@@ -213,9 +213,10 @@ internal static class SecurableElementColumnPathResolver
     /// <see cref="ResolvedSecurableElementPath"/> is appended to <paramref name="results"/>
     /// per declared root-level person path that resolves to a DocumentId chain. The
     /// shortest-path rule is scoped to alternate routes for that one declared path, not to
-    /// collapsing independent declared paths for the same person kind. The "subject IS the
-    /// person resource" case is the only path where a null resolved chain plus non-empty
-    /// root-level paths is not an error — see <see cref="PersonJoinPathResolver.IsPersonResource"/>.
+    /// collapsing independent declared paths for the same person kind. The exact self person
+    /// identity path is the only path where a null resolved chain plus a root-level path is not
+    /// an error — see
+    /// <see cref="PersonJoinPathResolver.IsSelfPersonIdentityPath"/>.
     /// </summary>
     private static void ResolvePersonPaths(
         ConcreteResourceModel subjectResource,
@@ -232,11 +233,6 @@ internal static class SecurableElementColumnPathResolver
         {
             return;
         }
-
-        var subjectIsPersonResource = PersonJoinPathResolver.IsPersonResource(
-            subjectResource.RelationalModel.Resource,
-            personResourceName
-        );
 
         foreach (var personPath in personPaths)
         {
@@ -257,12 +253,22 @@ internal static class SecurableElementColumnPathResolver
                 results.Add(new ResolvedSecurableElementPath(kind, chain));
             }
 
-            // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
-            // person resource, in which case unresolved paths are self-references and silently
-            // skipped (e.g. Contact declaring $.contactUniqueId).
-            if (unresolvedRootLevelPaths.Count > 0 && !subjectIsPersonResource)
+            // Surface any root-level path that did not bind (Fix #7). Only the exact self
+            // identity path on Student/Contact/Staff is zero-hop and intentionally skipped.
+            foreach (var unresolvedPath in unresolvedRootLevelPaths)
             {
-                unresolvedPaths.AddRange(unresolvedRootLevelPaths);
+                if (
+                    PersonJoinPathResolver.IsSelfPersonIdentityPath(
+                        subjectResource.RelationalModel.Resource,
+                        kind,
+                        unresolvedPath
+                    )
+                )
+                {
+                    continue;
+                }
+
+                unresolvedPaths.Add(unresolvedPath);
             }
         }
     }

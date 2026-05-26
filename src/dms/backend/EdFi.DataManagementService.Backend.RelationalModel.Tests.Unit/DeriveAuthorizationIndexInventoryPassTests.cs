@@ -1888,44 +1888,37 @@ public class Given_Person_Chain_With_Reference_Cycle_Among_Intermediates
 }
 
 /// <summary>
-/// Pins the subject-is-person suppression contract: when the subject IS the person resource
-/// (e.g. <c>Ed-Fi.Student</c>), all root-level Student paths bypass the unresolved-paths
-/// reporting in <c>ProcessPersonKind</c> — even paths that would otherwise be schema bugs.
-/// The person resource's own <c>DocumentId</c> is the auth anchor, so the pass does NOT
-/// need a join chain; matching today's runtime behavior, broken sibling paths on a self-
-/// securable resource are silently dropped.
+/// Pins the exact self-path suppression contract: when the subject IS the person resource
+/// (e.g. <c>Ed-Fi.Student</c>), only its exact self identity path bypasses unresolved-path
+/// reporting. Broken same-kind sibling paths still fail instead of being silently dropped.
 /// </summary>
 [TestFixture]
 public class Given_Person_Resource_With_Self_And_Broken_Securable_Path
 {
-    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
     private Exception? _exception;
 
     [SetUp]
     public void Setup()
     {
         _exception = TestExceptions.CaptureException(() =>
-            _authIndexes = AuthorizationIndexTestRunner
-                .Build(ctx =>
-                    ctx.ConcreteResourcesInNameOrder.Add(
-                        AuthIndexFixtureResources.BuildPersonResourceWithSelfAndBrokenSecurablePath()
-                    )
+            AuthorizationIndexTestRunner.Build(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildPersonResourceWithSelfAndBrokenSecurablePath()
                 )
-                .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
-                .ToArray()
+            )
         );
     }
 
     [Test]
-    public void It_should_not_throw_on_the_broken_sibling_path()
+    public void It_should_throw_on_the_broken_sibling_path()
     {
-        _exception.Should().BeNull();
-    }
-
-    [Test]
-    public void It_should_not_emit_any_person_join_auth_index()
-    {
-        _authIndexes.Should().BeEmpty();
+        _exception
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("Ed-Fi.Student")
+            .And.Contain("$.nonexistentReference.studentUniqueId")
+            .And.NotContain("$.studentUniqueId,");
     }
 }
 
@@ -3369,8 +3362,8 @@ internal static class AuthIndexFixtureResources
     /// <summary>
     /// Subject resource declaring two root-level Student securable paths: one matches a real
     /// <see cref="DocumentReferenceBinding"/>, the other targets a non-existent reference. The
-    /// resolved path produces an auth index; the unresolved sibling is silently dropped (no
-    /// throw), matching the runtime resolver's "only throw when all paths unresolved" rule.
+    /// resolved path would produce an auth index, but the unresolved sibling fails fast to match
+    /// the runtime resolver's schema-drift surface.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithMixedResolvableAndUnresolvableStudentPaths()
     {
@@ -3812,10 +3805,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Builds <c>Ed-Fi.Student</c> with both its self-anchor securable (<c>$.studentUniqueId</c>)
-    /// and a sibling path that doesn't match any binding. The subject-is-person guard in
-    /// <c>ProcessPersonKind</c> suppresses unresolved-path reporting for all root-level paths
-    /// on the person resource, so the broken sibling is silently dropped — pinning today's
-    /// behavior so a future contract change is forced to update this test.
+    /// and a sibling path that doesn't match any binding. The exact self path is suppressed,
+    /// but the broken sibling must be surfaced as an unresolved person securable path.
     /// </summary>
     public static ConcreteResourceModel BuildPersonResourceWithSelfAndBrokenSecurablePath() =>
         BuildResource(

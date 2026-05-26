@@ -487,6 +487,59 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_preserve_self_person_subject_and_fail_broken_same_kind_sibling_path()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var unresolvedStudentReferencePath = "$.nonexistentReference.studentUniqueId";
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                resource.ResourceName,
+                CreateModelWithTables(
+                    resource.ResourceName,
+                    CreateRootTable(Table(resource.ResourceName)),
+                    []
+                ),
+                new ResourceSecurableElements(
+                    [],
+                    [],
+                    ["$.studentUniqueId", unresolvedStudentReferencePath],
+                    [],
+                    []
+                )
+            )
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            resource,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+
+        var selectedSubject = result
+            .StrategySubjectSelections.Single()
+            .Subjects.Should()
+            .ContainSingle()
+            .Subject;
+        selectedSubject
+            .PersonMetadata!.Path.Kind.Should()
+            .Be(RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId);
+        selectedSubject
+            .Contributors.Select(static contributor => contributor.JsonPath)
+            .Should()
+            .Equal("$.studentUniqueId");
+
+        var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Subject;
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.UnresolvedSecurableElement);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location.JsonPath.Should().Be(unresolvedStudentReferencePath);
+        failure.Contributors.Should().ContainSingle().Which.ContributionOrder.Should().Be(1);
+    }
+
+    [Test]
     public void It_should_preserve_resolved_people_subjects_when_other_same_strategy_people_paths_are_unresolved()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "PartiallyResolvedStudentCarrier");

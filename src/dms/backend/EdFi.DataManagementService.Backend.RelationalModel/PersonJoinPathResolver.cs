@@ -40,9 +40,8 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     <see cref="ReferenceIdentityBinding"/> whose <c>ReferenceJsonPath</c> equals the
 ///     securable path exactly. A reference-object prefix match alone is not enough — the
 ///     full identity path must be present in the binding's <c>IdentityBindings</c>.
-///     Paths that don't bind are accumulated into <c>unresolvedRootLevelPaths</c>; the caller
-///     decides whether to throw (subject is not the person resource) or skip (subject IS the
-///     person resource, the path is a self-reference).</description>
+///     Paths that don't bind are accumulated into <c>unresolvedRootLevelPaths</c>; callers
+///     suppress only paths accepted by <see cref="IsSelfPersonIdentityPath"/>.</description>
 ///   </item>
 ///   <item>
 ///     <description>If the binding's target is the person resource, the chain is a single
@@ -64,9 +63,9 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///   </item>
 /// </list>
 /// <para>Returns <see langword="null"/> when no non-array-nested path resolves. Callers decide
-/// whether that — combined with "subject is not the person resource itself" — means "unresolved"
-/// (throw) or "OK, subject is the person and its own DocumentId is the anchor" (skip). Use
-/// <see cref="IsPersonResource"/> for that check.</para>
+/// whether that — combined with <see cref="IsSelfPersonIdentityPath"/> — means "unresolved"
+/// (throw) or "OK, this exact self path uses the person resource's own DocumentId anchor"
+/// (skip).</para>
 /// </remarks>
 public static class PersonJoinPathResolver
 {
@@ -217,6 +216,49 @@ public static class PersonJoinPathResolver
     public static bool IsPersonResource(QualifiedResourceName resource, string personResourceName) =>
         string.Equals(resource.ProjectName, EdFiProjectName, StringComparison.Ordinal)
         && string.Equals(resource.ResourceName, personResourceName, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Returns <see langword="true"/> only for the exact self identity path on a core Ed-Fi
+    /// person resource. Other same-kind paths on the person resource still require a resolvable
+    /// DocumentId reference path.
+    /// </summary>
+    public static bool IsSelfPersonIdentityPath(
+        QualifiedResourceName resource,
+        SecurableElementKind securableElementKind,
+        string personPath
+    ) =>
+        IsPersonResource(resource, GetPersonResourceName(securableElementKind))
+        && string.Equals(
+            personPath,
+            GetSelfPersonIdentityJsonPath(securableElementKind),
+            StringComparison.Ordinal
+        );
+
+    private static string GetSelfPersonIdentityJsonPath(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "$.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported relationship authorization person securable element kind."
+            ),
+        };
+
+    private static string GetPersonResourceName(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "Student",
+            SecurableElementKind.Contact => "Contact",
+            SecurableElementKind.Staff => "Staff",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported relationship authorization person securable element kind."
+            ),
+        };
 
     /// <summary>
     /// Builds a <see cref="QualifiedResourceName"/> → <see cref="ConcreteResourceModel"/> lookup

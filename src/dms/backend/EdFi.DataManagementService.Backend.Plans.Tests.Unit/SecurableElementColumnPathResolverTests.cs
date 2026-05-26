@@ -298,6 +298,21 @@ public class Given_SecurableElementColumnPathResolver
     public class Given_direct_person_reference
     {
         [Test]
+        public void It_should_skip_exact_self_person_identity_path_without_join_steps()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("Ed-Fi", "Student", rootTable);
+
+            var securableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []);
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "Student", model, securableElements);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().BeEmpty();
+        }
+
+        [Test]
         public void It_should_resolve_student_direct_reference()
         {
             // StudentSchoolAssociation -> Student (direct)
@@ -1349,6 +1364,29 @@ public class Given_SecurableElementColumnPathResolver
                 .Throw<InvalidOperationException>()
                 .WithMessage("*Ed-Fi.TestResource*")
                 .WithMessage("*$.studentReference.studentUniqueId*");
+        }
+
+        [Test]
+        public void It_should_throw_when_person_resource_has_self_path_and_broken_same_kind_sibling_path()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("Ed-Fi", "Student", rootTable);
+
+            var securableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.studentUniqueId", "$.nonexistentReference.studentUniqueId"],
+                [],
+                []
+            );
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "Student", model, securableElements);
+            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            var exception = act.Should().Throw<InvalidOperationException>().Which;
+            exception.Message.Should().Contain("Ed-Fi.Student");
+            exception.Message.Should().Contain("$.nonexistentReference.studentUniqueId");
+            exception.Message.Should().NotContain("$.studentUniqueId");
         }
 
         [Test]

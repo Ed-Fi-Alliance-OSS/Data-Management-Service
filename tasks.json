@@ -733,7 +733,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter DeriveAuthorizationIndexInventoryPass",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/SecurableElementColumnPathResolver.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Auth View Selection",

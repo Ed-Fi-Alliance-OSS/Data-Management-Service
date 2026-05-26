@@ -370,8 +370,9 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// filter and the emitted indexes agree on which <c>(table, column)</c> carries each hop.
     /// </summary>
     /// <remarks>
-    /// Subjects that ARE the person resource itself (e.g. Student with <c>$.studentUniqueId</c>)
+    /// Exact self identity paths on person resources (e.g. Student with <c>$.studentUniqueId</c>)
     /// emit no person-join index for that kind — their own <c>DocumentId</c> is the auth anchor.
+    /// Other same-kind paths on person resources must still resolve through a DocumentId path.
     /// Array-nested person paths (<c>[*]</c>) follow the runtime's resource-wide rule: silently
     /// skipped when any other securable path on the resource resolved; thrown with
     /// "unsupported child-table traversal" when no path resolved at all.
@@ -395,6 +396,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete,
                 concrete.SecurableElements.Student,
                 "Student",
+                SecurableElementKind.Student,
                 authIndexLookup,
                 resourceLookup,
                 ref anyResolved,
@@ -406,6 +408,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete,
                 concrete.SecurableElements.Contact,
                 "Contact",
+                SecurableElementKind.Contact,
                 authIndexLookup,
                 resourceLookup,
                 ref anyResolved,
@@ -417,6 +420,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete,
                 concrete.SecurableElements.Staff,
                 "Staff",
+                SecurableElementKind.Staff,
                 authIndexLookup,
                 resourceLookup,
                 ref anyResolved,
@@ -462,6 +466,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         ConcreteResourceModel subjectResource,
         IReadOnlyList<string> personPaths,
         string personResourceName,
+        SecurableElementKind kind,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         ref bool anyResolved,
@@ -473,11 +478,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         {
             return;
         }
-
-        var subjectIsPersonResource = PersonJoinPathResolver.IsPersonResource(
-            subjectResource.RelationalModel.Resource,
-            personResourceName
-        );
 
         foreach (var personPath in personPaths)
         {
@@ -502,12 +502,22 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 }
             }
 
-            // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
-            // person resource, in which case unresolved paths are self-references and silently
-            // skipped (e.g. Student declaring $.studentUniqueId).
-            if (unresolvedRootLevelPaths.Count > 0 && !subjectIsPersonResource)
+            // Surface any root-level path that did not bind (Fix #7). Only the exact self
+            // identity path on Student/Contact/Staff is zero-hop and intentionally skipped.
+            foreach (var unresolvedPath in unresolvedRootLevelPaths)
             {
-                unresolvedPaths.AddRange(unresolvedRootLevelPaths);
+                if (
+                    PersonJoinPathResolver.IsSelfPersonIdentityPath(
+                        subjectResource.RelationalModel.Resource,
+                        kind,
+                        unresolvedPath
+                    )
+                )
+                {
+                    continue;
+                }
+
+                unresolvedPaths.Add(unresolvedPath);
             }
         }
     }
