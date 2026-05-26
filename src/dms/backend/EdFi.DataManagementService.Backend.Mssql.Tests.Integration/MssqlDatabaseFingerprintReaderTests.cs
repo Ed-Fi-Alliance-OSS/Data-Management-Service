@@ -94,7 +94,6 @@ public class Given_MssqlDatabaseFingerprintReaderTests_A_Provisioned_Core_Dms_Sc
                 "Descriptor",
                 "Document",
                 "DocumentCache",
-                "DocumentChangeEvent",
                 "EffectiveSchema",
                 "ReferentialIdentity",
                 "ResourceKey",

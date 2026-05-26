@@ -176,15 +176,6 @@ BEGIN
     END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS "dms"."DocumentChangeEvent"
-(
-    "ChangeVersion" bigint NOT NULL,
-    "DocumentId" bigint NOT NULL,
-    "ResourceKeyId" smallint NOT NULL,
-    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT "PK_DocumentChangeEvent" PRIMARY KEY ("ChangeVersion", "DocumentId")
-);
-
 CREATE TABLE IF NOT EXISTS "dms"."EffectiveSchema"
 (
     "EffectiveSchemaSingletonId" smallint NOT NULL,
@@ -348,40 +339,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DocumentChangeEvent_Document'
-        AND conrelid = to_regclass('"dms"."DocumentChangeEvent"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentChangeEvent"
-        ADD CONSTRAINT "FK_DocumentChangeEvent_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DocumentChangeEvent_ResourceKey'
-        AND conrelid = to_regclass('"dms"."DocumentChangeEvent"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentChangeEvent"
-        ADD CONSTRAINT "FK_DocumentChangeEvent_ResourceKey"
-        FOREIGN KEY ("ResourceKeyId")
-        REFERENCES "dms"."ResourceKey" ("ResourceKeyId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_ReferentialIdentity_Document'
         AND conrelid = to_regclass('"dms"."ReferentialIdentity"')
     )
@@ -439,30 +396,11 @@ CREATE INDEX IF NOT EXISTS "IX_Document_ResourceKeyId_DocumentId" ON "dms"."Docu
 
 CREATE INDEX IF NOT EXISTS "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt" ON "dms"."DocumentCache" ("ProjectName", "ResourceName", "LastModifiedAt", "DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_DocumentChangeEvent_DocumentId" ON "dms"."DocumentChangeEvent" ("DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion" ON "dms"."DocumentChangeEvent" ("ResourceKeyId", "ChangeVersion", "DocumentId");
-
 CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."ReferentialIdentity" ("DocumentId");
 
 -- ==========================================================
 -- Phase 8: Triggers
 -- ==========================================================
-
-CREATE OR REPLACE FUNCTION "dms"."TF_Document_Journal"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    INSERT INTO "dms"."DocumentChangeEvent" ("ChangeVersion", "DocumentId", "ResourceKeyId", "CreatedAt")
-    VALUES (NEW."ContentVersion", NEW."DocumentId", NEW."ResourceKeyId", now());
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Document_Journal" ON "dms"."Document";
-CREATE TRIGGER "TR_Document_Journal"
-    AFTER INSERT OR UPDATE OF "ContentVersion" ON "dms"."Document"
-    FOR EACH ROW
-    EXECUTE FUNCTION "dms"."TF_Document_Journal"();
 
 CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
 RETURNS TRIGGER AS $func$

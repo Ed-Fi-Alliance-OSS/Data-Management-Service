@@ -115,20 +115,6 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
     }
 
     [Test]
-    public void It_creates_the_journaling_trigger()
-    {
-        using var connection = new SqlConnection(
-            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
-        );
-        connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM sys.triggers WHERE name = 'TR_Document_Journal';";
-        var result = command.ExecuteScalar();
-        result.Should().NotBeNull("the TR_Document_Journal trigger should exist after provisioning");
-    }
-
-    [Test]
     public void It_seeds_effective_schema_row()
     {
         using var connection = new SqlConnection(
@@ -808,7 +794,6 @@ public class Given_Mssql_ResourceKey_Table_Dropped_After_Provisioning
             using var command = connection.CreateCommand();
             command.CommandText = """
                 ALTER TABLE [dms].[Document] DROP CONSTRAINT [FK_Document_ResourceKey];
-                ALTER TABLE [dms].[DocumentChangeEvent] DROP CONSTRAINT [FK_DocumentChangeEvent_ResourceKey];
                 ALTER TABLE [dms].[ReferentialIdentity] DROP CONSTRAINT [FK_ReferentialIdentity_ResourceKey];
                 DROP TABLE [dms].[ResourceKey];
                 """;

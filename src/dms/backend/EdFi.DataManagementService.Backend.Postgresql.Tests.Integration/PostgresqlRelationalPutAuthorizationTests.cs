@@ -168,7 +168,7 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_authorizes_put_and_updates_document_resource_and_journal_rows()
+    public async Task It_authorizes_put_and_updates_document_resource()
     {
         var existingSeed = CreateRootChildSeed(
             "cccccccc-1111-0000-0000-000000000004",
@@ -201,12 +201,11 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
         var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
         after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
         after.Document.DocumentUuid.Should().Be(existingSeed.DocumentUuid.Value);
-        after.DocumentChangeEventCount.Should().BeGreaterThan(before.DocumentChangeEventCount);
         AssertRootRow(after, proposedSeed);
     }
 
     [Test]
-    public async Task It_denies_stored_value_put_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_stored_value_put_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "cccccccc-1111-0000-0000-000000000001",
@@ -418,7 +417,7 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_maps_stored_null_put_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_maps_stored_null_put_failure_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = new AuthorizationNullableSeed(
             new DocumentUuid(Guid.Parse("cccccccc-1111-0000-0000-000000000010")),
@@ -449,7 +448,7 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_maps_proposed_missing_put_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_maps_proposed_missing_put_failure_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = new AuthorizationNullableSeed(
             new DocumentUuid(Guid.Parse("cccccccc-1111-0000-0000-000000000011")),
@@ -481,7 +480,7 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_denies_proposed_value_put_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_proposed_value_put_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "cccccccc-1111-0000-0000-000000000002",
@@ -680,13 +679,12 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
         var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
         after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
         after.Document.DocumentUuid.Should().Be(existingSeed.DocumentUuid.Value);
-        after.DocumentChangeEventCount.Should().BeGreaterThan(before.DocumentChangeEventCount);
         AssertRootRow(after, candidateSeed);
         (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
     }
 
     [Test]
-    public async Task It_denies_stored_value_post_as_update_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_stored_value_post_as_update_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "cccccccc-2222-0000-0000-000000000001",
@@ -914,7 +912,7 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
     }
 
     [Test]
-    public async Task It_maps_stored_null_post_as_update_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_maps_stored_null_post_as_update_failure_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = new AuthorizationNullableSeed(
             new DocumentUuid(Guid.Parse("cccccccc-2222-0000-0000-000000000010")),
@@ -950,7 +948,7 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
     }
 
     [Test]
-    public async Task It_maps_proposed_missing_post_as_update_failure_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_maps_proposed_missing_post_as_update_failure_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = new AuthorizationNullableSeed(
             new DocumentUuid(Guid.Parse("cccccccc-2222-0000-0000-000000000011")),
@@ -987,7 +985,7 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
     }
 
     [Test]
-    public async Task It_denies_proposed_value_post_as_update_and_leaves_document_resource_identity_and_journal_rows_unchanged()
+    public async Task It_denies_proposed_value_post_as_update_and_leaves_document_resource_identity_unchanged()
     {
         var existingSeed = CreateRootChildSeed(
             "cccccccc-2222-0000-0000-000000000002",

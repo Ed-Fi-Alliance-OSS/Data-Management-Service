@@ -58,8 +58,7 @@ internal sealed record ProfileGuardedNoOpDocumentRow(
 
 internal sealed record ProfileGuardedNoOpPersistedState(
     ProfileGuardedNoOpDocumentRow Document,
-    IReadOnlyDictionary<string, object?> RootRow,
-    long DocumentChangeEventCount
+    IReadOnlyDictionary<string, object?> RootRow
 );
 
 internal static class ProfileGuardedNoOpPersistedStateSupport
@@ -68,24 +67,19 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
         TDatabase database,
         Guid documentUuid,
         Func<TDatabase, Guid, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> readDocumentRows,
-        Func<TDatabase, long, Task<IReadOnlyDictionary<string, object?>>> readRootRowByDocumentId,
-        Func<TDatabase, long, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> readChangeEventRows
+        Func<TDatabase, long, Task<IReadOnlyDictionary<string, object?>>> readRootRowByDocumentId
     )
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(readDocumentRows);
         ArgumentNullException.ThrowIfNull(readRootRowByDocumentId);
-        ArgumentNullException.ThrowIfNull(readChangeEventRows);
 
         var documentRows = await readDocumentRows(database, documentUuid).ConfigureAwait(false);
         var documentRow = BuildDocumentRow(documentRows, documentUuid);
 
         var rootRow = await readRootRowByDocumentId(database, documentRow.DocumentId).ConfigureAwait(false);
-        var changeEventRows = await readChangeEventRows(database, documentRow.DocumentId)
-            .ConfigureAwait(false);
-        var changeEventCount = ExtractSingleRowCount(changeEventRows);
 
-        return new ProfileGuardedNoOpPersistedState(documentRow, rootRow, changeEventCount);
+        return new ProfileGuardedNoOpPersistedState(documentRow, rootRow);
     }
 
     private static ProfileGuardedNoOpDocumentRow BuildDocumentRow(
@@ -117,17 +111,5 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
                 CultureInfo.InvariantCulture
             )
         );
-    }
-
-    private static long ExtractSingleRowCount(IReadOnlyList<IReadOnlyDictionary<string, object?>> rows)
-    {
-        if (rows.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"Expected exactly one DocumentChangeEvent count row, but found {rows.Count}."
-            );
-        }
-
-        return Convert.ToInt64(rows[0]["RowCount"], CultureInfo.InvariantCulture);
     }
 }

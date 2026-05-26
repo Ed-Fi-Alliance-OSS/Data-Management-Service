@@ -260,12 +260,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_create_document_change_event_table()
-    {
-        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentChangeEvent\"");
-    }
-
-    [Test]
     public void It_should_create_effective_schema_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"EffectiveSchema\"");
@@ -297,7 +291,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         var descriptor = _ddl.IndexOf("\"dms\".\"Descriptor\"", StringComparison.Ordinal);
         var document = _ddl.IndexOf("\"dms\".\"Document\"", StringComparison.Ordinal);
         var documentCache = _ddl.IndexOf("\"dms\".\"DocumentCache\"", StringComparison.Ordinal);
-        var documentChangeEvent = _ddl.IndexOf("\"dms\".\"DocumentChangeEvent\"", StringComparison.Ordinal);
         var effectiveSchema = _ddl.IndexOf("\"dms\".\"EffectiveSchema\"", StringComparison.Ordinal);
         var referentialIdentity = _ddl.IndexOf("\"dms\".\"ReferentialIdentity\"", StringComparison.Ordinal);
         var resourceKey = _ddl.IndexOf("\"dms\".\"ResourceKey\"", StringComparison.Ordinal);
@@ -305,8 +298,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
 
         descriptor.Should().BeLessThan(document);
         document.Should().BeLessThan(documentCache);
-        documentCache.Should().BeLessThan(documentChangeEvent);
-        documentChangeEvent.Should().BeLessThan(effectiveSchema);
+        documentCache.Should().BeLessThan(effectiveSchema);
         effectiveSchema.Should().BeLessThan(referentialIdentity);
         referentialIdentity.Should().BeLessThan(resourceKey);
         resourceKey.Should().BeLessThan(schemaComponent);
@@ -370,22 +362,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("DEFAULT now()");
     }
 
-    [Test]
-    public void It_should_keep_document_defaults_available_for_root_insert_initialization()
-    {
-        _ddl.Should().Contain("nextval('\"dms\".\"ChangeVersionSequence\"')");
-        _ddl.Should().Contain("DEFAULT now()");
-        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\"");
-    }
-
-    [Test]
-    public void It_should_keep_document_journaling_trigger_compatible_with_default_seeded_insert_flow()
-    {
-        _ddl.Should()
-            .Contain("VALUES (NEW.\"ContentVersion\", NEW.\"DocumentId\", NEW.\"ResourceKeyId\", now());");
-        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\" ON \"dms\".\"Document\"");
-    }
-
     // ── Primary keys ────────────────────────────────────────────────
 
     [Test]
@@ -398,13 +374,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_have_named_pk_for_document()
     {
         _ddl.Should().Contain("CONSTRAINT \"PK_Document\" PRIMARY KEY (\"DocumentId\")");
-    }
-
-    [Test]
-    public void It_should_have_composite_pk_for_document_change_event()
-    {
-        _ddl.Should()
-            .Contain("CONSTRAINT \"PK_DocumentChangeEvent\" PRIMARY KEY (\"ChangeVersion\", \"DocumentId\")");
     }
 
     [Test]
@@ -539,18 +508,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_fk_document_change_event_document()
-    {
-        _ddl.Should().Contain("\"FK_DocumentChangeEvent_Document\"");
-    }
-
-    [Test]
-    public void It_should_have_fk_document_change_event_resource_key()
-    {
-        _ddl.Should().Contain("\"FK_DocumentChangeEvent_ResourceKey\"");
-    }
-
-    [Test]
     public void It_should_have_fk_referential_identity_document()
     {
         _ddl.Should().Contain("\"FK_ReferentialIdentity_Document\"");
@@ -589,61 +546,9 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_index_document_change_event_document_id()
-    {
-        _ddl.Should().Contain("\"IX_DocumentChangeEvent_DocumentId\"");
-    }
-
-    [Test]
-    public void It_should_have_index_document_change_event_resource_key_change_version()
-    {
-        _ddl.Should().Contain("\"IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion\"");
-    }
-
-    [Test]
     public void It_should_have_index_referential_identity_document_id()
     {
         _ddl.Should().Contain("\"IX_ReferentialIdentity_DocumentId\"");
-    }
-
-    // ── PG trigger ──────────────────────────────────────────────────
-
-    [Test]
-    public void It_should_create_trigger_function()
-    {
-        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".\"TF_Document_Journal\"()");
-        _ddl.Should().Contain("LANGUAGE plpgsql");
-    }
-
-    [Test]
-    public void It_should_drop_existing_trigger_before_creating()
-    {
-        _ddl.Should().Contain("DROP TRIGGER IF EXISTS \"TR_Document_Journal\" ON \"dms\".\"Document\"");
-    }
-
-    [Test]
-    public void It_should_create_trigger_on_document()
-    {
-        _ddl.Should().Contain("CREATE TRIGGER \"TR_Document_Journal\"");
-        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\"");
-        _ddl.Should().Contain("FOR EACH ROW");
-        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Document_Journal\"()");
-    }
-
-    [Test]
-    public void It_should_use_new_record_in_trigger_function()
-    {
-        _ddl.Should().Contain("NEW.\"ContentVersion\"");
-        _ddl.Should().Contain("NEW.\"DocumentId\"");
-        _ddl.Should().Contain("NEW.\"ResourceKeyId\"");
-    }
-
-    [Test]
-    public void It_should_not_contain_mssql_trigger_syntax()
-    {
-        _ddl.Should().NotContain("CREATE OR ALTER TRIGGER");
-        _ddl.Should().NotContain("SET NOCOUNT ON");
-        _ddl.Should().NotContain("sysutcdatetime()");
     }
 
     // ── PG descriptor stamping trigger ──────────────────────────────
@@ -883,12 +788,11 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_create_all_eight_tables()
+    public void It_should_create_all_seven_tables()
     {
         _ddl.Should().Contain("[dms].[Descriptor]");
         _ddl.Should().Contain("[dms].[Document]");
         _ddl.Should().Contain("[dms].[DocumentCache]");
-        _ddl.Should().Contain("[dms].[DocumentChangeEvent]");
         _ddl.Should().Contain("[dms].[EffectiveSchema]");
         _ddl.Should().Contain("[dms].[ReferentialIdentity]");
         _ddl.Should().Contain("[dms].[ResourceKey]");
@@ -975,15 +879,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime())");
     }
 
-    [Test]
-    public void It_should_keep_document_journaling_trigger_compatible_with_default_then_restamp_flow()
-    {
-        _ddl.Should().Contain("IF UPDATE([ContentVersion]) OR NOT EXISTS (SELECT 1 FROM deleted)");
-        _ddl.Should()
-            .Contain("SELECT i.[ContentVersion], i.[DocumentId], i.[ResourceKeyId], sysutcdatetime()");
-        _ddl.Should().Contain("FROM inserted i;");
-    }
-
     // ── MSSQL named default constraints ─────────────────────────────
 
     [Test]
@@ -1020,12 +915,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_named_default_for_effective_schema_applied_at()
     {
         _ddl.Should().Contain("CONSTRAINT [DF_EffectiveSchema_AppliedAt] DEFAULT");
-    }
-
-    [Test]
-    public void It_should_have_named_default_for_document_change_event_created_at()
-    {
-        _ddl.Should().Contain("CONSTRAINT [DF_DocumentChangeEvent_CreatedAt] DEFAULT");
     }
 
     [Test]
@@ -1132,13 +1021,11 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_eight_foreign_keys()
+    public void It_should_have_all_six_foreign_keys()
     {
         _ddl.Should().Contain("[FK_Descriptor_Document]");
         _ddl.Should().Contain("[FK_Document_ResourceKey]");
         _ddl.Should().Contain("[FK_DocumentCache_Document]");
-        _ddl.Should().Contain("[FK_DocumentChangeEvent_Document]");
-        _ddl.Should().Contain("[FK_DocumentChangeEvent_ResourceKey]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_Document]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_ResourceKey]");
         _ddl.Should().Contain("[FK_SchemaComponent_EffectiveSchemaHash]");
@@ -1159,75 +1046,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Indexes ─────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_six_indexes()
+    public void It_should_have_all_four_indexes()
     {
         _ddl.Should().Contain("[IX_Descriptor_Uri_Discriminator]");
         _ddl.Should().Contain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
-        _ddl.Should().Contain("[IX_DocumentChangeEvent_DocumentId]");
-        _ddl.Should().Contain("[IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion]");
         _ddl.Should().Contain("[IX_ReferentialIdentity_DocumentId]");
-    }
-
-    // ── MSSQL trigger ───────────────────────────────────────────────
-
-    [Test]
-    public void It_should_create_or_alter_trigger()
-    {
-        _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_Document_Journal]");
-    }
-
-    [Test]
-    public void It_should_emit_go_batch_separator_before_trigger()
-    {
-        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch
-        var triggerIndex = _ddl.IndexOf("CREATE OR ALTER TRIGGER");
-        var goIndex = _ddl.LastIndexOf("GO\n", triggerIndex);
-
-        goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
-        triggerIndex.Should().BeGreaterThan(goIndex);
-        // The GO should be immediately before the trigger (only whitespace between)
-        var between = _ddl.Substring(goIndex + 3, triggerIndex - goIndex - 3);
-        between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER TRIGGER");
-    }
-
-    [Test]
-    public void It_should_attach_trigger_to_document_table()
-    {
-        _ddl.Should().Contain("ON [dms].[Document]");
-        _ddl.Should().Contain("AFTER INSERT, UPDATE");
-    }
-
-    [Test]
-    public void It_should_use_set_nocount_on()
-    {
-        _ddl.Should().Contain("SET NOCOUNT ON");
-    }
-
-    [Test]
-    public void It_should_check_content_version_update()
-    {
-        _ddl.Should().Contain("IF UPDATE([ContentVersion])");
-    }
-
-    [Test]
-    public void It_should_insert_from_inserted_pseudo_table()
-    {
-        _ddl.Should().Contain("FROM inserted i");
-    }
-
-    [Test]
-    public void It_should_use_sysutcdatetime_in_trigger()
-    {
-        _ddl.Should().Contain("sysutcdatetime()");
-    }
-
-    [Test]
-    public void It_should_not_contain_pg_trigger_syntax()
-    {
-        _ddl.Should().NotContain("LANGUAGE plpgsql");
-        _ddl.Should().NotContain("DISTINCT ON");
-        _ddl.Should().NotContain("new_table");
     }
 
     // ── MSSQL descriptor stamping trigger ───────────────────────────

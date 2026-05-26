@@ -809,7 +809,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("END IF;");
 
         // Root-document INSERTs reuse dms.Document defaults so we do not burn an
-        // extra sequence value and journal row before the resource row exists.
+        // extra sequence value before the resource row exists.
         if (isRootDocumentStampingTrigger)
         {
             writer.AppendLine("IF TG_OP = 'UPDATE' THEN");

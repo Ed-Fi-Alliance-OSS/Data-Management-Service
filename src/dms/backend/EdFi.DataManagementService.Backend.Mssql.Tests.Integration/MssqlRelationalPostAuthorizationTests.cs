@@ -331,14 +331,6 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
             .Should()
             .Be(0);
         (await _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync(seed)).Should().Be(0);
-        (
-            await _context.CountDocumentChangeEventRowsForResourceAsync(
-                ProjectEndpointName,
-                RootChildResourceName
-            )
-        )
-            .Should()
-            .Be(0);
     }
 
     private static void AssertRelationshipDenied(
