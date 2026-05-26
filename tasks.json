@@ -464,5 +464,68 @@
       "Run git diff --stat and review the changed file list for out-of-scope production, test, DDL, or endpoint-enablement changes"
     ],
     "completed": true
+  },
+  {
+    "category": "Failure Metadata",
+    "description": "Medium: Preserve missing People auth view association failures and all contributors when other planning failures are present.",
+    "acceptance-criteria": [
+      "When a selected People subject requires a People auth view that was not emitted, the planner reports a MissingPeopleAuthViewAssociations security-configuration failure even if the same plan also has another subject-selection failure such as an unresolved EducationOrganization securable element.",
+      "Security-configuration failure aggregation remains deterministic and includes both the missing People auth view failure and the independent subject-selection failure.",
+      "MissingPeopleAuthViewAssociations failures aggregate contributors from every selected People subject that shares the same configured strategy, value source, person kind, auth view, and output column.",
+      "When a resource has multiple independent Student, Contact, or Staff securable paths that select the same missing auth view, the security-configuration failure includes every contributing JSON path and readable name in deterministic contribution order.",
+      "The missing-auth-view dedupe key still preserves separate configured strategies, relationship-local order, value source, person kind, auth view, and responsibility versus non-responsibility Student view identity.",
+      "Existing single-subject missing People auth view diagnostics and EdOrg-only planning behavior remain unchanged."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.PlanSupportedStrategies and PlanSupportedUpdateStrategies to confirm missing People auth view association failures are collected before returning security-configuration failures from selectedSubjects.Failures.",
+      "Review RelationshipAuthorizationPlanner.SelectStrategyPersonAuthViews and replace DistinctBy-first-wins behavior with grouping that merges contributor metadata.",
+      "Add a planner unit test for a mixed strategy with one unresolved EdOrg securable element, one selected People subject, and suppressed People auth views; assert both security-configuration failures are returned.",
+      "Add a planner unit test with two independent Student securable paths selecting auth.EducationOrganizationIdToStudentDocumentId while people auth views are suppressed, and assert both contributors appear on the MissingPeopleAuthViewAssociations failure.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Operation Eligibility",
+    "description": "Medium: Make transitive People proposed anchors consumable by proposed-value authorization extraction and SQL staging guards.",
+    "acceptance-criteria": [
+      "Transitive People proposed specs that use a first-hop root-row anchor are accepted by RelationshipAuthorizationProposedValueExtractor instead of being rejected because the anchor column differs from the terminal person subject column.",
+      "Proposed-value validation distinguishes EdOrg/direct-root bindings, which still bind the subject column, from People transitive bindings, which bind PersonMetadata.ProposedAnchor.Binding.",
+      "SingleRecordRelationshipAuthorizationSqlCompiler rejects staged People specs through the explicit DMS-1158 execution-boundary message before applying EdOrg-only root-table or same-column invariants that transitive People specs intentionally violate.",
+      "Existing EdOrg-only proposed authorization extraction and SQL compiler behavior remains unchanged.",
+      "Unit coverage proves a transitive People proposed spec extracts the first-hop runtime value and preserves the terminal DocumentId path metadata."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.CreateProposedAnchor, RelationshipAuthorizationProposedValueExtractor.Extract, and SingleRecordRelationshipAuthorizationSqlCompiler.NormalizeSpec for consistent People proposed-anchor semantics.",
+      "Add unit coverage for a transitive People proposed check spec whose first-hop binding column differs from the terminal person DocumentId subject column.",
+      "Add unit coverage proving SingleRecordRelationshipAuthorizationSqlCompiler reports the DMS-1158 People staging error for transitive People specs rather than a generic root-table or proposed-binding mismatch.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationshipAuthorizationProposedValueExtractor",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationExecutor",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Medium: Move relationship authorization auth object ownership from check specs to executable subjects.",
+    "acceptance-criteria": [
+      "Each RelationshipAuthorizationSubject carries the auth object required to evaluate that specific subject, including EdOrg hierarchy subjects and each People auth view subject.",
+      "RelationshipAuthorizationCheckSpec no longer exposes a single authoritative AuthObject that can misrepresent mixed EdOrg-and-People or multi-person-kind strategies.",
+      "RelationshipAuthorizationPersonSubjectMetadata no longer duplicates auth object metadata already owned by the subject.",
+      "Failure mapping uses subject-level auth object metadata and sets strategy-level auth object summaries only when all failed subjects in that strategy use the same auth object.",
+      "Existing EdOrg-only planner, SQL compiler, endpoint staging, AUTH1 payload mapping, and failure message behavior remain unchanged.",
+      "Mixed RelationshipsWithEdOrgsAndPeople and RelationshipsWithPeopleOnly specs can represent multiple auth objects without relying on first-subject or EdOrg-preferred fallback behavior."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationContracts.cs and remove RelationshipAuthorizationCheckSpec.AuthObject as the authoritative auth object field.",
+      "Review RelationshipAuthorizationPlanner.CreateCheckSpecAuthObject and remove first-subject or EdOrg-preferred auth object fallback logic after subjects own auth objects.",
+      "Update PageDocumentIdAuthorizationSpecAdapter, SingleRecordRelationshipAuthorizationSqlCompiler, RelationshipAuthorizationFailureMapper, and endpoint staging guards to read auth object metadata from the subject being evaluated.",
+      "Add unit coverage for a mixed EdOrg-and-Student strategy and a PeopleOnly strategy with multiple person kinds, asserting each failed subject maps the correct auth object and strategy-level auth object is null when subjects differ.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorization",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationExecutor",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend src/dms/core/EdFi.DataManagementService.Core.External/Backend"
+    ],
+    "completed": false
   }
 ]
