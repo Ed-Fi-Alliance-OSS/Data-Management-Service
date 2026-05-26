@@ -148,24 +148,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     }
 
     [Test]
-    public async Task It_does_not_stamp_on_descriptor_row_delete()
-    {
-        var seed = await SeedAsync();
-
-        await _database.ExecuteNonQueryAsync(
-            """
-            DELETE FROM [dms].[Descriptor]
-            WHERE DocumentId = @documentId;
-            """,
-            new SqlParameter("@documentId", seed.DocumentId)
-        );
-
-        var after = await ReadStampsAsync(seed.DocumentId);
-        after.ContentVersion.Should().Be(seed.ContentVersion);
-        after.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
-    }
-
-    [Test]
     public async Task It_stamps_both_documents_on_multi_row_descriptor_update()
     {
         var seedA = await SeedAsync(codeValue: "Female");

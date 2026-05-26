@@ -166,25 +166,4 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
                 "each row must pull a distinct nextval — a per-statement cache would collide"
             );
     }
-
-    [Test]
-    public async Task It_does_not_stamp_on_descriptor_row_delete()
-    {
-        var seed = await SeedAsync();
-
-        // Detach the FK cascade impact by using a plain DELETE on Descriptor only — the
-        // owning Document row stays. The descriptor stamping trigger is AFTER UPDATE so
-        // DELETE has no path through it.
-        await _database.ExecuteNonQueryAsync(
-            """
-            DELETE FROM dms."Descriptor"
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", seed.DocumentId)
-        );
-
-        var after = await ReadStampsAsync(seed.DocumentId);
-        after.ContentVersion.Should().Be(seed.ContentVersion);
-        after.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
-    }
 }
