@@ -1449,17 +1449,17 @@ already present there and must not invent a synthetic
 
 **`SeedLoader` claimset - required resource claim permissions:**
 
-| Resource claim URI pattern | Authorization strategy | Operations |
+| Resource claim URI pattern | Authorization strategy source | Operations |
 |---|---|---|
-| `http://ed-fi.org/identity/claims/domains/systemDescriptors` | `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/domains/managedDescriptors` | `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/schoolYearType` | `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/domains/educationOrganizations` | `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/school` | `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/course` | `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/student` | `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/studentSchoolAssociation` | `NoFurtherAuthorizationRequired` | Create |
-| *(extension resource claims per selected built-in extension seed source)* | `NoFurtherAuthorizationRequired` | Create |
+| `http://ed-fi.org/identity/claims/domains/systemDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/domains/managedDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/schoolYearType` | Explicit `authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` | Create |
+| `http://ed-fi.org/identity/claims/domains/educationOrganizations` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/school` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/course` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/student` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/studentSchoolAssociation` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| *(extension resource claims per selected built-in extension seed source)* | Inherited from the extension claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant unless a future design names a specific closed-enum exception | Create |
 
 > **Note:** Read (GET) access is not required by the bootstrap seed-loading contract. BulkLoadClient uses
 > POST for seed records; duplicate detection and `--continue-on-error` handling for `409 Conflict` responses
