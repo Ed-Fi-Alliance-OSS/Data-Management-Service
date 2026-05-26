@@ -677,7 +677,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlanner|RelationalPeopleAuthorizationSubjectSelector\"",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Auth View Selection",

@@ -896,6 +896,58 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_report_missing_people_auth_view_associations_once_per_people_strategy()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var responsibilityAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreatePeopleSubjectMappingSet(resource, SecurableElementKind.Student),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures.Should().HaveCount(2);
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .OnlyContain(static failureKind =>
+                failureKind == RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+            );
+        failures
+            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Equal(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
+            );
+        failures.Select(static failure => failure.RelationshipLocalOrder).Should().Equal(0, 1);
+        failures
+            .Select(static failure => failure.AuthObject)
+            .Should()
+            .Equal(studentAuthObject, responsibilityAuthObject);
+        failures
+            .SelectMany(static failure => failure.Contributors)
+            .Select(static contributor => contributor.JsonPath)
+            .Should()
+            .Equal("$.studentReference.studentUniqueId", "$.studentReference.studentUniqueId");
+    }
+
+    [Test]
     public void It_should_continue_with_edorg_subjects_for_mixed_strategies_when_people_views_are_suppressed_but_no_people_subject_is_selected()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "TestResource");

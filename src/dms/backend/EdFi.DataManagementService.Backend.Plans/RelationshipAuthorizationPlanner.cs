@@ -490,11 +490,16 @@ public sealed class RelationshipAuthorizationPlanner
     {
         List<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects = [];
         List<RelationshipAuthorizationFailureMetadata> failures = [];
+        var peopleSubjectsByStrategy = SelectPeopleSubjectsByStrategy(
+            mappingSet,
+            resource,
+            supportedStrategies
+        );
 
         foreach (var supportedStrategy in supportedStrategies)
         {
             var edOrgSelection = SelectEdOrgSubjects(mappingSet, resource, supportedStrategy);
-            var peopleSelection = SelectPeopleSubjects(mappingSet, resource, supportedStrategy);
+            var peopleSelection = SelectPeopleSubjects(supportedStrategy, peopleSubjectsByStrategy);
             List<RelationshipAuthorizationSubject> subjects =
             [
                 .. edOrgSelection.Subjects,
@@ -559,10 +564,52 @@ public sealed class RelationshipAuthorizationPlanner
         };
     }
 
-    private static RelationshipAuthorizationStrategySubjectSelection SelectPeopleSubjects(
+    private static PeopleSubjectSelectionsByStrategy SelectPeopleSubjectsByStrategy(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        SupportedRelationshipAuthorizationStrategy supportedStrategy
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies
+    )
+    {
+        var peopleStrategies = supportedStrategies.Where(SelectsPeopleSubject).ToArray();
+
+        if (peopleStrategies.Length == 0)
+        {
+            return PeopleSubjectSelectionsByStrategy.Empty;
+        }
+
+        var selection = RelationalPeopleAuthorizationSubjectSelector.Select(
+            mappingSet,
+            resource,
+            peopleStrategies
+        );
+
+        var subjectsByStrategy = selection
+            .StrategySubjectSelections.GroupBy(static strategySelection =>
+                CreateStrategyIdentity(
+                    strategySelection.ConfiguredStrategy,
+                    strategySelection.RelationshipLocalOrder
+                )
+            )
+            .ToDictionary(
+                static group => group.Key,
+                static group =>
+                    (IReadOnlyList<RelationshipAuthorizationSubject>)
+                        group.SelectMany(static strategySelection => strategySelection.Subjects).ToArray()
+            );
+
+        var failuresByStrategy = selection
+            .SecurityConfigurationFailures.GroupBy(CreateStrategyIdentity)
+            .ToDictionary(
+                static group => group.Key,
+                static group => (IReadOnlyList<RelationshipAuthorizationFailureMetadata>)group.ToArray()
+            );
+
+        return new PeopleSubjectSelectionsByStrategy(subjectsByStrategy, failuresByStrategy);
+    }
+
+    private static RelationshipAuthorizationStrategySubjectSelection SelectPeopleSubjects(
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
+        PeopleSubjectSelectionsByStrategy peopleSubjectsByStrategy
     )
     {
         if (!SelectsPeopleSubject(supportedStrategy))
@@ -570,32 +617,37 @@ public sealed class RelationshipAuthorizationPlanner
             return new RelationshipAuthorizationStrategySubjectSelection([], []);
         }
 
-        var selection = RelationalPeopleAuthorizationSubjectSelector.Select(
-            mappingSet,
-            resource,
-            [supportedStrategy]
+        var strategyIdentity = CreateStrategyIdentity(
+            supportedStrategy.ConfiguredStrategy,
+            supportedStrategy.RelationshipLocalOrder
         );
 
-        return selection.Outcome switch
+        return new RelationshipAuthorizationStrategySubjectSelection(
+            peopleSubjectsByStrategy.SubjectsByStrategy.GetValueOrDefault(strategyIdentity) ?? [],
+            peopleSubjectsByStrategy.FailuresByStrategy.GetValueOrDefault(strategyIdentity) ?? []
+        );
+    }
+
+    private static RelationshipAuthorizationStrategyIdentity CreateStrategyIdentity(
+        ConfiguredAuthorizationStrategy configuredStrategy,
+        int relationshipLocalOrder
+    ) => new(configuredStrategy.RawConfiguredIndex, relationshipLocalOrder);
+
+    private static RelationshipAuthorizationStrategyIdentity CreateStrategyIdentity(
+        RelationshipAuthorizationFailureMetadata failure
+    )
+    {
+        if (
+            failure.ConfiguredStrategy is not { } configuredStrategy
+            || failure.RelationshipLocalOrder is not { } relationshipLocalOrder
+        )
         {
-            RelationalPeopleAuthorizationSubjectSelectionOutcome.Success =>
-                new RelationshipAuthorizationStrategySubjectSelection(
-                    selection
-                        .StrategySubjectSelections.SelectMany(static strategy => strategy.Subjects)
-                        .ToArray(),
-                    []
-                ),
-            RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError =>
-                new RelationshipAuthorizationStrategySubjectSelection(
-                    selection
-                        .StrategySubjectSelections.SelectMany(static strategy => strategy.Subjects)
-                        .ToArray(),
-                    selection.SecurityConfigurationFailures
-                ),
-            _ => throw new InvalidOperationException(
-                $"Unsupported People relationship authorization subject selection outcome '{selection.Outcome}'."
-            ),
-        };
+            throw new InvalidOperationException(
+                "People relationship authorization subject selection failures must identify their configured strategy."
+            );
+        }
+
+        return CreateStrategyIdentity(configuredStrategy, relationshipLocalOrder);
     }
 
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> SelectHardSubjectSelectionFailures(
@@ -1667,6 +1719,35 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures
     );
+
+    private readonly record struct RelationshipAuthorizationStrategyIdentity(
+        int RawConfiguredIndex,
+        int RelationshipLocalOrder
+    );
+
+    private sealed record PeopleSubjectSelectionsByStrategy(
+        IReadOnlyDictionary<
+            RelationshipAuthorizationStrategyIdentity,
+            IReadOnlyList<RelationshipAuthorizationSubject>
+        > SubjectsByStrategy,
+        IReadOnlyDictionary<
+            RelationshipAuthorizationStrategyIdentity,
+            IReadOnlyList<RelationshipAuthorizationFailureMetadata>
+        > FailuresByStrategy
+    )
+    {
+        public static PeopleSubjectSelectionsByStrategy Empty { get; } =
+            new(
+                new Dictionary<
+                    RelationshipAuthorizationStrategyIdentity,
+                    IReadOnlyList<RelationshipAuthorizationSubject>
+                >(),
+                new Dictionary<
+                    RelationshipAuthorizationStrategyIdentity,
+                    IReadOnlyList<RelationshipAuthorizationFailureMetadata>
+                >()
+            );
+    }
 
     private sealed record SelectedStrategyPersonAuthView(
         ConfiguredAuthorizationStrategy ConfiguredStrategy,
