@@ -2364,10 +2364,22 @@ public sealed class RelationalDocumentStoreRepository(
     private static bool HasOnlyEdOrgSubjectSelectionFailures(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
     ) =>
-        failures.All(static failure =>
+        failures.Count > 0
+        && failures.All(static failure =>
             failure.FailureKind
                 is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
                     or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+            && failure.PersonMetadata is null
+            && failure.Location?.Kind is null or SecurableElementKind.EducationOrganization
+            && failure.Contributors.All(static contributor =>
+                contributor.Kind is SecurableElementKind.EducationOrganization
+            )
+            && failure.SkippedContributors.All(static contributor =>
+                contributor.Kind is SecurableElementKind.EducationOrganization
+            )
+            && failure.IneligibleSubjects.All(static ineligibleSubject =>
+                ineligibleSubject.Subject.PersonMetadata is null
+            )
         );
 
     private static string BuildSecurityConfigurationFailureMessage(
@@ -2376,8 +2388,21 @@ public sealed class RelationalDocumentStoreRepository(
         string operationLabel,
         string effectiveAuthorizationLabel,
         string scopeTag
-    ) =>
-        failure.FailureKind switch
+    )
+    {
+        if (
+            TryBuildPeopleSecurityConfigurationFailureMessage(
+                mappingSet,
+                failure,
+                operationLabel,
+                out var peopleFailureMessage
+            )
+        )
+        {
+            return peopleFailureMessage;
+        }
+
+        return failure.FailureKind switch
         {
             RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy =>
                 $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
@@ -2425,6 +2450,234 @@ public sealed class RelationalDocumentStoreRepository(
                 $"Unsupported {operationLabel} authorization security-configuration failure kind."
             ),
         };
+    }
+
+    private static bool TryBuildPeopleSecurityConfigurationFailureMessage(
+        MappingSet mappingSet,
+        RelationshipAuthorizationFailureMetadata failure,
+        string operationLabel,
+        out string message
+    )
+    {
+        message = string.Empty;
+
+        if (!TryGetPeopleSubjectKindName(failure, out var subjectKindName))
+        {
+            return false;
+        }
+
+        var resourceName = RelationalWriteSupport.FormatResource(failure.Resource);
+        var strategyName = failure.ConfiguredStrategy?.StrategyName;
+        var authViewPhrase = FormatPeopleAuthViewPhrase(failure);
+        var authViewSentence = FormatPeopleAuthViewSentence(failure);
+        var locationSentence = FormatPeopleLocationSentence(failure);
+        var contributorSentence = FormatPeopleContributorSentence(failure);
+        var skippedContributorSentence = FormatSkippedPeopleContributorSentence(failure);
+        var ineligibleSubjectSentence = FormatIneligiblePeopleSubjectSentence(failure);
+        var hintSentence = FormatHintSentence(failure.Hint);
+
+        message = failure.FailureKind switch
+        {
+            RelationshipAuthorizationFailureKind.UnresolvedSecurableElement =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' requires resolvable {subjectKindName} securable elements{authViewPhrase}, "
+                    + $"but element {FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from People relationship authorization metadata"} "
+                    + "could not be resolved to a DocumentId-based relational path."
+                    + contributorSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.NoApplicableRootSubject =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' has no applicable {subjectKindName} relationship authorization subject{authViewPhrase}. "
+                    + locationSentence
+                    + authViewSentence
+                    + contributorSentence
+                    + skippedContributorSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.NoExecutableSubjects =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' has no executable {subjectKindName} relationship authorization subjects for this operation. "
+                    + authViewSentence
+                    + contributorSentence
+                    + ineligibleSubjectSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.MissingProposedRootBinding =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' requires proposed-value {subjectKindName} relationship authorization subject "
+                    + $"{FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from People relationship authorization metadata"}{authViewPhrase}, "
+                    + $"but anchor column '{failure.Location?.Table}.{failure.Location?.Column?.Value}' does not have a matching root write binding."
+                    + contributorSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' selects People relationship subject '{subjectKindName}' "
+                    + $"through auth view '{failure.Location?.AuthorizationObjectName}', but the people auth views were not emitted in mapping set "
+                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. {failure.Hint}",
+            _ => string.Empty,
+        };
+
+        return message.Length > 0;
+    }
+
+    private static bool TryGetPeopleSubjectKindName(
+        RelationshipAuthorizationFailureMetadata failure,
+        out string subjectKindName
+    )
+    {
+        if (failure.Location?.Kind is { } locationKind && IsPeopleSecurableElementKind(locationKind))
+        {
+            subjectKindName = locationKind.ToString();
+            return true;
+        }
+
+        var contributorKind = failure
+            .Contributors.Select(static contributor => contributor.Kind)
+            .FirstOrDefault(IsPeopleSecurableElementKind);
+
+        if (IsPeopleSecurableElementKind(contributorKind))
+        {
+            subjectKindName = contributorKind.ToString();
+            return true;
+        }
+
+        var skippedContributorKind = failure
+            .SkippedContributors.Select(static contributor => contributor.Kind)
+            .FirstOrDefault(IsPeopleSecurableElementKind);
+
+        if (IsPeopleSecurableElementKind(skippedContributorKind))
+        {
+            subjectKindName = skippedContributorKind.ToString();
+            return true;
+        }
+
+        var ineligibleSubjectKind = failure
+            .IneligibleSubjects.SelectMany(static ineligibleSubject =>
+                ineligibleSubject.Subject.Contributors.Select(static contributor => contributor.Kind)
+            )
+            .FirstOrDefault(IsPeopleSecurableElementKind);
+
+        if (IsPeopleSecurableElementKind(ineligibleSubjectKind))
+        {
+            subjectKindName = ineligibleSubjectKind.ToString();
+            return true;
+        }
+
+        if (failure.PersonMetadata is not null)
+        {
+            subjectKindName = failure.PersonMetadata.PersonKind.ToString();
+            return true;
+        }
+
+        subjectKindName = string.Empty;
+        return false;
+    }
+
+    private static bool IsPeopleSecurableElementKind(SecurableElementKind kind) =>
+        kind is SecurableElementKind.Student or SecurableElementKind.Contact or SecurableElementKind.Staff;
+
+    private static string FormatPeopleAuthViewPhrase(RelationshipAuthorizationFailureMetadata failure)
+    {
+        var authViewName = GetPeopleAuthViewName(failure);
+
+        return authViewName is null ? string.Empty : $" through auth view '{authViewName}'";
+    }
+
+    private static string FormatPeopleAuthViewSentence(RelationshipAuthorizationFailureMetadata failure)
+    {
+        var authViewName = GetPeopleAuthViewName(failure);
+
+        return authViewName is null ? string.Empty : $"Auth view: '{authViewName}'. ";
+    }
+
+    private static string? GetPeopleAuthViewName(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.PersonMetadata?.AuthObject.Name.ToString()
+        ?? failure.AuthObject?.Name.ToString()
+        ?? failure.Location?.AuthorizationObjectName;
+
+    private static string FormatPeopleLocationSentence(RelationshipAuthorizationFailureMetadata failure)
+    {
+        var elementDetail = FormatSecurableElementDetail(
+            failure.Location?.ReadableName,
+            failure.Location?.JsonPath
+        );
+
+        if (elementDetail is null)
+        {
+            return string.Empty;
+        }
+
+        if (failure.Location?.Table is not null && failure.Location.Column is not null)
+        {
+            return $"Element {elementDetail} resolved to '{failure.Location.Table}.{failure.Location.Column.Value}'. ";
+        }
+
+        return $"Element {elementDetail} did not produce an executable People subject. ";
+    }
+
+    private static string FormatPeopleContributorSentence(RelationshipAuthorizationFailureMetadata failure) =>
+        FormatContributorSentence(
+            "Contributors",
+            failure.Contributors.Select(static contributor =>
+                FormatSecurableElementDetail(contributor.ReadableName, contributor.JsonPath)
+            )
+        );
+
+    private static string FormatSkippedPeopleContributorSentence(
+        RelationshipAuthorizationFailureMetadata failure
+    ) =>
+        FormatContributorSentence(
+            "Skipped People securable elements",
+            failure.SkippedContributors.Select(static contributor =>
+            {
+                var elementDetail =
+                    FormatSecurableElementDetail(contributor.ReadableName, contributor.JsonPath)
+                    ?? $"'{contributor.Kind}'";
+                var columnDetail =
+                    contributor.Table is not null && contributor.Column is not null
+                        ? $"; column: '{contributor.Table}.{contributor.Column.Value}'"
+                        : string.Empty;
+                var authViewDetail = contributor.AuthObject is not null
+                    ? $"; auth view: '{contributor.AuthObject.Name}'"
+                    : string.Empty;
+
+                return $"{elementDetail} (reason: {contributor.Reason}{columnDetail}{authViewDetail})";
+            })
+        );
+
+    private static string FormatIneligiblePeopleSubjectSentence(
+        RelationshipAuthorizationFailureMetadata failure
+    ) =>
+        FormatContributorSentence(
+            "Ineligible People subjects",
+            failure.IneligibleSubjects.Select(ineligibleSubject =>
+            {
+                var contributorDetail =
+                    ineligibleSubject
+                        .Subject.Contributors.Select(static contributor =>
+                            FormatSecurableElementDetail(contributor.ReadableName, contributor.JsonPath)
+                        )
+                        .FirstOrDefault(static detail => detail is not null)
+                    ?? $"'{ineligibleSubject.Subject.Table}.{ineligibleSubject.Subject.Column.Value}'";
+
+                return $"{contributorDetail} (reason: {ineligibleSubject.Reason})";
+            })
+        );
+
+    private static string FormatContributorSentence(string label, IEnumerable<string?> details)
+    {
+        var distinctDetails = details
+            .Where(static detail => detail is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static detail => detail, StringComparer.Ordinal)
+            .ToArray();
+
+        return distinctDetails.Length == 0
+            ? string.Empty
+            : $"{label}: [{string.Join(", ", distinctDetails)}]. ";
+    }
+
+    private static string FormatHintSentence(string? hint) =>
+        string.IsNullOrWhiteSpace(hint) ? string.Empty : $" {hint}";
 
     private static string FormatStrategyNames(
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies

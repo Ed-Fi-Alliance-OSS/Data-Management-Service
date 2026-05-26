@@ -3111,6 +3111,110 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_formats_people_unresolved_security_configuration_failures_with_people_wording()
+    {
+        const string studentPath = "$.studentReference.studentUniqueId";
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithUnresolvedStudentSubject(_schoolResourceInfo, studentPath),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().HaveCount(2);
+        var peopleError = failure.Errors.Single(error =>
+            error.Contains(studentPath, StringComparison.Ordinal)
+        );
+        peopleError
+            .Should()
+            .Contain("Student securable elements")
+            .And.Contain("DocumentId-based relational path")
+            .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
+            .And.NotContain("EducationOrganization securable elements");
+    }
+
+    [Test]
+    public async Task It_formats_people_child_collection_security_configuration_failures_with_skipped_metadata()
+    {
+        const string studentPath = "$.studentReferences[*].studentReference.studentUniqueId";
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithChildOnlyStudentSubject(_schoolResourceInfo, studentPath),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().HaveCount(2);
+        var peopleError = failure.Errors.Single(error =>
+            error.Contains(studentPath, StringComparison.Ordinal)
+        );
+        peopleError
+            .Should()
+            .Contain("Student relationship authorization subject")
+            .And.Contain("ChildCollectionPersonPathOutsideSubjectScope")
+            .And.Contain("StudentUniqueId")
+            .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
+            .And.NotContain("concrete root-table EducationOrganization authorization subject");
+    }
+
+    [Test]
+    public async Task It_formats_people_missing_proposed_binding_security_configuration_failures_with_people_wording()
+    {
+        const string studentPath = "$.studentReference.studentUniqueId";
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithUnboundStudentSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Missing People binding"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901L]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().HaveCount(2);
+        var peopleError = failure.Errors.Single(error =>
+            error.Contains(studentPath, StringComparison.Ordinal)
+        );
+        peopleError
+            .Should()
+            .Contain("proposed-value Student relationship authorization subject")
+            .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
+            .And.Contain("anchor column")
+            .And.NotContain("EducationOrganization subject");
+        _capturedExecutorRequests.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_returns_security_configuration_failure_when_query_authorization_includes_invalid_and_known_out_of_scope_strategies()
     {
         var queryRequest = CreateQueryRequest(
@@ -7206,6 +7310,222 @@ public class Given_RelationalDocumentStoreRepositoryTests
         };
     }
 
+    private static MappingSet CreateQuerySupportedMappingSetWithUnresolvedStudentSubject(
+        ResourceInfo resourceInfo,
+        string studentPath
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = CreateRootTableModel(resourceInfo.ResourceName.Value);
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootTable,
+            ResourceStorageKind.RelationalTables
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements([], [], [studentPath], [], [])
+        );
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSetWithChildOnlyStudentSubject(
+        ResourceInfo resourceInfo,
+        string studentPath
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = CreateRootTableModel(resourceInfo.ResourceName.Value);
+        var childTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), $"{resourceInfo.ResourceName.Value}StudentReference"),
+            new JsonPathExpression(
+                "$.studentReferences[*]",
+                [new JsonPathSegment.Property("studentReferences"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            new TableKey(
+                $"PK_{resourceInfo.ResourceName.Value}StudentReference",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.Scalar)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("CollectionStudent_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+        var resourceModel = new RelationalResourceModel(
+            resourceKey.Resource,
+            new DbSchemaName("edfi"),
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable, childTable],
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    new JsonPathExpression(
+                        "$.studentReferences[*].studentReference",
+                        [
+                            new JsonPathSegment.Property("studentReferences"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("studentReference"),
+                        ]
+                    ),
+                    childTable.Table,
+                    new DbColumnName("CollectionStudent_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "Student"),
+                    [
+                        new ReferenceIdentityBinding(
+                            new JsonPathExpression(studentPath, []),
+                            new JsonPathExpression(studentPath, []),
+                            new DbColumnName("CollectionStudentUniqueId")
+                        ),
+                    ]
+                ),
+            ],
+            []
+        );
+
+        return CreateAuthorizationAwareQuerySupportedMappingSet(
+            resourceInfo,
+            resourceModel,
+            new ResourceSecurableElements([], [], [studentPath], [], [])
+        );
+    }
+
+    private static MappingSet CreateWriteAuthorizationAwareMappingSetWithUnboundStudentSubject(
+        ResourceInfo resourceInfo
+    )
+    {
+        const string studentPath = "$.studentReference.studentUniqueId";
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var studentDocumentIdColumn = AuthNames.StudentDocumentId;
+        var rootTable = CreateRootTableModel(
+            resourceInfo.ResourceName.Value,
+            [
+                new DbColumnModel(
+                    studentDocumentIdColumn,
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression(studentPath, []),
+                    new QualifiedResourceName("Ed-Fi", "Student"),
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Name"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression("$.name", []),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ]
+        );
+        var resourceModel = new RelationalResourceModel(
+            resourceKey.Resource,
+            new DbSchemaName("edfi"),
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    new JsonPathExpression("$.studentReference", []),
+                    rootTable.Table,
+                    studentDocumentIdColumn,
+                    new QualifiedResourceName("Ed-Fi", "Student"),
+                    [
+                        new ReferenceIdentityBinding(
+                            new JsonPathExpression(studentPath, []),
+                            new JsonPathExpression(studentPath, []),
+                            new DbColumnName("StudentUniqueId")
+                        ),
+                    ]
+                ),
+            ],
+            []
+        );
+        var concreteResource = new ConcreteResourceModel(
+            resourceKey,
+            ResourceStorageKind.RelationalTables,
+            resourceModel
+        )
+        {
+            SecurableElements = new ResourceSecurableElements([], [], [studentPath], [], []),
+        };
+        var concreteResources = new List<ConcreteResourceModel>
+        {
+            concreteResource,
+            CreateMinimalConcreteResource(2, "Student"),
+        };
+        concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources(3));
+
+        var documentIdColumn = rootTable.Columns.Single(static column =>
+            column.ColumnName.Value == "DocumentId"
+        );
+        var nameColumn = rootTable.Columns.Single(static column => column.ColumnName.Value == "Name");
+        var writePlan = new ResourceWritePlan(
+            resourceModel,
+            [
+                new TableWritePlan(
+                    rootTable,
+                    InsertSql: "",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(100, 2, 1000),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            documentIdColumn,
+                            new WriteValueSource.DocumentId(),
+                            "DocumentId"
+                        ),
+                        new WriteColumnBinding(
+                            nameColumn,
+                            new WriteValueSource.Scalar(
+                                new JsonPathExpression("$.name", []),
+                                new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                            ),
+                            "Name"
+                        ),
+                    ],
+                    KeyUnificationPlans: []
+                ),
+            ]
+        );
+
+        return CreateMappingSet(
+            resourceKey.Resource,
+            concreteResources,
+            writePlan,
+            CreateReadPlan(resourceModel, rootTable)
+        );
+    }
+
     private static MappingSet CreateProfileProjectionOrderSensitiveMappingSet(ResourceInfo resourceInfo)
     {
         var resourceKey = CreateResourceKeyEntry(resourceInfo);
@@ -7921,6 +8241,110 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
+    private static ResourceKeyEntry CreateResourceKeyEntry(short resourceKeyId, string resourceName) =>
+        new(resourceKeyId, new QualifiedResourceName("Ed-Fi", resourceName), "1.0.0", false);
+
+    private static DbTableModel CreateRootTableModel(
+        string tableName,
+        IReadOnlyList<DbColumnModel>? columns = null
+    )
+    {
+        var documentIdColumn = new DbColumnModel(
+            new DbColumnName("DocumentId"),
+            ColumnKind.ParentKeyPart,
+            new RelationalScalarType(ScalarKind.Int64),
+            false,
+            null,
+            null,
+            new ColumnStorage.Stored()
+        );
+
+        return new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), tableName),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                $"PK_{tableName}",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [documentIdColumn, .. (columns ?? [])],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+    }
+
+    private static ConcreteResourceModel CreateMinimalConcreteResource(
+        short resourceKeyId,
+        string resourceName
+    )
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceKeyId, resourceName);
+        var rootTable = CreateRootTableModel(resourceName);
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootTable,
+            ResourceStorageKind.RelationalTables
+        );
+
+        return new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, resourceModel)
+        {
+            SecurableElements = ResourceSecurableElements.Empty,
+        };
+    }
+
+    private static IReadOnlyList<ConcreteResourceModel> CreateRequiredPeopleAuthAssociationResources(
+        short firstResourceKeyId
+    ) =>
+        [
+            .. AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames.Select(
+                (resourceName, index) =>
+                    CreateMinimalConcreteResource((short)(firstResourceKeyId + index), resourceName)
+            ),
+        ];
+
+    private static MappingSet CreateMappingSet(
+        QualifiedResourceName requestResource,
+        IReadOnlyList<ConcreteResourceModel> concreteResources,
+        ResourceWritePlan writePlan,
+        ResourceReadPlan readPlan
+    )
+    {
+        var resourceKeyIdByResource = concreteResources.ToDictionary(
+            static concreteResource => concreteResource.ResourceKey.Resource,
+            static concreteResource => concreteResource.ResourceKey.ResourceKeyId
+        );
+        var resourceKeyById = concreteResources.ToDictionary(
+            static concreteResource => concreteResource.ResourceKey.ResourceKeyId,
+            static concreteResource => concreteResource.ResourceKey
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(concreteResources),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
+            {
+                [requestResource] = writePlan,
+            },
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [requestResource] = readPlan,
+            },
+            ResourceKeyIdByResource: resourceKeyIdByResource,
+            ResourceKeyById: resourceKeyById,
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
     private static DerivedRelationalModelSet CreateDerivedModelSet(
         RelationalResourceModel resourceModel,
         ResourceKeyEntry resourceKey
@@ -7931,29 +8355,47 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static DerivedRelationalModelSet CreateDerivedModelSet(
         ConcreteResourceModel concreteResourceModel
+    ) => CreateDerivedModelSet([concreteResourceModel]);
+
+    private static DerivedRelationalModelSet CreateDerivedModelSet(
+        IReadOnlyList<ConcreteResourceModel> concreteResourceModels
     )
     {
-        var resourceKey = concreteResourceModel.ResourceKey;
+        var resourceKeys = concreteResourceModels
+            .Select(static concreteResource => concreteResource.ResourceKey)
+            .OrderBy(static resourceKey => resourceKey.ResourceKeyId)
+            .ToArray();
 
         return new DerivedRelationalModelSet(
             EffectiveSchema: new EffectiveSchemaInfo(
                 ApiSchemaFormatVersion: "1.0",
                 RelationalMappingVersion: "v1",
                 EffectiveSchemaHash: "schema-hash",
-                ResourceKeyCount: 1,
+                ResourceKeyCount: (short)resourceKeys.Length,
                 ResourceKeySeedHash: [1, 2, 3],
                 SchemaComponentsInEndpointOrder:
                 [
                     new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
                 ],
-                ResourceKeysInIdOrder: [resourceKey]
+                ResourceKeysInIdOrder: resourceKeys
             ),
             Dialect: SqlDialect.Pgsql,
             ProjectSchemasInEndpointOrder:
             [
                 new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
             ],
-            ConcreteResourcesInNameOrder: [concreteResourceModel],
+            ConcreteResourcesInNameOrder:
+            [
+                .. concreteResourceModels
+                    .OrderBy(
+                        static concreteResource => concreteResource.ResourceKey.Resource.ProjectName,
+                        StringComparer.Ordinal
+                    )
+                    .ThenBy(
+                        static concreteResource => concreteResource.ResourceKey.Resource.ResourceName,
+                        StringComparer.Ordinal
+                    ),
+            ],
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder: [],
             IndexesInCreateOrder: [],

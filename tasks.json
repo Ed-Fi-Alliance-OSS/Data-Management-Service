@@ -301,6 +301,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs"
     ],
-    "completed": false
+    "completed": true
   }
 ]
