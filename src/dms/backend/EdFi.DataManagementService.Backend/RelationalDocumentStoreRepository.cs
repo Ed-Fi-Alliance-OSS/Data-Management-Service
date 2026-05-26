@@ -2145,6 +2145,10 @@ public sealed class RelationalDocumentStoreRepository(
                             ? $"resolved to '{failure.Location.Table}.{failure.Location.Column.Value}' instead of a '{DbTableKind.Root}' table."
                             : failure.Hint ?? "did not produce a concrete root-table binding."
                     ),
+            RelationshipAuthorizationFailureKind.NoExecutableSubjects =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' has no executable relationship authorization subjects for this operation. "
+                    + failure.Hint,
             RelationshipAuthorizationFailureKind.MissingProposedRootBinding =>
                 $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires proposed-value EducationOrganization subject "

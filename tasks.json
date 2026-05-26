@@ -127,7 +127,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
       "Add unit tests for stored transitive anchors, proposed direct and transitive anchors, self-person create-new ineligibility, mixed executable/ineligible strategy handling, and all-ineligible strategy failures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Failure Metadata",

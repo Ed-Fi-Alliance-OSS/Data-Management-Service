@@ -304,6 +304,17 @@ public sealed record RelationshipAuthorizationSubject(
     public bool IsPersonSubject => PersonMetadata is not null;
 }
 
+public enum RelationshipAuthorizationSubjectIneligibilityReason
+{
+    SelfPersonDocumentIdUnavailableForCreateNew,
+}
+
+public sealed record RelationshipAuthorizationIneligibleSubject(
+    RelationshipAuthorizationSubject Subject,
+    RelationshipAuthorizationSubjectIneligibilityReason Reason,
+    string Hint
+);
+
 public abstract record RelationshipAuthorizationCheckTarget
 {
     private RelationshipAuthorizationCheckTarget() { }
@@ -333,7 +344,10 @@ public sealed record RelationshipAuthorizationCheckSpec(
     RelationshipAuthorizationAuthObject AuthObject,
     IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
     RelationshipAuthorizationCheckTarget CheckTarget
-);
+)
+{
+    public IReadOnlyList<RelationshipAuthorizationIneligibleSubject> IneligibleSubjects { get; init; } = [];
+}
 
 public enum RelationshipAuthorizationFailureKind
 {
@@ -342,6 +356,7 @@ public enum RelationshipAuthorizationFailureKind
     UnknownCustomViewBasisResource,
     UnresolvedSecurableElement,
     NoApplicableRootSubject,
+    NoExecutableSubjects,
     NoClaimEducationOrganizationIds,
     MissingProposedRootBinding,
     StoredValueNull,
@@ -371,6 +386,8 @@ public sealed record RelationshipAuthorizationFailureMetadata(
 {
     public IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors { get; init; } =
     [];
+
+    public IReadOnlyList<RelationshipAuthorizationIneligibleSubject> IneligibleSubjects { get; init; } = [];
 }
 
 public abstract record RelationshipAuthorizationResult
