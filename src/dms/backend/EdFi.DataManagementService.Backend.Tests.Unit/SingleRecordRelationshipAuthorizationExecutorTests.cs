@@ -242,6 +242,34 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>();
     }
 
+    [Test]
+    public async Task It_rejects_staged_people_relationship_specs_before_executing_sql()
+    {
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sut = new SingleRecordRelationshipAuthorizationExecutor(commandExecutor);
+
+        Func<Task> execute = async () =>
+            await sut.ExecuteAsync(
+                new SingleRecordRelationshipAuthorizationExecutionRequest(
+                    CreateMappingSet(SqlDialect.Pgsql),
+                    DocumentId: 349L,
+                    [CreatePeopleStoredCheckSpec()],
+                    AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                        SqlDialect.Pgsql,
+                        [100L],
+                        "ClaimEducationOrganizationIds"
+                    ),
+                    EmittedAuth1Index: 0
+                )
+            );
+
+        await execute
+            .Should()
+            .ThrowAsync<ArgumentException>()
+            .WithMessage("*RelationshipsWithStudentsOnly*DMS-1158*");
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
     private static MappingSet CreateMappingSet(SqlDialect dialect) =>
         new(
             new MappingSetKey("schema-hash", dialect, "v1"),
@@ -298,6 +326,54 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
                 new DbColumnName("DocumentId")
             )
         );
+
+    private static RelationshipAuthorizationCheckSpec CreatePeopleStoredCheckSpec()
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+
+        return new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RawConfiguredIndex: 0
+            ),
+            RelationshipLocalOrder: 0,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Stored,
+            RelationshipAuthorizationAuthObject.CreatePerson(
+                RelationshipAuthorizationPersonAuthViewKind.Student
+            ),
+            [
+                new RelationshipAuthorizationSubject(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    rootTable,
+                    AuthNames.StudentDocumentId,
+                    [
+                        new RelationshipAuthorizationSubjectContributor(
+                            SecurableElementKind.Student,
+                            "$.studentReference.studentUniqueId",
+                            "StudentUniqueId"
+                        ),
+                    ],
+                    new RelationshipAuthorizationPersonSubjectMetadata(
+                        RelationshipAuthorizationPersonKind.Student,
+                        new RelationshipAuthorizationPersonSubjectPath(
+                            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                            [new ColumnPathStep(rootTable, AuthNames.StudentDocumentId, null, null)]
+                        ),
+                        RelationshipAuthorizationAuthObject.CreatePerson(
+                            RelationshipAuthorizationPersonAuthViewKind.Student
+                        ),
+                        new RelationshipAuthorizationPersonStoredAnchor(
+                            rootTable,
+                            new DbColumnName("DocumentId")
+                        ),
+                        ProposedAnchor: null
+                    )
+                ),
+            ],
+            new RelationshipAuthorizationCheckTarget.Stored(rootTable, new DbColumnName("DocumentId"))
+        );
+    }
 
     private static IReadOnlyDictionary<string, object?> CreateRow(
         params (string ColumnName, object? Value)[] values

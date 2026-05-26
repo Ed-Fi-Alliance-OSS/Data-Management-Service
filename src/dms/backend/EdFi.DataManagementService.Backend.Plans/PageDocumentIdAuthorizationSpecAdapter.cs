@@ -47,6 +47,8 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
             );
         }
 
+        RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForPageDocumentId(checkSpec);
+
         return new PageDocumentIdAuthorizationStrategy(
             MapKind(checkSpec.Direction),
             [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],

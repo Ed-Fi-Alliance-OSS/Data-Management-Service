@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -117,6 +118,42 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
             );
     }
 
+    [Test]
+    public void It_should_reject_people_relationship_specs_until_get_many_integration_consumes_people_core()
+    {
+        var authorizationResult = new RelationshipAuthorizationResult.Authorized(
+            [
+                new RelationshipAuthorizationCheckSpec(
+                    new ConfiguredAuthorizationStrategy(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                        RawConfiguredIndex: 0
+                    ),
+                    RelationshipLocalOrder: 0,
+                    RelationshipAuthorizationHierarchyDirection.Normal,
+                    RelationshipAuthorizationValueSource.Stored,
+                    RelationshipAuthorizationAuthObject.CreatePerson(
+                        RelationshipAuthorizationPersonAuthViewKind.Student
+                    ),
+                    [CreatePersonSubject()],
+                    new RelationshipAuthorizationCheckTarget.Stored(_rootTable, _documentIdColumn)
+                ),
+            ],
+            new AuthorizationClaimEducationOrganizationIdParameterization(
+                AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray,
+                "ClaimEducationOrganizationIds",
+                [100L],
+                ["ClaimEducationOrganizationIds"]
+            )
+        );
+
+        var adapt = () => PageDocumentIdAuthorizationSpecAdapter.Adapt(authorizationResult);
+
+        adapt
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*RelationshipsWithStudentsOnly*DMS-1095*");
+    }
+
     private static RelationshipAuthorizationCheckSpec CreateCheckSpec(
         int rawConfiguredIndex,
         int relationshipLocalOrder,
@@ -148,5 +185,31 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                     columnName
                 ),
             ]
+        );
+
+    private static RelationshipAuthorizationSubject CreatePersonSubject() =>
+        new(
+            _resource,
+            _rootTable,
+            AuthNames.StudentDocumentId,
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    SecurableElementKind.Student,
+                    "$.studentReference.studentUniqueId",
+                    "StudentUniqueId"
+                ),
+            ],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                RelationshipAuthorizationPersonKind.Student,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                    [new ColumnPathStep(_rootTable, AuthNames.StudentDocumentId, null, null)]
+                ),
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(_rootTable, _documentIdColumn),
+                ProposedAnchor: null
+            )
         );
 }

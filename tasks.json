@@ -166,7 +166,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationExecutor",
       "Search the E2E feature files to confirm no @relational-backend tags were re-enabled for People scenarios in this story."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Regression Coverage",
