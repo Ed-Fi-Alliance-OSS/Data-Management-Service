@@ -1966,7 +1966,7 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
-    private static bool TryCreatePeopleEndpointStagingFailures(
+    internal static bool TryCreatePeopleEndpointStagingFailures(
         QualifiedResourceName resource,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
@@ -1976,14 +1976,13 @@ public sealed class RelationalDocumentStoreRepository(
 
         failures =
         [
-            .. configuredAuthorizationStrategies
-                .Select(static (strategy, relationshipLocalOrder) => (strategy, relationshipLocalOrder))
-                .Where(static entry => IsPeopleRelationshipStrategy(entry.strategy.StrategyName))
-                .Select(entry => new RelationshipAuthorizationFailureMetadata(
+            .. RelationshipAuthorizationStrategyClassifier
+                .SelectPeopleRelationshipStrategies(configuredAuthorizationStrategies)
+                .Select(strategy => new RelationshipAuthorizationFailureMetadata(
                     RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy,
                     resource,
-                    entry.strategy,
-                    entry.relationshipLocalOrder,
+                    strategy.ConfiguredStrategy,
+                    strategy.RelationshipLocalOrder,
                     Hint: "People relationship endpoint execution is staged for DMS-1095 and DMS-1158."
                 )),
         ];
@@ -2062,17 +2061,6 @@ public sealed class RelationalDocumentStoreRepository(
             ? [.. peopleEndpointStagingFailures, .. knownButNotEnabledFailures]
             : peopleEndpointStagingFailures;
     }
-
-    private static bool IsPeopleRelationshipStrategy(string strategyName) =>
-        strategyName switch
-        {
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
-            or AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted
-            or AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
-            or AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
-            or AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility => true,
-            _ => false,
-        };
 
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
         MappingSet mappingSet,

@@ -48,6 +48,58 @@ internal static class RelationshipAuthorizationStrategyClassifier
 
     private static readonly IReadOnlyDictionary<
         string,
+        SupportedRelationshipAuthorizationStrategyDefinition
+    > _supportedStrategyDefinitionsByName = new Dictionary<
+        string,
+        SupportedRelationshipAuthorizationStrategyDefinition
+    >(StringComparer.Ordinal)
+    {
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly] =
+            new SupportedRelationshipAuthorizationStrategyDefinition(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                _edOrgOnlySubjects
+            ),
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted] =
+            new SupportedRelationshipAuthorizationStrategyDefinition(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                _edOrgOnlySubjects
+            ),
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople] =
+            new SupportedRelationshipAuthorizationStrategyDefinition(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                _edOrgAndPeopleSubjects
+            ),
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted] =
+            new SupportedRelationshipAuthorizationStrategyDefinition(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                _edOrgAndPeopleSubjects
+            ),
+        [AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly] =
+            new SupportedRelationshipAuthorizationStrategyDefinition(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                _peopleOnlySubjects
+            ),
+        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly] =
+            new SupportedRelationshipAuthorizationStrategyDefinition(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                _studentsOnlySubjects
+            ),
+        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility] =
+            new SupportedRelationshipAuthorizationStrategyDefinition(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                _studentsOnlyThroughResponsibilitySubjects
+            ),
+    };
+
+    private static readonly IReadOnlyDictionary<
+        string,
         RelationshipAuthorizationStrategyKind
     > _knownButNotEnabledStrategyKindsByName = new Dictionary<string, RelationshipAuthorizationStrategyKind>(
         StringComparer.Ordinal
@@ -58,6 +110,43 @@ internal static class RelationshipAuthorizationStrategyClassifier
         [AuthorizationStrategyNameConstants.OwnershipBased] =
             RelationshipAuthorizationStrategyKind.OwnershipBased,
     };
+
+    public static bool IsPeopleRelationshipStrategy(string strategyName) =>
+        _supportedStrategyDefinitionsByName.TryGetValue(strategyName, out var definition)
+        && definition.IncludesPeopleSubjects;
+
+    public static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> SelectPeopleRelationshipStrategies(
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    )
+    {
+        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
+
+        List<SupportedRelationshipAuthorizationStrategy> peopleStrategies = [];
+        var relationshipLocalOrder = 0;
+
+        foreach (var configuredStrategy in configuredAuthorizationStrategies)
+        {
+            if (IsNoFurtherAuthorizationRequired(configuredStrategy.StrategyName))
+            {
+                continue;
+            }
+
+            var currentRelationshipLocalOrder = relationshipLocalOrder++;
+
+            if (
+                TryCreateSupportedRelationshipStrategy(
+                    configuredStrategy,
+                    currentRelationshipLocalOrder,
+                    out var supportedStrategy
+                ) && IsPeopleRelationshipStrategy(configuredStrategy.StrategyName)
+            )
+            {
+                peopleStrategies.Add(supportedStrategy);
+            }
+        }
+
+        return peopleStrategies;
+    }
 
     public static RelationshipAuthorizationClassification Classify(
         MappingSet mappingSet,
@@ -78,13 +167,7 @@ internal static class RelationshipAuthorizationStrategyClassifier
         {
             var strategyName = configuredStrategy.StrategyName;
 
-            if (
-                string.Equals(
-                    strategyName,
-                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
-                    StringComparison.Ordinal
-                )
-            )
+            if (IsNoFurtherAuthorizationRequired(strategyName))
             {
                 noFurtherAuthorizationRequiredStrategies.Add(configuredStrategy);
                 continue;
@@ -92,91 +175,16 @@ internal static class RelationshipAuthorizationStrategyClassifier
 
             var currentRelationshipLocalOrder = relationshipLocalOrder++;
 
-            switch (strategyName)
+            if (
+                TryCreateSupportedRelationshipStrategy(
+                    configuredStrategy,
+                    currentRelationshipLocalOrder,
+                    out var supportedStrategy
+                )
+            )
             {
-                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly:
-                    supportedStrategies.Add(
-                        new SupportedRelationshipAuthorizationStrategy(
-                            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                            RelationshipAuthorizationHierarchyDirection.Normal,
-                            configuredStrategy,
-                            currentRelationshipLocalOrder,
-                            _edOrgOnlySubjects
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted:
-                    supportedStrategies.Add(
-                        new SupportedRelationshipAuthorizationStrategy(
-                            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-                            RelationshipAuthorizationHierarchyDirection.Inverted,
-                            configuredStrategy,
-                            currentRelationshipLocalOrder,
-                            _edOrgOnlySubjects
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople:
-                    supportedStrategies.Add(
-                        new SupportedRelationshipAuthorizationStrategy(
-                            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
-                            RelationshipAuthorizationHierarchyDirection.Normal,
-                            configuredStrategy,
-                            currentRelationshipLocalOrder,
-                            _edOrgAndPeopleSubjects
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted:
-                    supportedStrategies.Add(
-                        new SupportedRelationshipAuthorizationStrategy(
-                            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
-                            RelationshipAuthorizationHierarchyDirection.Inverted,
-                            configuredStrategy,
-                            currentRelationshipLocalOrder,
-                            _edOrgAndPeopleSubjects
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly:
-                    supportedStrategies.Add(
-                        new SupportedRelationshipAuthorizationStrategy(
-                            RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
-                            RelationshipAuthorizationHierarchyDirection.Normal,
-                            configuredStrategy,
-                            currentRelationshipLocalOrder,
-                            _peopleOnlySubjects
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly:
-                    supportedStrategies.Add(
-                        new SupportedRelationshipAuthorizationStrategy(
-                            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
-                            RelationshipAuthorizationHierarchyDirection.Normal,
-                            configuredStrategy,
-                            currentRelationshipLocalOrder,
-                            _studentsOnlySubjects
-                        )
-                    );
-                    continue;
-
-                case AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility:
-                    supportedStrategies.Add(
-                        new SupportedRelationshipAuthorizationStrategy(
-                            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
-                            RelationshipAuthorizationHierarchyDirection.Normal,
-                            configuredStrategy,
-                            currentRelationshipLocalOrder,
-                            _studentsOnlyThroughResponsibilitySubjects
-                        )
-                    );
-                    continue;
+                supportedStrategies.Add(supportedStrategy);
+                continue;
             }
 
             if (
@@ -295,6 +303,40 @@ internal static class RelationshipAuthorizationStrategyClassifier
             ),
         };
 
+    private static bool IsNoFurtherAuthorizationRequired(string strategyName) =>
+        string.Equals(
+            strategyName,
+            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+            StringComparison.Ordinal
+        );
+
+    private static bool TryCreateSupportedRelationshipStrategy(
+        ConfiguredAuthorizationStrategy configuredStrategy,
+        int relationshipLocalOrder,
+        out SupportedRelationshipAuthorizationStrategy supportedStrategy
+    )
+    {
+        if (
+            !_supportedStrategyDefinitionsByName.TryGetValue(
+                configuredStrategy.StrategyName,
+                out var definition
+            )
+        )
+        {
+            supportedStrategy = null!;
+            return false;
+        }
+
+        supportedStrategy = new SupportedRelationshipAuthorizationStrategy(
+            definition.Kind,
+            definition.Direction,
+            configuredStrategy,
+            relationshipLocalOrder,
+            definition.EligibleSubjects
+        );
+        return true;
+    }
+
     private static CustomViewStrategyResolution ResolveCustomViewStrategy(
         MappingSet mappingSet,
         string strategyName
@@ -403,4 +445,19 @@ internal static class RelationshipAuthorizationStrategyClassifier
         string? BasisResourceName,
         QualifiedResourceName? BasisResource
     );
+
+    private sealed record SupportedRelationshipAuthorizationStrategyDefinition(
+        RelationshipAuthorizationStrategyKind Kind,
+        RelationshipAuthorizationHierarchyDirection Direction,
+        IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> EligibleSubjects
+    )
+    {
+        public bool IncludesPeopleSubjects { get; } =
+            EligibleSubjects.Any(static subject =>
+                subject.Kind
+                    is SecurableElementKind.Student
+                        or SecurableElementKind.Contact
+                        or SecurableElementKind.Staff
+            );
+    }
 }

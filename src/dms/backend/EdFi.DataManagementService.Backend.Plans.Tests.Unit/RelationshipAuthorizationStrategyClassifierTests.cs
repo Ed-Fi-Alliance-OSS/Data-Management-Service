@@ -118,6 +118,35 @@ public class Given_RelationshipAuthorizationStrategyClassifier
     }
 
     [Test]
+    public void It_selects_people_relationship_strategies_with_classifier_relationship_local_order()
+    {
+        ConfiguredAuthorizationStrategy[] configuredAuthorizationStrategies =
+        [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, 0),
+            new(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople, 1),
+            new(AuthorizationStrategyNameConstants.NamespaceBased, 2),
+            new(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly, 3),
+        ];
+
+        var peopleStrategies = RelationshipAuthorizationStrategyClassifier.SelectPeopleRelationshipStrategies(
+            configuredAuthorizationStrategies
+        );
+
+        peopleStrategies
+            .Select(static strategy => strategy.Kind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly
+            );
+        peopleStrategies
+            .Select(static strategy => strategy.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(1, 3);
+        peopleStrategies.Select(static strategy => strategy.RelationshipLocalOrder).Should().Equal(0, 2);
+    }
+
+    [Test]
     public void It_classifies_known_out_of_scope_mixed_strategies_as_known_but_not_enabled()
     {
         var classification = Classify(

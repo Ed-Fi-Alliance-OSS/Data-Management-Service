@@ -267,7 +267,7 @@
       "Run rg \"RelationshipsWithEdOrgsAndPeople|RelationshipsWithPeopleOnly|RelationshipsWithStudentsOnly\" src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Plans and confirm endpoint staging no longer owns a duplicate People strategy list.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Simplification",

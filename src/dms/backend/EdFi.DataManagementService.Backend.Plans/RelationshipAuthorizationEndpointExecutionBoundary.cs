@@ -4,22 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Security;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
 internal static class RelationshipAuthorizationEndpointExecutionBoundary
 {
     public static bool IsPeopleRelationshipStrategy(string strategyName) =>
-        strategyName switch
-        {
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
-            or AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted
-            or AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
-            or AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
-            or AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility => true,
-            _ => false,
-        };
+        RelationshipAuthorizationStrategyClassifier.IsPeopleRelationshipStrategy(strategyName);
 
     public static void ThrowIfUnsupportedForPageDocumentId(RelationshipAuthorizationCheckSpec checkSpec)
     {

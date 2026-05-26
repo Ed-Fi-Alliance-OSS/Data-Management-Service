@@ -3056,6 +3056,31 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
+    [Test]
+    public void It_calculates_people_endpoint_staging_relationship_order_with_no_further_no_op()
+    {
+        ConfiguredAuthorizationStrategy[] configuredAuthorizationStrategies =
+        [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, 0),
+            new(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople, 1),
+            new(AuthorizationStrategyNameConstants.NamespaceBased, 2),
+            new(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly, 3),
+        ];
+
+        var created = RelationalDocumentStoreRepository.TryCreatePeopleEndpointStagingFailures(
+            new QualifiedResourceName("Ed-Fi", "School"),
+            configuredAuthorizationStrategies,
+            out var failures
+        );
+
+        created.Should().BeTrue();
+        failures
+            .Select(static failure => failure.ConfiguredStrategy!.RawConfiguredIndex)
+            .Should()
+            .Equal(1, 3);
+        failures.Select(static failure => failure.RelationshipLocalOrder).Should().Equal(0, 2);
+    }
+
     [TestCase(RelationshipAuthorizationEndpoint.Query)]
     [TestCase(RelationshipAuthorizationEndpoint.GetById)]
     [TestCase(RelationshipAuthorizationEndpoint.Post)]
