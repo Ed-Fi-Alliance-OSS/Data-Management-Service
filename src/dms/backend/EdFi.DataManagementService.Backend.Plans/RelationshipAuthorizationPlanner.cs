@@ -1045,7 +1045,8 @@ public sealed class RelationshipAuthorizationPlanner
 
         return new RelationshipAuthorizationPersonFailureMetadata(
             personMetadata.PersonKind,
-            subject.AuthObject
+            subject.AuthObject,
+            personMetadata.Path
         );
     }
 

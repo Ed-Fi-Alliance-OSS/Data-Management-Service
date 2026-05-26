@@ -576,6 +576,211 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_use_null_strategy_auth_object_when_mixed_auth_object_runtime_subjects_fail()
+    {
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                33,
+                0,
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                ),
+                CreateSubject("SchoolId", "$.schoolReference.schoolId"),
+                studentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                5,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        1,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedStrategy = relationshipFailure!.FailedStrategies.Should().ContainSingle().Subject;
+
+        failedStrategy.AuthObject.Should().BeNull();
+        failedStrategy.FailedSubjects.Select(static subject => subject.SubjectIndex).Should().Equal(0, 1);
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
+            .Should()
+            .Equal(
+                "auth.EducationOrganizationIdToEducationOrganizationId",
+                "auth.EducationOrganizationIdToStudentDocumentId"
+            );
+    }
+
+    [Test]
+    public void It_should_use_null_strategy_auth_object_for_people_only_runtime_failures_with_distinct_auth_objects()
+    {
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var contactSubject = CreatePersonSubject(
+            SecurableElementKind.Contact,
+            RelationshipAuthorizationPersonKind.Contact,
+            RelationshipAuthorizationPersonAuthViewKind.Contact,
+            AuthNames.ContactDocumentId,
+            "$.contactReference.contactUniqueId",
+            "ContactUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                34,
+                0,
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                studentSubject,
+                contactSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                6,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        1,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedStrategy = relationshipFailure!.FailedStrategies.Should().ContainSingle().Subject;
+
+        failedStrategy.AuthObject.Should().BeNull();
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
+            .Should()
+            .Equal(
+                "auth.EducationOrganizationIdToStudentDocumentId",
+                "auth.EducationOrganizationIdToContactDocumentId"
+            );
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.PersonSubject?.PersonKind)
+            .Should()
+            .Equal("Student", "Contact");
+    }
+
+    [Test]
+    public void It_should_keep_homogeneous_people_runtime_strategy_auth_object_when_multiple_subjects_fail()
+    {
+        var primaryStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var alternateStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            new DbColumnName("AlternateStudent_DocumentId"),
+            "$.alternateStudentReference.studentUniqueId",
+            "AlternateStudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                35,
+                0,
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                primaryStudentSubject,
+                alternateStudentSubject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                7,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        1,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedStrategy = relationshipFailure!.FailedStrategies.Should().ContainSingle().Subject;
+
+        failedStrategy.AuthObject.Should().NotBeNull();
+        failedStrategy.AuthObject!.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
+            .Should()
+            .OnlyContain(static name => name == "auth.EducationOrganizationIdToStudentDocumentId");
+    }
+
+    [Test]
     public void It_should_map_people_no_claims_failures_with_auth_view_hints()
     {
         var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
@@ -653,6 +858,176 @@ public class Given_RelationshipAuthorizationFailureMapper
         failedSubject.PersonSubject.Should().NotBeNull();
         failedSubject.PersonSubject!.PersonKind.Should().Be("Student");
         failedSubject.PersonSubject.Hint.Should().Be(authObject.FailureHint);
+    }
+
+    [Test]
+    public void It_should_map_mixed_auth_object_no_claims_failures_with_per_subject_auth_objects()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var edOrgAuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Normal
+        );
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var edOrgSubject = CreateSubject("SchoolId", "$.schoolReference.schoolId");
+        var studentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                36,
+                0,
+                edOrgAuthObject,
+                edOrgSubject,
+                studentSubject
+            ),
+        };
+        var noClaimsFailures = new[]
+        {
+            new RelationshipAuthorizationFailureMetadata(
+                RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+                resource,
+                checkSpecs[0].ConfiguredStrategy,
+                checkSpecs[0].RelationshipLocalOrder,
+                ValueSource: RelationshipAuthorizationValueSource.Stored,
+                AuthObject: edOrgAuthObject,
+                Hint: "edorg no claims"
+            )
+            {
+                Contributors = edOrgSubject.Contributors,
+            },
+            new RelationshipAuthorizationFailureMetadata(
+                RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+                resource,
+                checkSpecs[0].ConfiguredStrategy,
+                checkSpecs[0].RelationshipLocalOrder,
+                ValueSource: RelationshipAuthorizationValueSource.Stored,
+                AuthObject: studentAuthObject,
+                Hint: studentAuthObject.FailureHint
+            )
+            {
+                PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                    RelationshipAuthorizationPersonKind.Student,
+                    studentAuthObject,
+                    studentSubject.PersonMetadata!.Path
+                ),
+                Contributors = studentSubject.Contributors,
+            },
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            noClaimsFailures,
+            [],
+            8,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedStrategy = relationshipFailure!.FailedStrategies.Should().ContainSingle().Subject;
+
+        failedStrategy.AuthObject.Should().BeNull();
+        failedStrategy.FailedSubjects.Select(static subject => subject.SubjectIndex).Should().Equal(0, 1);
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
+            .Should()
+            .Equal(
+                "auth.EducationOrganizationIdToEducationOrganizationId",
+                "auth.EducationOrganizationIdToStudentDocumentId"
+            );
+        failedStrategy.FailedSubjects[0].Hint.Should().Be("edorg no claims");
+        failedStrategy.FailedSubjects[1].Hint.Should().Be(studentAuthObject.FailureHint);
+        failedStrategy.FailedSubjects[1].PersonSubject.Should().NotBeNull();
+        failedStrategy.FailedSubjects[1].PersonSubject!.Hint.Should().Be(studentAuthObject.FailureHint);
+    }
+
+    [Test]
+    public void It_should_match_people_no_claims_metadata_by_subject_path_when_available()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var primaryStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentReference.studentUniqueId",
+            "StudentUniqueId"
+        );
+        var alternateStudentSubject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            new DbColumnName("AlternateStudent_DocumentId"),
+            "$.alternateStudentReference.studentUniqueId",
+            "AlternateStudentUniqueId"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                37,
+                0,
+                authObject,
+                primaryStudentSubject,
+                alternateStudentSubject
+            ),
+        };
+        var noClaimsFailures = new[]
+        {
+            CreatePeopleNoClaimsFailure(
+                resource,
+                checkSpecs[0],
+                authObject,
+                primaryStudentSubject,
+                "primary path hint"
+            ),
+            CreatePeopleNoClaimsFailure(
+                resource,
+                checkSpecs[0],
+                authObject,
+                alternateStudentSubject,
+                "alternate path hint"
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapNoClaimsFailure(
+            checkSpecs,
+            noClaimsFailures,
+            [],
+            9,
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedStrategy = relationshipFailure!.FailedStrategies.Should().ContainSingle().Subject;
+
+        failedStrategy.AuthObject.Should().NotBeNull();
+        failedStrategy.AuthObject!.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.Hint)
+            .Should()
+            .Equal("primary path hint", "alternate path hint");
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
+            .Should()
+            .OnlyContain(static name => name == "auth.EducationOrganizationIdToStudentDocumentId");
     }
 
     [Test]
@@ -1037,6 +1412,31 @@ public class Given_RelationshipAuthorizationFailureMapper
                 subject.IsPersonSubject ? subject : subject with { AuthObject = authObject }
             ),
         ];
+
+    private static RelationshipAuthorizationFailureMetadata CreatePeopleNoClaimsFailure(
+        QualifiedResourceName resource,
+        RelationshipAuthorizationCheckSpec checkSpec,
+        RelationshipAuthorizationAuthObject authObject,
+        RelationshipAuthorizationSubject subject,
+        string hint
+    ) =>
+        new(
+            RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+            resource,
+            checkSpec.ConfiguredStrategy,
+            checkSpec.RelationshipLocalOrder,
+            ValueSource: checkSpec.ValueSource,
+            AuthObject: authObject,
+            Hint: hint
+        )
+        {
+            PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                subject.PersonMetadata!.PersonKind,
+                authObject,
+                subject.PersonMetadata.Path
+            ),
+            Contributors = subject.Contributors,
+        };
 
     private static RelationshipAuthorizationProposedValueBinding CreateProposedBinding(
         DbTableName table,

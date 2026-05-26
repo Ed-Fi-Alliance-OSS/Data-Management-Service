@@ -427,7 +427,7 @@
       "Add or update tests proving mixed EdOrg plus Student no-claims failures produce one failed strategy with a null strategy auth-object summary and per-subject auth objects.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationFailureMapper|RelationshipAuthorizationAuth1FailurePayload\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Repository Integration",

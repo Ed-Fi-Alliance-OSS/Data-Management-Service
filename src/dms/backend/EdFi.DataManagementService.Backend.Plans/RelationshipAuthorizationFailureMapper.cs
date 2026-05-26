@@ -284,15 +284,77 @@ public static class RelationshipAuthorizationFailureMapper
         if (subject.PersonMetadata is { } personMetadata)
         {
             return failureGroup.FirstOrDefault(failure =>
-                    failure.PersonMetadata?.PersonKind == personMetadata.PersonKind
-                    && failure.PersonMetadata.AuthObject == subject.AuthObject
-                ) ?? failureGroup.FirstOrDefault(failure => failure.AuthObject == subject.AuthObject);
+                    IsMatchingPersonFailureMetadata(
+                        failure,
+                        personMetadata,
+                        subject.AuthObject,
+                        requirePathMatch: true
+                    )
+                )
+                ?? failureGroup.FirstOrDefault(failure =>
+                    IsGenericPersonFailureMetadata(failure, personMetadata, subject.AuthObject)
+                )
+                ?? failureGroup.FirstOrDefault(failure =>
+                    IsMatchingPersonFailureMetadata(
+                        failure,
+                        personMetadata,
+                        subject.AuthObject,
+                        requirePathMatch: false
+                    )
+                )
+                ?? failureGroup.FirstOrDefault(failure => failure.AuthObject == subject.AuthObject);
         }
 
         return failureGroup.FirstOrDefault(failure =>
                 failure.PersonMetadata is null && failure.AuthObject == subject.AuthObject
             ) ?? failureGroup.FirstOrDefault(failure => failure.PersonMetadata is null);
     }
+
+    private static bool IsMatchingPersonFailureMetadata(
+        RelationshipAuthorizationFailureMetadata failure,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        RelationshipAuthorizationAuthObject authObject,
+        bool requirePathMatch
+    )
+    {
+        if (failure.PersonMetadata is not { } failurePersonMetadata)
+        {
+            return false;
+        }
+
+        if (
+            failurePersonMetadata.PersonKind != personMetadata.PersonKind
+            || failurePersonMetadata.AuthObject != authObject
+        )
+        {
+            return false;
+        }
+
+        return !requirePathMatch
+            || failurePersonMetadata.Path is not null
+                && PersonPathsMatch(failurePersonMetadata.Path, personMetadata.Path);
+    }
+
+    private static bool IsGenericPersonFailureMetadata(
+        RelationshipAuthorizationFailureMetadata failure,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        RelationshipAuthorizationAuthObject authObject
+    )
+    {
+        if (failure.PersonMetadata is not { } failurePersonMetadata)
+        {
+            return false;
+        }
+
+        return failurePersonMetadata.PersonKind == personMetadata.PersonKind
+            && failurePersonMetadata.AuthObject == authObject
+            && failurePersonMetadata.Path is null;
+    }
+
+    private static bool PersonPathsMatch(
+        RelationshipAuthorizationPersonSubjectPath first,
+        RelationshipAuthorizationPersonSubjectPath second
+    ) => first.Kind == second.Kind && first.Steps.SequenceEqual(second.Steps);
 
     private static RelationshipAuthorizationAuthObjectInfo? SelectHomogeneousStrategyAuthObject(
         IReadOnlyList<RelationshipAuthorizationFailedSubject> failedSubjects

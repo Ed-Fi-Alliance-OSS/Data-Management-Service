@@ -374,7 +374,8 @@ public sealed record RelationshipAuthorizationFailureLocation(
 
 public sealed record RelationshipAuthorizationPersonFailureMetadata(
     RelationshipAuthorizationPersonKind PersonKind,
-    RelationshipAuthorizationAuthObject AuthObject
+    RelationshipAuthorizationAuthObject AuthObject,
+    RelationshipAuthorizationPersonSubjectPath? Path = null
 );
 
 public sealed record RelationshipAuthorizationFailureMetadata(

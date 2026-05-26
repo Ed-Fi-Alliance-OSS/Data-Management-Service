@@ -519,14 +519,10 @@ public class Given_RelationshipAuthorizationPlannerTests
         failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds);
         failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
         failure.AuthObject.Should().Be(expectedAuthObject);
-        failure
-            .PersonMetadata.Should()
-            .Be(
-                new RelationshipAuthorizationPersonFailureMetadata(
-                    RelationshipAuthorizationPersonKind.Student,
-                    expectedAuthObject
-                )
-            );
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
+        failure.PersonMetadata.Path.Should().NotBeNull();
         failure.Location?.Kind.Should().Be(SecurableElementKind.Student);
         failure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
         failure.Location?.ReadableName.Should().Be("StudentUniqueId");
@@ -573,14 +569,10 @@ public class Given_RelationshipAuthorizationPlannerTests
             failure.PersonMetadata is not null
         );
 
-        peopleFailure
-            .PersonMetadata.Should()
-            .Be(
-                new RelationshipAuthorizationPersonFailureMetadata(
-                    RelationshipAuthorizationPersonKind.Student,
-                    expectedStudentAuthObject
-                )
-            );
+        peopleFailure.PersonMetadata.Should().NotBeNull();
+        peopleFailure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        peopleFailure.PersonMetadata.AuthObject.Should().Be(expectedStudentAuthObject);
+        peopleFailure.PersonMetadata.Path.Should().NotBeNull();
         peopleFailure
             .Location?.AuthorizationObjectName.Should()
             .Be(expectedStudentAuthObject.Name.ToString());
@@ -617,14 +609,10 @@ public class Given_RelationshipAuthorizationPlannerTests
         var failure = noClaimsResult.Failures[0];
 
         failure.AuthObject.Should().Be(expectedAuthObject);
-        failure
-            .PersonMetadata.Should()
-            .Be(
-                new RelationshipAuthorizationPersonFailureMetadata(
-                    RelationshipAuthorizationPersonKind.Student,
-                    expectedAuthObject
-                )
-            );
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
+        failure.PersonMetadata.Path.Should().NotBeNull();
         failure
             .Contributors.Select(static contributor => contributor.JsonPath)
             .Should()
@@ -667,9 +655,9 @@ public class Given_RelationshipAuthorizationPlannerTests
         failure.AuthObject.Should().Be(expectedAuthObject);
         failure.AuthObject?.SubjectValueColumn.Should().Be(expectedAuthObject.SubjectValueColumn);
         failure.AuthObject?.FailureHint.Should().Be(expectedAuthObject.FailureHint);
-        failure
-            .PersonMetadata.Should()
-            .Be(new RelationshipAuthorizationPersonFailureMetadata(personKind, expectedAuthObject));
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(personKind);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
         failure.Location?.Kind.Should().Be(securableElementKind);
         failure.Location?.JsonPath.Should().Be(GetPersonReferenceJsonPath(securableElementKind));
         failure.Location?.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
