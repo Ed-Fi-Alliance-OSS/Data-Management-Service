@@ -23,8 +23,10 @@ The first delete fires the resource or descriptor stamping trigger while `dms.Do
 - A successful resource delete inserts a tracked-change tombstone with the bumped `ContentVersion`.
 - A successful descriptor delete inserts a descriptor tombstone with the bumped `ContentVersion`.
 - The mirror update inside the delete trigger is allowed to affect zero rows because the deleted concrete row is already gone.
+- A resource delete with cascaded child, nested-child, or `_ext` rows produces exactly one visible root tombstone in the appropriate `tracked_changes_*` table.
+- The root tombstone's `ChangeVersion` is the final delete ChangeVersion exposed to Change Queries; no cascaded child or `_ext` trigger activity can leave a later visible root stamp or tracked-change row that advances an extraction watermark past the tombstone.
 - Delete conflict behavior and diagnostics remain consistent with the delete-path epic.
-- Integration tests cover regular resources, descriptors, and at least one cascading-delete scenario for an abstract-resource family.
+- PostgreSQL and SQL Server integration tests cover regular resources, descriptors, at least one cascading-delete scenario for an abstract-resource family, at least one child-bearing resource delete, and at least one extension-bearing resource delete.
 
 ## Dependencies
 

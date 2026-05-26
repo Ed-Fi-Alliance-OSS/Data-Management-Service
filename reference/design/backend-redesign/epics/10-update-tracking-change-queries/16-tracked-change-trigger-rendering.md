@@ -28,10 +28,12 @@ Concrete abstract resources (e.g., `School`, `LocalEducationAgency`, `Organizati
 - Tombstones and key-change rows store the stamped `dms.Document.ContentVersion` in `ChangeVersion`.
 - Key-change rows inserted by a trigger fire satisfy `tracked_changes.ChangeVersion == dms.Document.ContentVersion == persisted mirror ContentVersion` for that same fire.
 - Delete tombstones inserted by a trigger fire satisfy `tracked_changes.ChangeVersion == dms.Document.ContentVersion` stamped by the delete trigger before `dms.Document` deletion.
+- Root resource deletes that cascade child, nested-child, or `_ext` rows produce exactly one visible root tombstone in the appropriate `tracked_changes_*` table.
+- The root tombstone's `ChangeVersion` is the final delete ChangeVersion exposed to Change Queries; cascaded child or `_ext` trigger activity must not leave a later visible root stamp or tracked-change row that can advance an extraction watermark past the tombstone.
 - PostgreSQL and SQL Server tests assert the full three-way linkage for key-change rows and tracked row to document stamp linkage for delete tombstones before document deletion.
 - Descriptor resources write to `tracked_changes_edfi.Descriptor` with the correct `Discriminator`.
 - Concrete abstract resources write tombstones to their own tracked-change tables on delete but do not emit key-change rows (their inherited identity is immutable in practice).
-- Tests cover deletes, identity changes, cascading key changes, descriptor paths, people securable paths, key-unification paths, and multi-row updates in both dialects.
+- Tests cover deletes, identity changes, cascading key changes, descriptor paths, people securable paths, key-unification paths, multi-row updates, and root deletes with cascaded child / `_ext` rows in both dialects. The root-delete cascade tests must include at least one child-bearing resource and one extension-bearing resource on PostgreSQL and SQL Server.
 
 ## Dependencies
 
