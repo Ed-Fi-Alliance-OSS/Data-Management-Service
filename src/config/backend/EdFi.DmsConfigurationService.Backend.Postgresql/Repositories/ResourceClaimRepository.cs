@@ -108,6 +108,20 @@ public class ResourceClaimRepository(
         return node;
     }
 
+    internal static IEnumerable<T> ApplyPaging<T>(IEnumerable<T> items, int? offset, int? limit)
+    {
+        IEnumerable<T> result = items;
+        if (offset.HasValue)
+        {
+            result = result.Skip(offset.Value);
+        }
+        if (limit.HasValue)
+        {
+            result = result.Take(limit.Value);
+        }
+        return result;
+    }
+
     internal static IEnumerable<ResourceClaimResponse> SortAndPage(
         IEnumerable<ResourceClaimResponse> items,
         ResourceClaimQuery query
@@ -125,15 +139,7 @@ public class ResourceClaimRepository(
                 ? items.OrderByDescending(r => r.Name, StringComparer.OrdinalIgnoreCase)
                 : items.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
         };
-        if (query.Offset.HasValue)
-        {
-            result = result.Skip(query.Offset.Value);
-        }
-        if (query.Limit.HasValue)
-        {
-            result = result.Take(query.Limit.Value);
-        }
-        return result;
+        return ApplyPaging(result, query.Offset, query.Limit);
     }
 
     internal static IEnumerable<ResourceClaimActionResponse> SortAndPage(
@@ -153,15 +159,7 @@ public class ResourceClaimRepository(
                 ? items.OrderByDescending(r => r.ResourceClaimId)
                 : items.OrderBy(r => r.ResourceClaimId),
         };
-        if (query.Offset.HasValue)
-        {
-            result = result.Skip(query.Offset.Value);
-        }
-        if (query.Limit.HasValue)
-        {
-            result = result.Take(query.Limit.Value);
-        }
-        return result;
+        return ApplyPaging(result, query.Offset, query.Limit);
     }
 
     internal static IEnumerable<ResourceClaimActionAuthStrategyResponse> SortAndPage(
@@ -184,15 +182,7 @@ public class ResourceClaimRepository(
                 ? items.OrderByDescending(r => r.ResourceClaimId)
                 : items.OrderBy(r => r.ResourceClaimId),
         };
-        if (query.Offset.HasValue)
-        {
-            result = result.Skip(query.Offset.Value);
-        }
-        if (query.Limit.HasValue)
-        {
-            result = result.Take(query.Limit.Value);
-        }
-        return result;
+        return ApplyPaging(result, query.Offset, query.Limit);
     }
 
     public async Task<ResourceClaimListResult> GetResourceClaims(ResourceClaimQuery query)
