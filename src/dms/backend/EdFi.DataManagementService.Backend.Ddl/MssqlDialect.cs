@@ -326,6 +326,30 @@ public sealed class MssqlDialect : SqlDialectBase
     }
 
     /// <inheritdoc />
+    public override string CreateGetMaxChangeVersionFunction(DbSchemaName schema)
+    {
+        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier("GetMaxChangeVersion")}";
+        var escapedSchema = schema.Value.Replace("'", "''");
+
+        // Reads sys.sequences.current_value; cannot use WITH SCHEMABINDING because
+        // system catalog views are not bindable. CoreDdlEmitter is responsible for
+        // wrapping this statement in its own GO batch.
+        return $"""
+            CREATE OR ALTER FUNCTION {qualifiedName}()
+            RETURNS bigint
+            AS
+            BEGIN
+                DECLARE @Result bigint;
+                SELECT @Result = CONVERT(bigint, seq.current_value) FROM sys.sequences seq
+                INNER JOIN sys.schemas sch
+                ON seq.schema_id = sch.schema_id
+                WHERE seq.name = 'ChangeVersionSequence' AND sch.name = '{escapedSchema}';
+                RETURN @Result;
+            END;
+            """;
+    }
+
+    /// <inheritdoc />
     public override string CreateThrowErrorFunction(DbSchemaName schema)
     {
         // SQL Server does not use a throw_error function; authorization error

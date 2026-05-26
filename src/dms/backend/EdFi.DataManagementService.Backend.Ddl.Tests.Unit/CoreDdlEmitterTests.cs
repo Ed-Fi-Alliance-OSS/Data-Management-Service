@@ -174,6 +174,56 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_create_get_max_change_version_function()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".GetMaxChangeVersion() RETURNS bigint");
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_after_change_version_sequence()
+    {
+        var sequence = _ddl.IndexOf(
+            "CREATE SEQUENCE IF NOT EXISTS \"dms\".\"ChangeVersionSequence\"",
+            StringComparison.Ordinal
+        );
+        var function = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+
+        sequence.Should().BeGreaterThan(0);
+        function.Should().BeGreaterThan(sequence);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_before_phase_5_tables()
+    {
+        var function = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+        var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
+
+        function.Should().BeGreaterThan(0);
+        function.Should().BeLessThan(phase5);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_first_among_functions()
+    {
+        var getMax = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+        var throwError = _ddl.IndexOf("\"dms\".\"throw_error\"", StringComparison.Ordinal);
+        var uuidv5 = _ddl.IndexOf("\"dms\".\"uuidv5\"", StringComparison.Ordinal);
+
+        getMax.Should().BeLessThan(throwError);
+        throwError.Should().BeLessThan(uuidv5);
+    }
+
+    [Test]
+    public void It_should_bind_get_max_change_version_to_document_content_version_sequence()
+    {
+        // Document.ContentVersion defaults to nextval('"dms"."ChangeVersionSequence"').
+        // GetMaxChangeVersion must read from the same sequence so change-query
+        // semantics stay coherent.
+        _ddl.Should().Contain("DEFAULT nextval('\"dms\".\"ChangeVersionSequence\"')");
+        _ddl.Should().Contain("SELECT last_value FROM \"dms\".\"ChangeVersionSequence\" INTO result;");
+    }
+
+    [Test]
     public void It_should_not_emit_user_defined_table_types()
     {
         _ddl.Should().NotContain("CREATE TYPE");
@@ -783,19 +833,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_emit_go_batch_separator_before_uuidv5_function()
-    {
-        var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION", StringComparison.Ordinal);
-        functionIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE OR ALTER FUNCTION in DDL");
-        var goIndex = _ddl.LastIndexOf("GO\n", functionIndex);
-
-        goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
-        functionIndex.Should().BeGreaterThan(goIndex);
-        var between = _ddl.Substring(goIndex + 3, functionIndex - goIndex - 3);
-        between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER FUNCTION");
-    }
-
-    [Test]
     public void It_should_emit_go_batch_separator_after_uuidv5_function_before_tables()
     {
         var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION", StringComparison.Ordinal);
@@ -1323,5 +1360,81 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         {
             line.Should().Be(line.TrimEnd(), $"Line has trailing whitespace: [{line}]");
         }
+    }
+
+    [Test]
+    public void It_should_create_get_max_change_version_function()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER FUNCTION [dms].[GetMaxChangeVersion]()");
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_after_change_version_sequence()
+    {
+        var sequence = _ddl.IndexOf(
+            "CREATE SEQUENCE [dms].[ChangeVersionSequence]",
+            StringComparison.Ordinal
+        );
+        var function = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
+
+        sequence.Should().BeGreaterThan(0);
+        function.Should().BeGreaterThan(sequence);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_before_uuidv5()
+    {
+        var getMax = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
+        var uuidv5 = _ddl.IndexOf("[dms].[uuidv5]", StringComparison.Ordinal);
+
+        getMax.Should().BeGreaterThan(0);
+        getMax.Should().BeLessThan(uuidv5);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_before_phase_5_tables()
+    {
+        var function = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
+        var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
+
+        function.Should().BeGreaterThan(0);
+        function.Should().BeLessThan(phase5);
+    }
+
+    [Test]
+    public void It_should_isolate_each_function_in_its_own_go_batch()
+    {
+        var search = 0;
+        var occurrences = 0;
+        while (true)
+        {
+            var idx = _ddl.IndexOf("CREATE OR ALTER FUNCTION", search, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                break;
+            }
+            occurrences++;
+
+            var goIdx = _ddl.LastIndexOf("GO\n", idx, StringComparison.Ordinal);
+            goIdx
+                .Should()
+                .BeGreaterOrEqualTo(0, "every CREATE OR ALTER FUNCTION must be preceded by a GO line");
+            var between = _ddl.Substring(goIdx + 3, idx - goIdx - 3);
+            between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER FUNCTION");
+
+            search = idx + 1;
+        }
+
+        occurrences.Should().Be(2, "expected exactly two function batches: GetMaxChangeVersion and uuidv5");
+    }
+
+    [Test]
+    public void It_should_bind_get_max_change_version_to_document_content_version_sequence()
+    {
+        _ddl.Should()
+            .Contain(
+                "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
+            );
+        _ddl.Should().Contain("seq.name = 'ChangeVersionSequence' AND sch.name = 'dms'");
     }
 }

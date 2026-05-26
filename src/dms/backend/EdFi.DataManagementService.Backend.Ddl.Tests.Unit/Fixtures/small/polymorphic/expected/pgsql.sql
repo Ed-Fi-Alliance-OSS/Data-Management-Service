@@ -40,6 +40,16 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 -- Phase 4: Functions and Types
 -- ==========================================================
 
+CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+$GetMaxChangeVersion$
+DECLARE
+    result bigint;
+BEGIN
+    SELECT last_value FROM "dms"."ChangeVersionSequence" INTO result;
+    RETURN result;
+END
+$GetMaxChangeVersion$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION "dms"."throw_error"(code text, msg text)
 RETURNS integer
 LANGUAGE plpgsql

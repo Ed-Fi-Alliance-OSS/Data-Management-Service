@@ -28,7 +28,9 @@ public class DatabaseSetupFixture
 
         var createSchema = dialect.CreateSchemaIfNotExists(schema);
         var createExtension = dialect.CreateExtensionIfNotExists("pgcrypto");
-        var createFunction = dialect.CreateUuidv5Function(schema);
+        var createSequence = dialect.CreateSequenceIfNotExists(schema, "ChangeVersionSequence");
+        var createUuidv5 = dialect.CreateUuidv5Function(schema);
+        var createGetMax = dialect.CreateGetMaxChangeVersionFunction(schema);
 
         var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
 
@@ -46,7 +48,17 @@ public class DatabaseSetupFixture
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            await using (var cmd = new NpgsqlCommand(createFunction, connection))
+            await using (var cmd = new NpgsqlCommand(createSequence, connection))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await using (var cmd = new NpgsqlCommand(createUuidv5, connection))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await using (var cmd = new NpgsqlCommand(createGetMax, connection))
             {
                 await cmd.ExecuteNonQueryAsync();
             }

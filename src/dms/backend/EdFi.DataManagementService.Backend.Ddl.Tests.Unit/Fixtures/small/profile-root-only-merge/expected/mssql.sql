@@ -46,6 +46,18 @@ CREATE SEQUENCE [dms].[CollectionItemIdSequence] START WITH 1;
 -- ==========================================================
 
 GO
+CREATE OR ALTER FUNCTION [dms].[GetMaxChangeVersion]()
+RETURNS bigint
+AS
+BEGIN
+    DECLARE @Result bigint;
+    SELECT @Result = CONVERT(bigint, seq.current_value) FROM sys.sequences seq
+    INNER JOIN sys.schemas sch
+    ON seq.schema_id = sch.schema_id
+    WHERE seq.name = 'ChangeVersionSequence' AND sch.name = 'dms';
+    RETURN @Result;
+END;
+GO
 CREATE OR ALTER FUNCTION [dms].[uuidv5](@namespace_uuid uniqueidentifier, @name_text nvarchar(max))
 RETURNS uniqueidentifier
 WITH SCHEMABINDING

@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <item>Schemas</item>
 /// <item>Extensions (pgcrypto for PostgreSQL; no-op for SQL Server)</item>
 /// <item>Sequences</item>
-/// <item>Functions (UUIDv5 helper)</item>
+/// <item>Functions (GetMaxChangeVersion, UUIDv5 helper)</item>
 /// <item>Tables (PK / UNIQUE / CHECK inline; no cross-table FKs)</item>
 /// <item>Foreign keys (ALTER TABLE ADD CONSTRAINT)</item>
 /// <item>Indexes</item>
@@ -189,8 +189,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits database functions and type definitions required by core infrastructure.
-    /// Includes the UUIDv5 helper (both dialects), the <c>throw_error</c> function
-    /// (PostgreSQL), and user-defined table types for authorization TVPs (SQL Server).
+    /// Includes the <c>GetMaxChangeVersion</c> helper and the UUIDv5 helper (both dialects),
+    /// the <c>throw_error</c> function (PostgreSQL), and user-defined table types for
+    /// authorization TVPs (SQL Server).
     /// </summary>
     private void EmitFunctions(SqlWriter writer)
     {
@@ -201,7 +202,11 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         if (_dialect.Rules.Dialect == SqlDialect.Mssql)
         {
-            // CREATE OR ALTER FUNCTION must be the first and only statement in a T-SQL batch.
+            // Each CREATE OR ALTER FUNCTION must be the first statement in its T-SQL
+            // batch. Alphabetical (case-insensitive) within Phase 4:
+            //   GetMaxChangeVersion -> uuidv5 -> BigIntTable -> UniqueIdentifierTable.
+            writer.AppendLine("GO");
+            writer.AppendLine(_dialect.CreateGetMaxChangeVersionFunction(DmsTableNames.DmsSchema));
             writer.AppendLine("GO");
             writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
             writer.AppendLine("GO");
@@ -229,7 +234,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        // PostgreSQL: functions (alphabetical)
+        // PostgreSQL: functions (alphabetical, case-insensitive)
+        writer.AppendLine(_dialect.CreateGetMaxChangeVersionFunction(DmsTableNames.DmsSchema));
+        writer.AppendLine();
         writer.AppendLine(_dialect.CreateThrowErrorFunction(DmsTableNames.DmsSchema));
         writer.AppendLine();
         writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
