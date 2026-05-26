@@ -411,6 +411,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         await ResponseBodyIs(expectedBody);
     }
 
+    [Then("the response body is empty")]
+    public async Task ThenTheResponseBodyIsEmpty()
+    {
+        string content = await _apiResponse.TextAsync();
+        content.Should().BeNullOrEmpty("response body should be empty per CMS-GAP-009");
+    }
+
     [Then("the response body should not contain {string}")]
     public async Task ThenTheResponseBodyShouldNotContain(string text)
     {
@@ -513,6 +520,29 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _applicationKey = responseJson["key"]!.GetValue<string>();
         responseJson["secret"].Should().NotBeNull();
         _applicationSecret = responseJson["secret"]!.GetValue<string>();
+    }
+
+    [When("a token request is attempted with the captured application credentials")]
+    public async Task WhenATokenRequestIsAttemptedWithTheCapturedApplicationCredentials()
+    {
+        await GetClientAccessToken(_applicationKey, _applicationSecret, "edfi_admin_api/full_access");
+    }
+
+    [Then("the response body contains an object matching")]
+    public async Task ThenTheResponseBodyContainsAnObjectMatching(string expectedPartial)
+    {
+        string content = await _apiResponse.TextAsync();
+        expectedPartial = await ReplaceIdsAsync(expectedPartial);
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+        jsonArray.Should().NotBeNull("response body should be a JSON array");
+        var expectedObj = JsonNode.Parse(expectedPartial)!.AsObject();
+        bool found = jsonArray!.Any(item =>
+            item is JsonObject obj
+            && expectedObj.All(kvp =>
+                obj.ContainsKey(kvp.Key) && obj[kvp.Key]?.ToJsonString() == kvp.Value?.ToJsonString()
+            )
+        );
+        found.Should().BeTrue($"No object in the array matched: {expectedPartial}");
     }
 
     [Then("the token should have {string} scope and {string} namespacePrefix")]

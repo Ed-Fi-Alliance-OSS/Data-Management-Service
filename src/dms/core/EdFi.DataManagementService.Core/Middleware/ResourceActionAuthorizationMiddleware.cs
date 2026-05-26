@@ -6,6 +6,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -48,14 +49,14 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             }
 
             ClaimSet? claimSet = await GetClaimSetForClient(requestInfo);
-            if (claimSet == null)
+            if (claimSet is null)
             {
                 CreateForbiddenResponse(requestInfo);
                 return;
             }
 
             Debug.Assert(
-                requestInfo.PathComponents != null,
+                requestInfo.PathComponents is not null,
                 "ResourceActionAuthorizationMiddleware: There should be PathComponents",
                 ""
             );
@@ -149,7 +150,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
 
         ClaimSet? claimSet = claimsList.FindClaimSetByName(claimSetName);
 
-        if (claimSet == null)
+        if (claimSet is null)
         {
             _logger.LogInformation(
                 "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
@@ -235,7 +236,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         string claimSetName
     )
     {
-        if (authorizedAction == null)
+        if (authorizedAction is null)
         {
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
             _logger.LogDebug(
@@ -280,7 +281,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         if (strategies.Count == 0)
         {
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
-            if (IsRelationalGetManyRequest(requestInfo))
+            if (IsRelationalBackendAuthorizationRequest(requestInfo))
             {
                 CreateNoStrategiesSecurityConfigurationResponse(
                     requestInfo,
@@ -302,7 +303,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         IReadOnlyList<string> strategies
     )
     {
-        if (IsGetManyRequest(requestInfo))
+        if (IsGetManyRequest(requestInfo) || IsRelationalBackendAuthorizationRequest(requestInfo))
         {
             return false;
         }
@@ -338,8 +339,15 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     private static bool IsGetManyRequest(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
 
-    private static bool IsRelationalGetManyRequest(RequestInfo requestInfo) =>
-        requestInfo.MappingSet is not null && IsGetManyRequest(requestInfo);
+    // Broad relational backend-planned surface used for missing-strategy classification; GET-many is included.
+    private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
+        requestInfo.MappingSet is not null
+        && (
+            requestInfo.Method == RequestMethod.GET
+            || requestInfo.Method == RequestMethod.DELETE
+            || requestInfo.Method == RequestMethod.POST
+            || requestInfo.Method == RequestMethod.PUT
+        );
 
     private static string GetOperationLabel(RequestInfo requestInfo) =>
         requestInfo.Method == RequestMethod.GET && requestInfo.PathComponents.HasDocumentUuidSegment

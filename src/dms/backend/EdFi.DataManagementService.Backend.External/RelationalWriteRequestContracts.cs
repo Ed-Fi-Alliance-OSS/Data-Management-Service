@@ -38,6 +38,11 @@ public interface IRelationalWriteRequest : IRelationalRequestWithMappingSet
     /// Effective authorization strategy evaluators for the current write action.
     /// </summary>
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
+
+    /// <summary>
+    /// Typed request-scoped authorization inputs for relational write planning/execution.
+    /// </summary>
+    RelationalAuthorizationContext AuthorizationContext { get; }
 }
 
 /// <summary>
@@ -55,6 +60,11 @@ public interface IRelationalUpdateRequest : IUpdateRequest, IRelationalWriteRequ
 /// </summary>
 public interface IRelationalDeleteRequest : IDeleteRequest, IRelationalRequestWithMappingSet
 {
+    /// <summary>
+    /// Typed request-scoped authorization inputs for relational single-record planning/execution.
+    /// </summary>
+    RelationalAuthorizationContext AuthorizationContext { get; }
+
     /// <summary>
     /// Effective authorization strategy evaluators for the current delete action.
     /// </summary>

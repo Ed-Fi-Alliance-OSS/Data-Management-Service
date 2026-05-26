@@ -3640,6 +3640,111 @@
                   ]
                 }
               ]
+            },
+            {
+              "name": "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Update",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Delete",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "ReadChanges",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Update",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Delete",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "ReadChanges",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -4828,6 +4933,127 @@
                   "authorizationStrategyOverrides": [
                     {
                       "name": "RelationshipsWithEdOrgsOnly"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Update",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Delete",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "ReadChanges",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Update",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "Delete",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                },
+                {
+                  "name": "ReadChanges",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "RelationshipsWithEdOrgsOnlyInverted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "RelationshipsWithEdOrgsOnly"
+                    },
+                    {
+                      "name": "NamespaceBased"
                     }
                   ]
                 }

@@ -29,7 +29,7 @@ All authorization stories (design, DDL/provisioning, runtime integration, and te
 - `DMS-1094` — `05b-emit-person-join-indexes.md` — Emit people indexes needed for joins
 - `DMS-1055` — `06-relationship-auth-get-many.md` — Implement EdOrg-only Relationship-based Authorization for GET-many
 - `DMS-1095` — `06b-people-relationship-auth-get-many.md` — Implement People-involved Relationship-based Authorization for GET-many
-- `DMS-1056` — `07-relationship-auth-crud.md` — Implement Relationship-based Authorization Strategies for GET-by-id, POST, PUT, and DELETE
+- `DMS-1056` — `07-relationship-auth-crud.md` — Split Relationship-based Authorization for GET-by-id, POST, PUT, and DELETE; planning recut under `07-relationship-auth-crud/`
 - `DMS-1057` — `08-namespace-auth-strategy.md` — Implement Namespace-based Authorization Strategy
 - `DMS-1058` — `09-design-ownership-token-maintenance.md` — Design Ownership-token maintenance in CMS
 - `DMS-1059` — `10-emit-ownership-column-and-index.md` — Emit the CreatedByOwnershipTokenId column and index

@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -64,6 +65,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         using var scope = serviceProvider.CreateScope();
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var parameterConfigurator =
+            scope.ServiceProvider.GetRequiredService<IRelationalParameterConfigurator>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
@@ -71,6 +74,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
+        var singleRecordRelationshipAuthorizationExecutor =
+            scope.ServiceProvider.GetRequiredService<ISingleRecordRelationshipAuthorizationExecutor>();
+        var relationshipAuthorizationProviderFailureExtractor =
+            scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
         var writeFreshnessChecker =
@@ -95,6 +102,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
         var deleteEtagPreconditionChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteEtagPreconditionChecker>();
+        var edOrgAuthorizationElementResolutionCache =
+            scope.ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationElementResolutionCache>();
+        var edOrgAuthorizationSubjectSelector =
+            scope.ServiceProvider.GetRequiredService<RelationalEdOrgAuthorizationSubjectSelector>();
         var factory = scope
             .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
             .Should()
@@ -107,12 +118,19 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
+        parameterConfigurator.Should().BeOfType<DefaultRelationalParameterConfigurator>();
         writeSessionFactory.Should().BeOfType<TestRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<TestDocumentHydrator>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
+        singleRecordRelationshipAuthorizationExecutor
+            .Should()
+            .BeOfType<SingleRecordRelationshipAuthorizationExecutor>();
+        relationshipAuthorizationProviderFailureExtractor
+            .Should()
+            .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
@@ -128,6 +146,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeSameAs(currentEtagPreconditionChecker);
+        edOrgAuthorizationElementResolutionCache.Should().NotBeNull();
+        edOrgAuthorizationSubjectSelector.Should().NotBeNull();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
     }
@@ -171,9 +191,22 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
+        // The Backend's reference-resolver registration tree includes the read materializer,
+        // which depends on Core-owned IDocumentLinkSlugResolver and bound ResourceLinksOptions.
+        // Provide stubs so the composition surface validates end-to-end without pulling in the
+        // full Core DI extension.
+        services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
+        services.AddOptions<ResourceLinksOptions>();
+
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+            throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
     }
 
     private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
@@ -277,6 +310,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         public Task<HydratedPage> HydrateAsync(
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
             CancellationToken ct
         )
         {

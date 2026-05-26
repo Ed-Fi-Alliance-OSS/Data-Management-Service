@@ -482,6 +482,285 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_emit_null_DocumentReferenceLookup_when_model_has_no_document_reference_bindings()
+    {
+        _pgsqlRootOnlyReadPlan.DocumentReferenceLookup.Should().BeNull();
+        _mssqlRootOnlyReadPlan.DocumentReferenceLookup.Should().BeNull();
+        _pgsqlReadPlan.DocumentReferenceLookup.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_emit_DocumentReferenceLookup_result_shape_with_fixed_ordinals()
+    {
+        _pgsqlProjectionReadPlan
+            .DocumentReferenceLookup!.ResultShape.Should()
+            .Be(
+                new DocumentReferenceLookupResultShape(
+                    DocumentIdOrdinal: 0,
+                    DocumentUuidOrdinal: 1,
+                    ResourceKeyIdOrdinal: 2
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_sql_for_single_binding_with_SELECT_DISTINCT()
+    {
+        var lookup = _pgsqlProjectionReadPlan.DocumentReferenceLookup;
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SelectByKeysetSql.Should()
+            .Be(
+                """
+                SELECT
+                    doc."DocumentId",
+                    doc."DocumentUuid",
+                    doc."ResourceKeyId"
+                FROM
+                    (
+                        SELECT DISTINCT t0."School_DocumentId" AS "DocumentId"
+                        FROM "edfi"."StudentProjection" t0
+                        INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+                        WHERE t0."School_DocumentId" IS NOT NULL
+                    ) p
+                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
+                ORDER BY
+                    doc."DocumentId" ASC
+                ;
+
+                """
+            );
+
+        lookup.SourcesInOrder.Should().ContainSingle();
+        var source = lookup.SourcesInOrder.Single();
+        source.Table.Should().Be(_projectionResourceModel.Root.Table);
+        source.FkColumn.Value.Should().Be("School_DocumentId");
+    }
+
+    [Test]
+    public void It_should_emit_exact_mssql_DocumentReferenceLookup_sql_for_single_binding_with_SELECT_DISTINCT()
+    {
+        var lookup = _mssqlProjectionReadPlan.DocumentReferenceLookup;
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SelectByKeysetSql.Should()
+            .Be(
+                """
+                SELECT
+                    doc.[DocumentId],
+                    doc.[DocumentUuid],
+                    doc.[ResourceKeyId]
+                FROM
+                    (
+                        SELECT DISTINCT t0.[School_DocumentId] AS [DocumentId]
+                        FROM [edfi].[StudentProjection] t0
+                        INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
+                        WHERE t0.[School_DocumentId] IS NOT NULL
+                    ) p
+                INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = p.[DocumentId]
+                ORDER BY
+                    doc.[DocumentId] ASC
+                ;
+
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_DocumentReferenceLookup_sql_for_multiple_bindings_joined_with_UNION()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var lookup = readPlan.DocumentReferenceLookup;
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SelectByKeysetSql.Should()
+            .Be(
+                """
+                SELECT
+                    doc."DocumentId",
+                    doc."DocumentUuid",
+                    doc."ResourceKeyId"
+                FROM
+                    (
+                        SELECT t0."School_DocumentId" AS "DocumentId"
+                        FROM "edfi"."StudentReferenceProjection" t0
+                        INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+                        WHERE t0."School_DocumentId" IS NOT NULL
+                        UNION
+                        SELECT t1."Calendar_DocumentId" AS "DocumentId"
+                        FROM "edfi"."StudentReferenceProjection" t1
+                        INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
+                        WHERE t1."Calendar_DocumentId" IS NOT NULL
+                    ) p
+                INNER JOIN "dms"."Document" doc ON doc."DocumentId" = p."DocumentId"
+                ORDER BY
+                    doc."DocumentId" ASC
+                ;
+
+                """
+            );
+
+        lookup
+            .SourcesInOrder.Select(static source => source.FkColumn.Value)
+            .Should()
+            .Equal("School_DocumentId", "Calendar_DocumentId");
+        lookup
+            .SourcesInOrder.Select(static source => source.Table)
+            .Should()
+            .AllBeEquivalentTo(readPlan.Model.Root.Table);
+    }
+
+    [Test]
+    public void It_should_throw_when_compiled_DocumentReferenceLookup_source_FK_column_kind_is_not_DocumentFk()
+    {
+        // Start with a valid compiled plan, then mutate the lookup's SourcesInOrder so it
+        // references a Scalar-kind column (School_RefSchoolId) instead of the actual
+        // DocumentFk (School_DocumentId). Upstream reference-projection validation still
+        // passes because the model's DocumentReferenceBinding is left untouched, so the
+        // mismatch only surfaces in the new lookup-plan validation path.
+        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateProjectionMetadataResourceModel()
+        );
+        var mutatedReadPlan = validReadPlan with
+        {
+            DocumentReferenceLookup = validReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder =
+                [
+                    new DocumentReferenceLookupSource(
+                        Table: _projectionResourceModel.Root.Table,
+                        FkColumn: new DbColumnName("School_RefSchoolId")
+                    ),
+                ],
+            },
+        };
+
+        Action act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*document-reference lookup plan source at index '0'*FK column 'School_RefSchoolId' has kind 'Scalar'*Expected 'DocumentFk'*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_when_SourcesInOrder_is_missing_a_binding_required_source()
+    {
+        // Compile a valid two-binding plan (School + Calendar), then drop the Calendar
+        // source from SourcesInOrder while leaving the model's DocumentReferenceBindings
+        // untouched. Per-source validation still passes for the surviving School entry,
+        // so the gap surfaces only via the coverage check.
+        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var schoolSource = validReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single(source =>
+            source.FkColumn.Value == "School_DocumentId"
+        );
+        var mutatedReadPlan = validReadPlan with
+        {
+            DocumentReferenceLookup = validReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [schoolSource],
+            },
+        };
+
+        Action act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*document-reference lookup plan is missing authoritative source for table*FK column 'Calendar_DocumentId'*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_when_SourcesInOrder_contains_a_source_not_backed_by_any_binding()
+    {
+        // Compile a valid single-binding plan (School), then append a second source
+        // (Calendar_DocumentId) that has no corresponding DocumentReferenceBinding in
+        // the model. The strayed source is still a valid DocumentFk column, so per-
+        // source kind validation passes; the bindings-coverage check is the only path
+        // that flags it.
+        var unboundFkModel = CreateProjectionMetadataResourceModelWithUnboundDocumentFkColumn();
+        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unboundFkModel);
+        var schoolSource = validReadPlan.DocumentReferenceLookup!.SourcesInOrder.Single();
+        var mutatedReadPlan = validReadPlan with
+        {
+            DocumentReferenceLookup = validReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder =
+                [
+                    schoolSource,
+                    new DocumentReferenceLookupSource(
+                        Table: unboundFkModel.Root.Table,
+                        FkColumn: new DbColumnName("Calendar_DocumentId")
+                    ),
+                ],
+            },
+        };
+
+        Action act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*document-reference lookup plan source at index '1'*FK column 'Calendar_DocumentId' does not correspond to any authoritative DocumentReferenceBinding*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_DocumentReferenceLookup_when_SourcesInOrder_dependency_order_is_swapped()
+    {
+        // Compile a valid two-binding plan (School first, Calendar second per the
+        // compiler's TableDependencyOrdinal+FkColumnOrdinal sort), then swap the two
+        // entries. Each entry still corresponds to an authoritative binding and per-
+        // source validation passes, so the order mismatch surfaces only via the
+        // ordering check against the bindings-derived expected sequence.
+        var validReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var orderedSources = validReadPlan.DocumentReferenceLookup!.SourcesInOrder;
+        orderedSources.Length.Should().Be(2);
+        var mutatedReadPlan = validReadPlan with
+        {
+            DocumentReferenceLookup = validReadPlan.DocumentReferenceLookup! with
+            {
+                SourcesInOrder = [orderedSources[1], orderedSources[0]],
+            },
+        };
+
+        Action act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*document-reference lookup plan source at index '0' targets table*FK column 'Calendar_DocumentId'*authoritative dependency-order requires table*FK column 'School_DocumentId'*"
+            );
+    }
+
+    [Test]
     public void It_should_emit_exact_pgsql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
@@ -3337,6 +3616,23 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         return model with
         {
             DocumentReferenceBindings = [binding],
+        };
+    }
+
+    // Returns a model whose root table retains both `School_DocumentId` and `Calendar_DocumentId`
+    // DocumentFk columns from the multi-binding fixture, but only the School DocumentReferenceBinding.
+    // The compiler emits a single-source lookup; test code can then append a stray Calendar source
+    // to SourcesInOrder and rely on the bindings-coverage check to flag it.
+    private static RelationalResourceModel CreateProjectionMetadataResourceModelWithUnboundDocumentFkColumn()
+    {
+        var model = CreateRootMultiBindingReferenceProjectionResourceModel();
+        var schoolBinding = model.DocumentReferenceBindings.Single(binding =>
+            binding.FkColumn.Value == "School_DocumentId"
+        );
+
+        return model with
+        {
+            DocumentReferenceBindings = [schoolBinding],
         };
     }
 

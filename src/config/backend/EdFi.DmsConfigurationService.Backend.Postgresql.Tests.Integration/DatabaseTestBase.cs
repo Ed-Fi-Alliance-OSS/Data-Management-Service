@@ -45,6 +45,8 @@ public abstract class DatabaseTestBase
                     new("dmscs", "claimshierarchy"),
                     new("dmscs", "dmsinstance"),
                     new("dmscs", "dmsinstanceroutecontext"),
+                    new("dmscs", "openiddictapplication"),
+                    new("dmscs", "openiddictapplicationscope"),
                 ],
                 DbAdapter = DbAdapter.Postgres,
             }

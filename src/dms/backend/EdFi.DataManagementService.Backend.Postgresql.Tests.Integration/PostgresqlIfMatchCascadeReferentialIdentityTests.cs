@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -113,6 +114,7 @@ file static class PostgresqlIfMatchCascadeReferentialIdentityTestSupport
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
+        services.AddNoOpDocumentLinkSlugResolver();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
@@ -408,6 +410,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 ResourceInfo: resourceInfo,
                 MappingSet: _mappingSet,
+                AuthorizationContext: new RelationalAuthorizationContext([]),
                 ResourceAuthorizationHandler: new PostgresqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 AuthorizationStrategyEvaluators: [],
                 TraceId: new TraceId(traceId)

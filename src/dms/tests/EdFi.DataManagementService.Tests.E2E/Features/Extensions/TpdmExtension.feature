@@ -110,8 +110,6 @@ Feature: Tpdm extension resources and descriptors
                   ]
                   """
 
-        @relational-backend
-        @relational-ci-shard-2
         Scenario: 04 Ensure clients can delete a descriptor
             Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """

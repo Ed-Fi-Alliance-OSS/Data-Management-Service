@@ -1235,6 +1235,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         {
                             item.Remove("_etag");
                         }
+
+                        JsonTestUtilities.RemoveLinkSubtrees(item);
                     }
                 }
             }
@@ -1250,6 +1252,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 {
                     (responseJson as JsonObject)?.Remove("_etag");
                 }
+
+                JsonTestUtilities.RemoveLinkSubtrees(jsonObject);
             }
         }
 

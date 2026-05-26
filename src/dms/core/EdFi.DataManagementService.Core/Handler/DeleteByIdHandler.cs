@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
@@ -64,6 +65,9 @@ internal class DeleteByIdHandler(
                         MappingSet: requestInfo.MappingSet
                     )
                     {
+                        AuthorizationContext = RelationalAuthorizationContext.Create(
+                            requestInfo.ClientAuthorizations
+                        ),
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
                     }
                 ),
@@ -83,9 +87,33 @@ internal class DeleteByIdHandler(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
                     traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: notAuthorized.ErrorMessages
+                    errors: notAuthorized.ErrorMessages,
+                    hints: notAuthorized.Hints
                 ),
                 Headers: []
+            ),
+            DeleteFailureRelationshipNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: notAuthorized.ErrorMessages,
+                    hints: notAuthorized.Hints
+                ),
+                Headers: []
+            ),
+            DeleteFailureNotImplemented failure => new FrontendResponse(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            DeleteFailureSecurityConfiguration failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSecurityConfiguration(
+                    requestInfo.FrontendRequest.TraceId,
+                    failure.Errors
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             DeleteFailureReference failure => new FrontendResponse(
                 StatusCode: 409,

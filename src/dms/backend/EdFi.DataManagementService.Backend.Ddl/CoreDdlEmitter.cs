@@ -10,8 +10,8 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <summary>
 /// Emits deterministic DDL for the core <c>dms.*</c> schema objects.
 /// <para>
-/// This includes tables, constraints, indexes, sequences, and journaling
-/// triggers required by the v1 object inventory defined in
+/// This includes tables, constraints, indexes, sequences, and the descriptor
+/// stamping trigger required by the v1 object inventory defined in
 /// <c>reference/design/backend-redesign/design-docs/ddl-generation.md</c>.
 /// </para>
 /// <para>
@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <item>Schemas</item>
 /// <item>Extensions (pgcrypto for PostgreSQL; no-op for SQL Server)</item>
 /// <item>Sequences</item>
-/// <item>Functions (UUIDv5 helper)</item>
+/// <item>Functions (GetMaxChangeVersion, UUIDv5 helper)</item>
 /// <item>Tables (PK / UNIQUE / CHECK inline; no cross-table FKs)</item>
 /// <item>Foreign keys (ALTER TABLE ADD CONSTRAINT)</item>
 /// <item>Indexes</item>
@@ -36,7 +36,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _descriptorTable = DmsTableNames.Descriptor;
     private static readonly DbTableName _documentTable = DmsTableNames.Document;
     private static readonly DbTableName _documentCacheTable = DmsTableNames.DocumentCache;
-    private static readonly DbTableName _documentChangeEventTable = DmsTableNames.DocumentChangeEvent;
     private static readonly DbTableName _effectiveSchemaTable = EffectiveSchemaTableDefinition.Table;
     private static readonly DbColumnName _effectiveSchemaSingletonIdColumn =
         EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId;
@@ -189,8 +188,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits database functions and type definitions required by core infrastructure.
-    /// Includes the UUIDv5 helper (both dialects), the <c>throw_error</c> function
-    /// (PostgreSQL), and user-defined table types for authorization TVPs (SQL Server).
+    /// Includes the <c>GetMaxChangeVersion</c> helper and the UUIDv5 helper (both dialects),
+    /// the <c>throw_error</c> function (PostgreSQL), and user-defined table types for
+    /// authorization TVPs (SQL Server).
     /// </summary>
     private void EmitFunctions(SqlWriter writer)
     {
@@ -201,7 +201,11 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         if (_dialect.Rules.Dialect == SqlDialect.Mssql)
         {
-            // CREATE OR ALTER FUNCTION must be the first and only statement in a T-SQL batch.
+            // Each CREATE OR ALTER FUNCTION must be the first statement in its T-SQL
+            // batch. Alphabetical (case-insensitive) within Phase 4:
+            //   GetMaxChangeVersion -> uuidv5 -> BigIntTable -> UniqueIdentifierTable.
+            writer.AppendLine("GO");
+            writer.AppendLine(_dialect.CreateGetMaxChangeVersionFunction(DmsTableNames.DmsSchema));
             writer.AppendLine("GO");
             writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
             writer.AppendLine("GO");
@@ -229,7 +233,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        // PostgreSQL: functions (alphabetical)
+        // PostgreSQL: functions (alphabetical, case-insensitive)
+        writer.AppendLine(_dialect.CreateGetMaxChangeVersionFunction(DmsTableNames.DmsSchema));
+        writer.AppendLine();
         writer.AppendLine(_dialect.CreateThrowErrorFunction(DmsTableNames.DmsSchema));
         writer.AppendLine();
         writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
@@ -249,7 +255,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         EmitDescriptorTable(writer);
         EmitDocumentTable(writer);
         EmitDocumentCacheTable(writer);
-        EmitDocumentChangeEventTable(writer);
         EmitEffectiveSchemaTable(writer);
         EmitReferentialIdentityTable(writer);
         EmitResourceKeyTable(writer);
@@ -370,6 +375,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 $"{_dialect.RenderColumnDefinition(Col("ResourceVersion"), StringType(32), false)},"
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Etag"), StringType(64), false)},");
+            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("ContentVersion"), "bigint", false)},");
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("LastModifiedAt"), DateTimeType, false)},"
             );
@@ -413,36 +419,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 )
             );
         }
-        writer.AppendLine();
-    }
-
-    /// <summary>
-    /// Emits the <c>dms.DocumentChangeEvent</c> table definition.
-    /// </summary>
-    private void EmitDocumentChangeEventTable(SqlWriter writer)
-    {
-        writer.AppendLine(_dialect.CreateTableHeader(_documentChangeEventTable));
-        writer.AppendLine("(");
-        using (writer.Indent())
-        {
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("ChangeVersion"), "bigint", false)},");
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
-            );
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("CreatedAt"), DateTimeType, false, "DF_DocumentChangeEvent_CreatedAt", _dialect.CurrentTimestampDefaultExpression)},"
-            );
-            writer.AppendLine(
-                _dialect.RenderNamedPrimaryKeyClause(
-                    "PK_DocumentChangeEvent",
-                    [Col("ChangeVersion"), Col("DocumentId")]
-                )
-            );
-        }
-        writer.AppendLine(");");
         writer.AppendLine();
     }
 
@@ -707,29 +683,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
-                _documentChangeEventTable,
-                "FK_DocumentChangeEvent_Document",
-                [Col("DocumentId")],
-                _documentTable,
-                [Col("DocumentId")],
-                onDelete: ReferentialAction.Cascade
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
-                _documentChangeEventTable,
-                "FK_DocumentChangeEvent_ResourceKey",
-                [Col("ResourceKeyId")],
-                _resourceKeyTable,
-                [Col("ResourceKeyId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
                 _referentialIdentityTable,
                 "FK_ReferentialIdentity_Document",
                 [Col("DocumentId")],
@@ -804,24 +757,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
-                _documentChangeEventTable,
-                "IX_DocumentChangeEvent_DocumentId",
-                [Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _documentChangeEventTable,
-                "IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion",
-                [Col("ResourceKeyId"), Col("ChangeVersion"), Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
                 _referentialIdentityTable,
                 "IX_ReferentialIdentity_DocumentId",
                 [Col("DocumentId")]
@@ -833,7 +768,11 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     // ── Phase 8: Triggers ───────────────────────────────────────────────
 
     /// <summary>
-    /// Emits core triggers, including dialect-specific document journaling triggers.
+    /// Emits core triggers: the dialect-specific descriptor stamping trigger on
+    /// <c>dms.Descriptor</c>. The descriptor stamping trigger bumps
+    /// <c>dms.Document.ContentVersion</c> / <c>ContentLastModifiedAt</c> on real value
+    /// changes to a descriptor row, with a DB-level no-op guard that short-circuits
+    /// when no stored descriptor column actually changed.
     /// </summary>
     private void EmitTriggers(SqlWriter writer)
     {
@@ -841,50 +780,93 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
-            EmitPgsqlJournalingTrigger(writer);
+            EmitPgsqlDescriptorStampingTrigger(writer);
         }
         else
         {
-            EmitMssqlJournalingTrigger(writer);
+            EmitMssqlDescriptorStampingTrigger(writer);
         }
     }
 
-    /// <summary>
-    /// Emits the PostgreSQL document journaling trigger function and trigger, inserting rows into
-    /// <c>dms.DocumentChangeEvent</c> when <c>dms.Document.ContentVersion</c> changes.
-    /// </summary>
-    private void EmitPgsqlJournalingTrigger(SqlWriter writer)
-    {
-        var docTable = _dialect.QualifyTable(_documentTable);
-        var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
-        var funcName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_Document_Journal")}";
+    // ── Descriptor stamping trigger (dms.Descriptor → dms.Document) ────────
 
-        // Row-level trigger function. Uses FOR EACH ROW instead of statement-level
-        // transition tables because PostgreSQL 16 does not support transition tables
-        // with column lists or multiple events.
+    /// <summary>
+    /// Stored columns on <c>dms.Descriptor</c> in the order they are emitted by
+    /// <see cref="EmitDescriptorTable"/>, paired with their <see cref="ScalarKind"/>.
+    /// The kind metadata is load-bearing for the MSSQL trigger: <see cref="ScalarKind.String"/>
+    /// columns are compared via <c>CAST(... AS varbinary(max))</c> so that trailing-space-only
+    /// and case-only changes (which default CI collation + ANSI padding would miss) are still
+    /// detected — matching the byte-comparison behavior used by <c>[dms].[uuidv5]</c>.
+    /// </summary>
+    private static readonly IReadOnlyList<(DbColumnName Column, ScalarKind Kind)> _descriptorStoredColumns =
+        new (DbColumnName, ScalarKind)[]
+        {
+            (new("Namespace"), ScalarKind.String),
+            (new("CodeValue"), ScalarKind.String),
+            (new("ShortDescription"), ScalarKind.String),
+            (new("Description"), ScalarKind.String),
+            (new("EffectiveBeginDate"), ScalarKind.Date),
+            (new("EffectiveEndDate"), ScalarKind.Date),
+            (new("Discriminator"), ScalarKind.String),
+            (new("Uri"), ScalarKind.String),
+        };
+
+    /// <summary>
+    /// Emits the PostgreSQL descriptor stamping trigger function and trigger.
+    /// On a real value change to any stored column of <c>dms.Descriptor</c>, bumps
+    /// <c>dms.Document.ContentVersion</c> and <c>ContentLastModifiedAt</c> on the
+    /// owning document row. A DB-level no-op guard (<c>IS DISTINCT FROM</c> across
+    /// every stored column) short-circuits same-value UPDATEs so unchanged PUTs do
+    /// not bump the stamps.
+    /// </summary>
+    private void EmitPgsqlDescriptorStampingTrigger(SqlWriter writer)
+    {
+        var descriptorTable = _dialect.QualifyTable(_descriptorTable);
+        var documentTable = _dialect.QualifyTable(_documentTable);
+        var sequenceName =
+            $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
+        var funcName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_Descriptor_Stamp_Document")}";
+
         writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
         writer.AppendLine("RETURNS TRIGGER AS $func$");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
-            writer.AppendLine(
-                $"INSERT INTO {changeTable} ({Quote("ChangeVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}, {Quote("CreatedAt")})"
-            );
-            writer.AppendLine(
-                $"VALUES (NEW.{Quote("ContentVersion")}, NEW.{Quote("DocumentId")}, NEW.{Quote("ResourceKeyId")}, now());"
-            );
+            // No-op guard: if no stored column actually changed, skip the stamp.
+            writer.Append("IF TG_OP = 'UPDATE' AND NOT (");
+            EmitPgsqlDescriptorValueDiffDisjunction(writer);
+            writer.AppendLine(") THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("RETURN NEW;");
+            }
+            writer.AppendLine("END IF;");
+
+            writer.Append("UPDATE ");
+            writer.AppendLine(documentTable);
+            writer.Append("SET ");
+            writer.Append(Quote("ContentVersion"));
+            writer.Append(" = nextval('");
+            writer.Append(sequenceName);
+            writer.Append("'), ");
+            writer.Append(Quote("ContentLastModifiedAt"));
+            writer.AppendLine(" = now()");
+            writer.Append("WHERE ");
+            writer.Append(Quote("DocumentId"));
+            writer.Append(" = NEW.");
+            writer.Append(Quote("DocumentId"));
+            writer.AppendLine(";");
             writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
         writer.AppendLine("$func$ LANGUAGE plpgsql;");
         writer.AppendLine();
 
-        // Drop and recreate trigger
-        writer.AppendLine(_dialect.DropTriggerIfExists(_documentTable, "TR_Document_Journal"));
-        writer.AppendLine($"CREATE TRIGGER {Quote("TR_Document_Journal")}");
+        writer.AppendLine(_dialect.DropTriggerIfExists(_descriptorTable, "TR_Descriptor_Stamp_Document"));
+        writer.AppendLine($"CREATE TRIGGER {Quote("TR_Descriptor_Stamp_Document")}");
         using (writer.Indent())
         {
-            writer.AppendLine($"AFTER INSERT OR UPDATE OF {Quote("ContentVersion")} ON {docTable}");
+            writer.AppendLine($"AFTER UPDATE ON {descriptorTable}");
             writer.AppendLine("FOR EACH ROW");
             writer.AppendLine($"EXECUTE FUNCTION {funcName}();");
         }
@@ -892,45 +874,120 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits the SQL Server document journaling trigger, inserting rows into
-    /// <c>dms.DocumentChangeEvent</c> on document inserts and on updates that modify
-    /// <c>dms.Document.ContentVersion</c>.
+    /// Emits the SQL Server descriptor stamping trigger. The trigger is
+    /// <c>AFTER UPDATE</c>, so every <c>inserted</c> row has a matching <c>deleted</c>
+    /// row — an <c>INNER JOIN</c> is sufficient. The <c>WHERE</c> clause carries the
+    /// null-safe per-column diff predicates across every stored descriptor column, so
+    /// no-op UPDATEs produce no CTE rows and the downstream <c>UPDATE dms.Document</c>
+    /// stamps nothing.
     /// </summary>
-    private void EmitMssqlJournalingTrigger(SqlWriter writer)
+    private void EmitMssqlDescriptorStampingTrigger(SqlWriter writer)
     {
-        var docTable = _dialect.QualifyTable(_documentTable);
-        var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
-        var triggerName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TR_Document_Journal")}";
+        var descriptorTable = _dialect.QualifyTable(_descriptorTable);
+        var documentTable = _dialect.QualifyTable(_documentTable);
+        var sequenceName =
+            $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
+        var triggerName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TR_Descriptor_Stamp_Document")}";
+        var quotedKeyColumn = Quote("DocumentId");
 
         // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
         writer.AppendLine("GO");
         writer.AppendLine($"CREATE OR ALTER TRIGGER {triggerName}");
-        writer.AppendLine($"ON {docTable}");
-        writer.AppendLine("AFTER INSERT, UPDATE");
+        writer.AppendLine($"ON {descriptorTable}");
+        writer.AppendLine("AFTER UPDATE");
         writer.AppendLine("AS");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
-            writer.AppendLine($"IF UPDATE({Quote("ContentVersion")}) OR NOT EXISTS (SELECT 1 FROM deleted)");
-            writer.AppendLine("BEGIN");
+            writer.AppendLine(";WITH affectedDocs AS (");
             using (writer.Indent())
             {
-                writer.AppendLine(
-                    $"INSERT INTO {changeTable} ({Quote("ChangeVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}, {Quote("CreatedAt")})"
-                );
-                writer.AppendLine(
-                    $"SELECT i.{Quote("ContentVersion")}, i.{Quote("DocumentId")}, i.{Quote("ResourceKeyId")}, sysutcdatetime()"
-                );
-                writer.AppendLine("FROM inserted i;");
+                writer.Append("SELECT i.");
+                writer.AppendLine(quotedKeyColumn);
+                writer.AppendLine("FROM inserted i");
+                writer.Append("INNER JOIN deleted del ON del.");
+                writer.Append(quotedKeyColumn);
+                writer.Append(" = i.");
+                writer.AppendLine(quotedKeyColumn);
+                writer.Append("WHERE ");
+                EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
+                writer.AppendLine();
             }
-            writer.AppendLine("END");
+            writer.AppendLine(")");
+
+            writer.AppendLine("UPDATE d");
+            writer.Append("SET d.");
+            writer.Append(Quote("ContentVersion"));
+            writer.Append(" = NEXT VALUE FOR ");
+            writer.Append(sequenceName);
+            writer.Append(", d.");
+            writer.Append(Quote("ContentLastModifiedAt"));
+            writer.AppendLine(" = sysutcdatetime()");
+            writer.Append("FROM ");
+            writer.Append(documentTable);
+            writer.AppendLine(" d");
+            writer.Append("INNER JOIN affectedDocs a ON d.");
+            writer.Append(quotedKeyColumn);
+            writer.Append(" = a.");
+            writer.Append(quotedKeyColumn);
+            writer.AppendLine(";");
         }
         writer.AppendLine("END;");
-        // Close the batch so that subsequent DDL (e.g., relational model DDL
-        // concatenated after core DDL) starts in a fresh batch.
+        // Close the batch so that subsequent DDL starts in a fresh batch.
         writer.AppendLine("GO");
         writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the PostgreSQL <c>OLD.col IS DISTINCT FROM NEW.col</c> disjunction across
+    /// the stored descriptor columns, matching the form used by
+    /// <c>RelationalModelDdlEmitter.EmitPgsqlValueDiffDisjunction</c>.
+    /// </summary>
+    private void EmitPgsqlDescriptorValueDiffDisjunction(SqlWriter writer)
+    {
+        for (int i = 0; i < _descriptorStoredColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" OR ");
+            }
+            var col = Quote(_descriptorStoredColumns[i].Column.Value);
+            writer.Append("OLD.");
+            writer.Append(col);
+            writer.Append(" IS DISTINCT FROM NEW.");
+            writer.Append(col);
+        }
+    }
+
+    /// <summary>
+    /// Emits a MSSQL null-safe inequality disjunction across the stored descriptor
+    /// columns. String columns are wrapped in <c>CAST(... AS varbinary(max))</c> so
+    /// trailing-space-only and case-only changes are detected — mirrors
+    /// <c>RelationalModelDdlEmitter.EmitMssqlColumnValueDiffDisjunction</c>.
+    /// </summary>
+    private void EmitMssqlDescriptorColumnDiffDisjunction(
+        SqlWriter writer,
+        string leftAlias,
+        string rightAlias
+    )
+    {
+        for (int i = 0; i < _descriptorStoredColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" OR ");
+            }
+            var quotedColumn = Quote(_descriptorStoredColumns[i].Column.Value);
+            MssqlTriggerDiffEmitter.EmitNullSafeNotEqual(
+                writer,
+                leftAlias,
+                quotedColumn,
+                rightAlias,
+                quotedColumn,
+                _descriptorStoredColumns[i].Kind
+            );
+        }
     }
 
     private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);

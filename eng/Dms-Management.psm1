@@ -320,7 +320,7 @@ function Get-CmsToken {
         The Keycloak bearer token for authorization (mandatory).
 
     .OUTPUTS
-        [string] Returns the vendor ID of the newly created or updated vendor.
+        [long] Returns the vendor ID of the newly created or updated vendor.
 
     .EXAMPLE
         # Create or update a vendor
@@ -362,18 +362,21 @@ function Add-Vendor {
         $headers["Tenant"] = $Tenant
     }
 
-    $invokeParams = @{
-        BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/vendors"
-        Method       = "Post"
-        ContentType  = "application/json"
-        Body         = ConvertTo-Json -InputObject $vendorData -Depth 10
-        Headers      = $headers
+    $fullUri = "$($CmsUrl.TrimEnd('/'))/v2/vendors"
+
+    $webRequestParams = @{
+        Uri         = $fullUri
+        Method      = "Post"
+        ContentType = "application/json"
+        Body        = ConvertTo-Json -InputObject $vendorData -Depth 10
+        Headers     = $headers
     }
 
-    $response = Invoke-Api @invokeParams
-
-    return $response.id
+    $webResponse = Invoke-WebRequest @webRequestParams
+    $location = $webResponse.Headers['Location']
+    if ($location -is [array]) { $location = $location[0] }
+    if (-not $location) { throw "CMS Add-Vendor response missing Location header" }
+    return [long]($location -split '/')[-1]
 }
 
 <#

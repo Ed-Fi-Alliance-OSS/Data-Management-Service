@@ -145,7 +145,7 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationDeleteResult.Success());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid())]));
+                .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid(), true)]));
 
             A.CallTo(() =>
                     _clientRepository.CreateClientAsync(
@@ -156,7 +156,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -170,7 +171,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -246,7 +249,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Invokes(call =>
@@ -456,7 +460,7 @@ public class ApplicationModuleTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, true));
+                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
 
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
@@ -533,7 +537,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -754,7 +759,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -776,7 +782,9 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid())]));
+                .Returns(
+                    new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid(), true)])
+                );
 
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
@@ -784,7 +792,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -902,7 +912,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -938,7 +949,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
             A.CallTo(() =>
@@ -947,7 +958,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1066,7 +1079,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -1088,7 +1102,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -1124,7 +1139,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
             A.CallTo(() =>
@@ -1133,7 +1148,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1252,7 +1269,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -1288,7 +1306,7 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
             A.CallTo(() =>
@@ -1297,7 +1315,9 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<long[]?>.Ignored
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -1414,7 +1434,7 @@ public class ApplicationModuleTests
         public void SetUp()
         {
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("1", Guid.NewGuid())]));
+                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("1", Guid.NewGuid(), true)]));
 
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.Success("NEW_SECRET"));
@@ -1686,6 +1706,109 @@ public class ApplicationModuleTests
 
             // Assert
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+    }
+
+    [TestFixture]
+    public class Given_GetApplications_WithEnabledFlag : ApplicationModuleTests
+    {
+        [Test]
+        public async Task It_returns_enabled_true_when_application_is_enabled()
+        {
+            // Arrange
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+                .Returns(
+                    new ApplicationQueryResult.Success([
+                        new ApplicationResponse()
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DmsInstanceIds = [],
+                            ProfileIds = [],
+                            Enabled = true,
+                        },
+                    ])
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync("/v2/applications?offset=0&limit=25");
+            var body = await response.Content.ReadAsStringAsync();
+            var json = JsonNode.Parse(body)!.AsArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            json[0]!["enabled"]!.GetValue<bool>().Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_returns_enabled_false_when_application_is_disabled()
+        {
+            // Arrange
+            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+                .Returns(
+                    new ApplicationQueryResult.Success([
+                        new ApplicationResponse()
+                        {
+                            Id = 2,
+                            ApplicationName = "Disabled Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [],
+                            DmsInstanceIds = [],
+                            ProfileIds = [],
+                            Enabled = false,
+                        },
+                    ])
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync("/v2/applications?offset=0&limit=25");
+            var body = await response.Content.ReadAsStringAsync();
+            var json = JsonNode.Parse(body)!.AsArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            json[0]!["enabled"]!.GetValue<bool>().Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_returns_enabled_false_on_get_by_id_when_application_is_disabled()
+        {
+            // Arrange
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse()
+                        {
+                            Id = 3,
+                            ApplicationName = "Disabled Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [],
+                            DmsInstanceIds = [],
+                            ProfileIds = [],
+                            Enabled = false,
+                        }
+                    )
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var response = await client.GetAsync("/v2/applications/3");
+            var body = await response.Content.ReadAsStringAsync();
+            var json = JsonNode.Parse(body)!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            json["enabled"]!.GetValue<bool>().Should().BeFalse();
         }
     }
 }

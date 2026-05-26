@@ -33,9 +33,8 @@ public class Given_Descriptor_Write_Response_Etags
                 new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
             ),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
@@ -55,7 +54,6 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
@@ -74,9 +72,8 @@ public class Given_Descriptor_Write_Response_Etags
                 new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
             ),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             _descriptorResource,
@@ -103,13 +100,12 @@ public class Given_Descriptor_Write_Response_Etags
         {
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorResultSet(description: "Previous"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePostAsync(request);
@@ -124,7 +120,6 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.CommitCallCount.Should().Be(1);
@@ -142,11 +137,10 @@ public class Given_Descriptor_Write_Response_Etags
         {
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePostAsync(request);
@@ -161,7 +155,6 @@ public class Given_Descriptor_Write_Response_Etags
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
@@ -176,11 +169,10 @@ public class Given_Descriptor_Write_Response_Etags
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorResultSet()]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
         var result = await sut.HandlePutAsync(request);
@@ -194,7 +186,6 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
@@ -208,13 +199,12 @@ public class Given_Descriptor_Write_Response_Etags
         {
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorResultSet(description: "Previous Description"),
         ]);
-        var sut = CreateSut(targetLookupService, commandExecutor, sessionFactory);
+        var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
             documentUuid,
@@ -232,7 +222,6 @@ public class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        commandExecutor.Commands.Should().BeEmpty();
         sessionFactory.Session.ScalarCommands.Should().ContainSingle();
         sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
         sessionFactory.Session.CommitCallCount.Should().Be(1);
@@ -249,13 +238,11 @@ public class Given_Descriptor_Write_Response_Etags
 
     private static DescriptorWriteHandler CreateSut(
         IRelationalWriteTargetLookupService targetLookupService,
-        IRelationalCommandExecutor commandExecutor,
         IRelationalWriteSessionFactory? writeSessionFactory = null
     )
     {
         return new DescriptorWriteHandler(
             targetLookupService,
-            commandExecutor,
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             writeSessionFactory ?? A.Fake<IRelationalWriteSessionFactory>(),

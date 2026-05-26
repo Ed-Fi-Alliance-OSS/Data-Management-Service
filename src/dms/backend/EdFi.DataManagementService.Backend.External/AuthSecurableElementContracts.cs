@@ -55,6 +55,18 @@ public sealed record EdOrgSecurableElement(string JsonPath, string MetaEdName);
 /// Per-resource securable element metadata extracted from ApiSchema.json.
 /// Each list may be empty if the resource does not participate in that authorization kind.
 /// </summary>
+/// <remarks>
+/// <para>All JSON paths in every list MUST already be in the canonical form produced by
+/// <c>JsonPathExpressionCompiler.Compile(...).Canonical</c> — dot-notation, no bracket
+/// quoting, no whitespace, normalized array wildcards (<c>[*]</c>). Both
+/// <c>PersonJoinPathResolver.FindBindingByPersonPath</c> and
+/// <c>SecurableElementLocationResolver.ResolveAllCandidates</c> compare these raw strings
+/// against <c>JsonPathExpression.Canonical</c> values with <c>StringComparison.Ordinal</c>.
+/// A non-canonical path (e.g. <c>$["studentReference"]["studentUniqueId"]</c>) silently
+/// fails to match, surfaces as an "unresolved" throw, and the error blames the schema author
+/// rather than the input format.</para>
+/// <para>ApiSchema.json producers are responsible for emitting canonical paths.</para>
+/// </remarks>
 /// <param name="EducationOrganization">EdOrg securable element paths with MetaEd names.</param>
 /// <param name="Namespace">Namespace JSON paths.</param>
 /// <param name="Student">Student person JSON paths.</param>

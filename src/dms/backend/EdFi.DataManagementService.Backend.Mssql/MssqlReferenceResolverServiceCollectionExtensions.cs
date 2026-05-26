@@ -27,6 +27,9 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
                 MssqlRelationalWriteExceptionClassifier
             >()
         );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalParameterConfigurator, MssqlRelationalParameterConfigurator>()
+        );
 
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
@@ -94,12 +97,21 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
     public async Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken ct
     )
     {
         await using var connection = await _openConnectionAsync(ct).ConfigureAwait(false);
 
-        return await HydrationExecutor.ExecuteAsync(connection, plan, keyset, SqlDialect.Mssql, null, ct);
+        return await HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            transaction: null,
+            executionOptions,
+            ct
+        );
     }
 }
 

@@ -81,6 +81,7 @@ internal sealed class PostgresqlRelationalQueryExecutionRecorder
 {
     public List<PageKeysetSpec> HydrationKeysets { get; } = [];
     public List<long> PageMaterializedDocumentIds { get; } = [];
+    public Func<CancellationToken, Task>? BeforeNextHydrationAsync { get; set; }
     public int SingleDocumentMaterializationCallCount { get; private set; }
     public int PageMaterializationCallCount { get; private set; }
 
@@ -104,6 +105,19 @@ internal sealed class PostgresqlRelationalQueryExecutionRecorder
             materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
         );
     }
+
+    public async Task InvokeBeforeHydrationAsync(CancellationToken cancellationToken)
+    {
+        var beforeHydrationAsync = BeforeNextHydrationAsync;
+
+        if (beforeHydrationAsync is null)
+        {
+            return;
+        }
+
+        BeforeNextHydrationAsync = null;
+        await beforeHydrationAsync(cancellationToken);
+    }
 }
 
 internal sealed class RecordingPostgresqlDocumentHydrator(
@@ -119,14 +133,24 @@ internal sealed class RecordingPostgresqlDocumentHydrator(
     public async Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken ct
     )
     {
+        await _recorder.InvokeBeforeHydrationAsync(ct);
         _recorder.HydrationKeysets.Add(keyset);
 
         await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync(ct);
 
-        return await HydrationExecutor.ExecuteAsync(connection, plan, keyset, SqlDialect.Pgsql, null, ct);
+        return await HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Pgsql,
+            transaction: null,
+            executionOptions,
+            ct
+        );
     }
 }
 
@@ -135,7 +159,10 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
 {
     private readonly PostgresqlRelationalQueryExecutionRecorder _recorder =
         recorder ?? throw new ArgumentNullException(nameof(recorder));
-    private readonly RelationalReadMaterializer _inner = new();
+    private readonly RelationalReadMaterializer _inner = new(
+        new IntegrationFixtureSlugResolver(),
+        Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions())
+    );
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -151,6 +178,15 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
         _recorder.RecordPageMaterialization(materializedDocuments);
         return materializedDocuments;
     }
+
+    public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) =>
+        _inner.StripReferenceLinks(document, readPlan);
+}
+
+internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
+{
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        new(ProjectEndpointName: "test", EndpointName: "tests", ResourceName: "Test");
 }
 
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService

@@ -8,8 +8,7 @@
 // request item index) followed by a byte-identical profiled PUT must hit the guarded
 // no-op short-circuit. The merged rowset must match the stored rowset on row identity
 // and content so the executor's positional SequenceEqual succeeds — no DML against
-// edfi.SchoolAddress, no Document version/timestamp mutation, no DocumentChangeEvent
-// row.
+// edfi.SchoolAddress, no Document version/timestamp mutation.
 
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -29,7 +28,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// so the executor's positional <c>SequenceEqual</c> succeeds and the guarded no-op
 /// short-circuit fires — neither root row, nor collection row count, nor collection
 /// row contents (including <c>CollectionItemId</c> and <c>Ordinal</c>), nor Document
-/// version/timestamp metadata, nor a <c>DocumentChangeEvent</c> row may be written.
+/// version/timestamp metadata may be written.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -132,11 +131,5 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level
     public void It_does_not_change_content_version()
     {
         _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion);
-    }
-
-    [Test]
-    public void It_does_not_emit_a_document_change_event_row()
-    {
-        _stateAfterUpdate.DocumentChangeEventCount.Should().Be(_stateBeforeUpdate.DocumentChangeEventCount);
     }
 }

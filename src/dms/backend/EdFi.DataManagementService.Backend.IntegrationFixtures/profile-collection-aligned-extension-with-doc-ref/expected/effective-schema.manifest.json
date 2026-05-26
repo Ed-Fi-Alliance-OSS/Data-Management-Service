@@ -1,0 +1,37 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v1",
+  "effective_schema_hash": "628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46",
+  "resource_key_count": 2,
+  "resource_key_seed_hash": "5b23660dad5043287a28ff5c5d048a8ba519b836eb51bdb5a02aeae548bbdde6",
+  "schema_components": [
+    {
+      "project_endpoint_name": "aligned",
+      "project_name": "Aligned",
+      "project_version": "1.0.0",
+      "is_extension_project": true,
+      "project_hash": "6fe2ce6bd6f8906e129bfe788086b6339c1c35e63c927abbbeaae5d2d44feb53"
+    },
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "1.0.0",
+      "is_extension_project": false,
+      "project_hash": "57cd346fc5709d6c76ac7eeb47c44224bf38bd787ec7018e512b456daaeeaf99"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "ParentResource",
+      "resource_version": "1.0.0"
+    },
+    {
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "Sponsor",
+      "resource_version": "1.0.0"
+    }
+  ]
+}

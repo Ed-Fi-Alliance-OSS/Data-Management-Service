@@ -371,15 +371,11 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         short resourceKeyId
     )
     {
-        // dms.Document has the TR_Document_Journal trigger; OUTPUT without INTO is rejected
-        // in that case, so route the inserted DocumentId through a table variable.
         return await database.ExecuteScalarAsync<long>(
             """
-            DECLARE @Inserted TABLE ([DocumentId] bigint);
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
+            OUTPUT INSERTED.[DocumentId]
             VALUES (@documentUuid, @resourceKeyId);
-            SELECT TOP (1) [DocumentId] FROM @Inserted;
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)

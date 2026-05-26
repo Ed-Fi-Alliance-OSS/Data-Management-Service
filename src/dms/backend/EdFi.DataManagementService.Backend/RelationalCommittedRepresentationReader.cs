@@ -6,7 +6,6 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -55,7 +54,10 @@ internal sealed class RelationalCommittedRepresentationReader(
                 writeSession.Transaction,
                 readPlan,
                 new PageKeysetSpec.Single(persistedTarget.DocumentId),
-                new HydrationExecutionOptions(IncludeDescriptorProjection: true),
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: true,
+                    IncludeDocumentReferenceLookup: false
+                ),
                 cancellationToken
             )
             .ConfigureAwait(false);

@@ -597,6 +597,55 @@ public static class ProfileDefinitions
         """;
 
     /// <summary>
+    /// Profile for BellSchedule that selects only the ClassPeriods collection on read, and
+    /// inside it lists only the ClassPeriodReference property. The server-generated
+    /// <c>link</c> subtree is never listed but must survive readable-profile projection
+    /// on each nested <c>classPeriods[*].classPeriodReference</c> — this is the
+    /// nested-collection counterpart to <c>Test-Profile-Resource-References-IncludeOnly</c>
+    /// (which only covers root-level references on School).
+    /// </summary>
+    public const string BellScheduleClassPeriodsIncludeOnlyName =
+        "E2E-Test-BellSchedule-ClassPeriods-IncludeOnly";
+
+    public const string BellScheduleClassPeriodsIncludeOnlyXml = """
+        <Profile name="E2E-Test-BellSchedule-ClassPeriods-IncludeOnly">
+            <Resource name="BellSchedule">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Collection name="classPeriods" memberSelection="IncludeOnly">
+                        <Property name="classPeriodReference"/>
+                    </Collection>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Read-only counterpart to <c>Test-Profile-Resource-References-IncludeOnly</c>
+    /// (defined in <c>Profiles/TestXmls/Profiles.xml</c>). That XML fixture uses
+    /// PascalCase property names which fail case-sensitive validation against
+    /// camelCase JSON schema members in IncludeOnly mode, so it is dropped from the
+    /// catalog and returns 406 on GET. This profile is the DMS-native lower-camel
+    /// equivalent used by the IncludeOnly read scenario, and intentionally omits
+    /// WriteContentType so existing write scenarios that depend on the unloaded
+    /// PascalCase profile remain undisturbed.
+    /// </summary>
+    public const string SchoolReferencesIncludeOnlyReadName =
+        "E2E-Test-Profile-Resource-References-IncludeOnly-Read";
+
+    public const string SchoolReferencesIncludeOnlyReadXml = """
+        <Profile name="E2E-Test-Profile-Resource-References-IncludeOnly-Read">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Property name="localEducationAgencyReference"/>
+                    <Property name="charterApprovalSchoolYearTypeReference"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
     /// Invalid profile: IncludeOnly contains a property in a nested collection that doesn't exist.
     /// Expected behavior: Profile loading fails with error, returns 406 when used.
     /// </summary>
@@ -657,6 +706,10 @@ public static class ProfileDefinitions
                 (InvalidExtensionPropertyName, InvalidExtensionPropertyXml),
                 (WarningExcludeIdentityName, WarningExcludeIdentityXml),
                 (InvalidNestedCollectionPropertyName, InvalidNestedCollectionPropertyXml),
+                // Nested collection-scoped reference: link must survive on classPeriods[*].classPeriodReference
+                (BellScheduleClassPeriodsIncludeOnlyName, BellScheduleClassPeriodsIncludeOnlyXml),
+                // Root-level IncludeOnly read profile for School (lower-camel; PascalCase counterpart in Profiles.xml fails to load)
+                (SchoolReferencesIncludeOnlyReadName, SchoolReferencesIncludeOnlyReadXml),
             ],
             ProfileXmlFileLoader.LoadProfiles("Profiles/TestXmls/Profiles.xml")
         );

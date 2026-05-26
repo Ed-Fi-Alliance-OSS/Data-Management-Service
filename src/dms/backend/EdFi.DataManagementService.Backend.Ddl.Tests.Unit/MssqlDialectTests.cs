@@ -1352,3 +1352,55 @@ public class Given_MssqlDialect_Rendering_Numeric_Literals
         _dialect.RenderIntegerLiteral(0).Should().Be("0");
     }
 }
+
+[TestFixture]
+public class Given_MssqlDialect_Emitting_GetMaxChangeVersion_Function
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _ddl = dialect.CreateGetMaxChangeVersionFunction(new DbSchemaName("dms"));
+    }
+
+    [Test]
+    public void It_should_emit_create_or_alter_function_with_bracketed_name()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER FUNCTION [dms].[GetMaxChangeVersion]()");
+    }
+
+    [Test]
+    public void It_should_return_bigint()
+    {
+        _ddl.Should().Contain("RETURNS bigint");
+    }
+
+    [Test]
+    public void It_should_query_sys_sequences_joined_to_sys_schemas()
+    {
+        _ddl.Should().Contain("FROM sys.sequences seq");
+        _ddl.Should().Contain("INNER JOIN sys.schemas sch");
+        _ddl.Should().Contain("ON seq.schema_id = sch.schema_id");
+    }
+
+    [Test]
+    public void It_should_filter_by_sequence_name_and_schema_name()
+    {
+        _ddl.Should().Contain("WHERE seq.name = 'ChangeVersionSequence' AND sch.name = 'dms'");
+    }
+
+    [Test]
+    public void It_should_convert_current_value_to_bigint()
+    {
+        _ddl.Should().Contain("CONVERT(bigint, seq.current_value)");
+    }
+
+    [Test]
+    public void It_should_not_include_go_separators_inside_returned_text()
+    {
+        _ddl.Should().NotContain("GO\n");
+        _ddl.Should().NotContain("\nGO");
+    }
+}

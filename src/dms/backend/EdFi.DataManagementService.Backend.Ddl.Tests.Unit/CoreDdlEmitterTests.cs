@@ -174,6 +174,56 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_create_get_max_change_version_function()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".GetMaxChangeVersion() RETURNS bigint");
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_after_change_version_sequence()
+    {
+        var sequence = _ddl.IndexOf(
+            "CREATE SEQUENCE IF NOT EXISTS \"dms\".\"ChangeVersionSequence\"",
+            StringComparison.Ordinal
+        );
+        var function = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+
+        sequence.Should().BeGreaterThan(0);
+        function.Should().BeGreaterThan(sequence);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_before_phase_5_tables()
+    {
+        var function = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+        var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
+
+        function.Should().BeGreaterThan(0);
+        function.Should().BeLessThan(phase5);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_first_among_functions()
+    {
+        var getMax = _ddl.IndexOf("\"dms\".GetMaxChangeVersion()", StringComparison.Ordinal);
+        var throwError = _ddl.IndexOf("\"dms\".\"throw_error\"", StringComparison.Ordinal);
+        var uuidv5 = _ddl.IndexOf("\"dms\".\"uuidv5\"", StringComparison.Ordinal);
+
+        getMax.Should().BeLessThan(throwError);
+        throwError.Should().BeLessThan(uuidv5);
+    }
+
+    [Test]
+    public void It_should_bind_get_max_change_version_to_document_content_version_sequence()
+    {
+        // Document.ContentVersion defaults to nextval('"dms"."ChangeVersionSequence"').
+        // GetMaxChangeVersion must read from the same sequence so change-query
+        // semantics stay coherent.
+        _ddl.Should().Contain("DEFAULT nextval('\"dms\".\"ChangeVersionSequence\"')");
+        _ddl.Should().Contain("SELECT last_value FROM \"dms\".\"ChangeVersionSequence\" INTO result;");
+    }
+
+    [Test]
     public void It_should_not_emit_user_defined_table_types()
     {
         _ddl.Should().NotContain("CREATE TYPE");
@@ -200,9 +250,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_create_document_change_event_table()
+    public void It_should_emit_content_version_column_on_document_cache_table()
     {
-        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentChangeEvent\"");
+        // Schema-only column added for the cached-vs-canonical freshness check
+        // (cached.ContentVersion == dms.Document.ContentVersion AND
+        //  cached.LastModifiedAt == dms.Document.ContentLastModifiedAt).
+        // Runtime cache reader/writer lands in a follow-on ticket.
+        _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL");
     }
 
     [Test]
@@ -237,7 +291,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         var descriptor = _ddl.IndexOf("\"dms\".\"Descriptor\"", StringComparison.Ordinal);
         var document = _ddl.IndexOf("\"dms\".\"Document\"", StringComparison.Ordinal);
         var documentCache = _ddl.IndexOf("\"dms\".\"DocumentCache\"", StringComparison.Ordinal);
-        var documentChangeEvent = _ddl.IndexOf("\"dms\".\"DocumentChangeEvent\"", StringComparison.Ordinal);
         var effectiveSchema = _ddl.IndexOf("\"dms\".\"EffectiveSchema\"", StringComparison.Ordinal);
         var referentialIdentity = _ddl.IndexOf("\"dms\".\"ReferentialIdentity\"", StringComparison.Ordinal);
         var resourceKey = _ddl.IndexOf("\"dms\".\"ResourceKey\"", StringComparison.Ordinal);
@@ -245,8 +298,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
 
         descriptor.Should().BeLessThan(document);
         document.Should().BeLessThan(documentCache);
-        documentCache.Should().BeLessThan(documentChangeEvent);
-        documentChangeEvent.Should().BeLessThan(effectiveSchema);
+        documentCache.Should().BeLessThan(effectiveSchema);
         effectiveSchema.Should().BeLessThan(referentialIdentity);
         referentialIdentity.Should().BeLessThan(resourceKey);
         resourceKey.Should().BeLessThan(schemaComponent);
@@ -310,22 +362,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("DEFAULT now()");
     }
 
-    [Test]
-    public void It_should_keep_document_defaults_available_for_root_insert_initialization()
-    {
-        _ddl.Should().Contain("nextval('\"dms\".\"ChangeVersionSequence\"')");
-        _ddl.Should().Contain("DEFAULT now()");
-        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\"");
-    }
-
-    [Test]
-    public void It_should_keep_document_journaling_trigger_compatible_with_default_seeded_insert_flow()
-    {
-        _ddl.Should()
-            .Contain("VALUES (NEW.\"ContentVersion\", NEW.\"DocumentId\", NEW.\"ResourceKeyId\", now());");
-        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\" ON \"dms\".\"Document\"");
-    }
-
     // ── Primary keys ────────────────────────────────────────────────
 
     [Test]
@@ -338,13 +374,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_have_named_pk_for_document()
     {
         _ddl.Should().Contain("CONSTRAINT \"PK_Document\" PRIMARY KEY (\"DocumentId\")");
-    }
-
-    [Test]
-    public void It_should_have_composite_pk_for_document_change_event()
-    {
-        _ddl.Should()
-            .Contain("CONSTRAINT \"PK_DocumentChangeEvent\" PRIMARY KEY (\"ChangeVersion\", \"DocumentId\")");
     }
 
     [Test]
@@ -479,18 +508,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_fk_document_change_event_document()
-    {
-        _ddl.Should().Contain("\"FK_DocumentChangeEvent_Document\"");
-    }
-
-    [Test]
-    public void It_should_have_fk_document_change_event_resource_key()
-    {
-        _ddl.Should().Contain("\"FK_DocumentChangeEvent_ResourceKey\"");
-    }
-
-    [Test]
     public void It_should_have_fk_referential_identity_document()
     {
         _ddl.Should().Contain("\"FK_ReferentialIdentity_Document\"");
@@ -529,61 +546,79 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_index_document_change_event_document_id()
-    {
-        _ddl.Should().Contain("\"IX_DocumentChangeEvent_DocumentId\"");
-    }
-
-    [Test]
-    public void It_should_have_index_document_change_event_resource_key_change_version()
-    {
-        _ddl.Should().Contain("\"IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion\"");
-    }
-
-    [Test]
     public void It_should_have_index_referential_identity_document_id()
     {
         _ddl.Should().Contain("\"IX_ReferentialIdentity_DocumentId\"");
     }
 
-    // ── PG trigger ──────────────────────────────────────────────────
+    // ── PG descriptor stamping trigger ──────────────────────────────
 
     [Test]
-    public void It_should_create_trigger_function()
+    public void It_should_create_descriptor_stamping_function()
     {
-        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".\"TF_Document_Journal\"()");
-        _ddl.Should().Contain("LANGUAGE plpgsql");
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()");
     }
 
     [Test]
-    public void It_should_drop_existing_trigger_before_creating()
+    public void It_should_drop_existing_descriptor_stamping_trigger_before_creating()
     {
-        _ddl.Should().Contain("DROP TRIGGER IF EXISTS \"TR_Document_Journal\" ON \"dms\".\"Document\"");
+        _ddl.Should()
+            .Contain("DROP TRIGGER IF EXISTS \"TR_Descriptor_Stamp_Document\" ON \"dms\".\"Descriptor\"");
     }
 
     [Test]
-    public void It_should_create_trigger_on_document()
+    public void It_should_create_descriptor_stamping_trigger()
     {
-        _ddl.Should().Contain("CREATE TRIGGER \"TR_Document_Journal\"");
-        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\"");
-        _ddl.Should().Contain("FOR EACH ROW");
-        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Document_Journal\"()");
+        _ddl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
+        _ddl.Should().Contain("AFTER UPDATE ON \"dms\".\"Descriptor\"");
+        _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()");
     }
 
     [Test]
-    public void It_should_use_new_record_in_trigger_function()
+    public void It_should_emit_no_op_guard_in_descriptor_stamping_function()
     {
-        _ddl.Should().Contain("NEW.\"ContentVersion\"");
-        _ddl.Should().Contain("NEW.\"DocumentId\"");
-        _ddl.Should().Contain("NEW.\"ResourceKeyId\"");
+        _ddl.Should().Contain("IF TG_OP = 'UPDATE' AND NOT (");
+        _ddl.Should().Contain("OLD.\"Namespace\" IS DISTINCT FROM NEW.\"Namespace\"");
+        _ddl.Should().Contain("OLD.\"CodeValue\" IS DISTINCT FROM NEW.\"CodeValue\"");
+        _ddl.Should().Contain("OLD.\"ShortDescription\" IS DISTINCT FROM NEW.\"ShortDescription\"");
+        _ddl.Should().Contain("OLD.\"Description\" IS DISTINCT FROM NEW.\"Description\"");
+        _ddl.Should().Contain("OLD.\"EffectiveBeginDate\" IS DISTINCT FROM NEW.\"EffectiveBeginDate\"");
+        _ddl.Should().Contain("OLD.\"EffectiveEndDate\" IS DISTINCT FROM NEW.\"EffectiveEndDate\"");
+        _ddl.Should().Contain("OLD.\"Discriminator\" IS DISTINCT FROM NEW.\"Discriminator\"");
+        _ddl.Should().Contain("OLD.\"Uri\" IS DISTINCT FROM NEW.\"Uri\"");
     }
 
     [Test]
-    public void It_should_not_contain_mssql_trigger_syntax()
+    public void It_should_stamp_document_from_descriptor_trigger()
     {
-        _ddl.Should().NotContain("CREATE OR ALTER TRIGGER");
-        _ddl.Should().NotContain("SET NOCOUNT ON");
-        _ddl.Should().NotContain("sysutcdatetime()");
+        _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
+        _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
+        _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+    }
+
+    [Test]
+    public void It_should_diff_every_non_key_descriptor_column_in_stamping_trigger()
+    {
+        // Drift guard: the trigger's no-op predicate is built from a hand-maintained
+        // column list (_descriptorStoredColumns in CoreDdlEmitter). If a future change
+        // to EmitDescriptorTable adds or renames a column without updating that list,
+        // real value changes to the new column will silently fail to bump stamps.
+        // This test re-derives the column set from the emitted Descriptor table and
+        // asserts each non-PK column appears as an IS DISTINCT FROM predicate.
+        var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
+        columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
+        columns.Should().Contain("DocumentId", "sanity check the extractor found PK column");
+
+        foreach (var column in columns.Where(c => c != "DocumentId"))
+        {
+            _ddl.Should()
+                .Contain(
+                    $"OLD.\"{column}\" IS DISTINCT FROM NEW.\"{column}\"",
+                    $"descriptor stamping trigger must compare {column}; "
+                        + "update _descriptorStoredColumns in CoreDdlEmitter when adding columns"
+                );
+        }
     }
 
     // ── No authorization objects ─────────────────────────────────────
@@ -703,19 +738,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_emit_go_batch_separator_before_uuidv5_function()
-    {
-        var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION", StringComparison.Ordinal);
-        functionIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE OR ALTER FUNCTION in DDL");
-        var goIndex = _ddl.LastIndexOf("GO\n", functionIndex);
-
-        goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
-        functionIndex.Should().BeGreaterThan(goIndex);
-        var between = _ddl.Substring(goIndex + 3, functionIndex - goIndex - 3);
-        between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER FUNCTION");
-    }
-
-    [Test]
     public void It_should_emit_go_batch_separator_after_uuidv5_function_before_tables()
     {
         var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION", StringComparison.Ordinal);
@@ -758,12 +780,19 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Tables ──────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_create_all_eight_tables()
+    public void It_should_emit_content_version_column_on_document_cache_table()
+    {
+        // Schema-only column added for the cached-vs-canonical freshness check.
+        // Runtime cache reader/writer lands in a follow-on ticket.
+        _ddl.Should().Contain("[ContentVersion] bigint NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_all_seven_tables()
     {
         _ddl.Should().Contain("[dms].[Descriptor]");
         _ddl.Should().Contain("[dms].[Document]");
         _ddl.Should().Contain("[dms].[DocumentCache]");
-        _ddl.Should().Contain("[dms].[DocumentChangeEvent]");
         _ddl.Should().Contain("[dms].[EffectiveSchema]");
         _ddl.Should().Contain("[dms].[ReferentialIdentity]");
         _ddl.Should().Contain("[dms].[ResourceKey]");
@@ -850,15 +879,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime())");
     }
 
-    [Test]
-    public void It_should_keep_document_journaling_trigger_compatible_with_default_then_restamp_flow()
-    {
-        _ddl.Should().Contain("IF UPDATE([ContentVersion]) OR NOT EXISTS (SELECT 1 FROM deleted)");
-        _ddl.Should()
-            .Contain("SELECT i.[ContentVersion], i.[DocumentId], i.[ResourceKeyId], sysutcdatetime()");
-        _ddl.Should().Contain("FROM inserted i;");
-    }
-
     // ── MSSQL named default constraints ─────────────────────────────
 
     [Test]
@@ -895,12 +915,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_named_default_for_effective_schema_applied_at()
     {
         _ddl.Should().Contain("CONSTRAINT [DF_EffectiveSchema_AppliedAt] DEFAULT");
-    }
-
-    [Test]
-    public void It_should_have_named_default_for_document_change_event_created_at()
-    {
-        _ddl.Should().Contain("CONSTRAINT [DF_DocumentChangeEvent_CreatedAt] DEFAULT");
     }
 
     [Test]
@@ -1007,13 +1021,11 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_eight_foreign_keys()
+    public void It_should_have_all_six_foreign_keys()
     {
         _ddl.Should().Contain("[FK_Descriptor_Document]");
         _ddl.Should().Contain("[FK_Document_ResourceKey]");
         _ddl.Should().Contain("[FK_DocumentCache_Document]");
-        _ddl.Should().Contain("[FK_DocumentChangeEvent_Document]");
-        _ddl.Should().Contain("[FK_DocumentChangeEvent_ResourceKey]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_Document]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_ResourceKey]");
         _ddl.Should().Contain("[FK_SchemaComponent_EffectiveSchemaHash]");
@@ -1034,75 +1046,117 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Indexes ─────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_six_indexes()
+    public void It_should_have_all_four_indexes()
     {
         _ddl.Should().Contain("[IX_Descriptor_Uri_Discriminator]");
         _ddl.Should().Contain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
-        _ddl.Should().Contain("[IX_DocumentChangeEvent_DocumentId]");
-        _ddl.Should().Contain("[IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion]");
         _ddl.Should().Contain("[IX_ReferentialIdentity_DocumentId]");
     }
 
-    // ── MSSQL trigger ───────────────────────────────────────────────
+    // ── MSSQL descriptor stamping trigger ───────────────────────────
 
     [Test]
-    public void It_should_create_or_alter_trigger()
+    public void It_should_create_or_alter_descriptor_stamping_trigger()
     {
-        _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_Document_Journal]");
+        _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]");
+        _ddl.Should().Contain("ON [dms].[Descriptor]");
+        _ddl.Should().Contain("AFTER UPDATE");
     }
 
     [Test]
-    public void It_should_emit_go_batch_separator_before_trigger()
+    public void It_should_emit_go_batch_separator_around_descriptor_stamping_trigger()
     {
-        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch
-        var triggerIndex = _ddl.IndexOf("CREATE OR ALTER TRIGGER");
-        var goIndex = _ddl.LastIndexOf("GO\n", triggerIndex);
+        var triggerIndex = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]",
+            StringComparison.Ordinal
+        );
+        triggerIndex.Should().BeGreaterThan(0);
 
-        goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
-        triggerIndex.Should().BeGreaterThan(goIndex);
-        // The GO should be immediately before the trigger (only whitespace between)
-        var between = _ddl.Substring(goIndex + 3, triggerIndex - goIndex - 3);
-        between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER TRIGGER");
+        var precedingGo = _ddl.LastIndexOf("GO\n", triggerIndex, StringComparison.Ordinal);
+        precedingGo
+            .Should()
+            .BeGreaterOrEqualTo(0, "expected GO batch separator before descriptor stamping trigger");
+
+        var trailingGo = _ddl.IndexOf("GO\n", triggerIndex, StringComparison.Ordinal);
+        trailingGo
+            .Should()
+            .BeGreaterThan(triggerIndex, "expected GO batch separator after descriptor stamping trigger");
     }
 
     [Test]
-    public void It_should_attach_trigger_to_document_table()
+    public void It_should_emit_affected_docs_cte_in_descriptor_stamping_trigger()
     {
-        _ddl.Should().Contain("ON [dms].[Document]");
-        _ddl.Should().Contain("AFTER INSERT, UPDATE");
-    }
-
-    [Test]
-    public void It_should_use_set_nocount_on()
-    {
-        _ddl.Should().Contain("SET NOCOUNT ON");
-    }
-
-    [Test]
-    public void It_should_check_content_version_update()
-    {
-        _ddl.Should().Contain("IF UPDATE([ContentVersion])");
-    }
-
-    [Test]
-    public void It_should_insert_from_inserted_pseudo_table()
-    {
+        // AFTER UPDATE guarantees every inserted row has a matching deleted row,
+        // so a single INNER JOIN is sufficient — no LEFT JOIN+UNION ceremony.
+        _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("FROM inserted i");
+        _ddl.Should().Contain("INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().NotContain("LEFT JOIN deleted");
+        _ddl.Should().NotContain("LEFT JOIN inserted");
     }
 
     [Test]
-    public void It_should_use_sysutcdatetime_in_trigger()
+    public void It_should_emit_null_safe_per_column_diffs_for_descriptor_stamping_trigger()
     {
-        _ddl.Should().Contain("sysutcdatetime()");
+        // String columns must be wrapped in CAST(... AS varbinary(max)) for byte-level comparison.
+        _ddl.Should()
+            .Contain("(CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max))");
+        _ddl.Should()
+            .Contain("(CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max))");
+        _ddl.Should()
+            .Contain(
+                "(CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max))"
+            );
+        _ddl.Should()
+            .Contain("(CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max))");
+        _ddl.Should()
+            .Contain(
+                "(CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max))"
+            );
+        _ddl.Should().Contain("(CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max))");
+        // Date columns must use plain <> (no CAST).
+        _ddl.Should().Contain("(i.[EffectiveBeginDate] <> del.[EffectiveBeginDate]");
+        _ddl.Should().Contain("(i.[EffectiveEndDate] <> del.[EffectiveEndDate]");
     }
 
     [Test]
-    public void It_should_not_contain_pg_trigger_syntax()
+    public void It_should_update_document_from_descriptor_stamping_trigger()
     {
-        _ddl.Should().NotContain("LANGUAGE plpgsql");
-        _ddl.Should().NotContain("DISTINCT ON");
-        _ddl.Should().NotContain("new_table");
+        _ddl.Should().Contain("UPDATE d");
+        _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
+        _ddl.Should().Contain("FROM [dms].[Document] d");
+        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
+    }
+
+    [Test]
+    public void It_should_diff_every_non_key_descriptor_column_in_stamping_trigger()
+    {
+        // Drift guard: same intent as the PG sibling test. Strings must be wrapped in
+        // CAST(... AS varbinary(max)) so case-only / trailing-space-only changes are
+        // detected under default CI collation; non-string columns use plain <>. If a
+        // future column addition forgets to wire the right comparator, this test fails.
+        var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
+        columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
+        columns
+            .Select(c => c.Name)
+            .Should()
+            .Contain("DocumentId", "sanity check the extractor found PK column");
+
+        foreach (var (name, type) in columns.Where(c => c.Name != "DocumentId"))
+        {
+            var isStringType = type.Contains("char", StringComparison.OrdinalIgnoreCase);
+            var expected = isStringType
+                ? $"CAST(i.[{name}] AS varbinary(max)) <> CAST(del.[{name}] AS varbinary(max))"
+                : $"i.[{name}] <> del.[{name}]";
+            _ddl.Should()
+                .Contain(
+                    expected,
+                    $"descriptor stamping trigger must compare {name} ({type}); "
+                        + "update _descriptorStoredColumns in CoreDdlEmitter when adding columns"
+                );
+        }
     }
 
     // ── No authorization objects ─────────────────────────────────────
@@ -1130,5 +1184,81 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         {
             line.Should().Be(line.TrimEnd(), $"Line has trailing whitespace: [{line}]");
         }
+    }
+
+    [Test]
+    public void It_should_create_get_max_change_version_function()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER FUNCTION [dms].[GetMaxChangeVersion]()");
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_after_change_version_sequence()
+    {
+        var sequence = _ddl.IndexOf(
+            "CREATE SEQUENCE [dms].[ChangeVersionSequence]",
+            StringComparison.Ordinal
+        );
+        var function = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
+
+        sequence.Should().BeGreaterThan(0);
+        function.Should().BeGreaterThan(sequence);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_before_uuidv5()
+    {
+        var getMax = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
+        var uuidv5 = _ddl.IndexOf("[dms].[uuidv5]", StringComparison.Ordinal);
+
+        getMax.Should().BeGreaterThan(0);
+        getMax.Should().BeLessThan(uuidv5);
+    }
+
+    [Test]
+    public void It_should_emit_get_max_change_version_before_phase_5_tables()
+    {
+        var function = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
+        var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
+
+        function.Should().BeGreaterThan(0);
+        function.Should().BeLessThan(phase5);
+    }
+
+    [Test]
+    public void It_should_isolate_each_function_in_its_own_go_batch()
+    {
+        var search = 0;
+        var occurrences = 0;
+        while (true)
+        {
+            var idx = _ddl.IndexOf("CREATE OR ALTER FUNCTION", search, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                break;
+            }
+            occurrences++;
+
+            var goIdx = _ddl.LastIndexOf("GO\n", idx, StringComparison.Ordinal);
+            goIdx
+                .Should()
+                .BeGreaterOrEqualTo(0, "every CREATE OR ALTER FUNCTION must be preceded by a GO line");
+            var between = _ddl.Substring(goIdx + 3, idx - goIdx - 3);
+            between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER FUNCTION");
+
+            search = idx + 1;
+        }
+
+        occurrences.Should().Be(2, "expected exactly two function batches: GetMaxChangeVersion and uuidv5");
+    }
+
+    [Test]
+    public void It_should_bind_get_max_change_version_to_document_content_version_sequence()
+    {
+        _ddl.Should()
+            .Contain(
+                "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
+            );
+        _ddl.Should().Contain("seq.name = 'ChangeVersionSequence' AND sch.name = 'dms'");
     }
 }

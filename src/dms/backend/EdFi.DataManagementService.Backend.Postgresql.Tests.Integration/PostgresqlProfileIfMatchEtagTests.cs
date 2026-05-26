@@ -6,6 +6,7 @@
 using System.Data;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -96,6 +97,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
+        services.AddNoOpDocumentLinkSlugResolver();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
@@ -164,6 +166,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
             DocumentUuid: documentUuid,
             ResourceInfo: PostgresqlProfileRootTableOnlyMergeSupport.NamingStressItemResourceInfo,
             MappingSet: mappingSet,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
             ResourceAuthorizationHandler: new PostgresqlProfileIfMatchAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators: [],
             TraceId: new TraceId(traceId),

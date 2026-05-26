@@ -1,0 +1,473 @@
+### DMS-1145 — Link Injection on Document References (Read Path)
+#
+# Manual walkthrough of the link-injection contract for the relational read path:
+#   - GET-by-id and query responses decorate every document-reference object with
+#     `link.rel` (target resource name) and `link.href` (relative URI of the target).
+#   - Descriptors continue to be serialized as URI strings — they do NOT get a `link`
+#     envelope. Only document references (the `*Reference` objects that resolve to
+#     other resources) participate in link injection.
+#   - Link emission is keyset-deduplicated: a reference that appears N times in a
+#     page emits N decorated links from a single auxiliary lookup.
+#
+# Two demo resource chains:
+#
+#   (A) CalendarDate chain — straightforward: root-level references + descriptor URIs.
+#       LEA → School → SchoolYearType → Calendar → CalendarDate
+#
+#   (B) BellSchedule chain — the "interesting" case: a root-level reference
+#       (schoolReference) PLUS multiple nested-collection-scoped references
+#       (classPeriods[*].classPeriodReference). This is the same shape pinned by
+#       E2E ProfileReferenceFiltering.feature scenario 05 and exercises page-level
+#       dedup when both ClassPeriods share the same target School.
+#       LEA → School → ClassPeriod ×2 → BellSchedule
+#
+# Expected on GET CalendarDate:
+#   calendarReference: { calendarCode, schoolId, schoolYear, link: { rel: "Calendar", href: "/ed-fi/calendars/<uuid>" } }
+#   calendarEvents[*].calendarEventDescriptor: "uri://ed-fi.org/CalendarEventDescriptor#Holiday"  (string, NO link)
+#
+# Expected on GET Calendar:
+#   schoolReference:         { schoolId, link: { rel: "School", href: "/ed-fi/schools/<uuid>" } }
+#   schoolYearTypeReference: { schoolYear, link: { rel: "SchoolYearType", href: "/ed-fi/schoolYearTypes/<uuid>" } }
+#   calendarTypeDescriptor:  "uri://ed-fi.org/CalendarTypeDescriptor#Student Specific"  (string, NO link)
+#
+# Expected on GET BellSchedule:
+#   schoolReference:                              { schoolId, link: { rel: "School",      href: "/ed-fi/schools/<uuid>" } }
+#   classPeriods[0].classPeriodReference:         { schoolId, classPeriodName, link: { rel: "ClassPeriod", href: "/ed-fi/classPeriods/<uuid>" } }
+#   classPeriods[1].classPeriodReference:         { schoolId, classPeriodName, link: { rel: "ClassPeriod", href: "/ed-fi/classPeriods/<uuid>" } }
+#
+# Prereqs:
+#   /e2e start --relational          # link injection is a relational-backend feature
+#   /e2e status                      # confirm dms-local-dms-1 is healthy
+#
+# Execute top-to-bottom with the VS Code REST Client extension.
+
+@dmsPort=8080
+@configPort=8081
+@dataApi=http://localhost:{{dmsPort}}/data
+
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
+
+# Relational DB + password match eng/docker-compose/.env.e2e.relational.
+@relationalDbName=edfi_datamanagementservice_relational
+@postgresPassword=abcdefgh1!
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. Bootstrap — Configuration Service token, vendor, DMS instance, application, DMS token
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 1.1 Configuration-Service token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+### 1.2 Create a vendor scoped to the ed-fi namespace
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "DMS-1145 Link Injection Demo Vendor {{$randomInt 0 9999999}}",
+    "contactName": "Relational Backend",
+    "contactEmailAddress": "demo@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor to read the Id (POST returns no body per DMS-1081; id is the last segment of the Location header)
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+### 1.3 Create a DMS instance pointing at the RELATIONAL database
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "DMS-1145 Link Injection Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password={{postgresPassword}};database={{relationalDbName}};"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+### 1.4 Create an application with NoFurtherAuthorizationRequired
+# (matches the E2E relational-backend lane; avoids namespace-authz noise for the demo)
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "DMS-1145 Link Injection Demo",
+    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "educationOrganizationIds": [ 255, 255901 ],
+    "dmsInstanceIds": [ {{dmsInstanceId}} ]
+}
+
+###
+@clientId={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+
+### 1.5 Reload claim sets so the NoFurtherAuthRequired set is visible to DMS
+POST http://localhost:{{dmsPort}}/management/reload-claimsets
+
+### 1.6 Exchange the client credentials for a DMS bearer token
+# Use HTTP Basic auth (not form-body) — the generated client_secret can contain '&'
+# which would be interpreted as a form-encoded field separator.
+# @name dmsTokenRequest
+POST http://localhost:{{dmsPort}}/oauth/token
+Authorization: basic {{clientId}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. Seed descriptors (no `link` injection — these stay as URI strings)
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 2.1 GradeLevelDescriptor — First grade
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "First grade",
+    "shortDescription": "First grade"
+}
+
+### 2.2 EducationOrganizationCategoryDescriptor — School
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+    "codeValue": "School",
+    "shortDescription": "School"
+}
+
+### 2.3 LocalEducationAgencyCategoryDescriptor — Independent
+POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
+    "codeValue": "Independent",
+    "shortDescription": "Independent"
+}
+
+### 2.4 CalendarTypeDescriptor — Student Specific
+POST {{dataApi}}/ed-fi/calendarTypeDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/CalendarTypeDescriptor",
+    "codeValue": "Student Specific",
+    "shortDescription": "Student Specific"
+}
+
+### 2.5 CalendarEventDescriptor — Holiday
+POST {{dataApi}}/ed-fi/calendarEventDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/CalendarEventDescriptor",
+    "codeValue": "Holiday",
+    "shortDescription": "Holiday"
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. Seed the document chain — LEA → School → SchoolYearType → Calendar → CalendarDate
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 3.1 LocalEducationAgency 255 (parent of School)
+# @name createLea
+POST {{dataApi}}/ed-fi/localEducationAgencies
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "localEducationAgencyId": 255,
+    "nameOfInstitution": "Grand Bend ISD",
+    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
+    "categories": [
+        { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+    ]
+}
+
+###
+@leaLocation={{createLea.response.headers.location}}
+
+### 3.2 School 255901 (referenced by Calendar.schoolReference)
+# @name createSchool
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolId": 255901,
+    "nameOfInstitution": "Grand Bend Elementary School",
+    "localEducationAgencyReference": { "localEducationAgencyId": 255 },
+    "educationOrganizationCategories": [
+        { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+    ],
+    "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade" }
+    ]
+}
+
+###
+@schoolLocation={{createSchool.response.headers.location}}
+
+### 3.3 SchoolYearType 2025 (referenced by Calendar.schoolYearTypeReference)
+# @name createSchoolYearType
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": 2025,
+    "currentSchoolYear": true,
+    "schoolYearDescription": "2024-2025"
+}
+
+###
+@schoolYearTypeLocation={{createSchoolYearType.response.headers.location}}
+
+### 3.4 Calendar (referenced by CalendarDate.calendarReference)
+# Has TWO document references (schoolReference, schoolYearTypeReference) +
+# one descriptor (calendarTypeDescriptor) — exercises both code paths on GET.
+# @name createCalendar
+POST {{dataApi}}/ed-fi/calendars
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "calendarCode": "2024-2025-GBE",
+    "schoolReference": { "schoolId": 255901 },
+    "schoolYearTypeReference": { "schoolYear": 2025 },
+    "calendarTypeDescriptor": "uri://ed-fi.org/CalendarTypeDescriptor#Student Specific"
+}
+
+###
+@calendarLocation={{createCalendar.response.headers.location}}
+
+### 3.5 CalendarDate (root-level calendarReference + descriptor-only collection)
+# @name createCalendarDate
+POST {{dataApi}}/ed-fi/calendarDates
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "calendarReference": {
+        "calendarCode": "2024-2025-GBE",
+        "schoolId": 255901,
+        "schoolYear": 2025
+    },
+    "date": "2024-12-25",
+    "calendarEvents": [
+        { "calendarEventDescriptor": "uri://ed-fi.org/CalendarEventDescriptor#Holiday" }
+    ]
+}
+
+###
+@calendarDateLocation={{createCalendarDate.response.headers.location}}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. The actual link-injection demonstrations
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 4.1 GET Calendar — verify links on schoolReference + schoolYearTypeReference,
+###     and verify calendarTypeDescriptor stays as a plain URI string
+#
+# Expected response shape (relevant fields only):
+#   {
+#     "id": "<uuid>",
+#     "calendarCode": "2024-2025-GBE",
+#     "schoolReference": {
+#       "schoolId": 255901,
+#       "link": { "rel": "School",         "href": "/ed-fi/schools/<school-uuid>" }
+#     },
+#     "schoolYearTypeReference": {
+#       "schoolYear": 2025,
+#       "link": { "rel": "SchoolYearType", "href": "/ed-fi/schoolYearTypes/<syt-uuid>" }
+#     },
+#     "calendarTypeDescriptor": "uri://ed-fi.org/CalendarTypeDescriptor#Student Specific",
+#     "_etag": "...",
+#     "_lastModifiedDate": "..."
+#   }
+GET {{calendarLocation}}
+Authorization: bearer {{dmsToken}}
+Accept: application/json
+
+### 4.2 GET CalendarDate — verify link on calendarReference,
+###     and verify calendarEvents[*].calendarEventDescriptor stays as a plain URI string
+#
+# Expected response shape:
+#   {
+#     "id": "<uuid>",
+#     "calendarReference": {
+#       "calendarCode": "2024-2025-GBE",
+#       "schoolId": 255901,
+#       "schoolYear": 2025,
+#       "link": { "rel": "Calendar", "href": "/ed-fi/calendars/<calendar-uuid>" }
+#     },
+#     "date": "2024-12-25",
+#     "calendarEvents": [
+#       { "calendarEventDescriptor": "uri://ed-fi.org/CalendarEventDescriptor#Holiday" }
+#     ],
+#     "_etag": "...",
+#     "_lastModifiedDate": "..."
+#   }
+GET {{calendarDateLocation}}
+Authorization: bearer {{dmsToken}}
+Accept: application/json
+
+### 4.3 Query Calendars — same link contract over a page
+# Expected: each item in the result array carries the same `schoolReference.link`
+# and `schoolYearTypeReference.link` decorations as the single-document GET above.
+# Multiple calendars pointing at the same School/SchoolYearType still produce
+# correctly populated link objects per row (page-level lookup dedup).
+GET {{dataApi}}/ed-fi/calendars
+Authorization: bearer {{dmsToken}}
+Accept: application/json
+
+### 4.4 Query CalendarDates — same link contract over a page
+GET {{dataApi}}/ed-fi/calendarDates
+Authorization: bearer {{dmsToken}}
+Accept: application/json
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 5. BellSchedule — root-level reference + multiple nested-collection references
+# ──────────────────────────────────────────────────────────────────────────────
+
+### 5.1 ClassPeriod 1 — "First Period" on School 255901
+# @name createClassPeriod1
+POST {{dataApi}}/ed-fi/classPeriods
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "classPeriodName": "First Period",
+    "schoolReference": { "schoolId": 255901 }
+}
+
+###
+@classPeriod1Location={{createClassPeriod1.response.headers.location}}
+
+### 5.2 ClassPeriod 2 — "Second Period" on the same School
+# @name createClassPeriod2
+POST {{dataApi}}/ed-fi/classPeriods
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "classPeriodName": "Second Period",
+    "schoolReference": { "schoolId": 255901 }
+}
+
+###
+@classPeriod2Location={{createClassPeriod2.response.headers.location}}
+
+### 5.3 BellSchedule — root-level schoolReference + nested classPeriods with TWO references
+# @name createBellSchedule
+POST {{dataApi}}/ed-fi/bellSchedules
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "bellScheduleName": "Link Injection Demo Schedule",
+    "schoolReference": { "schoolId": 255901 },
+    "classPeriods": [
+        { "classPeriodReference": { "schoolId": 255901, "classPeriodName": "First Period" } },
+        { "classPeriodReference": { "schoolId": 255901, "classPeriodName": "Second Period" } }
+    ]
+}
+
+###
+@bellScheduleLocation={{createBellSchedule.response.headers.location}}
+
+### 5.4 GET BellSchedule — the headline demonstration
+#
+# Three injected links to verify:
+#   - schoolReference.link.rel  == "School"
+#   - schoolReference.link.href ends with "/ed-fi/schools/<school-uuid>"
+#   - classPeriods[0].classPeriodReference.link.rel  == "ClassPeriod"
+#   - classPeriods[0].classPeriodReference.link.href ends with "/ed-fi/classPeriods/<cp1-uuid>"
+#   - classPeriods[1].classPeriodReference.link.rel  == "ClassPeriod"
+#   - classPeriods[1].classPeriodReference.link.href ends with "/ed-fi/classPeriods/<cp2-uuid>"
+#
+# Two ClassPeriods → two DISTINCT hrefs (different document UUIDs).
+# Both ClassPeriods share the same target School slug, demonstrating that the
+# page-level auxiliary lookup dedup still produces correct per-row decorations.
+GET {{bellScheduleLocation}}
+Authorization: bearer {{dmsToken}}
+Accept: application/json
+
+### 5.5 Query BellSchedules — page-level link contract
+# Same contract applied to every item in the result array.
+GET {{dataApi}}/ed-fi/bellSchedules
+Authorization: bearer {{dmsToken}}
+Accept: application/json
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 6. Cleanup (optional)
+# ──────────────────────────────────────────────────────────────────────────────
+
+### Delete BellSchedule
+DELETE {{bellScheduleLocation}}
+Authorization: bearer {{dmsToken}}
+
+### Delete ClassPeriod 2
+DELETE {{classPeriod2Location}}
+Authorization: bearer {{dmsToken}}
+
+### Delete ClassPeriod 1
+DELETE {{classPeriod1Location}}
+Authorization: bearer {{dmsToken}}
+
+### Delete CalendarDate (uses the Location header captured above)
+DELETE {{calendarDateLocation}}
+Authorization: bearer {{dmsToken}}
+
+### Delete Calendar
+DELETE {{calendarLocation}}
+Authorization: bearer {{dmsToken}}
+
+### Delete SchoolYearType
+DELETE {{schoolYearTypeLocation}}
+Authorization: bearer {{dmsToken}}
+
+### Delete School
+DELETE {{schoolLocation}}
+Authorization: bearer {{dmsToken}}
+
+### Delete LEA
+DELETE {{leaLocation}}
+Authorization: bearer {{dmsToken}}

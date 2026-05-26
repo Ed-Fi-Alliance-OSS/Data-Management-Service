@@ -14,4 +14,5 @@ public class ApplicationResponse
     public List<long> EducationOrganizationIds { get; set; } = [];
     public List<long> DmsInstanceIds { get; set; } = [];
     public List<long> ProfileIds { get; set; } = [];
+    public bool Enabled { get; set; }
 }

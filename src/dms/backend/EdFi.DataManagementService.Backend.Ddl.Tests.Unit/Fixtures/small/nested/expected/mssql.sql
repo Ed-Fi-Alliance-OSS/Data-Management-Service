@@ -46,6 +46,18 @@ CREATE SEQUENCE [dms].[CollectionItemIdSequence] START WITH 1;
 -- ==========================================================
 
 GO
+CREATE OR ALTER FUNCTION [dms].[GetMaxChangeVersion]()
+RETURNS bigint
+AS
+BEGIN
+    DECLARE @Result bigint;
+    SELECT @Result = CONVERT(bigint, seq.current_value) FROM sys.sequences seq
+    INNER JOIN sys.schemas sch
+    ON seq.schema_id = sch.schema_id
+    WHERE seq.name = 'ChangeVersionSequence' AND sch.name = 'dms';
+    RETURN @Result;
+END;
+GO
 CREATE OR ALTER FUNCTION [dms].[uuidv5](@namespace_uuid uniqueidentifier, @name_text nvarchar(max))
 RETURNS uniqueidentifier
 WITH SCHEMABINDING
@@ -170,6 +182,7 @@ CREATE TABLE [dms].[DocumentCache]
     [ResourceName] nvarchar(256) NOT NULL,
     [ResourceVersion] nvarchar(32) NOT NULL,
     [Etag] nvarchar(64) NOT NULL,
+    [ContentVersion] bigint NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
@@ -189,16 +202,6 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[DocumentCache]
 ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson]) = 1 AND LEFT(LTRIM([DocumentJson]), 1) = '{');
-
-IF OBJECT_ID(N'dms.DocumentChangeEvent', N'U') IS NULL
-CREATE TABLE [dms].[DocumentChangeEvent]
-(
-    [ChangeVersion] bigint NOT NULL,
-    [DocumentId] bigint NOT NULL,
-    [ResourceKeyId] smallint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentChangeEvent_CreatedAt] DEFAULT (sysutcdatetime()),
-    CONSTRAINT [PK_DocumentChangeEvent] PRIMARY KEY CLUSTERED ([ChangeVersion], [DocumentId])
-);
 
 IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NULL
 CREATE TABLE [dms].[EffectiveSchema]
@@ -310,28 +313,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_DocumentChangeEvent_Document' AND parent_object_id = OBJECT_ID(N'dms.DocumentChangeEvent')
-)
-ALTER TABLE [dms].[DocumentChangeEvent]
-ADD CONSTRAINT [FK_DocumentChangeEvent_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_DocumentChangeEvent_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.DocumentChangeEvent')
-)
-ALTER TABLE [dms].[DocumentChangeEvent]
-ADD CONSTRAINT [FK_DocumentChangeEvent_ResourceKey]
-FOREIGN KEY ([ResourceKeyId])
-REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ReferentialIdentity_Document' AND parent_object_id = OBJECT_ID(N'dms.ReferentialIdentity')
 )
 ALTER TABLE [dms].[ReferentialIdentity]
@@ -395,22 +376,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'DocumentChangeEvent' AND i.name = N'IX_DocumentChangeEvent_DocumentId'
-)
-CREATE INDEX [IX_DocumentChangeEvent_DocumentId] ON [dms].[DocumentChangeEvent] ([DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'DocumentChangeEvent' AND i.name = N'IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion'
-)
-CREATE INDEX [IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion] ON [dms].[DocumentChangeEvent] ([ResourceKeyId], [ChangeVersion], [DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'dms' AND t.name = N'ReferentialIdentity' AND i.name = N'IX_ReferentialIdentity_DocumentId'
 )
 CREATE INDEX [IX_ReferentialIdentity_DocumentId] ON [dms].[ReferentialIdentity] ([DocumentId]);
@@ -420,18 +385,22 @@ CREATE INDEX [IX_ReferentialIdentity_DocumentId] ON [dms].[ReferentialIdentity] 
 -- ==========================================================
 
 GO
-CREATE OR ALTER TRIGGER [dms].[TR_Document_Journal]
-ON [dms].[Document]
-AFTER INSERT, UPDATE
+CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]
+ON [dms].[Descriptor]
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF UPDATE([ContentVersion]) OR NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        INSERT INTO [dms].[DocumentChangeEvent] ([ChangeVersion], [DocumentId], [ResourceKeyId], [CreatedAt])
-        SELECT i.[ContentVersion], i.[DocumentId], i.[ResourceKeyId], sysutcdatetime()
-        FROM inserted i;
-    END
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL))
+    )
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
 END;
 GO
 

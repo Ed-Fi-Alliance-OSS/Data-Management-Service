@@ -43,6 +43,11 @@ public sealed record ReadableProfileProjectionContext(
 public interface IRelationalGetRequest : IGetRequest
 {
     /// <summary>
+    /// Typed request-scoped authorization inputs for relational single-record planning/execution.
+    /// </summary>
+    RelationalAuthorizationContext AuthorizationContext { get; }
+
+    /// <summary>
     /// The resolved runtime mapping set for the active request.
     /// Relational GET-by-id only executes after mapping-set resolution.
     /// </summary>

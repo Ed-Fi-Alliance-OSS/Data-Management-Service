@@ -79,4 +79,11 @@ public class ApplicationInfo
     /// These IDs are included in the dmsInstanceIds claim in issued JWT tokens.
     /// </summary>
     public long[] DmsInstanceIds { get; set; } = [];
+
+    /// <summary>
+    /// Indicates whether all API clients associated with this application are approved.
+    /// Derived as BOOL_AND(IsApproved) across all ApiClient rows for the application.
+    /// Defaults to true when no API clients exist.
+    /// </summary>
+    public bool IsApproved { get; set; } = true;
 }

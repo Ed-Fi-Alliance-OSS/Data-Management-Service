@@ -26,8 +26,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
     Rule: StudentContactAssociation CRUD is properly authorized
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 01 Ensure client can create a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -53,8 +51,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
              Then it should respond with 201
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 02 Ensure client can retrieve a StudentContactAssociation
             Given a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -154,8 +150,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      []
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 06 Ensure client can update a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -248,8 +242,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 08 Ensure client can delete a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -298,8 +290,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 10 Ensure client get the required validation error when studentContactAssociations is created with empty contactReference
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "25590190200000"
              When a POST request is made to "/ed-fi/studentContactAssociations" with
@@ -331,8 +321,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
     Rule: Contact CRUD is properly authorized
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 11 Ensure client can create a Contact
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -436,8 +424,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 14 Ensure client can delete a contact when it's unused and should return 204 nocontent
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -451,8 +437,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              When a DELETE request is made to "/ed-fi/contacts/{id}"
              Then it should respond with 204
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 15 Ensure client can not delete a contact when it's associated with a student
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -491,8 +475,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 16 Ensure client can retrieve a contact with student contact association
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -580,8 +562,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
 
 
-        @relational-backend
-        @relational-ci-shard-3
         Scenario: 18 Ensure client can update a contact When it's associated
             Given a POST request is made to "/ed-fi/contacts/" with
                   """

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -73,6 +74,9 @@ internal class UpdateByIdHandler(
                     )
                     {
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
+                        AuthorizationContext = RelationalAuthorizationContext.Create(
+                            requestInfo.ClientAuthorizations
+                        ),
                     }
                 ),
             requestInfo
@@ -173,9 +177,30 @@ internal class UpdateByIdHandler(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
                     traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: failure.ErrorMessages
+                    errors: failure.ErrorMessages,
+                    hints: failure.Hints
                 ),
                 Headers: []
+            ),
+            UpdateFailureRelationshipNotAuthorized failure => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: failure.ErrorMessages,
+                    hints: failure.Hints
+                ),
+                Headers: []
+            ),
+            UpdateFailureNotImplemented failure => new FrontendResponse(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            UpdateFailureSecurityConfiguration failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, failure.Errors),
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             UpdateFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),

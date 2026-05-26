@@ -33,7 +33,8 @@ public class KeycloakClientRepository(
         string scope,
         string namespacePrefixes,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true
     )
     {
         try
@@ -52,7 +53,7 @@ public class KeycloakClientRepository(
             Client client = new()
             {
                 ClientId = clientId,
-                Enabled = true,
+                Enabled = isApproved,
                 Secret = clientSecret,
                 Name = displayName,
                 ServiceAccountsEnabled = true,
@@ -138,7 +139,7 @@ public class KeycloakClientRepository(
             Client newClient = new()
             {
                 ClientId = client.ClientId,
-                Enabled = true,
+                Enabled = client.Enabled,
                 Secret = client.Secret,
                 Name = client.Name,
                 ServiceAccountsEnabled = true,
@@ -295,12 +296,18 @@ public class KeycloakClientRepository(
         string displayName,
         string scope,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true,
+        string role = ""
     )
     {
         try
         {
             var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
+            if (client is null)
+            {
+                return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+            }
             await CheckAndCreateClientScopeAsync(scope);
             var scopeExists = await ClientScopeExistsAsync(scope);
             if (scopeExists)
@@ -313,7 +320,7 @@ public class KeycloakClientRepository(
                 Client newClient = new()
                 {
                     ClientId = client.ClientId,
-                    Enabled = true,
+                    Enabled = isApproved,
                     Secret = client.Secret,
                     Name = displayName,
                     ServiceAccountsEnabled = true,
@@ -327,6 +334,39 @@ public class KeycloakClientRepository(
                 );
                 if (!string.IsNullOrEmpty(newClientId))
                 {
+                    if (!string.IsNullOrEmpty(role))
+                    {
+                        // Re-assign the service account role lost during delete-and-recreate
+                        var realmRoles = await keycloakClientFacade.GetRolesAsync(_realm);
+                        Role? clientRole = realmRoles.FirstOrDefault(x =>
+                            x.Name.Equals(role, StringComparison.InvariantCultureIgnoreCase)
+                        );
+
+                        if (clientRole != null)
+                        {
+                            var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
+                                _realm,
+                                newClientId
+                            );
+                            _ = await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                                _realm,
+                                serviceAccountUser.Id,
+                                [clientRole]
+                            );
+                        }
+                        else
+                        {
+                            logger.LogError(
+                                "Role {Role} not found in Keycloak realm; service account role mapping could not be restored for client {ClientId}",
+                                SanitizeForLog(role),
+                                SanitizeForLog(client.ClientId)
+                            );
+                            return new ClientUpdateResult.FailureUnknown(
+                                $"Role '{role}' not found in Keycloak realm; service account role mapping could not be restored"
+                            );
+                        }
+                    }
+
                     return new ClientUpdateResult.Success(Guid.Parse(newClientId));
                 }
             }

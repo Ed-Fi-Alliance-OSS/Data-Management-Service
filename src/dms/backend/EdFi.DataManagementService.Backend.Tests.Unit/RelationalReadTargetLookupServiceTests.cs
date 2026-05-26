@@ -75,7 +75,7 @@ public class Given_RelationalReadTargetLookupService
 
         result
             .Should()
-            .BeEquivalentTo(new RelationalReadTargetLookupResult.ExistingDocument(404L, documentUuid));
+            .BeEquivalentTo(new RelationalReadTargetLookupResult.ExistingDocument(404L, documentUuid, 907L));
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
         commandExecutor

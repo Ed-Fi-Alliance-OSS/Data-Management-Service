@@ -26,6 +26,8 @@ internal static class FixtureRepositoryPaths
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics",
         [FixtureKey.ProfileRootOnlyMerge] =
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge",
+        [FixtureKey.DescriptorRuntime] =
+            "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/descriptor-runtime",
         [FixtureKey.ProfileSeparateTableMerge] =
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-separate-table-merge",
         [FixtureKey.ProfileNestedAndRootExtensionChildren] =
@@ -34,6 +36,7 @@ internal static class FixtureRepositoryPaths
             "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension",
         [FixtureKey.ProfileCollectionAlignedExtensionHiddenDescendant] =
             "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-hidden-descendant",
+        [FixtureKey.AuthoritativeDs52] = "src/dms/backend/Fixtures/authoritative/ds-5.2",
     };
 
     /// <summary>

@@ -27,7 +27,6 @@ internal static partial class ProvisionTestHelper
         "EffectiveSchema",
         "SchemaComponent",
         "DocumentCache",
-        "DocumentChangeEvent",
     ];
 
     internal static (int ExitCode, string Output, string Error) RunProvision(

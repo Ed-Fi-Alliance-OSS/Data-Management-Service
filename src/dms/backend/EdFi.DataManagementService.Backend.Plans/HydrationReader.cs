@@ -176,6 +176,58 @@ public static class HydrationReader
         return new HydratedDescriptorRows(rows);
     }
 
+    /// <summary>
+    /// Reads document-reference auxiliary lookup rows from the current result set.
+    /// </summary>
+    /// <remarks>
+    /// Expected columns at fixed ordinals aligned to
+    /// <see cref="DocumentReferenceLookupResultShape"/>:
+    /// 0=DocumentId (bigint), 1=DocumentUuid (uuid), 2=ResourceKeyId (smallint).
+    /// </remarks>
+    /// <param name="reader">The data reader positioned at the lookup result set.</param>
+    /// <param name="lookupPlan">The lookup plan describing the expected ordinals.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Hydrated lookup rows in result-set order.</returns>
+    public static async Task<HydratedDocumentReferenceLookup> ReadDocumentReferenceLookupRowsAsync(
+        DbDataReader reader,
+        DocumentReferenceLookupPlan lookupPlan,
+        CancellationToken ct
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(lookupPlan);
+
+        var resultShape = lookupPlan.ResultShape;
+        var expectedColumnCount =
+            Math.Max(
+                Math.Max(resultShape.DocumentIdOrdinal, resultShape.DocumentUuidOrdinal),
+                resultShape.ResourceKeyIdOrdinal
+            ) + 1;
+
+        if (reader.FieldCount != expectedColumnCount)
+        {
+            throw new InvalidOperationException(
+                "Document-reference lookup result set has "
+                    + $"{reader.FieldCount} columns but expected {expectedColumnCount}."
+            );
+        }
+
+        var rows = new List<DocumentReferenceLookupRow>();
+
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(
+                new DocumentReferenceLookupRow(
+                    DocumentId: reader.GetInt64(resultShape.DocumentIdOrdinal),
+                    DocumentUuid: reader.GetGuid(resultShape.DocumentUuidOrdinal),
+                    ResourceKeyId: reader.GetInt16(resultShape.ResourceKeyIdOrdinal)
+                )
+            );
+        }
+
+        return new HydratedDocumentReferenceLookup(rows);
+    }
+
     private static DateTimeOffset ReadDateTimeOffset(DbDataReader reader, int ordinal)
     {
         var value = reader.GetValue(ordinal);

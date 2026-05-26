@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -81,7 +82,9 @@ public class Given_No_Profile_Relational_Post
             A.Fake<IReadableProfileProjector>(),
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
-            A.Fake<IRelationalWriteSessionFactory>()
+            A.Fake<IRelationalWriteSessionFactory>(),
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -194,7 +197,9 @@ public class Given_No_Profile_Relational_Put
             A.Fake<IReadableProfileProjector>(),
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
-            A.Fake<IRelationalWriteSessionFactory>()
+            A.Fake<IRelationalWriteSessionFactory>(),
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -307,7 +312,9 @@ public class Given_A_Profiled_Relational_Post
             A.Fake<IReadableProfileProjector>(),
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
-            A.Fake<IRelationalWriteSessionFactory>()
+            A.Fake<IRelationalWriteSessionFactory>(),
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -419,7 +426,9 @@ public class Given_A_Profiled_Relational_Put
             A.Fake<IReadableProfileProjector>(),
             new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
-            A.Fake<IRelationalWriteSessionFactory>()
+            A.Fake<IRelationalWriteSessionFactory>(),
+            AuthorizationSubjectSelectorTestSupport.Create(),
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -466,6 +475,12 @@ public class Given_A_Profiled_Relational_Put
         _capturedExecutorRequest!.ProfileWriteContext.Should().NotBeNull();
         _capturedExecutorRequest.ProfileWriteContext!.ProfileName.Should().Be("test-profile");
     }
+}
+
+internal static class AuthorizationSubjectSelectorTestSupport
+{
+    public static RelationalEdOrgAuthorizationSubjectSelector Create() =>
+        new(new RelationalEdOrgAuthorizationElementResolutionCache());
 }
 
 /// <summary>

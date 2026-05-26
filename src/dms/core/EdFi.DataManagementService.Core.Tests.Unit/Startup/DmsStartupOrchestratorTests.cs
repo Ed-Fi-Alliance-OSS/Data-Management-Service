@@ -3,9 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Startup;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
@@ -308,6 +315,183 @@ public class DmsStartupOrchestratorTests
 
             // Assert - Second task should not have run
             _executionOrder.Should().Equal(100);
+        }
+    }
+
+    private static AppSettings AuthAppSettings(bool bypassAuthorization = false, bool multiTenancy = false) =>
+        new()
+        {
+            AllowIdentityUpdateOverrides = string.Empty,
+            BypassAuthorization = bypassAuthorization,
+            MultiTenancy = multiTenancy,
+        };
+
+    private static WarmUpOidcMetadataTask CreateOidcTask(
+        IConfigurationManager<OpenIdConnectConfiguration> configurationManager,
+        bool bypassAuthorization = false
+    )
+    {
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IConfigurationManager<OpenIdConnectConfiguration>)))
+            .Returns(configurationManager);
+
+        return new WarmUpOidcMetadataTask(
+            serviceProvider,
+            Options.Create(AuthAppSettings(bypassAuthorization: bypassAuthorization)),
+            NullLogger<WarmUpOidcMetadataTask>.Instance
+        );
+    }
+
+    private static CacheClaimSetsTask CreateClaimSetsTask(IClaimSetProvider claimSetProvider) =>
+        new(
+            claimSetProvider,
+            A.Fake<IDmsInstanceProvider>(),
+            Options.Create(AuthAppSettings(multiTenancy: false)),
+            NullLogger<CacheClaimSetsTask>.Instance
+        );
+
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_Both_Auth_Tasks_Are_Registered : DmsStartupOrchestratorTests
+    {
+        private static List<string> _callOrder = null!;
+        private DmsStartupOrchestrator _orchestrator = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _callOrder = [];
+
+            var oidcConfigurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
+            A.CallTo(() => oidcConfigurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .ReturnsLazily(() =>
+                {
+                    _callOrder.Add("oidc");
+                    return Task.FromResult(
+                        new OpenIdConnectConfiguration { Issuer = "https://issuer.example" }
+                    );
+                });
+
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
+                .ReturnsLazily(() =>
+                {
+                    _callOrder.Add("claim-sets");
+                    return Task.FromResult<IList<ClaimSet>>([]);
+                });
+
+            // Intentionally register out of declared order to verify orchestrator sorting.
+            var tasks = new List<IDmsStartupTask>
+            {
+                CreateClaimSetsTask(claimSetProvider),
+                CreateOidcTask(oidcConfigurationManager),
+            };
+
+            _orchestrator = new DmsStartupOrchestrator(tasks, NullLogger<DmsStartupOrchestrator>.Instance);
+        }
+
+        [Test]
+        public async Task It_runs_OIDC_warm_up_before_claim_set_cache()
+        {
+            await _orchestrator.RunAllAsync(CancellationToken.None);
+
+            _callOrder.Should().Equal("oidc", "claim-sets");
+        }
+
+        [Test]
+        public async Task It_runs_both_auth_tasks_when_executed_by_the_auth_order_range()
+        {
+            await _orchestrator.RunByOrderRangeAsync(
+                DmsStartupTaskOrderRanges.AuthInitializationMinimum,
+                DmsStartupTaskOrderRanges.AuthInitializationMaximum,
+                CancellationToken.None
+            );
+
+            _callOrder.Should().Equal("oidc", "claim-sets");
+        }
+    }
+
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_The_OIDC_Warm_Up_Task_Fails : DmsStartupOrchestratorTests
+    {
+        private static List<string> _callOrder = null!;
+        private DmsStartupOrchestrator _orchestrator = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _callOrder = [];
+
+            var oidcConfigurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
+            A.CallTo(() => oidcConfigurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .ThrowsAsync(new InvalidOperationException("OIDC metadata unavailable"));
+
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
+                .Invokes(() => _callOrder.Add("claim-sets"))
+                .ReturnsLazily(() => Task.FromResult<IList<ClaimSet>>([]));
+
+            var tasks = new List<IDmsStartupTask>
+            {
+                CreateOidcTask(oidcConfigurationManager),
+                CreateClaimSetsTask(claimSetProvider),
+            };
+
+            _orchestrator = new DmsStartupOrchestrator(tasks, NullLogger<DmsStartupOrchestrator>.Instance);
+        }
+
+        [Test]
+        public async Task It_aborts_startup_with_a_wrapped_exception()
+        {
+            Func<Task> act = async () => await _orchestrator.RunAllAsync(CancellationToken.None);
+
+            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+            exception.Which.Message.Should().Contain("Warm Up OIDC Metadata Cache");
+            exception.Which.InnerException.Should().BeOfType<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_does_not_execute_the_claim_set_task()
+        {
+            try
+            {
+                await _orchestrator.RunAllAsync(CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                // Expected
+            }
+
+            _callOrder.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_The_Claim_Set_Task_Has_An_Internal_Failure : DmsStartupOrchestratorTests
+    {
+        private DmsStartupOrchestrator _orchestrator = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
+                .ThrowsAsync(new InvalidOperationException("Configuration Service unreachable"));
+
+            _orchestrator = new DmsStartupOrchestrator(
+                [CreateClaimSetsTask(claimSetProvider)],
+                NullLogger<DmsStartupOrchestrator>.Instance
+            );
+        }
+
+        [Test]
+        public async Task It_does_not_bubble_out_of_the_orchestrator()
+        {
+            Func<Task> act = async () => await _orchestrator.RunAllAsync(CancellationToken.None);
+
+            await act.Should().NotThrowAsync();
         }
     }
 }

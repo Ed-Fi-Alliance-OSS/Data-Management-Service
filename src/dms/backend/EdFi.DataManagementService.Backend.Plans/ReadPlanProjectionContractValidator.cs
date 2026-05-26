@@ -77,6 +77,7 @@ internal static class ReadPlanProjectionContractValidator
 
         ValidateReferenceProjectionPlanContracts(readPlan, hydrationTablePlansByTable, createException);
         ValidateDescriptorProjectionPlanContracts(readPlan, hydrationTablePlansByTable, createException);
+        ValidateDocumentReferenceLookupPlanContract(readPlan, hydrationTablePlansByTable, createException);
     }
 
     private static IReadOnlyDictionary<DbTableName, TableReadPlan> BuildHydrationTablePlansByTableOrThrow(
@@ -826,5 +827,263 @@ internal static class ReadPlanProjectionContractValidator
     private static string FormatDescriptorSource(DescriptorEdgeSource source)
     {
         return $"'{source.DescriptorValuePath.Canonical}' on table '{source.Table}' FK column '{source.FkColumn.Value}'";
+    }
+
+    private static void ValidateDocumentReferenceLookupPlanContract(
+        ResourceReadPlan readPlan,
+        IReadOnlyDictionary<DbTableName, TableReadPlan> hydrationTablePlansByTable,
+        Func<string, Exception> createException
+    )
+    {
+        var lookup = readPlan.DocumentReferenceLookup;
+        var hasBindings = readPlan.Model.DocumentReferenceBindings.Count > 0;
+
+        if (lookup is null)
+        {
+            if (hasBindings)
+            {
+                throw createException(
+                    "DocumentReferenceBindings are present while DocumentReferenceLookup is null"
+                );
+            }
+
+            return;
+        }
+
+        if (!hasBindings)
+        {
+            throw createException(
+                "DocumentReferenceBindings are absent while DocumentReferenceLookup is populated"
+            );
+        }
+
+        var resultShape = lookup.ResultShape;
+
+        if (resultShape is not { DocumentIdOrdinal: 0, DocumentUuidOrdinal: 1, ResourceKeyIdOrdinal: 2 })
+        {
+            throw createException(
+                "document-reference lookup plan result shape must expose DocumentId at ordinal '0', "
+                    + "DocumentUuid at ordinal '1', and ResourceKeyId at ordinal '2', but was "
+                    + $"DocumentId='{resultShape.DocumentIdOrdinal}', "
+                    + $"DocumentUuid='{resultShape.DocumentUuidOrdinal}', "
+                    + $"ResourceKeyId='{resultShape.ResourceKeyIdOrdinal}'"
+            );
+        }
+
+        if (lookup.SourcesInOrder.IsDefaultOrEmpty)
+        {
+            throw createException(
+                "document-reference lookup plan must contain at least one source when populated"
+            );
+        }
+
+        HashSet<(DbTableName, DbColumnName)> seenSources = [];
+
+        for (var sourceIndex = 0; sourceIndex < lookup.SourcesInOrder.Length; sourceIndex++)
+        {
+            var source = lookup.SourcesInOrder[sourceIndex];
+
+            if (!seenSources.Add((source.Table, source.FkColumn)))
+            {
+                throw createException(
+                    $"document-reference lookup plan source at index '{sourceIndex}' duplicates "
+                        + $"table '{source.Table}' FK column '{source.FkColumn.Value}'"
+                );
+            }
+
+            var hydrationTablePlan = ProjectionMetadataResolver.ResolveHydrationTablePlanOrThrow(
+                source.Table,
+                hydrationTablePlansByTable,
+                missingTable =>
+                    createException(
+                        $"document-reference lookup plan source at index '{sourceIndex}' references "
+                            + $"table '{missingTable}' that is not present in compiled table plans"
+                    )
+            );
+
+            var fkColumnModel = ResolveTableColumnOrThrow(
+                hydrationTablePlan.TableModel,
+                source.FkColumn,
+                missingColumn =>
+                    createException(
+                        $"document-reference lookup plan source at index '{sourceIndex}' on table "
+                            + $"'{source.Table}' references FK column '{missingColumn.Value}' that does "
+                            + $"not exist in table columns"
+                    )
+            );
+
+            ValidateColumnKindOrThrow(
+                fkColumnModel,
+                expectedKind: ColumnKind.DocumentFk,
+                $"document-reference lookup plan source at index '{sourceIndex}' on table '{source.Table}' FK column",
+                createException
+            );
+        }
+
+        ValidateDocumentReferenceLookupSourceCoverageAndOrder(
+            readPlan,
+            lookup,
+            hydrationTablePlansByTable,
+            createException
+        );
+    }
+
+    private static void ValidateDocumentReferenceLookupSourceCoverageAndOrder(
+        ResourceReadPlan readPlan,
+        DocumentReferenceLookupPlan lookup,
+        IReadOnlyDictionary<DbTableName, TableReadPlan> hydrationTablePlansByTable,
+        Func<string, Exception> createException
+    )
+    {
+        var expectedSourcesInOrder = ComputeExpectedDocumentReferenceLookupSourcesInOrder(
+            readPlan,
+            hydrationTablePlansByTable,
+            createException
+        );
+
+        HashSet<(DbTableName, DbColumnName)> expectedSet = [];
+        foreach (var expected in expectedSourcesInOrder)
+        {
+            expectedSet.Add((expected.Table, expected.FkColumn));
+        }
+
+        for (var sourceIndex = 0; sourceIndex < lookup.SourcesInOrder.Length; sourceIndex++)
+        {
+            var source = lookup.SourcesInOrder[sourceIndex];
+
+            if (!expectedSet.Contains((source.Table, source.FkColumn)))
+            {
+                throw createException(
+                    $"document-reference lookup plan source at index '{sourceIndex}' on table "
+                        + $"'{source.Table}' FK column '{source.FkColumn.Value}' does not correspond "
+                        + "to any authoritative DocumentReferenceBinding"
+                );
+            }
+        }
+
+        HashSet<(DbTableName, DbColumnName)> actualSet = [];
+        foreach (var source in lookup.SourcesInOrder)
+        {
+            actualSet.Add((source.Table, source.FkColumn));
+        }
+
+        foreach (var expected in expectedSourcesInOrder)
+        {
+            if (!actualSet.Contains((expected.Table, expected.FkColumn)))
+            {
+                throw createException(
+                    $"document-reference lookup plan is missing authoritative source for table "
+                        + $"'{expected.Table}' FK column '{expected.FkColumn.Value}'"
+                );
+            }
+        }
+
+        if (lookup.SourcesInOrder.Length != expectedSourcesInOrder.Count)
+        {
+            throw createException(
+                $"document-reference lookup plan source count '{lookup.SourcesInOrder.Length}' "
+                    + "does not match authoritative DocumentReferenceBindings deduplicated source "
+                    + $"count '{expectedSourcesInOrder.Count}'"
+            );
+        }
+
+        for (var index = 0; index < expectedSourcesInOrder.Count; index++)
+        {
+            var expected = expectedSourcesInOrder[index];
+            var actual = lookup.SourcesInOrder[index];
+
+            if (actual.Table.Equals(expected.Table) && actual.FkColumn.Equals(expected.FkColumn))
+            {
+                continue;
+            }
+
+            throw createException(
+                $"document-reference lookup plan source at index '{index}' targets table "
+                    + $"'{actual.Table}' FK column '{actual.FkColumn.Value}', but authoritative "
+                    + $"dependency-order requires table '{expected.Table}' FK column "
+                    + $"'{expected.FkColumn.Value}'"
+            );
+        }
+    }
+
+    private static IReadOnlyList<DocumentReferenceLookupSource> ComputeExpectedDocumentReferenceLookupSourcesInOrder(
+        ResourceReadPlan readPlan,
+        IReadOnlyDictionary<DbTableName, TableReadPlan> hydrationTablePlansByTable,
+        Func<string, Exception> createException
+    )
+    {
+        Dictionary<DbTableName, int> tableDependencyOrdinalByTable = [];
+        for (var index = 0; index < readPlan.Model.TablesInDependencyOrder.Count; index++)
+        {
+            tableDependencyOrdinalByTable.TryAdd(readPlan.Model.TablesInDependencyOrder[index].Table, index);
+        }
+
+        Dictionary<
+            (DbTableName Table, DbColumnName FkColumn),
+            (int TableOrdinal, int ColumnOrdinal)
+        > orderingByKey = [];
+
+        foreach (var binding in readPlan.Model.DocumentReferenceBindings)
+        {
+            var key = (binding.Table, binding.FkColumn);
+
+            if (orderingByKey.ContainsKey(key))
+            {
+                continue;
+            }
+
+            if (!tableDependencyOrdinalByTable.TryGetValue(binding.Table, out var tableOrdinal))
+            {
+                throw createException(
+                    $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' references "
+                        + $"table '{binding.Table}' that is not present in TablesInDependencyOrder"
+                );
+            }
+
+            var hydrationTablePlan = ProjectionMetadataResolver.ResolveHydrationTablePlanOrThrow(
+                binding.Table,
+                hydrationTablePlansByTable,
+                missingTable =>
+                    createException(
+                        $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' references "
+                            + $"table '{missingTable}' that is not present in compiled table plans"
+                    )
+            );
+
+            var columnOrdinal = ProjectionMetadataResolver.ResolveTableColumnOrdinalOrThrow(
+                hydrationTablePlan.TableModel,
+                binding.FkColumn,
+                missingColumn =>
+                    createException(
+                        $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column "
+                            + $"'{missingColumn.Value}' does not exist in table '{binding.Table}' columns"
+                    )
+            );
+
+            orderingByKey[key] = (tableOrdinal, columnOrdinal);
+        }
+
+        return orderingByKey
+            .OrderBy(pair => pair.Value.TableOrdinal)
+            .ThenBy(pair => pair.Value.ColumnOrdinal)
+            .Select(pair => new DocumentReferenceLookupSource(pair.Key.Table, pair.Key.FkColumn))
+            .ToArray();
+    }
+
+    private static DbColumnModel ResolveTableColumnOrThrow(
+        DbTableModel tableModel,
+        DbColumnName columnName,
+        Func<DbColumnName, Exception> createMissingException
+    )
+    {
+        foreach (var column in tableModel.Columns)
+        {
+            if (column.ColumnName == columnName)
+            {
+                return column;
+            }
+        }
+
+        throw createMissingException(columnName);
     }
 }

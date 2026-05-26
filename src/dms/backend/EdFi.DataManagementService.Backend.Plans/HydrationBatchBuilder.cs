@@ -25,6 +25,10 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <item>Root table rows (from <c>TablePlansInDependencyOrder[0]</c>)</item>
 /// <item>Child table rows (from <c>TablePlansInDependencyOrder[1..n]</c>)</item>
 /// <item>Descriptor URI rows (from <c>DescriptorProjectionPlansInOrder[0..n]</c>)</item>
+/// <item>
+/// Optional document-reference auxiliary lookup rows (when
+/// <see cref="ResourceReadPlan.DocumentReferenceLookup"/> is non-null)
+/// </item>
 /// </list>
 /// </remarks>
 public static class HydrationBatchBuilder
@@ -97,6 +101,17 @@ public static class HydrationBatchBuilder
                 writer.AppendLine(EnsureTrailingSemicolon(descriptorPlan.SelectByKeysetSql));
                 writer.AppendLine();
             }
+        }
+
+        // 7. Document-reference auxiliary lookup (gated by plan property AND the caller-supplied
+        //    execution option — write-path callers that discard the lookup result opt out).
+        if (
+            executionOptions.IncludeDocumentReferenceLookup
+            && plan.DocumentReferenceLookup is { } documentReferenceLookup
+        )
+        {
+            writer.AppendLine(EnsureTrailingSemicolon(documentReferenceLookup.SelectByKeysetSql));
+            writer.AppendLine();
         }
 
         return writer.ToString();

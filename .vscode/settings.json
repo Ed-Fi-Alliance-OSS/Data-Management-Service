@@ -156,5 +156,6 @@
   },
   "editor.codeActionsOnSave": {
     "source.fixAll.markdownlint": "explicit"
-  }
+  },
+  "dotnet.projectsystem.cacheInProjectFolder": false
 }

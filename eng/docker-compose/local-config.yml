@@ -44,7 +44,7 @@ services:
     ports:
       - "127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}"
     volumes:
-      - ../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/additional-claims
+      - ${DMS_CONFIG_CLAIMS_MOUNT_SOURCE:-../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets}:/app/additional-claims:ro
     networks:
       - dms
     restart: unless-stopped

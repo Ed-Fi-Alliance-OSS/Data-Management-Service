@@ -187,7 +187,10 @@ public class DmsInstanceTests : DatabaseTest
             var instanceFromDb = ((DmsInstanceQueryResult.Success)getResult).DmsInstanceResponses.First();
             instanceFromDb.InstanceType.Should().Be("Production");
             instanceFromDb.InstanceName.Should().Be("Updated Instance");
-            AssertIsValidEncryptedBase64(instanceFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(
+                instanceFromDb.ConnectionString,
+                "Server=updated;Database=UpdatedDb;"
+            );
         }
 
         [Test]
@@ -199,7 +202,10 @@ public class DmsInstanceTests : DatabaseTest
             var instanceFromDb = ((DmsInstanceGetResult.Success)getByIdResult).DmsInstanceResponse;
             instanceFromDb.InstanceType.Should().Be("Production");
             instanceFromDb.InstanceName.Should().Be("Updated Instance");
-            AssertIsValidEncryptedBase64(instanceFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(
+                instanceFromDb.ConnectionString,
+                "Server=updated;Database=UpdatedDb;"
+            );
         }
     }
 

@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.External.Security;
 
 namespace EdFi.DataManagementService.Backend;
 

@@ -75,7 +75,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 "dms.Descriptor",
                 "dms.Document",
                 "dms.DocumentCache",
-                "dms.DocumentChangeEvent",
                 "dms.EffectiveSchema",
                 "dms.ReferentialIdentity",
                 "dms.ResourceKey",

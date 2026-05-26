@@ -143,6 +143,28 @@ This index links design documents under `reference/design/backend-redesign/epics
 
 - `DMS-1029` — Authorization Design Spike (Relational Primary Store) — `reference/design/backend-redesign/epics/14-authorization/EPIC.md`
   - `DMS-1026` — Authorization Design Spike (Relational Primary Store) — `reference/design/backend-redesign/epics/14-authorization/00-auth-placeholder.md`
+  - `DMS-1049` — Emit the auth.EducationOrganizationIdToEducationOrganizationId table and related triggers — `reference/design/backend-redesign/epics/14-authorization/01-emit-edorg-hierarchy-table-and-triggers.md`
+  - `DMS-1050` — Emit people auth views — `reference/design/backend-redesign/epics/14-authorization/02-emit-people-auth-views.md`
+  - `DMS-1052` — Emit MSSQL TVPs and PGSQL throw_error function — `reference/design/backend-redesign/epics/14-authorization/03-emit-mssql-tvps-and-pgsql-throw-error.md`
+  - `DMS-1053` — Create the ResolveSecurableElementColumnPath function — `reference/design/backend-redesign/epics/14-authorization/04-resolve-securable-element-column-path.md`
+  - `DMS-1054` — Emit indexes for the Relationship-based and Namespace-based strategies — `reference/design/backend-redesign/epics/14-authorization/05-emit-auth-indexes.md`
+  - `DMS-1094` — Emit people indexes needed for joins — `reference/design/backend-redesign/epics/14-authorization/05b-emit-person-join-indexes.md`
+  - `DMS-1055` — Implement EdOrg-only Relationship-based Authorization for GET-many — `reference/design/backend-redesign/epics/14-authorization/06-relationship-auth-get-many.md`
+  - `DMS-1095` — Implement People-involved Relationship-based Authorization for GET-many — `reference/design/backend-redesign/epics/14-authorization/06b-people-relationship-auth-get-many.md`
+  - `DMS-1056` — Split Relationship-based Authorization for GET-by-id, POST, PUT, and DELETE — `reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud.md`
+  - `DMS-1057` — Implement Namespace-based Authorization Strategy — `reference/design/backend-redesign/epics/14-authorization/08-namespace-auth-strategy.md`
+  - `DMS-1058` — Design Ownership-token maintenance in CMS — `reference/design/backend-redesign/epics/14-authorization/09-design-ownership-token-maintenance.md`
+  - `DMS-1059` — Emit the CreatedByOwnershipTokenId column and index — `reference/design/backend-redesign/epics/14-authorization/10-emit-ownership-column-and-index.md`
+  - `DMS-1060` — Implement Ownership-based Authorization Strategy — `reference/design/backend-redesign/epics/14-authorization/11-ownership-auth-strategy.md`
+  - `DMS-1061` — Add support for View-based strategy in the ResolveSecurableElementColumnPath function — `reference/design/backend-redesign/epics/14-authorization/12-view-based-resolve-column-path.md`
+  - `DMS-1062` — Implement View-based Authorization Strategy for GET-many — `reference/design/backend-redesign/epics/14-authorization/13-view-based-auth-get-many.md`
+  - `DMS-1063` — Implement View-based Authorization Strategy for GET-by-id, POST, PUT, and DELETE — `reference/design/backend-redesign/epics/14-authorization/14-view-based-auth-crud.md`
+  - `DMS-1064` — Enumerate all DS 5.2 resources with multi-hop Person authorization join paths — `reference/design/backend-redesign/epics/14-authorization/15-enumerate-multi-hop-person-paths.md`
+  - `DMS-1065` — Further Performance Optimizations — `reference/design/backend-redesign/epics/14-authorization/16-further-performance-optimizations.md`
+  - `DMS-1090` — Implement NoFurtherAuthorizationRequired Strategy — `reference/design/backend-redesign/epics/14-authorization/17-no-further-auth-required-strategy.md`
+  - `DMS-1091` — Formalize Auth Startup as IDmsStartupTask — `reference/design/backend-redesign/epics/14-authorization/18-formalize-auth-startup-task.md`
+  - `DMS-1096` — Verification harness for emitted auth DB objects — `reference/design/backend-redesign/epics/14-authorization/19-auth-verification-harness.md`
+  - `DMS-1099` — Implement Security Configuration ProblemDetails — `reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md`
 
 - `DMS-1027` — Runtime Plan Compilation + Caching (Shared with AOT Packs) — `reference/design/backend-redesign/epics/15-plan-compilation/EPIC.md`
   - `DMS-1043` — Plan SQL Foundations (Shared Canonical Writer + Dialect Helpers) — `reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md`

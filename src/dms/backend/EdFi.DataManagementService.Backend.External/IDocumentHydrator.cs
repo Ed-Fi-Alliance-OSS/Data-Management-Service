@@ -24,7 +24,18 @@ public interface IDocumentHydrator
     /// </summary>
     /// <param name="plan">The compiled resource read plan.</param>
     /// <param name="keyset">The page keyset specification (single document or query page).</param>
+    /// <param name="executionOptions">
+    /// Controls which optional projections (descriptor URIs, document-reference auxiliary
+    /// lookup) are included in the hydration batch. Callers that discard either result set
+    /// (e.g. StoredDocument-mode GETs that do not emit <c>link</c>) opt out so the database
+    /// does not run the corresponding SQL.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
-    Task<HydratedPage> HydrateAsync(ResourceReadPlan plan, PageKeysetSpec keyset, CancellationToken ct);
+    Task<HydratedPage> HydrateAsync(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
+        CancellationToken ct
+    );
 }

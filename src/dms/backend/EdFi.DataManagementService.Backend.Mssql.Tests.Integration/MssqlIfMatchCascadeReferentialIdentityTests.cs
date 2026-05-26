@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -99,6 +100,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
+        services.AddNoOpDocumentLinkSlugResolver();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
 
@@ -401,6 +403,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 DocumentUuid: documentUuid,
                 ResourceInfo: resourceInfo,
                 MappingSet: _mappingSet,
+                AuthorizationContext: new RelationalAuthorizationContext([]),
                 ResourceAuthorizationHandler: new MssqlIfMatchCascadeAllowAllResourceAuthorizationHandler(),
                 AuthorizationStrategyEvaluators: [],
                 TraceId: new TraceId(traceId)

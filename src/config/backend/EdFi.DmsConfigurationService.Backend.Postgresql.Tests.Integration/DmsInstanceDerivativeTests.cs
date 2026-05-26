@@ -273,7 +273,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeQueryResult.Success)getResult
             ).DmsInstanceDerivativeResponses.First();
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
-            AssertIsValidEncryptedBase64(derivativeFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(
+                derivativeFromDb.ConnectionString,
+                "Server=updated;Database=UpdatedDb;"
+            );
         }
 
         [Test]
@@ -286,7 +289,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeGetResult.Success)getByIdResult
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
-            AssertIsValidEncryptedBase64(derivativeFromDb.ConnectionString, "Server=updated;Database=UpdatedDb;");
+            AssertIsValidEncryptedBase64(
+                derivativeFromDb.ConnectionString,
+                "Server=updated;Database=UpdatedDb;"
+            );
         }
     }
 

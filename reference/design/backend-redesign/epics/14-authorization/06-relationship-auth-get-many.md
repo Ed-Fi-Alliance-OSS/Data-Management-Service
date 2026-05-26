@@ -37,7 +37,7 @@ Scope note: this story intentionally implements the ODS-parity GET-many slice fo
 
 NOTE: The People-involved strategies (RelationshipsWithEdOrgsAndPeople, RelationshipsWithEdOrgsAndPeopleInverted, RelationshipsWithPeopleOnly, RelationshipsWithStudentsOnly, RelationshipsWithStudentsOnlyThroughResponsibility) will be implemented in [DMS-1095](https://edfi.atlassian.net/browse/DMS-1095).
 
-NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS-1056](https://edfi.atlassian.net/browse/DMS-1056).
+NOTE: The relationship CRUD work has been split under [DMS-1056](https://edfi.atlassian.net/browse/DMS-1056) in `07-relationship-auth-crud.md`: EdOrg-only CRUD slices, shared People relationship core, and ProblemDetails hardening. People-involved CRUD endpoint execution remains separate follow-on work after the People core.
 
 ## Clarifying Questions and Answers
 
@@ -204,7 +204,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
 
   7. Richer securable-path metadata: yes. It is acceptable to extend compiled mapping-set/runtime contracts so each resolved path carries the original JSON path and a readable/MetaEd name alongside ResolvedSecurableElementPath. This supports diagnostics, security configuration errors, and per-element handling without reverse-mapping from physical columns.
 
-  8. Inverted strategy registry support: add GET-many support for RelationshipsWithEdOrgsOnlyInverted and add enough constants/provider registration for the shared authorization registry to recognize it. For GET-by-id, POST, PUT, and DELETE before DMS-1056, fail explicitly as not implemented rather than falling through to missing-provider 403s or accidental authorization.
+  8. Inverted strategy registry support: add GET-many support for RelationshipsWithEdOrgsOnlyInverted and add enough constants/provider registration for the shared authorization registry to recognize it. For GET-by-id, POST, PUT, and DELETE before the dedicated relationship CRUD operation slices, fail explicitly as not implemented rather than falling through to missing-provider 403s or accidental authorization.
 
   9. SQL Server TVP binding model: yes. Extend the page keyset/query parameter model or introduce a companion runtime parameter contract so parameters can carry provider-specific configuration such as SqlDbType.Structured and TypeName. Keep compiled/AOT query plans provider-neutral where possible; use the runtime binding layer to attach SQL Server-specific parameter configuration.
 
@@ -217,7 +217,7 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   3. How should we distinguish custom view-based strategy names from truly unknown strategy names before DMS-1062? For example, should {BasisResource}With... be treated as “known but not implemented” and return 501, while non-matching unknown names remain a 500 security configuration error?
   4. For security configuration failures in this story, should we use the current generic 500 response path, or add the urn:ed-fi:api:system:configuration:security ProblemDetails shape ahead of DMS-1099?
   5. Should we add a permanent CMS/E2E claim set for RelationshipsWithEdOrgsOnlyInverted, or create/patch that claim metadata only inside focused tests? I did not find an existing E2E inverted claim set.
-  6. For non-GET operations configured with RelationshipsWithEdOrgsOnlyInverted before DMS-1056, should DMS-1055 force an explicit 501, or is it enough that GET-many works and other operations remain on the current failure path?
+  6. For non-GET operations configured with RelationshipsWithEdOrgsOnlyInverted before the dedicated relationship CRUD operation slices, should DMS-1055 force an explicit 501, or is it enough that GET-many works and other operations remain on the current failure path?
   7. Is it acceptable to add provider-specific parameter metadata to the query/runtime parameter model for SQL Server TVPs, while keeping actual SqlParameter construction in the executor layer?
 
 ### Answers 3
@@ -256,8 +256,8 @@ NOTE: The GET-by-id, POST, PUT, and DELETE scenarios will be implemented in [DMS
   5. Add a permanent test-only inverted claim set.
      Create a focused E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet in the CMS/E2E claimset artifacts. Do not patch claim metadata ad hoc inside tests. The acceptance criteria explicitly need real
      token/claim-set wiring, and a committed fixture is easier to reason about than runtime mutation.
-  6. Force explicit 501 for non-GET inverted operations before DMS-1056.
-     Add constants/registration so RelationshipsWithEdOrgsOnlyInverted is recognized everywhere, but for GET-by-id, POST, PUT, and DELETE return an intentional not-implemented result until DMS-1056. Do
+  6. Force explicit 501 for non-GET inverted operations before the dedicated relationship CRUD operation slices.
+     Add constants/registration so RelationshipsWithEdOrgsOnlyInverted is recognized everywhere, but for GET-by-id, POST, PUT, and DELETE return an intentional not-implemented result until those operation slices are implemented. Do
      not let it fall through to missing-provider 403s.
   7. Yes, add provider-specific runtime parameter metadata.
      Keep SQL Server SqlParameter construction in the executor/binder layer, but extend the query parameter contract so a parameter can say “structured TVP, type dms.BigIntTable, column Id.” The

@@ -85,7 +85,15 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@vendorId={{createVendor.response.body.id}}
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor to read the Id (POST returns no body per DMS-1081; id is the last segment of the Location header)
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
 
 ### Step 5: Create a DMS Instance (if not using default)
 # @name createDmsInstance

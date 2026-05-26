@@ -40,6 +40,16 @@ CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
 -- Phase 4: Functions and Types
 -- ==========================================================
 
+CREATE OR REPLACE FUNCTION "dms".GetMaxChangeVersion() RETURNS bigint AS
+$GetMaxChangeVersion$
+DECLARE
+    result bigint;
+BEGIN
+    SELECT last_value FROM "dms"."ChangeVersionSequence" INTO result;
+    RETURN result;
+END
+$GetMaxChangeVersion$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION "dms"."throw_error"(code text, msg text)
 RETURNS integer
 LANGUAGE plpgsql
@@ -133,6 +143,7 @@ CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
     "ResourceName" varchar(256) NOT NULL,
     "ResourceVersion" varchar(32) NOT NULL,
     "Etag" varchar(64) NOT NULL,
+    "ContentVersion" bigint NOT NULL,
     "LastModifiedAt" timestamp with time zone NOT NULL,
     "DocumentJson" jsonb NOT NULL,
     "ComputedAt" timestamp with time zone NOT NULL DEFAULT now(),
@@ -164,15 +175,6 @@ BEGIN
         ADD CONSTRAINT "CK_DocumentCache_JsonObject" CHECK (jsonb_typeof("DocumentJson") = 'object');
     END IF;
 END $$;
-
-CREATE TABLE IF NOT EXISTS "dms"."DocumentChangeEvent"
-(
-    "ChangeVersion" bigint NOT NULL,
-    "DocumentId" bigint NOT NULL,
-    "ResourceKeyId" smallint NOT NULL,
-    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT "PK_DocumentChangeEvent" PRIMARY KEY ("ChangeVersion", "DocumentId")
-);
 
 CREATE TABLE IF NOT EXISTS "dms"."EffectiveSchema"
 (
@@ -337,40 +339,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DocumentChangeEvent_Document'
-        AND conrelid = to_regclass('"dms"."DocumentChangeEvent"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentChangeEvent"
-        ADD CONSTRAINT "FK_DocumentChangeEvent_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DocumentChangeEvent_ResourceKey'
-        AND conrelid = to_regclass('"dms"."DocumentChangeEvent"')
-    )
-    THEN
-        ALTER TABLE "dms"."DocumentChangeEvent"
-        ADD CONSTRAINT "FK_DocumentChangeEvent_ResourceKey"
-        FOREIGN KEY ("ResourceKeyId")
-        REFERENCES "dms"."ResourceKey" ("ResourceKeyId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_ReferentialIdentity_Document'
         AND conrelid = to_regclass('"dms"."ReferentialIdentity"')
     )
@@ -428,30 +396,30 @@ CREATE INDEX IF NOT EXISTS "IX_Document_ResourceKeyId_DocumentId" ON "dms"."Docu
 
 CREATE INDEX IF NOT EXISTS "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt" ON "dms"."DocumentCache" ("ProjectName", "ResourceName", "LastModifiedAt", "DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_DocumentChangeEvent_DocumentId" ON "dms"."DocumentChangeEvent" ("DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion" ON "dms"."DocumentChangeEvent" ("ResourceKeyId", "ChangeVersion", "DocumentId");
-
 CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."ReferentialIdentity" ("DocumentId");
 
 -- ==========================================================
 -- Phase 8: Triggers
 -- ==========================================================
 
-CREATE OR REPLACE FUNCTION "dms"."TF_Document_Journal"()
+CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    INSERT INTO "dms"."DocumentChangeEvent" ("ChangeVersion", "DocumentId", "ResourceKeyId", "CreatedAt")
-    VALUES (NEW."ContentVersion", NEW."DocumentId", NEW."ResourceKeyId", now());
+    IF TG_OP = 'UPDATE' AND NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+        RETURN NEW;
+    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS "TR_Document_Journal" ON "dms"."Document";
-CREATE TRIGGER "TR_Document_Journal"
-    AFTER INSERT OR UPDATE OF "ContentVersion" ON "dms"."Document"
+DROP TRIGGER IF EXISTS "TR_Descriptor_Stamp_Document" ON "dms"."Descriptor";
+CREATE TRIGGER "TR_Descriptor_Stamp_Document"
+    AFTER UPDATE ON "dms"."Descriptor"
     FOR EACH ROW
-    EXECUTE FUNCTION "dms"."TF_Document_Journal"();
+    EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 
 CREATE SCHEMA IF NOT EXISTS "aligned";
 CREATE SCHEMA IF NOT EXISTS "edfi";

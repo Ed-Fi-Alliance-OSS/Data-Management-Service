@@ -70,9 +70,12 @@ internal static class RelationalWriteIdentityStability
             return null;
         }
 
-        return request.AllowIdentityUpdates
-            ? BuildNotYetSupportedFailure(request.OperationKind, request.WritePlan.Model.Resource)
-            : BuildImmutableIdentityFailure(request.OperationKind, request.WritePlan.Model.Resource);
+        if (request.AllowIdentityUpdates)
+        {
+            return null;
+        }
+
+        return BuildImmutableIdentityFailure(request.OperationKind, request.WritePlan.Model.Resource);
     }
 
     private static RelationalWriteExecutorResult BuildImmutableIdentityFailure(
@@ -89,25 +92,6 @@ internal static class RelationalWriteIdentityStability
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateFailureImmutableIdentity(failureMessage)
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-    }
-
-    private static RelationalWriteExecutorResult BuildNotYetSupportedFailure(
-        RelationalWriteOperationKind operationKind,
-        QualifiedResourceName resource
-    )
-    {
-        var failureMessage = RelationalWriteSupport.BuildIdentityUpdatesNotYetSupportedMessage(resource);
-
-        return operationKind switch
-        {
-            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(failureMessage)
-            ),
-            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(failureMessage)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };

@@ -62,6 +62,9 @@ public static class WebApplicationBuilderExtensions
             .Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
+            .Configure<ResourceLinksOptions>(
+                webAppBuilder.Configuration.GetSection("DataManagement:ResourceLinks")
+            )
             .AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
             .AddSingleton<IStartupProcessExit, EnvironmentStartupProcessExit>()
             .AddSingleton<StartupPhaseExecutor>()
@@ -323,6 +326,7 @@ public static class WebApplicationBuilderExtensions
 
     private static void ReplaceWithRelationalDocumentStoreRepository(IServiceCollection services)
     {
+        services.AddRelationalRelationshipAuthorizationServices();
         services.TryAddScoped<RelationalDocumentStoreRepository>();
         services.Replace(
             ServiceDescriptor.Scoped<IDocumentStoreRepository>(serviceProvider =>
@@ -333,6 +337,7 @@ public static class WebApplicationBuilderExtensions
 
     private static void ReplaceWithRelationalQueryHandler(IServiceCollection services)
     {
+        services.AddRelationalRelationshipAuthorizationServices();
         services.TryAddScoped<RelationalDocumentStoreRepository>();
         services.Replace(
             ServiceDescriptor.Scoped<IQueryHandler>(serviceProvider =>

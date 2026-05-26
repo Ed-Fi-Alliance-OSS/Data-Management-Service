@@ -112,7 +112,23 @@ internal static class NormalizedPlanContractCodec
                         )
                     )
                 )
-            )
+            ),
+            DocumentReferenceLookup: plan.DocumentReferenceLookup is null
+                ? null
+                : new DocumentReferenceLookupPlanDto(
+                    SelectByKeysetSql: plan.DocumentReferenceLookup.SelectByKeysetSql,
+                    ResultShape: new DocumentReferenceLookupResultShapeDto(
+                        plan.DocumentReferenceLookup.ResultShape.DocumentIdOrdinal,
+                        plan.DocumentReferenceLookup.ResultShape.DocumentUuidOrdinal,
+                        plan.DocumentReferenceLookup.ResultShape.ResourceKeyIdOrdinal
+                    ),
+                    SourcesInOrder: plan.DocumentReferenceLookup.SourcesInOrder.Select(
+                        source => new DocumentReferenceLookupSourceDto(
+                            Table: EncodeTableName(source.Table),
+                            FkColumn: source.FkColumn.Value
+                        )
+                    )
+                )
         );
     }
 
@@ -363,6 +379,7 @@ internal static class NormalizedPlanContractCodec
         var tablePlans = DecodeTableReadPlans(dto, tablesByName);
         var referenceIdentityProjectionPlans = DecodeReferenceIdentityProjectionPlans(dto, tablesByName);
         var descriptorProjectionPlans = DecodeDescriptorProjectionPlans(dto, tablesByName);
+        var documentReferenceLookup = DecodeDocumentReferenceLookup(dto, tablesByName);
 
         var tempTableNameArgument =
             $"{nameof(ResourceReadPlanDto.KeysetTable)}.{nameof(KeysetTableContractDto.TempTableName)}";
@@ -387,7 +404,8 @@ internal static class NormalizedPlanContractCodec
             ),
             TablePlansInDependencyOrder: tablePlans,
             ReferenceIdentityProjectionPlansInDependencyOrder: referenceIdentityProjectionPlans,
-            DescriptorProjectionPlansInOrder: descriptorProjectionPlans
+            DescriptorProjectionPlansInOrder: descriptorProjectionPlans,
+            DocumentReferenceLookup: documentReferenceLookup
         );
 
         ReadPlanProjectionContractValidator.ValidateOrThrow(
@@ -697,6 +715,72 @@ internal static class NormalizedPlanContractCodec
         }
 
         return decoded;
+    }
+
+    private static ExternalPlans.DocumentReferenceLookupPlan? DecodeDocumentReferenceLookup(
+        ResourceReadPlanDto dto,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
+    {
+        var lookupDto = dto.DocumentReferenceLookup;
+
+        if (lookupDto is null)
+        {
+            return null;
+        }
+
+        var planArgument = nameof(ResourceReadPlanDto.DocumentReferenceLookup);
+        var resultShapeDto = lookupDto.ResultShape;
+
+        if (resultShapeDto is null)
+        {
+            throw new ArgumentNullException(
+                $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.ResultShape)}"
+            );
+        }
+
+        var resultShape = new ExternalPlans.DocumentReferenceLookupResultShape(
+            DocumentIdOrdinal: ValidateNonNegative(
+                resultShapeDto.DocumentIdOrdinal,
+                $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.ResultShape)}.{nameof(DocumentReferenceLookupResultShapeDto.DocumentIdOrdinal)}",
+                "document-reference lookup DocumentId ordinal"
+            ),
+            DocumentUuidOrdinal: ValidateNonNegative(
+                resultShapeDto.DocumentUuidOrdinal,
+                $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.ResultShape)}.{nameof(DocumentReferenceLookupResultShapeDto.DocumentUuidOrdinal)}",
+                "document-reference lookup DocumentUuid ordinal"
+            ),
+            ResourceKeyIdOrdinal: ValidateNonNegative(
+                resultShapeDto.ResourceKeyIdOrdinal,
+                $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.ResultShape)}.{nameof(DocumentReferenceLookupResultShapeDto.ResourceKeyIdOrdinal)}",
+                "document-reference lookup ResourceKeyId ordinal"
+            )
+        );
+
+        var sources = new ExternalPlans.DocumentReferenceLookupSource[lookupDto.SourcesInOrder.Length];
+
+        for (var sourceIndex = 0; sourceIndex < lookupDto.SourcesInOrder.Length; sourceIndex++)
+        {
+            var sourceDto = lookupDto.SourcesInOrder[sourceIndex];
+            var sourceArgument =
+                $"{planArgument}.{nameof(DocumentReferenceLookupPlanDto.SourcesInOrder)}[{sourceIndex}]";
+            var tableModel = ResolveTableModel(
+                sourceDto.Table,
+                tablesByName,
+                $"{sourceArgument}.{nameof(DocumentReferenceLookupSourceDto.Table)}"
+            );
+
+            sources[sourceIndex] = new ExternalPlans.DocumentReferenceLookupSource(
+                Table: tableModel.Table,
+                FkColumn: new DbColumnName(sourceDto.FkColumn)
+            );
+        }
+
+        return new ExternalPlans.DocumentReferenceLookupPlan(
+            SelectByKeysetSql: lookupDto.SelectByKeysetSql,
+            ResultShape: resultShape,
+            SourcesInOrder: sources
+        );
     }
 
     private static IReadOnlyList<ExternalPlans.KeyUnificationWritePlan> DecodeKeyUnificationPlans(

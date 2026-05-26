@@ -19,10 +19,19 @@ internal sealed class PostgresqlDocumentHydrator(NpgsqlDataSourceProvider dataSo
     public async Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken ct
     )
     {
         await using var connection = await dataSourceProvider.DataSource.OpenConnectionAsync(ct);
-        return await HydrationExecutor.ExecuteAsync(connection, plan, keyset, SqlDialect.Pgsql, ct);
+        return await HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Pgsql,
+            transaction: null,
+            executionOptions,
+            ct
+        );
     }
 }

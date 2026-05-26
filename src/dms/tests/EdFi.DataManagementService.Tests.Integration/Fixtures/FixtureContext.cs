@@ -32,8 +32,10 @@ public enum FixtureKey
 {
     FocusedStableKeyUpdateSemantics,
     ProfileRootOnlyMerge,
+    DescriptorRuntime,
     ProfileSeparateTableMerge,
     ProfileNestedAndRootExtensionChildren,
     ProfileCollectionAlignedExtension,
     ProfileCollectionAlignedExtensionHiddenDescendant,
+    AuthoritativeDs52,
 }

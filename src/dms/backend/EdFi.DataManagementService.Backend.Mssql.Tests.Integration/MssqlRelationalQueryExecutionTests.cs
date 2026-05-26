@@ -33,6 +33,7 @@ internal sealed class MssqlRelationalQueryExecutionRecorder
 {
     public List<PageKeysetSpec> HydrationKeysets { get; } = [];
     public List<long> PageMaterializedDocumentIds { get; } = [];
+    public Func<CancellationToken, Task>? BeforeNextHydrationAsync { get; set; }
     public int SingleDocumentMaterializationCallCount { get; private set; }
     public int PageMaterializationCallCount { get; private set; }
 
@@ -56,6 +57,19 @@ internal sealed class MssqlRelationalQueryExecutionRecorder
             materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
         );
     }
+
+    public async Task InvokeBeforeHydrationAsync(CancellationToken cancellationToken)
+    {
+        var beforeHydrationAsync = BeforeNextHydrationAsync;
+
+        if (beforeHydrationAsync is null)
+        {
+            return;
+        }
+
+        BeforeNextHydrationAsync = null;
+        await beforeHydrationAsync(cancellationToken);
+    }
 }
 
 internal sealed class RecordingMssqlDocumentHydrator(
@@ -71,9 +85,11 @@ internal sealed class RecordingMssqlDocumentHydrator(
     public async Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken ct
     )
     {
+        await _recorder.InvokeBeforeHydrationAsync(ct);
         _recorder.HydrationKeysets.Add(keyset);
 
         var selectedInstance = _dmsInstanceSelection.GetSelectedDmsInstance();
@@ -81,7 +97,15 @@ internal sealed class RecordingMssqlDocumentHydrator(
         await using var connection = new SqlConnection(selectedInstance.ConnectionString);
         await connection.OpenAsync(ct);
 
-        return await HydrationExecutor.ExecuteAsync(connection, plan, keyset, SqlDialect.Mssql, null, ct);
+        return await HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            transaction: null,
+            executionOptions,
+            ct
+        );
     }
 }
 
@@ -90,7 +114,10 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
 {
     private readonly MssqlRelationalQueryExecutionRecorder _recorder =
         recorder ?? throw new ArgumentNullException(nameof(recorder));
-    private readonly IRelationalReadMaterializer _inner = CreateInnerMaterializer();
+    private readonly RelationalReadMaterializer _inner = new(
+        new IntegrationFixtureSlugResolver(),
+        Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions())
+    );
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -107,22 +134,14 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
         return materializedDocuments;
     }
 
-    private static IRelationalReadMaterializer CreateInnerMaterializer()
-    {
-        var innerType =
-            typeof(RelationalReadMaterializationRequest).Assembly.GetType(
-                "EdFi.DataManagementService.Backend.RelationalReadMaterializer",
-                throwOnError: true
-            )
-            ?? throw new InvalidOperationException(
-                "Could not resolve internal relational read materializer type."
-            );
+    public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) =>
+        _inner.StripReferenceLinks(document, readPlan);
+}
 
-        return Activator.CreateInstance(innerType, nonPublic: true) as IRelationalReadMaterializer
-            ?? throw new InvalidOperationException(
-                "Could not construct internal relational read materializer."
-            );
-    }
+internal sealed class IntegrationFixtureSlugResolver : IDocumentLinkSlugResolver
+{
+    public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+        new(ProjectEndpointName: "test", EndpointName: "tests", ResourceName: "Test");
 }
 
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService

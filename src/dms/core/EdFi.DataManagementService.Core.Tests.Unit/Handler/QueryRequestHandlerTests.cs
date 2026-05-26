@@ -10,12 +10,12 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -495,10 +495,16 @@ public class QueryRequestHandlerTests
         );
         private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
         [
+            new(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, [], FilterOperator.Or),
             new(
                 AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                [new AuthorizationFilter.EducationOrganization("255901")],
+                [new AuthorizationFilter.EducationOrganization("999999")],
                 FilterOperator.Or
+            ),
+            new(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                [new AuthorizationFilter.EducationOrganization("111111")],
+                FilterOperator.And
             ),
         ];
 
@@ -549,7 +555,12 @@ public class QueryRequestHandlerTests
                     new EducationOrganizationId(255902),
                     new EducationOrganizationId(255900),
                 ],
-                NamespacePrefixes: [],
+                NamespacePrefixes:
+                [
+                    new NamespacePrefix("uri://sample-b.org"),
+                    new NamespacePrefix("uri://sample-a.org"),
+                    new NamespacePrefix("uri://sample-b.org"),
+                ],
                 DmsInstanceIds: []
             );
 
@@ -566,12 +577,25 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
                 .Equal(255900L, 255901L, 255902L);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample-a.org", "uri://sample-b.org");
             _repository.CapturedRequest.ResourceInfo.Should().BeSameAs(_requestInfo.ResourceInfo);
             _repository.CapturedRequest.QueryElements.Should().BeSameAs(_queryElements);
             _repository.CapturedRequest.PaginationParameters.Should().BeSameAs(_paginationParameters);
             _repository
                 .CapturedRequest.AuthorizationStrategyEvaluators.Should()
                 .BeSameAs(_authorizationStrategyEvaluators);
+            _repository
+                .CapturedRequest.AuthorizationStrategyEvaluators.Select(static evaluator =>
+                    evaluator.AuthorizationStrategyName
+                )
+                .Should()
+                .Equal(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                );
             _repository
                 .CapturedRequest.ResourceInfo.Should()
                 .BeEquivalentTo(
@@ -596,6 +620,39 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest.ReadableProfileProjectionContext.IdentityPropertyNames.Should()
                 .Equal("studentUniqueId", "schoolReference");
+        }
+
+        [Test]
+        public void It_builds_relational_authorization_context_from_client_authorizations_instead_of_strategy_filters()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository
+                .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(255900L, 255901L, 255902L);
+            _repository
+                .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .NotContain(111111L)
+                .And.NotContain(999999L);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample-a.org", "uri://sample-b.org");
+        }
+
+        [Test]
+        public void It_normalizes_direct_and_client_authorization_creation_paths_to_the_same_values()
+        {
+            var directlyConstructedContext = new RelationalAuthorizationContext(
+                [255902L, 255901L, 255902L, 255900L],
+                ["uri://sample-b.org", "uri://sample-a.org", "uri://sample-b.org"]
+            );
+
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository
+                .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(directlyConstructedContext.ClaimEducationOrganizationIds);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal(directlyConstructedContext.NamespacePrefixes);
         }
 
         [Test]

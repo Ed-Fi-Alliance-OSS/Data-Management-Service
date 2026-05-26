@@ -46,7 +46,7 @@ environment configuration.
 |---|---|
 | **Preconditions** | Story 00: filesystem ApiSchema source available directly through `-ApiSchemaPath`. Story 06: NuGet feed reachable for asset-only package materialization. No Docker services required. |
 | **Inputs** | Story 00: `-ApiSchemaPath <path>` (direct filesystem ApiSchema source). Story 06: `-Extensions <name>` (0..N, package-backed extension names), mutually exclusive with `-ApiSchemaPath`. |
-| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` containing normalized schema JSON files, optional schema-adjacent static content, and `bootstrap-api-schema-manifest.json`; the staged workspace itself is the downstream schema and runtime-asset contract consumed by later phases and DMS runtime |
+| **Outputs** | Staged workspace `eng/docker-compose/.bootstrap/ApiSchema/` containing normalized schema JSON files, optional schema-adjacent static content, and `bootstrap-api-schema-manifest.json`; the staged workspace itself is the downstream schema and runtime-asset contract consumed by later phases and by DMS runtime after Story 04 enables staged workspace loading |
 | **Side effects** | Writes staged workspace; computes expected `EffectiveSchemaHash` via `dms-schema hash`; records manifest-relative paths for schema and optional static content in `bootstrap-api-schema-manifest.json`; writes the schema section of `eng/docker-compose/.bootstrap/bootstrap-manifest.json` with schema-selection mode, selected extensions, the effective schema hash, an ApiSchema workspace fingerprint, and the relative ApiSchema manifest path |
 | **Failure conditions** | Story 00: missing `-ApiSchemaPath`; `-Extensions` supplied before Story 06 behavior is implemented; normalized-path collision; staged workspace exists with different content; `dms-schema hash` exits non-zero; fewer or more than 1 core schema present after staging. Story 06 adds: extension package/artifact resolution failure; `-Extensions` and `-ApiSchemaPath` both supplied; NuGet feed unreachable for package-backed materialization; selected package is missing the required asset-only ApiSchema payload; selected package contains only DLL-backed ApiSchema resources after the asset-only package switch-over. |
 | **Must NOT do** | Start or depend on Docker services; modify `.env` or Docker Compose variables; perform DDL work; contact the Config Service; accept claims-related parameters |
@@ -74,7 +74,7 @@ content-loading story.
 
 ### 3.2 `prepare-dms-claims.ps1` — Claims and Security Staging
 
-**Primary concern:** Stage `*-claimset.json` fragments into the workspace that the Config Service reads on startup.
+**Primary concern:** Stage `*-claimset.json` fragments into the workspace that the Config Service will read when staged runtime startup is enabled.
 
 | Item | Detail |
 |---|---|
@@ -88,11 +88,14 @@ content-loading story.
 **Mode-to-security contract (precise):** This command always stages the automatic base claims set identified by the schema section of the bootstrap manifest from `prepare-dms-schema.ps1`. If the staged schema set is core only, the bootstrap manifest claims mode may stay in Embedded mode. If the staged schema set includes extension resources with matching security fragments, this command stages those fragments automatically and records Hybrid mode. If the staged schema set needs additional non-core security fragments from `-ApiSchemaPath`, `-ClaimsDirectoryPath` is required and its validated fragments are staged alongside any automatic base fragments. Bootstrap validates the supplied fragments structurally, but does not prove that they authorize every custom resource.
 
 **Claim-set-reference validation contract:** This command validates only the claim set names that CMS
-composition will use as effective authorization attachments: every explicit
-`resourceClaims[].claimSets[].name`, plus the fragment top-level `name` only for non-parent resource
-claims that rely on it as the implicit claim set name. A fragment top-level `name` that is only a
-fragment/group label for explicit parent-claim attachments is not by itself a claim set reference and
-must not be rejected merely because it is absent from embedded `Claims.json`.
+composition will use as effective authorization attachments: explicit
+`resourceClaims[].claimSets[].name` entries on parent resource claims, plus the fragment top-level `name`
+for non-parent resource claims that rely on it as the implicit claim set name. Non-parent
+`resourceClaims[].claimSets[]` entries are rejected because the CMS composer does not use that shape for
+non-parent grants; those fragments must use `authorizationStrategyOverridesForCRUD` with an effective
+top-level fragment `name`. A fragment top-level `name` that is only a fragment/group label for explicit
+parent-claim attachments is not by itself a claim set reference and must not be rejected merely because it
+is absent from embedded `Claims.json`.
 
 **Bootstrap manifest handoff contract:** `eng/docker-compose/.bootstrap/bootstrap-manifest.json` is the only
 persisted compatibility and handoff state between bootstrap phases. The ApiSchema manifest under
@@ -127,7 +130,7 @@ are derived from the repo root plus the manifest's relative directories; they ar
 state. DMS compose services do not consume claimset fragment files, so `local-dms.yml` and
 `published-dms.yml` must not mount `/app/additional-claims`; DMS reads authorization metadata from CMS.
 
-**Boundary note:** Claim-fragment validation here is structural only: JSON shape, duplicate filenames, effective claim-set-name references, and mechanical extraction of the expected verification entries. This phase does not inspect attachment overlap, reject duplicate `(resource claim, claim set name)` pairs, or perform semantic composition reasoning; CMS startup remains the authoritative composition gate. Built-in seed-package advertisement is owned by Story 02 / `load-dms-seed-data.ps1`; this phase only stages and validates the claims inputs that later seed delivery depends on. The bootstrap manifest is not a cross-invocation resume mechanism, mutable workflow checkpoint, or second control plane.
+**Boundary note:** Claim-fragment validation here is structural only: JSON shape, duplicate filenames, effective claim-set-name references, rejection of CMS-ignored non-parent explicit `claimSets`, and mechanical extraction of the expected verification entries. This phase does not inspect attachment overlap, reject duplicate `(resource claim, claim set name)` pairs, or perform semantic composition reasoning; CMS startup remains the authoritative composition gate. Built-in seed-package advertisement is owned by Story 02 / `load-dms-seed-data.ps1`; this phase only stages and validates the claims inputs that later seed delivery depends on. The bootstrap manifest is not a cross-invocation resume mechanism, mutable workflow checkpoint, or second control plane.
 
 ---
 
@@ -137,24 +140,20 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 
 | Item | Detail |
 |---|---|
-| **Preconditions** | Staged claims workspace (`eng/docker-compose/.bootstrap/claims/`) and bootstrap manifest claims section present when CMS is included (normal flow). When invoked with `-DmsBaseUrl`, `configure-local-dms-instance.ps1` and `provision-dms-schema.ps1` have already completed for the selected target set. |
+| **Preconditions** | Current Story 00 startup may validate a bootstrap manifest when present, but staged claims startup is not activated until Story 04 enables DMS staged-schema runtime loading. When invoked with `-DmsBaseUrl`, `configure-local-dms-instance.ps1` and `provision-dms-schema.ps1` have already completed for the selected target set. |
 | **Inputs** | `-InfraOnly` (exclude DMS container from Docker startup); `-DmsBaseUrl <url>` (post-provision health endpoint of IDE-hosted DMS; valid only with `-InfraOnly` and only at the DMS-start/health-wait point after schema provisioning); `-EnvironmentFile <path>` (select Docker Compose env file and shared local settings); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); `-EnableKafkaUI`; `-EnableSwaggerUI`; teardown flags `-d`/`-v` |
-| **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; claims-ready Config Service; healthy DMS container (non-`-InfraOnly` path) or confirmed healthy IDE-hosted DMS endpoint (post-provision `-DmsBaseUrl` path) |
-| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; reads the bootstrap manifest claims section and applies it to Config Service startup through `local-config.yml` claims env vars and the Config Service `/app/additional-claims` bind mount; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); after `/health` is green, verifies CMS applied the staged claims content using a CMS load/composition result when available, otherwise by probing `/authorizationMetadata?claimSetName=<name>` for the recorded claims-verification checks and requiring each expected resource claim URI/action to be present; polls `$DmsBaseUrl/health` with timeout only during the post-provision DMS-start/health-wait invocation |
-| **Failure conditions** | Docker compose start failure; health-wait timeout for any service; Config Service claims composition/load result is failed, incomplete, or unavailable without successful authorization metadata fallback; authorization metadata fallback returns non-200 or omits the core baseline check or any expected `(claim set name, resource claim URI, action)` entry from the bootstrap manifest claims section; `-DmsBaseUrl` supplied before the selected instances and target databases are ready; `-DmsBaseUrl` health-wait timeout |
+| **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; healthy Config Service; healthy DMS container (non-`-InfraOnly` path) or confirmed healthy IDE-hosted DMS endpoint (post-provision `-DmsBaseUrl` path) |
+| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; validates the bootstrap manifest when present but does not apply manifest-selected staged claims to Config Service startup until Story 04 can also point DMS at the matching staged ApiSchema workspace; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); polls `$DmsBaseUrl/health` with timeout only during the post-provision DMS-start/health-wait invocation |
+| **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present; `-DmsBaseUrl` supplied before the selected instances and target databases are ready; `-DmsBaseUrl` health-wait timeout |
 | **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; configure DMS instances; create smoke-test or seed-loading CMS application credentials; load seed data; accept schema or claims parameters |
 
 **Boundary note:** `-InfraOnly` and `-DmsBaseUrl` are Docker-layer controls - they decide whether a DMS
-container starts or an already-provisioned IDE-hosted DMS endpoint is health-checked. Config Service
-readiness in the first infrastructure invocation is the claims-ready gate for later phases: `/health`
-must be green, and bootstrap must prove that CMS applied the staged claims content. A CMS
-load/composition result is the preferred proof. If that result is not available, the fallback is
-manifest-driven authorization metadata verification: query `/authorizationMetadata?claimSetName=<name>`
-for the recorded checks, require the core baseline check to pass, and require every staged fragment entry
-to contain the expected resource claim URI and action for its claim set. Merely finding `EdFiSandbox`, or
-finding a claim set name without the staged resource/action entries, is not claims-ready. This phase
-consumes the claims section of the bootstrap manifest produced earlier; it does not re-derive claims policy
-from schema or fragment contents. `-DmsBaseUrl` is never a shortcut around instance creation or schema
+container starts or an already-provisioned IDE-hosted DMS endpoint is health-checked. Story 00 makes staged
+schema/security the prepared bootstrap contract, not the Docker runtime source of truth. It keeps staged
+schema and staged claims startup inactive as a pair, because activating only CMS claims while DMS remains
+DLL-backed can produce mismatched authorization metadata. Story 04 owns the claims-ready gate for staged
+bootstrap startup, including any CMS load/composition result or authorization metadata verification. `-DmsBaseUrl`
+is never a shortcut around instance creation or schema
 provisioning: the wrapper must hold that value until after `configure-local-dms-instance.ps1` and
 `provision-dms-schema.ps1` have completed, and manual phase flows must invoke the external health wait in
 the same post-provision position. Once DMS health is confirmed, any later step is owned by wrapper

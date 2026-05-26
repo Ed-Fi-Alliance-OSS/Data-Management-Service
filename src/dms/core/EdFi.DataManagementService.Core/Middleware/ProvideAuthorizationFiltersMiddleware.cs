@@ -51,10 +51,10 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 return;
             }
 
-            if (IsRelationalGetManyRequest(requestInfo))
+            if (IsRelationalBackendAuthorizationRequest(requestInfo))
             {
-                // Relational GET-many now classifies strategy names in the backend planner,
-                // so middleware must preserve raw names and avoid premature provider failures.
+                // Relational backend-planned authorization classifies strategy names in the
+                // backend planner, so middleware must preserve raw names and avoid premature provider failures.
                 requestInfo.AuthorizationStrategyEvaluators =
                 [
                     .. requestInfo.ResourceActionAuthStrategies.Select(
@@ -78,7 +78,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                         authorizationStrategy,
                         requestInfo.ScopedServiceProvider
                     );
-                if (authFiltersProvider == null)
+                if (authFiltersProvider is null)
                 {
                     requestInfo.FrontendResponse = new FrontendResponse(
                         StatusCode: (int)HttpStatusCode.Forbidden,
@@ -138,8 +138,14 @@ internal class ProvideAuthorizationFiltersMiddleware(
         await next();
     }
 
-    private static bool IsRelationalGetManyRequest(RequestInfo requestInfo) =>
+    private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
         requestInfo.MappingSet is not null
-        && requestInfo.Method == RequestMethod.GET
-        && !requestInfo.PathComponents.HasDocumentUuidSegment;
+        && (
+            requestInfo.Method == RequestMethod.GET
+            || requestInfo.Method == RequestMethod.DELETE
+            || requestInfo.Method == RequestMethod.POST
+            // Descriptor PUT also bypasses legacy NamespaceBased filters until DMS-1057 wires
+            // descriptor writes into backend-planned namespace authorization.
+            || requestInfo.Method == RequestMethod.PUT
+        );
 }

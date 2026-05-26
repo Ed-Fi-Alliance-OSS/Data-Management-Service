@@ -1,0 +1,13 @@
+{
+  "id": "22222222333344445555666666666666",
+  "courseCode": "ENG-101",
+  "educationOrganizationReference": {
+    "educationOrganizationId": 255901,
+    "link": {
+      "rel": "School",
+      "href": "/ed-fi/schools/abcd1234ef0156782a3b4c5d6e7f8001"
+    }
+  },
+  "courseTitle": "English 101",
+  "numberOfParts": 1
+}

@@ -15,7 +15,8 @@ public interface IIdentityProviderRepository
         string scope,
         string namespacePrefixes,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true
     );
 
     Task<ClientUpdateResult> UpdateClientAsync(
@@ -23,7 +24,9 @@ public interface IIdentityProviderRepository
         string displayName,
         string scope,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null
+        long[]? dmsInstanceIds = null,
+        bool isApproved = true,
+        string role = ""
     );
 
     Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(string clientUuid, string namespacePrefixes);

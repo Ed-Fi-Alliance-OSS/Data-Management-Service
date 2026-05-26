@@ -20,7 +20,6 @@ internal static class DmsTableNames
     public static readonly DbTableName Descriptor = new(DmsSchema, "Descriptor");
     public static readonly DbTableName Document = new(DmsSchema, "Document");
     public static readonly DbTableName DocumentCache = new(DmsSchema, "DocumentCache");
-    public static readonly DbTableName DocumentChangeEvent = new(DmsSchema, "DocumentChangeEvent");
     public static readonly DbTableName ReferentialIdentity = new(DmsSchema, "ReferentialIdentity");
     public static readonly DbTableName ResourceKey = new(DmsSchema, "ResourceKey");
     public static readonly DbTableName SchemaComponent = new(DmsSchema, "SchemaComponent");

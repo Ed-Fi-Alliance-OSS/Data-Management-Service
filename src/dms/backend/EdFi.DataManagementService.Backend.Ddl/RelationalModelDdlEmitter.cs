@@ -6,7 +6,6 @@
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
-using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -18,7 +17,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
     // Frequently-used column names, allocated once to avoid repetitive allocations.
-    private static readonly DbColumnName DocumentIdColumn = new("DocumentId");
+    private static readonly DbColumnName DocumentIdColumn = RelationalNameConventions.DocumentIdColumnName;
     private static readonly DbColumnName ContentVersionColumn = new("ContentVersion");
     private static readonly DbColumnName ContentLastModifiedAtColumn = new("ContentLastModifiedAt");
     private static readonly DbColumnName IdentityVersionColumn = new("IdentityVersion");
@@ -179,6 +178,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits the <c>auth.EducationOrganizationIdToEducationOrganizationId</c> table when the auth hierarchy is present.
+    /// Renders from <see cref="AuthObjectDefinitions.AuthEdOrgTable"/> so the manifest emitter and
+    /// the SQL emitter share one source of truth for auth-table shape (DMS-1096 AC).
     /// </summary>
     private void EmitAuthTable(SqlWriter writer, AuthEdOrgHierarchy? authHierarchy)
     {
@@ -187,21 +188,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        var authTable = AuthNames.EdOrgIdToEdOrgId;
-        var sourceCol = AuthNames.SourceEdOrgId;
-        var targetCol = AuthNames.TargetEdOrgId;
+        var def = AuthObjectDefinitions.AuthEdOrgTable;
 
-        writer.AppendLine(_dialect.CreateTableHeader(authTable));
+        writer.AppendLine(_dialect.CreateTableHeader(def.Table));
         writer.AppendLine("(");
         using (writer.Indent())
         {
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(sourceCol, "bigint", false)},");
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(targetCol, "bigint", false)},");
+            foreach (var column in def.Columns)
+            {
+                writer.AppendLine(
+                    $"{_dialect.RenderColumnDefinition(column.Name, column.SqlType, column.IsNullable)},"
+                );
+            }
             writer.AppendLine(
-                _dialect.RenderNamedPrimaryKeyClause(
-                    "PK_EducationOrganizationIdToEducationOrganizationId",
-                    [sourceCol, targetCol]
-                )
+                _dialect.RenderNamedPrimaryKeyClause(def.PrimaryKeyName, def.PrimaryKeyColumns)
             );
         }
         writer.AppendLine(");");
@@ -558,8 +558,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(Quote(trigger.Table));
         var mssqlTriggerEvent = trigger.Parameters switch
         {
-            TriggerKindParameters.IdentityPropagationFallback => "INSTEAD OF UPDATE",
             TriggerKindParameters.DocumentStamping => "AFTER INSERT, UPDATE, DELETE",
+            TriggerKindParameters.IdentityPropagationFallback => "AFTER UPDATE",
             _ => "AFTER INSERT, UPDATE",
         };
         writer.AppendLine(mssqlTriggerEvent);
@@ -809,7 +809,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("END IF;");
 
         // Root-document INSERTs reuse dms.Document defaults so we do not burn an
-        // extra sequence value and journal row before the resource row exists.
+        // extra sequence value before the resource row exists.
         if (isRootDocumentStampingTrigger)
         {
             writer.AppendLine("IF TG_OP = 'UPDATE' THEN");
@@ -829,7 +829,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             // PostgreSQL: IS DISTINCT FROM provides null-safe inequality comparison.
             // (NULL IS DISTINCT FROM NULL) → false, (NULL IS DISTINCT FROM value) → true.
-            // Equivalent to MSSQL's EmitMssqlNullSafeNotEqual pattern which expands to:
+            // Equivalent to MssqlTriggerDiffEmitter.EmitNullSafeNotEqual which expands to:
             // (a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL))
             writer.Append("IF TG_OP = 'UPDATE' AND (");
             EmitPgsqlValueDiffDisjunction(writer, trigger.IdentityProjectionColumns);
@@ -1482,9 +1482,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits an UPDATE + INSERT upsert for abstract identity maintenance.
-    /// SQL Server rejects MERGE when the target table has an INSTEAD OF UPDATE
-    /// trigger, which can happen once identity propagation fallback triggers are
-    /// derived for abstract identity tables.
     /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
     /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
     /// </summary>
@@ -1617,14 +1614,49 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         var documentIdCol = Quote(DocumentIdColumn);
-        var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
-        var updatableColumns = GetWritableStoredNonKeyColumns(tableModel, trigger.Name.Value);
 
-        // Identity propagation happens before the owning row update. The ON UPDATE NO ACTION
-        // FKs are emitted as DocumentId-only on MSSQL (identity columns excluded), so neither
-        // the child nor the parent UPDATE violates the FK constraint.
+        // AFTER UPDATE trigger: SQL Server has already applied the owning row update by
+        // the time this body runs. We propagate identity-column changes to referrer
+        // tables. The ON UPDATE NO ACTION FKs are emitted as DocumentId-only on MSSQL
+        // (identity columns excluded), so the parent UPDATE does not violate the FK,
+        // and the referrer UPDATE that follows reconciles the stored projected
+        // identity columns.
+        //
+        // Guard: the trigger fires on every UPDATE statement against the owning table,
+        // including the abstract-identity upsert's zero-row UPDATE phase. Without a
+        // value-diff gate, each referrer UPDATE below would itself fire any
+        // identity-propagation triggers on the referrer's table and cascade through
+        // the schema, easily exceeding SQL Server's 32-level trigger nesting limit.
+        // The IF EXISTS short-circuits the entire body when no identity column
+        // actually changed, which makes the inner UPDATEs (and their cascades) run
+        // only when there is real work to do.
         writer.Append("IF (");
         EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
+        writer.AppendLine(")");
+        writer.AppendLine("AND EXISTS (");
+        using (writer.Indent())
+        {
+            writer.Append("SELECT 1 FROM inserted i INNER JOIN deleted d ON i.");
+            writer.Append(documentIdCol);
+            writer.Append(" = d.");
+            writer.AppendLine(documentIdCol);
+            writer.Append("WHERE ");
+            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+            {
+                if (i > 0)
+                {
+                    writer.Append(" OR ");
+                }
+                EmitMssqlColumnValueDiffPredicate(
+                    writer,
+                    tableModel,
+                    "i",
+                    "d",
+                    trigger.IdentityProjectionColumns[i]
+                );
+            }
+            writer.AppendLine();
+        }
         writer.AppendLine(")");
         writer.AppendLine("BEGIN");
 
@@ -1694,30 +1726,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         writer.AppendLine("END");
-        writer.AppendLine();
-
-        writer.AppendLine("UPDATE t");
-        writer.Append("SET ");
-        for (int i = 0; i < updatableColumns.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(", ");
-            }
-
-            var quotedColumn = Quote(updatableColumns[i]);
-            writer.Append("t.");
-            writer.Append(quotedColumn);
-            writer.Append(" = i.");
-            writer.Append(quotedColumn);
-        }
-        writer.AppendLine();
-        writer.Append("FROM ");
-        writer.Append(Quote(trigger.Table));
-        writer.AppendLine(" t");
-        writer.Append("INNER JOIN inserted i ON ");
-        EmitMssqlJoinConjunction(writer, "t", "i", tableKeyColumns);
-        writer.AppendLine(";");
     }
 
     /// <summary>
@@ -1808,82 +1816,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             EmitMssqlColumnValueDiffPredicate(writer, tableModel, "i", "d", identityProjectionColumns[i]);
         }
         writer.AppendLine(";");
-    }
-
-    /// <summary>
-    /// Emits a NULL-safe inequality comparison for MSSQL.
-    /// For <see cref="ScalarKind.String"/> columns emits
-    /// <c>(CAST(left.col AS varbinary(max)) &lt;&gt; CAST(right.col AS varbinary(max))
-    /// OR (left.col IS NULL AND right.col IS NOT NULL)
-    /// OR (left.col IS NOT NULL AND right.col IS NULL))</c>;
-    /// for all other scalar kinds the <c>CAST</c> wrappers are omitted.
-    /// </summary>
-    /// <remarks>
-    /// The <c>CAST(... AS varbinary(max))</c> wrapper on the <c>&lt;&gt;</c> operands ensures
-    /// byte-level comparison, which detects trailing-space-only and case-only changes that
-    /// the default <c>nvarchar</c> comparison misses (ANSI SQL padding ignores trailing
-    /// spaces; the default CI collation ignores case). This mirrors the approach used by
-    /// <c>[dms].[uuidv5]</c>, which hashes raw bytes — so a change that produces a
-    /// different hash must also be detected as a change here.
-    /// Non-text types (int, bigint, decimal, bit, date, datetime, time) are unaffected by
-    /// collation or ANSI padding, so plain <c>&lt;&gt;</c> suffices for those columns.
-    /// </remarks>
-    private static void EmitMssqlNullSafeNotEqual(
-        SqlWriter writer,
-        string leftAlias,
-        string quotedColumn,
-        string rightAlias,
-        string rightQuotedColumn,
-        ScalarKind? scalarKind
-    )
-    {
-        // Text columns need CAST(... AS varbinary(max)) to detect trailing-space-only
-        // and case-only changes that the default nvarchar CI collation would miss.
-        // Non-text types (int, bigint, decimal, bit, date, datetime, time) are
-        // unaffected by collation or ANSI padding, so plain <> suffices.
-        bool needsCast = scalarKind == ScalarKind.String;
-
-        writer.Append("(");
-        if (needsCast)
-        {
-            writer.Append("CAST(");
-        }
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        if (needsCast)
-        {
-            writer.Append(" AS varbinary(max))");
-        }
-        writer.Append(" <> ");
-        if (needsCast)
-        {
-            writer.Append("CAST(");
-        }
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        if (needsCast)
-        {
-            writer.Append(" AS varbinary(max))");
-        }
-        writer.Append(" OR (");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" IS NULL AND ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(" IS NOT NULL) OR (");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" IS NOT NULL AND ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(" IS NULL))");
     }
 
     private static void EmitMssqlNullSafeEqual(
@@ -2158,132 +2090,81 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        var requiredResourceNames = new[]
-        {
-            "StudentSchoolAssociation",
-            "StudentContactAssociation",
-            "StaffEducationOrganizationAssignmentAssociation",
-            "StaffEducationOrganizationEmploymentAssociation",
-            "StudentEducationOrganizationResponsibilityAssociation",
-        };
-
-        if (
-            !Array.TrueForAll(
-                requiredResourceNames,
-                requiredResourceName =>
-                    concreteResources.Any(r =>
-                        DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
-                        && r.ResourceKey.Resource.ResourceName == requiredResourceName
-                    )
-            )
-        )
+        if (!AuthObjectDefinitions.HasAllPeopleAuthViewAssociations(concreteResources))
         {
             return;
         }
 
-        var authSchema = AuthNames.AuthSchema;
-        string edOrgTable = Quote(AuthNames.EdOrgIdToEdOrgId);
-        string srcEdOrgId = Quote(AuthNames.SourceEdOrgId);
-        string tgtEdOrgId = Quote(AuthNames.TargetEdOrgId);
-        string schoolId = Quote(AuthNames.SchoolIdUnified);
-        string studentDocId = Quote(AuthNames.StudentDocumentId);
-        string contactDocId = Quote(AuthNames.ContactDocumentId);
-        string staffDocId = Quote(AuthNames.StaffDocumentId);
-        string edOrgEdOrgId = Quote(AuthNames.EdOrgEdOrgId);
-
-        var edfi = new DbSchemaName("edfi");
-
-        // Alphabetical order: Contact, Staff, Student, StudentThroughResponsibility
-
-        // 1. auth.EducationOrganizationIdToContactDocumentId
-        //    EdOrg hierarchy -> StudentSchoolAssociation -> StudentContactAssociation
-        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToContactDocumentId"));
-        writer.AppendLine($"SELECT DISTINCT");
-        using (writer.Indent())
+        foreach (var view in AuthObjectDefinitions.PeopleAuthViews)
         {
-            writer.AppendLine($"edOrg.{srcEdOrgId},");
-            writer.AppendLine($"sca.{contactDocId}");
+            EmitPeopleAuthView(writer, view);
         }
-        writer.AppendLine($"FROM {edOrgTable} edOrg");
-        writer.AppendLine(
-            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentSchoolAssociation"))} ssa"
-                + $" ON edOrg.{tgtEdOrgId} = ssa.{schoolId}"
-        );
-        writer.AppendLine(
-            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentContactAssociation"))} sca"
-                + $" ON ssa.{studentDocId} = sca.{studentDocId}"
-        );
-        writer.AppendLine(";");
-        writer.AppendLine();
+    }
 
-        // 2. auth.EducationOrganizationIdToStaffDocumentId
-        //    UNION of two arms: StaffEducationOrganizationAssignmentAssociation
-        //    and StaffEducationOrganizationEmploymentAssociation
-        //    UNION already deduplicates, so per-arm DISTINCT is not needed.
-        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStaffDocumentId"));
-        writer.AppendLine($"SELECT");
-        using (writer.Indent())
-        {
-            writer.AppendLine($"edOrg.{srcEdOrgId},");
-            writer.AppendLine($"seoaa.{staffDocId}");
-        }
-        writer.AppendLine($"FROM {edOrgTable} edOrg");
-        writer.AppendLine(
-            $"INNER JOIN {Quote(new DbTableName(edfi, "StaffEducationOrganizationAssignmentAssociation"))} seoaa"
-                + $" ON edOrg.{tgtEdOrgId} = seoaa.{edOrgEdOrgId}"
-        );
-        writer.AppendLine("UNION");
-        writer.AppendLine($"SELECT");
-        using (writer.Indent())
-        {
-            writer.AppendLine($"edOrg.{srcEdOrgId},");
-            writer.AppendLine($"seoea.{staffDocId}");
-        }
-        writer.AppendLine($"FROM {edOrgTable} edOrg");
-        writer.AppendLine(
-            $"INNER JOIN {Quote(new DbTableName(edfi, "StaffEducationOrganizationEmploymentAssociation"))} seoea"
-                + $" ON edOrg.{tgtEdOrgId} = seoea.{edOrgEdOrgId}"
-        );
-        writer.AppendLine(";");
-        writer.AppendLine();
+    /// <summary>
+    /// Emits a single people auth view from its shared <see cref="AuthViewDefinition"/>: header,
+    /// arms joined by the view's set-operator, and trailing terminator.
+    /// </summary>
+    private void EmitPeopleAuthView(SqlWriter writer, AuthViewDefinition view)
+    {
+        EmitViewHeader(writer, view.View);
 
-        // 3. auth.EducationOrganizationIdToStudentDocumentId
-        //    EdOrg hierarchy -> StudentSchoolAssociation
-        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentId"));
-        writer.AppendLine($"SELECT DISTINCT");
-        using (writer.Indent())
+        for (int i = 0; i < view.Arms.Count; i++)
         {
-            writer.AppendLine($"edOrg.{srcEdOrgId},");
-            writer.AppendLine($"ssa.{studentDocId}");
+            if (i > 0)
+            {
+                writer.AppendLine(SetOperatorKeyword(view));
+            }
+            EmitPeopleAuthViewArm(writer, view.Arms[i]);
         }
-        writer.AppendLine($"FROM {edOrgTable} edOrg");
-        writer.AppendLine(
-            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentSchoolAssociation"))} ssa"
-                + $" ON edOrg.{tgtEdOrgId} = ssa.{schoolId}"
-        );
-        writer.AppendLine(";");
-        writer.AppendLine();
 
-        // 4. auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility
-        //    EdOrg hierarchy -> StudentEducationOrganizationResponsibilityAssociation
-        EmitViewHeader(
-            writer,
-            new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentIdThroughResponsibility")
-        );
-        writer.AppendLine($"SELECT DISTINCT");
-        using (writer.Indent())
-        {
-            writer.AppendLine($"edOrg.{srcEdOrgId},");
-            writer.AppendLine($"seora.{studentDocId}");
-        }
-        writer.AppendLine($"FROM {edOrgTable} edOrg");
-        writer.AppendLine(
-            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentEducationOrganizationResponsibilityAssociation"))} seora"
-                + $" ON edOrg.{tgtEdOrgId} = seora.{edOrgEdOrgId}"
-        );
         writer.AppendLine(";");
         writer.AppendLine();
     }
+
+    /// <summary>
+    /// Emits a single <c>SELECT [DISTINCT] ... FROM ... INNER JOIN ...</c> arm of a people auth view.
+    /// </summary>
+    private void EmitPeopleAuthViewArm(SqlWriter writer, AuthViewArm arm)
+    {
+        writer.AppendLine(arm.SelectDistinct ? "SELECT DISTINCT" : "SELECT");
+        using (writer.Indent())
+        {
+            for (int j = 0; j < arm.OutputColumns.Count; j++)
+            {
+                var column = arm.OutputColumns[j];
+                var trailing = j < arm.OutputColumns.Count - 1 ? "," : string.Empty;
+                writer.AppendLine($"{column.Alias}.{Quote(column.Column)}{trailing}");
+            }
+        }
+        writer.AppendLine($"FROM {Quote(arm.SourceTable)} {arm.SourceAlias}");
+        foreach (var join in arm.Joins)
+        {
+            var predicates = string.Join(
+                " AND ",
+                join.On.Select(p =>
+                    $"{p.LeftAlias}.{Quote(p.LeftColumn)} = {p.RightAlias}.{Quote(p.RightColumn)}"
+                )
+            );
+            writer.AppendLine($"INNER JOIN {Quote(join.Table)} {join.Alias} ON {predicates}");
+        }
+    }
+
+    private static string SetOperatorKeyword(AuthViewDefinition view) =>
+        view.ArmsSetOperator switch
+        {
+            AuthViewSetOperator.Union => "UNION",
+            AuthViewSetOperator.UnionAll => "UNION ALL",
+            AuthViewSetOperator.None => throw new InvalidOperationException(
+                $"Auth view '{view.View.Schema.Value}.{view.View.Name}' has multiple arms but "
+                    + $"ArmsSetOperator is {nameof(AuthViewSetOperator.None)}."
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(view),
+                view.ArmsSetOperator,
+                "Unsupported AuthViewSetOperator."
+            ),
+        };
 
     /// <summary>
     /// Emits the dialect-specific <c>CREATE VIEW</c> header: an optional <c>GO</c> batch separator
@@ -2429,31 +2310,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         return keyColumns;
     }
 
-    private static IReadOnlyList<DbColumnName> GetWritableStoredNonKeyColumns(
-        DbTableModel tableModel,
-        string triggerName
-    )
-    {
-        var keyColumns = tableModel.Key.Columns.Select(column => column.ColumnName).ToHashSet();
-        var updatableColumns = tableModel
-            .Columns.Where(column =>
-                column.Storage is ColumnStorage.Stored
-                && column.IsWritable
-                && !keyColumns.Contains(column.ColumnName)
-            )
-            .Select(column => column.ColumnName)
-            .ToArray();
-
-        if (updatableColumns.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"IdentityPropagationFallback trigger '{triggerName}' requires at least one writable stored non-key column on table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}'."
-            );
-        }
-
-        return updatableColumns;
-    }
-
     private void EmitMssqlJoinConjunction(
         SqlWriter writer,
         string leftAlias,
@@ -2507,7 +2363,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     )
     {
         var quotedColumn = Quote(columnName);
-        EmitMssqlNullSafeNotEqual(
+        MssqlTriggerDiffEmitter.EmitNullSafeNotEqual(
             writer,
             leftAlias,
             quotedColumn,

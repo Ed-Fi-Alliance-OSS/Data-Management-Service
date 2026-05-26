@@ -20,6 +20,18 @@ public abstract class DdlGoldenFixtureTestBase
     private FixtureConfig _config = default!;
     private FixtureCompareResult _result = default!;
 
+    /// <summary>
+    /// Directory containing the freshly generated artifacts for the current fixture run.
+    /// Exposed for subclasses that want to assert against generated output (not checked-in expected/).
+    /// </summary>
+    protected string ActualDirectory => _actualDir;
+
+    /// <summary>
+    /// Reads the contents of a file emitted into the fixture's actual/ directory.
+    /// </summary>
+    protected string ReadActual(string relativeFileName) =>
+        File.ReadAllText(Path.Combine(_actualDir, relativeFileName));
+
     protected abstract string ResolveFixtureDirectory(string projectRoot);
 
     /// <summary>
