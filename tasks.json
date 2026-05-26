@@ -487,6 +487,25 @@
     "completed": true
   },
   {
+    "category": "Failure Metadata",
+    "description": "Medium: Preserve selected People subjects when unresolved People securable paths are also present.",
+    "acceptance-criteria": [
+      "RelationalPeopleAuthorizationSubjectSelector does not return before strategy subject selection when unresolved People paths exist but other same-strategy People paths resolve to executable subjects.",
+      "A selected People subject that requires a suppressed People auth view still produces a MissingPeopleAuthViewAssociations security-configuration failure when another selected People path is unresolved.",
+      "Security-configuration failure aggregation includes both the unresolved People securable element failure and missing People auth view failure in deterministic order.",
+      "Resolved People subject contributor metadata is preserved for missing-auth-view diagnostics even when unresolved People paths are present.",
+      "Existing behavior for unresolved People paths with no resolved executable People subjects remains a security-configuration failure."
+    ],
+    "steps-to-verify": [
+      "Review RelationalPeopleAuthorizationSubjectSelector.Select and defer the early unresolved-path return until after strategy subject selection has preserved resolved subject selections.",
+      "Add planner unit coverage for a People relationship strategy with one resolved Student path, one unresolved Student path, and suppressed People auth views; assert both UnresolvedSecurableElement and MissingPeopleAuthViewAssociations failures are returned.",
+      "Add selector unit coverage proving unresolved People paths do not discard resolved People subjects for the same selected strategy.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlanner|RelationalPeopleAuthorizationSubjectSelector\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": false
+  },
+  {
     "category": "Operation Eligibility",
     "description": "Medium: Make transitive People proposed anchors consumable by proposed-value authorization extraction and SQL staging guards.",
     "acceptance-criteria": [
@@ -527,5 +546,81 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend src/dms/core/EdFi.DataManagementService.Core.External/Backend"
     ],
     "completed": true
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Medium: Restrict zero-hop self-person subject selection to the resource's actual self identity securable element.",
+    "acceptance-criteria": [
+      "Student, Contact, and Staff resources still produce a zero-hop self-person subject for their own UniqueId securable element.",
+      "A root-level same-kind person reference on a Student, Contact, or Staff resource is resolved through the normal DocumentId reference path instead of being treated as the aggregate root DocumentId.",
+      "Unresolved non-self same-kind person securable paths on person resources produce the existing unresolved securable element security-configuration failure.",
+      "Unit coverage proves both the self-identity path and a non-self same-kind reference path on a person resource are classified correctly."
+    ],
+    "steps-to-verify": [
+      "Review RelationalPeopleAuthorizationSubjectSelector.ResolvePersonCandidates and replace the broad IsPersonResource shortcut with a self-identity-path check before creating SelfRootDocumentId subjects.",
+      "Add or update RelationalPeopleAuthorizationSubjectSelector tests for a Student/Contact/Staff self identity path and a same-kind root reference path on a person resource.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Operation Eligibility",
+    "description": "Medium: Bind existing-resource self-person proposed checks from the persisted target DocumentId instead of the unresolved root-row placeholder.",
+    "acceptance-criteria": [
+      "PUT and existing-resource POST-as-update self-person subjects for Student, Contact, and Staff remain executable even when the finalized root row carries FlattenedWriteValue.UnresolvedRootDocumentId for the root DocumentId binding.",
+      "Self-person proposed anchor metadata distinguishes existing-resource target DocumentId binding from normal proposed root-row value binding, or otherwise gives downstream consumers an equivalent non-null target-document source.",
+      "RelationshipAuthorizationProposedValueExtractor, or the later DMS-1158 consumer, maps existing-resource self-person proposed checks to the persisted target DocumentId and does not classify the unresolved root-row placeholder as ProposedValueMissing for that case.",
+      "POST create-new self-person subjects remain operation-ineligible with SelfPersonDocumentIdUnavailableForCreateNew.",
+      "Existing direct person references and transitive first-hop proposed anchors continue binding from the finalized root row as they do today."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.CreateProposedAnchor and RelationshipAuthorizationProposedValueExtractor.Extract for SelfRootDocumentId handling on ProposedValueOperationKind.ExistingResource.",
+      "Extend the proposed anchor or extraction request shape so existing-resource self-person checks can receive the target DocumentId without reading it from the unresolved root row.",
+      "Add planner or extractor unit coverage for Student, Contact, and Staff self-person PUT or POST-as-update checks where the root row DocumentId value is FlattenedWriteValue.UnresolvedRootDocumentId and the expected runtime authorization value is the existing target DocumentId.",
+      "Add regression coverage proving POST create-new still reports SelfPersonDocumentIdUnavailableForCreateNew for all-self People strategies.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationshipAuthorizationProposedValueExtractor",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Auth View Selection",
+    "description": "Medium: Preserve missing People auth view diagnostics when proposed check-spec planning also fails.",
+    "acceptance-criteria": [
+      "PlanProposedValues reports MissingPeopleAuthViewAssociations for selected operation-applicable People subjects even when CreateProposedCheckSpec also returns planning failures such as MissingProposedRootBinding.",
+      "When a selected People subject needs a suppressed auth view and its proposed root binding is missing, the security-configuration failures include both MissingProposedRootBinding and MissingPeopleAuthViewAssociations in deterministic order.",
+      "POST create-new self-person subjects that are operation-ineligible with SelfPersonDocumentIdUnavailableForCreateNew do not produce MissingPeopleAuthViewAssociations solely because People auth views were suppressed.",
+      "Existing stored-value and update missing-auth-view behavior remains unchanged.",
+      "EdOrg-only relationship planning remains unchanged."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.PlanSupportedStrategies and PlanSelectedSupportedStrategies so selected operation-applicable People auth views are considered before returning proposed planning failures.",
+      "Add planner unit coverage for PlanProposedValues with a selected direct or transitive People subject, suppressed People auth views, and a write plan missing the proposed root binding; assert both failure kinds are returned.",
+      "Add regression coverage for POST create-new self-person People planning with suppressed auth views; assert NoExecutableSubjects remains the reported failure and MissingPeopleAuthViewAssociations is not emitted for the ineligible self subject.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Low: Make the People subject selector report no-applicable strategies even when no skipped contributors exist.",
+    "acceptance-criteria": [
+      "RelationalPeopleAuthorizationSubjectSelector does not silently omit a configured People strategy that selects zero subjects and has zero skipped contributors when invoked with multiple supported People strategies.",
+      "A no-applicable People strategy selection produces NoApplicableRootSubject failure metadata with resource, configured strategy, relationship-local order, eligible securable element kind, auth object, and person metadata.",
+      "Planner consumption of the selector does not duplicate NoApplicableRootSubject failures for the same configured strategy.",
+      "Mixed EdOrg-and-People planner behavior still continues with applicable EdOrg subjects when no People subject is selected for the resource.",
+      "Selector unit coverage includes a multi-strategy call where one People strategy resolves a subject and another People strategy has no matching configured person paths."
+    ],
+    "steps-to-verify": [
+      "Review RelationalPeopleAuthorizationSubjectSelector.Select and decide whether no-applicable handling belongs in the selector result or exclusively in RelationshipAuthorizationPlanner.",
+      "Add or update RelationalPeopleAuthorizationSubjectSelector tests for a multi-strategy Student-plus-Contact selection where the resource only has Student paths and Contact should report NoApplicableRootSubject.",
+      "Add or update RelationshipAuthorizationPlanner tests proving no duplicate no-applicable failures are emitted through the current one-strategy selector call path.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationalPeopleAuthorizationSubjectSelector|RelationshipAuthorizationPlanner\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": false
   }
 ]
