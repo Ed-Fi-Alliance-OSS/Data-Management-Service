@@ -13,6 +13,8 @@ using EdFi.DmsConfigurationService.DataModel.Model.ResourceClaims;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
+using AuthorizationStrategy = EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
@@ -277,104 +279,134 @@ public class ResourceClaimRepository(
         }
     }
 
+    private sealed record ResolvedClaimNode(
+        ResourceClaimResponse Node,
+        Claim OriginalClaim,
+        Dictionary<string, Action> KnownActions,
+        Dictionary<string, AuthorizationStrategy> KnownAuthStrategies
+    );
+
+    private async Task<(
+        List<ResolvedClaimNode>? Nodes,
+        string? FailureMessage
+    )> LoadAndResolveClaimNodesWithActions()
+    {
+        var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
+        if (hierarchyResult is not ClaimsHierarchyGetResult.Success hierarchySuccess)
+        {
+            var failureMessage = hierarchyResult switch
+            {
+                ClaimsHierarchyGetResult.FailureHierarchyNotFound => "Hierarchy not found",
+                _ => "Failed to load claims hierarchy.",
+            };
+            return (null, failureMessage);
+        }
+
+        var metadata = await LoadResourceClaimMetadata();
+        var metadataByUri = metadata.ToDictionary(m => m.ClaimName, m => m);
+
+        var projection = BuildProjectedHierarchy(
+            hierarchySuccess.Claims,
+            metadataByUri,
+            out var projectionFailure
+        );
+        if (projection is null)
+        {
+            logger.LogError("Resource claim projection integrity failure: {Message}", projectionFailure);
+            return (null, projectionFailure);
+        }
+
+        var knownActions = claimSetRepository
+            .GetActions()
+            .ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
+
+        var authStrategiesResult = await claimSetRepository.GetAuthorizationStrategies();
+        if (authStrategiesResult is not AuthorizationStrategyGetResult.Success authStrategiesSuccess)
+        {
+            logger.LogError("Failed to load authorization strategies.");
+            return (null, "Failed to load authorization strategies.");
+        }
+        var knownAuthStrategies = authStrategiesSuccess.AuthorizationStrategy.ToDictionary(
+            s => s.AuthorizationStrategyName,
+            s => s,
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        var resolvedNodes = new List<ResolvedClaimNode>();
+        foreach (var (node, originalClaim) in projection.AllNodes)
+        {
+            if (originalClaim.DefaultAuthorization is null)
+            {
+                continue;
+            }
+
+            // Validate all actions and strategies exist
+            foreach (var action in originalClaim.DefaultAuthorization.Actions)
+            {
+                if (!knownActions.TryGetValue(action.Name, out var knownAction))
+                {
+                    var failureMessage =
+                        $"Action '{action.Name}' in DefaultAuthorization for claim '{originalClaim.Name}' could not be resolved.";
+                    logger.LogError(
+                        "Action '{ActionName}' in DefaultAuthorization for claim '{ClaimUri}' could not be resolved.",
+                        action.Name,
+                        originalClaim.Name
+                    );
+                    return (null, failureMessage);
+                }
+
+                var invalidStrategy = action.AuthorizationStrategies.Find(s =>
+                    !knownAuthStrategies.ContainsKey(s.Name)
+                );
+                if (invalidStrategy is not null)
+                {
+                    var failureMessage =
+                        $"Authorization strategy '{invalidStrategy.Name}' in DefaultAuthorization for claim '{originalClaim.Name}', action '{action.Name}' could not be resolved.";
+                    logger.LogError(
+                        "Authorization strategy '{StrategyName}' in DefaultAuthorization for claim '{ClaimUri}', action '{ActionName}' could not be resolved.",
+                        invalidStrategy.Name,
+                        originalClaim.Name,
+                        action.Name
+                    );
+                    return (null, failureMessage);
+                }
+            }
+
+            resolvedNodes.Add(new ResolvedClaimNode(node, originalClaim, knownActions, knownAuthStrategies));
+        }
+
+        return (resolvedNodes, null);
+    }
+
     public async Task<ResourceClaimActionListResult> GetResourceClaimActions(ResourceClaimActionQuery query)
     {
         try
         {
-            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
-            if (hierarchyResult is not ClaimsHierarchyGetResult.Success hierarchySuccess)
+            var (resolvedNodes, failureMessage) = await LoadAndResolveClaimNodesWithActions();
+            if (resolvedNodes is null)
             {
-                return hierarchyResult switch
-                {
-                    ClaimsHierarchyGetResult.FailureHierarchyNotFound =>
-                        new ResourceClaimActionListResult.FailureHierarchyNotFound(),
-                    _ => new ResourceClaimActionListResult.FailureUnknown("Failed to load claims hierarchy."),
-                };
+                return failureMessage?.Contains("Hierarchy not found") == true
+                    ? new ResourceClaimActionListResult.FailureHierarchyNotFound()
+                    : new ResourceClaimActionListResult.FailureProjectionIntegrity(failureMessage!);
             }
-
-            var metadata = await LoadResourceClaimMetadata();
-            var metadataByUri = metadata.ToDictionary(m => m.ClaimName, m => m);
-
-            var projection = BuildProjectedHierarchy(
-                hierarchySuccess.Claims,
-                metadataByUri,
-                out var failureMessage
-            );
-            if (projection is null)
-            {
-                logger.LogError("Resource claim projection integrity failure: {Message}", failureMessage);
-                return new ResourceClaimActionListResult.FailureProjectionIntegrity(failureMessage!);
-            }
-
-            var knownActions = claimSetRepository
-                .GetActions()
-                .ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
-
-            var authStrategiesResult = await claimSetRepository.GetAuthorizationStrategies();
-            if (authStrategiesResult is not AuthorizationStrategyGetResult.Success authStrategiesSuccess)
-            {
-                logger.LogError("Failed to load authorization strategies.");
-                return new ResourceClaimActionListResult.FailureUnknown(
-                    "Failed to load authorization strategies."
-                );
-            }
-            var knownAuthStrategies = authStrategiesSuccess.AuthorizationStrategy.ToDictionary(
-                s => s.AuthorizationStrategyName,
-                s => s,
-                StringComparer.OrdinalIgnoreCase
-            );
 
             var items = new List<ResourceClaimActionResponse>();
-            foreach (var (node, originalClaim) in projection.AllNodes)
+            foreach (var resolved in resolvedNodes)
             {
-                if (originalClaim.DefaultAuthorization is null)
-                {
-                    continue;
-                }
-
-                var actionNames = new List<ActionNameResponse>();
-#pragma warning disable S3267 // TryGetValue with early return cannot be replaced by LINQ Select
-                foreach (var action in originalClaim.DefaultAuthorization.Actions)
-                {
-                    if (!knownActions.TryGetValue(action.Name, out var knownAction))
+                var actionNames = resolved
+                    .OriginalClaim.DefaultAuthorization!.Actions.Select(action =>
                     {
-                        var msg =
-                            $"Action '{action.Name}' in DefaultAuthorization for claim '{originalClaim.Name}' could not be resolved.";
-                        logger.LogError(
-                            "Action '{ActionName}' in DefaultAuthorization for claim '{ClaimUri}' could not be resolved.",
-                            action.Name,
-                            originalClaim.Name
-                        );
-                        return new ResourceClaimActionListResult.FailureProjectionIntegrity(msg);
-                    }
-
-                    // Validate all strategies exist before processing
-                    var invalidStrategy = action.AuthorizationStrategies.Find(s =>
-                        !knownAuthStrategies.ContainsKey(s.Name)
-                    );
-                    if (invalidStrategy is not null)
-                    {
-                        var msg =
-                            $"Authorization strategy '{invalidStrategy.Name}' in DefaultAuthorization for claim '{originalClaim.Name}', action '{action.Name}' could not be resolved.";
-                        logger.LogError(
-                            "Authorization strategy '{StrategyName}' in DefaultAuthorization for claim '{ClaimUri}', action '{ActionName}' could not be resolved.",
-                            invalidStrategy.Name,
-                            originalClaim.Name,
-                            action.Name
-                        );
-                        return new ResourceClaimActionListResult.FailureProjectionIntegrity(msg);
-                    }
-
-                    actionNames.Add(new ActionNameResponse { Name = knownAction.Name });
-                }
-#pragma warning restore S3267
+                        var knownAction = resolved.KnownActions[action.Name];
+                        return new ActionNameResponse { Name = knownAction.Name };
+                    })
+                    .ToList();
 
                 items.Add(
                     new ResourceClaimActionResponse
                     {
-                        ResourceClaimId = node.Id,
-                        ResourceName = node.Name,
-                        ClaimName = originalClaim.Name,
+                        ResourceClaimId = resolved.Node.Id,
+                        ResourceName = resolved.Node.Name,
+                        ClaimName = resolved.OriginalClaim.Name,
                         Actions = actionNames,
                     }
                 );
@@ -403,121 +435,50 @@ public class ResourceClaimRepository(
     {
         try
         {
-            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
-            if (hierarchyResult is not ClaimsHierarchyGetResult.Success hierarchySuccess)
+            var (resolvedNodes, failureMessage) = await LoadAndResolveClaimNodesWithActions();
+            if (resolvedNodes is null)
             {
-                return hierarchyResult switch
-                {
-                    ClaimsHierarchyGetResult.FailureHierarchyNotFound =>
-                        new ResourceClaimActionAuthStrategyListResult.FailureHierarchyNotFound(),
-                    _ => new ResourceClaimActionAuthStrategyListResult.FailureUnknown(
-                        "Failed to load claims hierarchy."
-                    ),
-                };
+                return failureMessage?.Contains("Hierarchy not found") == true
+                    ? new ResourceClaimActionAuthStrategyListResult.FailureHierarchyNotFound()
+                    : new ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity(
+                        failureMessage!
+                    );
             }
-
-            var metadata = await LoadResourceClaimMetadata();
-            var metadataByUri = metadata.ToDictionary(m => m.ClaimName, m => m);
-
-            var projection = BuildProjectedHierarchy(
-                hierarchySuccess.Claims,
-                metadataByUri,
-                out var failureMessage
-            );
-            if (projection is null)
-            {
-                logger.LogError("Resource claim projection integrity failure: {Message}", failureMessage);
-                return new ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity(
-                    failureMessage!
-                );
-            }
-
-            var knownActions = claimSetRepository
-                .GetActions()
-                .ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
-
-            var authStrategiesResult = await claimSetRepository.GetAuthorizationStrategies();
-            if (authStrategiesResult is not AuthorizationStrategyGetResult.Success authStrategiesSuccess)
-            {
-                logger.LogError("Failed to load authorization strategies.");
-                return new ResourceClaimActionAuthStrategyListResult.FailureUnknown(
-                    "Failed to load authorization strategies."
-                );
-            }
-            var knownAuthStrategies = authStrategiesSuccess.AuthorizationStrategy.ToDictionary(
-                s => s.AuthorizationStrategyName,
-                s => s,
-                StringComparer.OrdinalIgnoreCase
-            );
 
             var items = new List<ResourceClaimActionAuthStrategyResponse>();
-            foreach (var (node, originalClaim) in projection.AllNodes)
+            foreach (var resolved in resolvedNodes)
             {
-                if (originalClaim.DefaultAuthorization is null)
-                {
-                    continue;
-                }
-
-                var actionsWithStrategies = new List<ActionWithAuthorizationStrategyResponse>();
-                foreach (var action in originalClaim.DefaultAuthorization.Actions)
-                {
-                    if (!knownActions.TryGetValue(action.Name, out var knownAction))
+                var actionsWithStrategies = resolved
+                    .OriginalClaim.DefaultAuthorization!.Actions.Select(action =>
                     {
-                        var msg =
-                            $"Action '{action.Name}' in DefaultAuthorization for claim '{originalClaim.Name}' could not be resolved.";
-                        logger.LogError(
-                            "Action '{ActionName}' in DefaultAuthorization for claim '{ClaimUri}' could not be resolved.",
-                            action.Name,
-                            originalClaim.Name
-                        );
-                        return new ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity(msg);
-                    }
-
-                    // Validate all strategies exist before processing
-                    var invalidStrategy = action.AuthorizationStrategies.Find(s =>
-                        !knownAuthStrategies.ContainsKey(s.Name)
-                    );
-                    if (invalidStrategy is not null)
-                    {
-                        var msg =
-                            $"Authorization strategy '{invalidStrategy.Name}' in DefaultAuthorization for claim '{originalClaim.Name}', action '{action.Name}' could not be resolved.";
-                        logger.LogError(
-                            "Authorization strategy '{StrategyName}' in DefaultAuthorization for claim '{ClaimUri}', action '{ActionName}' could not be resolved.",
-                            invalidStrategy.Name,
-                            originalClaim.Name,
-                            action.Name
-                        );
-                        return new ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity(msg);
-                    }
-
-                    var strategies = action
-                        .AuthorizationStrategies.Select(strategy =>
-                        {
-                            var knownStrategy = knownAuthStrategies[strategy.Name];
-                            return new AuthorizationStrategyForActionResponse
+                        var knownAction = resolved.KnownActions[action.Name];
+                        var strategies = action
+                            .AuthorizationStrategies.Select(strategy =>
                             {
-                                AuthStrategyId = knownStrategy.Id,
-                                AuthStrategyName = knownStrategy.AuthorizationStrategyName,
-                            };
-                        })
-                        .ToList();
+                                var knownStrategy = resolved.KnownAuthStrategies[strategy.Name];
+                                return new AuthorizationStrategyForActionResponse
+                                {
+                                    AuthStrategyId = knownStrategy.Id,
+                                    AuthStrategyName = knownStrategy.AuthorizationStrategyName,
+                                };
+                            })
+                            .ToList();
 
-                    actionsWithStrategies.Add(
-                        new ActionWithAuthorizationStrategyResponse
+                        return new ActionWithAuthorizationStrategyResponse
                         {
                             ActionId = knownAction.Id,
                             ActionName = knownAction.Name,
                             AuthorizationStrategies = strategies,
-                        }
-                    );
-                }
+                        };
+                    })
+                    .ToList();
 
                 items.Add(
                     new ResourceClaimActionAuthStrategyResponse
                     {
-                        ResourceClaimId = node.Id,
-                        ResourceName = node.Name,
-                        ClaimName = originalClaim.Name,
+                        ResourceClaimId = resolved.Node.Id,
+                        ResourceName = resolved.Node.Name,
+                        ClaimName = resolved.OriginalClaim.Name,
                         AuthorizationStrategiesForActions = actionsWithStrategies,
                     }
                 );
