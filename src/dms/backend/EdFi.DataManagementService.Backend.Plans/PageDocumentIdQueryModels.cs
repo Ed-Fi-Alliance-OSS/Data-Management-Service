@@ -95,8 +95,7 @@ public sealed record PageDocumentIdAuthorizationStrategy(
     PageDocumentIdAuthorizationStrategyKind Kind,
     IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects,
     int? RawConfiguredIndex = null,
-    int? RelationshipLocalOrder = null,
-    bool AllowsDirectClaimMatch = false
+    int? RelationshipLocalOrder = null
 );
 
 /// <summary>

@@ -10,6 +10,8 @@ Feature: OrganizationDepartment Authorization
                   | orgDepId                    | 255901101                | Test Office       | {"educationOrganizationId": 255901}  | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department" }] |
 
     Rule: When the client is authorized
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure authorized client can create a OrganizationDepartment
              When a POST request is made to "/ed-fi/organizationDepartments" with
                   """
@@ -69,6 +71,8 @@ Feature: OrganizationDepartment Authorization
                   ]
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure authorized client can update a OrganizationDepartment
              When a PUT request is made to "/ed-fi/organizationDepartments/{orgDepId}" with
                   """

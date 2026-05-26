@@ -26,6 +26,8 @@ Feature: DisciplineAction Authorization
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure authorized client can create a DisciplineAction
              When a POST request is made to "/ed-fi/disciplineActions" with
                   """
@@ -103,6 +105,8 @@ Feature: DisciplineAction Authorization
                   ]
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure authorized client can update a DisciplineAction
              When a PUT request is made to "/ed-fi/disciplineActions/{disciplineActionId}" with
                   """

@@ -69,8 +69,7 @@ public enum RelationshipAuthorizationValueSource
 public sealed record RelationshipAuthorizationAuthObject(
     DbTableName Name,
     DbColumnName SubjectValueColumn,
-    DbColumnName ClaimEducationOrganizationIdColumn,
-    bool AllowsDirectClaimMatch = false
+    DbColumnName ClaimEducationOrganizationIdColumn
 )
 {
     public static RelationshipAuthorizationAuthObject CreateEdOrgHierarchy(
@@ -81,14 +80,12 @@ public sealed record RelationshipAuthorizationAuthObject(
             RelationshipAuthorizationHierarchyDirection.Normal => new RelationshipAuthorizationAuthObject(
                 AuthNames.EdOrgIdToEdOrgId,
                 AuthNames.TargetEdOrgId,
-                AuthNames.SourceEdOrgId,
-                AllowsDirectClaimMatch: true
+                AuthNames.SourceEdOrgId
             ),
             RelationshipAuthorizationHierarchyDirection.Inverted => new RelationshipAuthorizationAuthObject(
                 AuthNames.EdOrgIdToEdOrgId,
                 AuthNames.SourceEdOrgId,
-                AuthNames.TargetEdOrgId,
-                AllowsDirectClaimMatch: true
+                AuthNames.TargetEdOrgId
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(direction),
@@ -205,10 +202,3 @@ public abstract record RelationshipAuthorizationResult
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures
     ) : RelationshipAuthorizationResult;
 }
-
-public sealed record RelationshipAuthorizationUpdatePlan(
-    RelationshipAuthorizationResult StoredValues,
-    RelationshipAuthorizationResult ProposedValues,
-    IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures,
-    IReadOnlyList<RelationshipAuthorizationFailureMetadata> KnownButNotEnabledFailures
-);

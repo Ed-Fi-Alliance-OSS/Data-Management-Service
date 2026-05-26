@@ -7,15 +7,6 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.External.Backend;
 
 /// <summary>
-/// Identifies why a PUT/update operation intentionally failed closed with a temporary not-implemented
-/// response.
-/// </summary>
-public enum UpdateFailureNotImplementedReason
-{
-    StrategyNotEnabled,
-}
-
-/// <summary>
 /// An update result from a document repository
 /// </summary>
 public record UpdateResult
@@ -80,32 +71,7 @@ public record UpdateResult
     /// <summary>
     /// A failure because the client is not authorized to update the document
     /// </summary>
-    public record UpdateFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : UpdateResult();
-
-    /// <summary>
-    /// A failure because stored or proposed relationship authorization denied the update.
-    /// </summary>
-    public record UpdateFailureRelationshipNotAuthorized(
-        string[] ErrorMessages,
-        RelationshipAuthorizationFailure RelationshipFailure,
-        string[]? Hints = null
-    ) : UpdateResult();
-
-    /// <summary>
-    /// A failure because the requested PUT/update operation is intentionally not implemented.
-    /// </summary>
-    /// <param name="FailureMessage">A message providing failure information</param>
-    /// <param name="Reason">Machine-readable reason for the temporary fail-closed outcome</param>
-    public record UpdateFailureNotImplemented(
-        string FailureMessage,
-        UpdateFailureNotImplementedReason Reason = UpdateFailureNotImplementedReason.StrategyNotEnabled
-    ) : UpdateResult();
-
-    /// <summary>
-    /// A failure because security configuration metadata for the PUT/update operation is invalid.
-    /// </summary>
-    /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
-    public record UpdateFailureSecurityConfiguration(string[] Errors) : UpdateResult();
+    public record UpdateFailureNotAuthorized(string[] ErrorMessages) : UpdateResult();
 
     /// <summary>
     /// A failure because the request body violated a write-path validation guard rail

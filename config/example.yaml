@@ -1,0 +1,25 @@
+# Example config for DMS endpoint tests
+base_url: "https://localhost:5100"
+auth:
+  register:
+    path: "/auth/register"
+    method: POST
+    payload:
+      username: "dms-test-user@example.com"
+      password: "P@ssw0rd!"
+  login:
+    path: "/auth/login"
+    method: POST
+    payload:
+      username: "dms-test-user@example.com"
+      password: "P@ssw0rd!"
+timeouts:
+  request_seconds: 30
+endpoints:
+  - path: "/api/v1/records"
+    verb: GET
+    expected_status: 200
+    auth: true
+    assert:
+      body_contains_keys: ["items"]
+parity: []

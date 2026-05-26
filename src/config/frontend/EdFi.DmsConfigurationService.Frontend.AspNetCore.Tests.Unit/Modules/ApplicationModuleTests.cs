@@ -460,7 +460,7 @@ public class ApplicationModuleTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+                .Returns(new VendorInsertResult.Success(1, true));
 
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());

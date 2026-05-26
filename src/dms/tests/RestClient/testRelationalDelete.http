@@ -52,15 +52,7 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@vendorLocation={{createVendor.response.headers.location}}
-
-### Retrieve the vendor to read the Id (POST returns no body per DMS-1081; id is the last segment of the Location header)
-# @name getVendor
-GET {{vendorLocation}}
-Authorization: bearer {{configToken}}
-
-###
-@vendorId={{getVendor.response.body.id}}
+@vendorId={{createVendor.response.body.id}}
 
 ### 1.3 Create a DMS instance pointing at the RELATIONAL database
 # The connection string MUST target the dedicated relational database provisioned by

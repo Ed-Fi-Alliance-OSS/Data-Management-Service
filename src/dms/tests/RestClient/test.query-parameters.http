@@ -60,15 +60,7 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@vendorAlphaLocation={{createVendorAlpha.response.headers.location}}
-
-### Retrieve Alpha vendor to read the Id (POST returns no body per DMS-1081; id is the last segment of the Location header)
-# @name getVendorAlpha
-GET {{vendorAlphaLocation}}
-Authorization: bearer {{configToken}}
-
-###
-@vendorAlphaId={{getVendorAlpha.response.body.id}}
+@vendorAlphaId={{createVendorAlpha.response.body.id}}
 
 # @name createVendorMango
 POST http://localhost:{{configPort}}/v2/vendors

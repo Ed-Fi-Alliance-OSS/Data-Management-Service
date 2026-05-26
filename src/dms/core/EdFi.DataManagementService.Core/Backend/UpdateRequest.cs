@@ -71,7 +71,4 @@ internal record UpdateRequest(
     public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
 
     public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; } = [];
-
-    public RelationalAuthorizationContext AuthorizationContext { get; init; } =
-        new RelationalAuthorizationContext([]);
 }

@@ -454,25 +454,6 @@ CREATE TRIGGER "TR_Document_Journal"
     FOR EACH ROW
     EXECUTE FUNCTION "dms"."TF_Document_Journal"();
 
-CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'UPDATE' AND NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
-        RETURN NEW;
-    END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_Descriptor_Stamp_Document" ON "dms"."Descriptor";
-CREATE TRIGGER "TR_Descriptor_Stamp_Document"
-    AFTER UPDATE ON "dms"."Descriptor"
-    FOR EACH ROW
-    EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
-
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "auth";
 

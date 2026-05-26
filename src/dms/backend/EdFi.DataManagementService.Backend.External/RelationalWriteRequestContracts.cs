@@ -38,11 +38,6 @@ public interface IRelationalWriteRequest : IRelationalRequestWithMappingSet
     /// Effective authorization strategy evaluators for the current write action.
     /// </summary>
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
-
-    /// <summary>
-    /// Typed request-scoped authorization inputs for relational write planning/execution.
-    /// </summary>
-    RelationalAuthorizationContext AuthorizationContext { get; }
 }
 
 /// <summary>

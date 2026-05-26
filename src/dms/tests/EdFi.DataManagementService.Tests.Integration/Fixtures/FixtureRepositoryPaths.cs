@@ -36,7 +36,6 @@ internal static class FixtureRepositoryPaths
             "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension",
         [FixtureKey.ProfileCollectionAlignedExtensionHiddenDescendant] =
             "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/profile-collection-aligned-extension-hidden-descendant",
-        [FixtureKey.AuthoritativeDs52] = "src/dms/backend/Fixtures/authoritative/ds-5.2",
     };
 
     /// <summary>

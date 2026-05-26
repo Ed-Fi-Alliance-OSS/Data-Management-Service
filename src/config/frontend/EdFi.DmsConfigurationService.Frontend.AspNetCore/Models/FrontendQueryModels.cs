@@ -170,3 +170,36 @@ public class FrontendProfileQuery : FrontendPagingQuery
 
     public ProfileQuery ToQuery() => ApplyPagingTo(new ProfileQuery { Id = Id, Name = Name });
 }
+
+public class FrontendResourceClaimQuery : FrontendPagingQuery
+{
+    [FromQuery(Name = "id")]
+    [Description("Filter resource claims by identifier.")]
+    public long? Id { get; set; }
+
+    [FromQuery(Name = "name")]
+    [Description("Filter resource claims by name.")]
+    public string? Name { get; set; }
+
+    public ResourceClaimQuery ToQuery() => ApplyPagingTo(new ResourceClaimQuery { Id = Id, Name = Name });
+}
+
+public class FrontendResourceClaimActionQuery : FrontendPagingQuery
+{
+    [FromQuery(Name = "resourceName")]
+    [Description("Filter resource claim actions by resource name.")]
+    public string? ResourceName { get; set; }
+
+    public ResourceClaimActionQuery ToQuery() =>
+        ApplyPagingTo(new ResourceClaimActionQuery { ResourceName = ResourceName });
+}
+
+public class FrontendResourceClaimActionAuthStrategyQuery : FrontendPagingQuery
+{
+    [FromQuery(Name = "resourceName")]
+    [Description("Filter resource claim action auth strategies by resource name.")]
+    public string? ResourceName { get; set; }
+
+    public ResourceClaimActionAuthStrategyQuery ToQuery() =>
+        ApplyPagingTo(new ResourceClaimActionAuthStrategyQuery { ResourceName = ResourceName });
+}

@@ -804,6 +804,80 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
+    /// Resolves the concrete table model for a reference binding, selecting the best matching JSON scope when a
+    /// table name appears in multiple scopes (e.g., extensions).
+    /// </summary>
+    private static DbTableModel ResolveReferenceBindingTable(
+        DocumentReferenceBinding binding,
+        RelationalResourceModel resourceModel,
+        QualifiedResourceName resource
+    )
+    {
+        var candidates = resourceModel
+            .TablesInDependencyOrder.Where(table => table.Table.Equals(binding.Table))
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not map to table '{binding.Table}'."
+            );
+        }
+
+        if (candidates.Length == 1)
+        {
+            return candidates[0];
+        }
+
+        var orderedCandidates = candidates
+            .OrderBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
+            .ToArray();
+        DbTableModel? bestMatch = null;
+
+        foreach (var candidate in orderedCandidates)
+        {
+            if (!IsPrefixOf(candidate.JsonScope.Segments, binding.ReferenceObjectPath.Segments))
+            {
+                continue;
+            }
+
+            if (bestMatch is null || candidate.JsonScope.Segments.Count > bestMatch.JsonScope.Segments.Count)
+            {
+                bestMatch = candidate;
+            }
+        }
+
+        if (bestMatch is null)
+        {
+            var scopeList = string.Join(", ", orderedCandidates.Select(table => table.JsonScope.Canonical));
+
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not match any table scope for '{binding.Table}'. "
+                    + $"Candidates: {scopeList}."
+            );
+        }
+
+        if (
+            binding.ReferenceObjectPath.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+            && !bestMatch.JsonScope.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
+            );
+        }
+
+        return bestMatch;
+    }
+
+    /// <summary>
     /// Builds the ordered identity column list for a resource root table based on <c>identityJsonPaths</c>.
     /// </summary>
     private static IReadOnlyList<DbColumnName> BuildIdentityValueColumns(

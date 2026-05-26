@@ -7,7 +7,6 @@ using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -553,9 +552,7 @@ public sealed record RelationalWriteExecutorRequest
         ReferenceResolverRequest referenceResolutionRequest,
         RelationalWriteTargetContext targetContext,
         BackendProfileWriteContext? profileWriteContext = null,
-        WritePrecondition? writePrecondition = null,
-        RelationshipAuthorizationResult? storedRelationshipAuthorization = null,
-        RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization = null
+        WritePrecondition? writePrecondition = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -624,8 +621,6 @@ public sealed record RelationalWriteExecutorRequest
 
         ProfileWriteContext = profileWriteContext;
         WritePrecondition = writePrecondition ?? new WritePrecondition.None();
-        StoredRelationshipAuthorization = storedRelationshipAuthorization;
-        ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
     }
 
     /// <summary>
@@ -664,7 +659,7 @@ public sealed record RelationalWriteExecutorRequest
     public JsonNode SelectedBody { get; init; }
 
     /// <summary>
-    /// Whether identity-changing writes are allowed for this resource.
+    /// Whether identity-changing writes are allowed for this resource once the executor supports them.
     /// </summary>
     public bool AllowIdentityUpdates { get; init; }
 
@@ -689,18 +684,6 @@ public sealed record RelationalWriteExecutorRequest
     /// Typed HTTP write precondition, if any.
     /// </summary>
     public WritePrecondition WritePrecondition { get; init; }
-
-    /// <summary>
-    /// Operation-neutral stored-value relationship authorization result for existing-target updates, when required.
-    /// Null when no stored relationship authorization applies.
-    /// </summary>
-    public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; init; }
-
-    /// <summary>
-    /// Operation-neutral proposed-value relationship authorization plan, when required.
-    /// The current executor executes this for POST and carries PUT plans for stored-gated orchestration.
-    /// </summary>
-    public RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization { get; init; }
 }
 
 /// <summary>

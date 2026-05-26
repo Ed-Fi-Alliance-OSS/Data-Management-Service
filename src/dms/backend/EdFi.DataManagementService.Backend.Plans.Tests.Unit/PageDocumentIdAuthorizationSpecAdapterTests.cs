@@ -70,10 +70,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                 && subjects[0].Table.Equals(_rootTable)
                 && subjects[0].Column.Equals(new DbColumnName("LocalEducationAgencyId"))
             );
-        authorizationSpec
-            .Strategies.Select(static strategy => strategy.AllowsDirectClaimMatch)
-            .Should()
-            .OnlyContain(static allowsDirectClaimMatch => allowsDirectClaimMatch);
         authorizationSpec.ClaimEducationOrganizationIdParameterization.Should().NotBeNull();
         authorizationSpec
             .ClaimEducationOrganizationIdParameterization!.ClaimEducationOrganizationIds.Should()
@@ -111,8 +107,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                     PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
                     [new PageDocumentIdAuthorizationSubject(_rootTable, new DbColumnName("SchoolId"))],
                     4,
-                    0,
-                    AllowsDirectClaimMatch: true
+                    0
                 )
             );
     }

@@ -901,46 +901,6 @@ public class Given_PageDocumentIdSqlCompiler
 
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"SchoolId\" = ANY(@ClaimEducationOrganizationIds) OR r.\"SchoolId\" IN (SELECT t0.\"TargetEducationOrganizationId\"",
-        "WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)"
-    )]
-    [TestCase(
-        SqlDialect.Mssql,
-        "r.[SchoolId] IN (@ClaimEducationOrganizationIds_0) OR r.[SchoolId] IN (SELECT t0.[TargetEducationOrganizationId]",
-        "WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0)"
-    )]
-    public void It_should_emit_direct_claim_match_or_normal_hierarchy_when_authorization_strategy_allows_it(
-        SqlDialect dialect,
-        string expectedDirectMatchFragment,
-        string expectedHierarchyFragment
-    )
-    {
-        var compiler = new PageDocumentIdSqlCompiler(dialect);
-        var plan = compiler.Compile(
-            CreateSpec(
-                [],
-                [],
-                includeTotalCountSql: true,
-                authorization: CreateAuthorizationSpec(
-                    dialect,
-                    CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        true,
-                        CreateAuthorizationSubject("SchoolId")
-                    )
-                )
-            )
-        );
-
-        plan.PageDocumentIdSql.Should().Contain(expectedDirectMatchFragment);
-        plan.PageDocumentIdSql.Should().Contain(expectedHierarchyFragment);
-        plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql.Should().Contain(expectedDirectMatchFragment);
-        plan.TotalCountSql.Should().Contain(expectedHierarchyFragment);
-    }
-
-    [TestCase(
-        SqlDialect.Pgsql,
         "r.\"SchoolId\" IN (SELECT t0.\"SourceEducationOrganizationId\"",
         "WHERE t0.\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)"
     )]
@@ -975,46 +935,6 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().Contain(expectedClaimFilterFragment);
         plan.TotalCountSql.Should().Contain(expectedSubjectFragment);
         plan.TotalCountSql.Should().Contain(expectedClaimFilterFragment);
-    }
-
-    [TestCase(
-        SqlDialect.Pgsql,
-        "r.\"SchoolId\" = ANY(@ClaimEducationOrganizationIds) OR r.\"SchoolId\" IN (SELECT t0.\"SourceEducationOrganizationId\"",
-        "WHERE t0.\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)"
-    )]
-    [TestCase(
-        SqlDialect.Mssql,
-        "r.[SchoolId] IN (@ClaimEducationOrganizationIds_0) OR r.[SchoolId] IN (SELECT t0.[SourceEducationOrganizationId]",
-        "WHERE t0.[TargetEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0)"
-    )]
-    public void It_should_emit_direct_claim_match_or_inverted_hierarchy_when_authorization_strategy_allows_it(
-        SqlDialect dialect,
-        string expectedDirectMatchFragment,
-        string expectedHierarchyFragment
-    )
-    {
-        var compiler = new PageDocumentIdSqlCompiler(dialect);
-        var plan = compiler.Compile(
-            CreateSpec(
-                [],
-                [],
-                includeTotalCountSql: true,
-                authorization: CreateAuthorizationSpec(
-                    dialect,
-                    CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-                        true,
-                        CreateAuthorizationSubject("SchoolId")
-                    )
-                )
-            )
-        );
-
-        plan.PageDocumentIdSql.Should().Contain(expectedDirectMatchFragment);
-        plan.PageDocumentIdSql.Should().Contain(expectedHierarchyFragment);
-        plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql.Should().Contain(expectedDirectMatchFragment);
-        plan.TotalCountSql.Should().Contain(expectedHierarchyFragment);
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -1172,8 +1092,6 @@ public class Given_PageDocumentIdSqlCompiler
             .Contain(
                 "WHERE t0.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)"
             );
-        plan.PageDocumentIdSql.Should()
-            .NotContain("r.[SchoolId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds) OR");
         plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("ClaimEducationOrganizationIds", "offset", "limit");
@@ -1187,89 +1105,6 @@ public class Given_PageDocumentIdSqlCompiler
         plan.TotalCountParametersInOrder!.Value[0]
             .Binding.Should()
             .Be(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
-    }
-
-    [Test]
-    public void It_should_emit_direct_claim_match_with_mssql_structured_claim_parameterization()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
-        var plan = compiler.Compile(
-            CreateSpec(
-                [],
-                [],
-                includeTotalCountSql: true,
-                authorization: CreateAuthorizationSpec(
-                    SqlDialect.Mssql,
-                    CreateClaimEducationOrganizationIds(2000),
-                    CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        true,
-                        CreateAuthorizationSubject("SchoolId")
-                    )
-                )
-            )
-        );
-
-        const string ExpectedDirectAndHierarchyFragment =
-            "r.[SchoolId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds) OR r.[SchoolId] IN (SELECT t0.[TargetEducationOrganizationId]";
-
-        plan.PageDocumentIdSql.Should().Contain(ExpectedDirectAndHierarchyFragment);
-        plan.PageDocumentIdSql.Should()
-            .Contain(
-                "WHERE t0.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)"
-            );
-        plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql.Should().Contain(ExpectedDirectAndHierarchyFragment);
-        plan.TotalCountSql.Should()
-            .Contain(
-                "WHERE t0.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)"
-            );
-    }
-
-    [Test]
-    public void It_should_preserve_duplicate_direct_match_strategies_as_distinct_or_branches()
-    {
-        static int CountOrdinalOccurrences(string value, string text) =>
-            value.Split(text, StringSplitOptions.None).Length - 1;
-
-        var plan = _compiler.Compile(
-            CreateSpec(
-                [],
-                [],
-                includeTotalCountSql: true,
-                authorization: CreateAuthorizationSpec(
-                    SqlDialect.Pgsql,
-                    CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        true,
-                        CreateAuthorizationSubject("SchoolId")
-                    ),
-                    CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        true,
-                        CreateAuthorizationSubject("SchoolId")
-                    )
-                )
-            )
-        );
-
-        CountOrdinalOccurrences(
-                plan.PageDocumentIdSql,
-                "r.\"SchoolId\" = ANY(@ClaimEducationOrganizationIds)"
-            )
-            .Should()
-            .Be(2);
-        CountOrdinalOccurrences(
-                plan.PageDocumentIdSql,
-                "\"auth\".\"EducationOrganizationIdToEducationOrganizationId\""
-            )
-            .Should()
-            .Be(2);
-        plan.PageDocumentIdSql.Should().Contain(" OR ");
-        plan.TotalCountSql.Should().NotBeNull();
-        CountOrdinalOccurrences(plan.TotalCountSql!, "r.\"SchoolId\" = ANY(@ClaimEducationOrganizationIds)")
-            .Should()
-            .Be(2);
     }
 
     [Test]
@@ -1463,21 +1298,11 @@ public class Given_PageDocumentIdSqlCompiler
 
     private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
         PageDocumentIdAuthorizationStrategyKind kind,
-        bool allowsDirectClaimMatch,
         params PageDocumentIdAuthorizationSubject[] subjects
     )
     {
-        return new PageDocumentIdAuthorizationStrategy(
-            kind,
-            subjects,
-            AllowsDirectClaimMatch: allowsDirectClaimMatch
-        );
+        return new PageDocumentIdAuthorizationStrategy(kind, subjects);
     }
-
-    private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
-        PageDocumentIdAuthorizationStrategyKind kind,
-        params PageDocumentIdAuthorizationSubject[] subjects
-    ) => CreateAuthorizationStrategy(kind, false, subjects);
 
     private static PageDocumentIdAuthorizationSubject CreateAuthorizationSubject(
         string columnName,

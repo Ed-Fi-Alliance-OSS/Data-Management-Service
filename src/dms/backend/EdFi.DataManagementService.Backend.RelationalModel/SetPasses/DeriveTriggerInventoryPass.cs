@@ -358,14 +358,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Helper record for reverse reference index entries. <see cref="BindingTable"/> is the
-    /// physical referrer table that stores projected reference identity columns — this is the
-    /// referrer resource's root table for root bindings, the owning child collection table for
-    /// child bindings, or the owning <c>_ext</c> table for extension bindings.
+    /// Helper record for reverse reference index entries.
     /// </summary>
     private sealed record ReverseReferenceEntry(
         QualifiedResourceName ReferrerResource,
-        DbTableModel BindingTable,
+        DbTableModel ReferrerRootTable,
         DocumentReferenceBinding Binding,
         DocumentReferenceMapping Mapping
     );
@@ -446,18 +443,25 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     entry.Binding,
                     entry.Mapping,
                     entry.ReferrerResource,
-                    entry.BindingTable,
+                    entry.ReferrerRootTable,
                     triggerTableModel,
                     targetResource
                 );
 
                 referrerUpdates.Add(
                     new PropagationReferrerTarget(
-                        entry.BindingTable.Table,
+                        entry.ReferrerRootTable.Table,
                         entry.Binding.FkColumn,
                         columnMappings
                     )
                 );
+            }
+
+            // Skip trigger creation when no referrers need propagation updates.
+            // This can happen when all referrer bindings resolve to non-root tables.
+            if (referrerUpdates.Count == 0)
+            {
+                continue;
             }
 
             context.TriggerInventory.Add(
@@ -474,9 +478,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds a reverse reference index mapping target resources to their referrer entries.
-    /// Resource extension contexts contribute their <c>_ext</c>-scoped reference mappings against
-    /// the base resource's merged binding set, so extension tables appear as referrers on the
-    /// referenced resource's propagation trigger.
     /// </summary>
     private static Dictionary<QualifiedResourceName, List<ReverseReferenceEntry>> BuildReverseReferenceIndex(
         RelationalModelSetBuilderContext context,
@@ -484,58 +485,34 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     )
     {
         var reverseIndex = new Dictionary<QualifiedResourceName, List<ReverseReferenceEntry>>();
-        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
-            context,
-            static (_, model) => model
-        );
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
-            var contextResource = new QualifiedResourceName(
+            if (IsResourceExtension(resourceContext))
+            {
+                continue;
+            }
+
+            var referrerResource = new QualifiedResourceName(
                 resourceContext.Project.ProjectSchema.ProjectName,
                 resourceContext.ResourceName
             );
 
-            ConcreteResourceModel referrerModel;
-            QualifiedResourceName referrerResource;
-
-            if (IsResourceExtension(resourceContext))
+            // Continue intentionally filters abstract and unmodeled resources — they have
+            // schema entries but no concrete resource model (e.g., abstract base resources
+            // or resources that do not produce relational tables).
+            if (!concreteResourcesByName.TryGetValue(referrerResource, out var referrerModel))
             {
-                // ReferenceBindingPass merges extension reference bindings into the base
-                // resource's RelationalModel.DocumentReferenceBindings (the binding's Table
-                // points at the _ext table). Skipping the extension context here would drop
-                // those _ext-bound referrers from the propagation reverse index, leaving the
-                // extension table's projected identity columns stale on cross-resource
-                // identity updates and preventing its stamp trigger from firing.
-                referrerModel = ResolveBaseResourceForExtension(
-                    resourceContext.ResourceName,
-                    contextResource,
-                    baseResourcesByName,
-                    static model => model.ResourceKey.Resource
-                );
-                referrerResource = referrerModel.ResourceKey.Resource;
+                continue;
             }
-            else
+
+            if (referrerModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
             {
-                referrerResource = contextResource;
-
-                // Continue intentionally filters abstract and unmodeled resources — they have
-                // schema entries but no concrete resource model (e.g., abstract base resources
-                // or resources that do not produce relational tables).
-                if (!concreteResourcesByName.TryGetValue(referrerResource, out var resolved))
-                {
-                    continue;
-                }
-
-                if (resolved.StorageKind == ResourceStorageKind.SharedDescriptorTable)
-                {
-                    continue;
-                }
-
-                referrerModel = resolved;
+                continue;
             }
 
             var referrerBuilderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
+            var referrerRootTable = referrerModel.RelationalModel.Root;
 
             var bindingByReferencePath = referrerModel.RelationalModel.DocumentReferenceBindings.ToDictionary(
                 binding => binding.ReferenceObjectPath.Canonical,
@@ -554,15 +531,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     continue;
                 }
 
-                // Resolve binding.Table to its DbTableModel via the shared scope-aware helper:
-                // the same DbTableName can occur in multiple scopes on a resource (e.g., a base
-                // table and its _ext counterpart), so a name-only dictionary lookup is unsafe.
-                // Resolving against the wrong model would silently mis-project unified-alias columns.
-                var bindingTableModel = ResolveReferenceBindingTable(
-                    binding,
-                    referrerModel.RelationalModel,
-                    referrerResource
-                );
+                // Only consider root-table bindings (references from the root table).
+                if (!binding.Table.Equals(referrerRootTable.Table))
+                {
+                    continue;
+                }
 
                 var targetResource = mapping.TargetResource;
 
@@ -572,7 +545,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     reverseIndex[targetResource] = entries;
                 }
 
-                entries.Add(new ReverseReferenceEntry(referrerResource, bindingTableModel, binding, mapping));
+                entries.Add(new ReverseReferenceEntry(referrerResource, referrerRootTable, binding, mapping));
             }
         }
 
@@ -581,24 +554,20 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds column mappings for identity propagation: source identity columns on the trigger
-    /// table to referrer stored columns on the binding table. The binding table may be the
-    /// referrer's root, a child collection table, or an extension table; <c>ib.Column</c> by
-    /// construction lives on that binding table, so its storage-column resolution must use the
-    /// binding table's <see cref="DbTableModel"/>. Resolving against any other model is unsound,
-    /// even when the storage column name happens to match.
+    /// table to referrer stored columns. Resolves source columns from the trigger table model's
+    /// <see cref="DbColumnModel.SourceJsonPath"/> mapping instead of guessing from JSON path
+    /// segments, matching the approach used by <see cref="BuildIdentityElementMappings"/>.
     /// </summary>
     /// <remarks>
-    /// Source columns are resolved from the referenced trigger table model using target identity
-    /// JSON paths. Update target columns are resolved from the referrer binding table model using
-    /// <see cref="DocumentReferenceBinding.IdentityBindings"/>. In <see cref="TriggerColumnMapping"/>,
-    /// <c>TargetColumn</c> means the column being updated on the referrer binding table — not the
-    /// referenced resource's target table.
+    /// Under key unification, <c>ib.Column</c> from reference identity bindings may be a persisted
+    /// computed alias. SQL Server rejects <c>SET r.[computedCol] = ...</c> (Msg 271), so each
+    /// target column must be resolved to its canonical storage column via the referrer table model.
     /// </remarks>
     private static IReadOnlyList<TriggerColumnMapping> BuildPropagationColumnMappings(
         DocumentReferenceBinding binding,
         DocumentReferenceMapping mapping,
         QualifiedResourceName referrerResource,
-        DbTableModel bindingTableModel,
+        DbTableModel referrerRootTable,
         DbTableModel triggerTable,
         QualifiedResourceName targetResource
     )
@@ -613,9 +582,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             identityPathByReferencePath[entry.ReferenceJsonPath.Canonical] = entry.IdentityJsonPath.Canonical;
         }
 
+        // For each identity binding, map source identity column to referrer stored column.
+        // Direction: SourceColumn = trigger table identity column, TargetColumn = referrer stored column.
         // Deduplicate by TargetColumn: key unification can cause multiple identity bindings
-        // to resolve to the same stored column. Duplicate column mappings would produce invalid
-        // SQL (SQL Server Error 264: duplicate columns in SET clause).
+        // to resolve to the same stored column (e.g., School.SchoolId and Session.SchoolId
+        // both → SchoolId_Unified). Duplicate column mappings would produce invalid SQL
+        // (SQL Server Error 264: duplicate columns in SET clause).
         HashSet<string> seenTargets = new(StringComparer.Ordinal);
         List<TriggerColumnMapping> mappings = new(binding.IdentityBindings.Count);
 
@@ -632,6 +604,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
+            // Resolve source column from the trigger table model's SourceJsonPath mapping.
             if (!sourceColumnsByPath.TryGetValue(identityPath, out var sourceColumn))
             {
                 throw new InvalidOperationException(
@@ -641,8 +614,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
-            // ib.Column may be a unified-alias computed column; resolve to its canonical storage column.
-            var targetColumn = ResolveToStoredColumn(ib.Column, bindingTableModel, referrerResource);
+            // Resolve through storage: ib.Column may be a unified alias (computed) after
+            // key unification. The propagation UPDATE must target the canonical stored column.
+            var targetColumn = ResolveToStoredColumn(ib.Column, referrerRootTable, referrerResource);
 
             if (seenTargets.Add(targetColumn.Value))
             {

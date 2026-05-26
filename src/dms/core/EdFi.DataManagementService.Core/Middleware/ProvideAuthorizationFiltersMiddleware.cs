@@ -53,7 +53,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
 
             if (IsRelationalBackendAuthorizationRequest(requestInfo))
             {
-                // Relational backend-planned authorization classifies strategy names in the
+                // Relational read and DMS-1056 delete authorization classify strategy names in the
                 // backend planner, so middleware must preserve raw names and avoid premature provider failures.
                 requestInfo.AuthorizationStrategyEvaluators =
                 [
@@ -78,7 +78,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                         authorizationStrategy,
                         requestInfo.ScopedServiceProvider
                     );
-                if (authFiltersProvider is null)
+                if (authFiltersProvider == null)
                 {
                     requestInfo.FrontendResponse = new FrontendResponse(
                         StatusCode: (int)HttpStatusCode.Forbidden,
@@ -140,12 +140,5 @@ internal class ProvideAuthorizationFiltersMiddleware(
 
     private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
         requestInfo.MappingSet is not null
-        && (
-            requestInfo.Method == RequestMethod.GET
-            || requestInfo.Method == RequestMethod.DELETE
-            || requestInfo.Method == RequestMethod.POST
-            // Descriptor PUT also bypasses legacy NamespaceBased filters until DMS-1057 wires
-            // descriptor writes into backend-planned namespace authorization.
-            || requestInfo.Method == RequestMethod.PUT
-        );
+        && (requestInfo.Method == RequestMethod.GET || requestInfo.Method == RequestMethod.DELETE);
 }

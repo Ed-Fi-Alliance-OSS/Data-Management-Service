@@ -28,11 +28,6 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
         new(new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000001")), 100, "North School"),
         new(new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000002")), 200, "South School"),
         new(new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000003")), 300, "West School"),
-        new(
-            new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000004")),
-            (int)ClaimEducationOrganizationId,
-            "Claim School"
-        ),
     ];
 
     private static readonly ClassPeriodSeed[] _classPeriodSeeds =
@@ -141,14 +136,6 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
         ),
     ];
 
-    private static readonly AuthorizationRootChildSeed _directClaimRootChildSeed = new(
-        new DocumentUuid(Guid.Parse("99999999-2000-0000-0000-000000000012")),
-        212,
-        "delete-direct-claim",
-        (int)ClaimEducationOrganizationId,
-        []
-    );
-
     private static readonly AuthorizationChildOnlySeed _authorizationChildOnlySeed = new(
         new DocumentUuid(Guid.Parse("99999999-3000-0000-0000-000000000001")),
         301,
@@ -211,10 +198,6 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
         }
 
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
-            await _context.CreateAuthorizationRootChildAsync(_directClaimRootChildSeed)
-        );
-
-        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
             await _context.CreateAuthorizationChildOnlyAsync(_authorizationChildOnlySeed)
         );
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
@@ -224,7 +207,6 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
         await _context.InsertAuthEdgeAsync(300, ClaimEducationOrganizationId);
-        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
     }
 
     [OneTimeTearDown]
@@ -247,33 +229,6 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
     {
         var seed = _authorizationRootChildSeeds[0];
 
-        await AssertRowsAsync(
-            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
-            seed.DocumentUuid,
-            1
-        );
-
-        var result = await DeleteRootChildAsync(
-            seed,
-            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
-        );
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        await AssertRowsAsync(
-            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
-            seed.DocumentUuid,
-            0
-        );
-    }
-
-    [Test]
-    public async Task It_authorizes_delete_by_direct_claim_match_without_a_hierarchy_edge()
-    {
-        var seed = _directClaimRootChildSeed;
-
-        (await _context.CountAuthEdgesAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId))
-            .Should()
-            .Be(0);
         await AssertRowsAsync(
             RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
             seed.DocumentUuid,
@@ -481,7 +436,7 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
 
         var failure = AssertRelationshipDenied(
             result,
-            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
         );
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
         await AssertRowsAsync(

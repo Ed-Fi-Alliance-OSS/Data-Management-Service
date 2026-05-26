@@ -57,7 +57,6 @@ Feature: Vendors endpoints
                         "location": "/v2/vendors/{vendorId}"
                     }
                   """
-              And the response body is empty
               And the record can be retrieved with a GET request
                   """
                   {
@@ -371,7 +370,6 @@ Feature: Vendors endpoints
                         "location": "config/v2/vendors/{vendorId}"
                     }
                   """
-              And the response body is empty
               And the record can be retrieved with a GET request
                   """
                   {
@@ -384,48 +382,3 @@ Feature: Vendors endpoints
                   """
 
 
-        Scenario: 18 POST with an existing company name returns 200 and updates the vendor
-             When a POST request is made to "/v2/vendors" with
-                  """
-                   {
-                       "company": "Upsert Co",
-                       "contactName": "Initial Contact",
-                       "contactEmailAddress": "initial@example.com",
-                       "namespacePrefixes": "Test"
-                   }
-                  """
-             Then it should respond with 201
-              And the response headers include
-                  """
-                    {
-                        "location": "/v2/vendors/{vendorId}"
-                    }
-                  """
-              And the response body is empty
-             When a POST request is made to "/v2/vendors" with
-                  """
-                   {
-                       "company": "Upsert Co",
-                       "contactName": "Updated Contact",
-                       "contactEmailAddress": "updated@example.com",
-                       "namespacePrefixes": "Test"
-                   }
-                  """
-             Then it should respond with 200
-              And the response headers include
-                  """
-                   {
-                       "location": "/v2/vendors/{vendorId}"
-                   }
-                  """
-              And the response body is empty
-              And the record can be retrieved with a GET request
-                  """
-                  {
-                      "id": {id},
-                      "company": "Upsert Co",
-                      "contactName": "Updated Contact",
-                      "contactEmailAddress": "updated@example.com",
-                      "namespacePrefixes": "Test"
-                  }
-                  """

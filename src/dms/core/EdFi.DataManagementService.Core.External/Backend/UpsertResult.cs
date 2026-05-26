@@ -8,15 +8,6 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.External.Backend;
 
 /// <summary>
-/// Identifies why a POST/upsert operation intentionally failed closed with a temporary not-implemented
-/// response.
-/// </summary>
-public enum UpsertFailureNotImplementedReason
-{
-    StrategyNotEnabled,
-}
-
-/// <summary>
 /// An upsert result from a document repository
 /// </summary>
 public record UpsertResult
@@ -78,29 +69,6 @@ public record UpsertResult
     /// A failure because the client is not authorized to upsert the document
     /// </summary>
     public record UpsertFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : UpsertResult();
-
-    /// <summary>
-    /// A failure because proposed-value or existing-target relationship authorization denied the upsert.
-    /// </summary>
-    public record UpsertFailureRelationshipNotAuthorized(
-        string[] ErrorMessages,
-        RelationshipAuthorizationFailure RelationshipFailure,
-        string[]? Hints = null
-    ) : UpsertResult();
-
-    /// <summary>
-    /// A failure because the requested POST/upsert operation is intentionally not implemented.
-    /// </summary>
-    /// <param name="FailureMessage">A message providing failure information</param>
-    /// <param name="Reason">Machine-readable reason for the temporary fail-closed outcome</param>
-    public record UpsertFailureNotImplemented(string FailureMessage, UpsertFailureNotImplementedReason Reason)
-        : UpsertResult();
-
-    /// <summary>
-    /// A failure because security configuration metadata for the POST/upsert operation is invalid.
-    /// </summary>
-    /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
-    public record UpsertFailureSecurityConfiguration(string[] Errors) : UpsertResult();
 
     /// <summary>
     /// A failure because the request body violated a write-path validation guard rail

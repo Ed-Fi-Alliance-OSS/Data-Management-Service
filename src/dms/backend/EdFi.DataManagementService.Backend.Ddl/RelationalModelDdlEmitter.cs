@@ -6,6 +6,7 @@
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -178,8 +179,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits the <c>auth.EducationOrganizationIdToEducationOrganizationId</c> table when the auth hierarchy is present.
-    /// Renders from <see cref="AuthObjectDefinitions.AuthEdOrgTable"/> so the manifest emitter and
-    /// the SQL emitter share one source of truth for auth-table shape (DMS-1096 AC).
     /// </summary>
     private void EmitAuthTable(SqlWriter writer, AuthEdOrgHierarchy? authHierarchy)
     {
@@ -188,20 +187,21 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        var def = AuthObjectDefinitions.AuthEdOrgTable;
+        var authTable = AuthNames.EdOrgIdToEdOrgId;
+        var sourceCol = AuthNames.SourceEdOrgId;
+        var targetCol = AuthNames.TargetEdOrgId;
 
-        writer.AppendLine(_dialect.CreateTableHeader(def.Table));
+        writer.AppendLine(_dialect.CreateTableHeader(authTable));
         writer.AppendLine("(");
         using (writer.Indent())
         {
-            foreach (var column in def.Columns)
-            {
-                writer.AppendLine(
-                    $"{_dialect.RenderColumnDefinition(column.Name, column.SqlType, column.IsNullable)},"
-                );
-            }
+            writer.AppendLine($"{_dialect.RenderColumnDefinition(sourceCol, "bigint", false)},");
+            writer.AppendLine($"{_dialect.RenderColumnDefinition(targetCol, "bigint", false)},");
             writer.AppendLine(
-                _dialect.RenderNamedPrimaryKeyClause(def.PrimaryKeyName, def.PrimaryKeyColumns)
+                _dialect.RenderNamedPrimaryKeyClause(
+                    "PK_EducationOrganizationIdToEducationOrganizationId",
+                    [sourceCol, targetCol]
+                )
             );
         }
         writer.AppendLine(");");
@@ -829,7 +829,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             // PostgreSQL: IS DISTINCT FROM provides null-safe inequality comparison.
             // (NULL IS DISTINCT FROM NULL) → false, (NULL IS DISTINCT FROM value) → true.
-            // Equivalent to MssqlTriggerDiffEmitter.EmitNullSafeNotEqual which expands to:
+            // Equivalent to MSSQL's EmitMssqlNullSafeNotEqual pattern which expands to:
             // (a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL))
             writer.Append("IF TG_OP = 'UPDATE' AND (");
             EmitPgsqlValueDiffDisjunction(writer, trigger.IdentityProjectionColumns);
@@ -1818,6 +1818,82 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(";");
     }
 
+    /// <summary>
+    /// Emits a NULL-safe inequality comparison for MSSQL.
+    /// For <see cref="ScalarKind.String"/> columns emits
+    /// <c>(CAST(left.col AS varbinary(max)) &lt;&gt; CAST(right.col AS varbinary(max))
+    /// OR (left.col IS NULL AND right.col IS NOT NULL)
+    /// OR (left.col IS NOT NULL AND right.col IS NULL))</c>;
+    /// for all other scalar kinds the <c>CAST</c> wrappers are omitted.
+    /// </summary>
+    /// <remarks>
+    /// The <c>CAST(... AS varbinary(max))</c> wrapper on the <c>&lt;&gt;</c> operands ensures
+    /// byte-level comparison, which detects trailing-space-only and case-only changes that
+    /// the default <c>nvarchar</c> comparison misses (ANSI SQL padding ignores trailing
+    /// spaces; the default CI collation ignores case). This mirrors the approach used by
+    /// <c>[dms].[uuidv5]</c>, which hashes raw bytes — so a change that produces a
+    /// different hash must also be detected as a change here.
+    /// Non-text types (int, bigint, decimal, bit, date, datetime, time) are unaffected by
+    /// collation or ANSI padding, so plain <c>&lt;&gt;</c> suffices for those columns.
+    /// </remarks>
+    private static void EmitMssqlNullSafeNotEqual(
+        SqlWriter writer,
+        string leftAlias,
+        string quotedColumn,
+        string rightAlias,
+        string rightQuotedColumn,
+        ScalarKind? scalarKind
+    )
+    {
+        // Text columns need CAST(... AS varbinary(max)) to detect trailing-space-only
+        // and case-only changes that the default nvarchar CI collation would miss.
+        // Non-text types (int, bigint, decimal, bit, date, datetime, time) are
+        // unaffected by collation or ANSI padding, so plain <> suffices.
+        bool needsCast = scalarKind == ScalarKind.String;
+
+        writer.Append("(");
+        if (needsCast)
+        {
+            writer.Append("CAST(");
+        }
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        if (needsCast)
+        {
+            writer.Append(" AS varbinary(max))");
+        }
+        writer.Append(" <> ");
+        if (needsCast)
+        {
+            writer.Append("CAST(");
+        }
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        if (needsCast)
+        {
+            writer.Append(" AS varbinary(max))");
+        }
+        writer.Append(" OR (");
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        writer.Append(" IS NULL AND ");
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        writer.Append(" IS NOT NULL) OR (");
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        writer.Append(" IS NOT NULL AND ");
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        writer.Append(" IS NULL))");
+    }
+
     private static void EmitMssqlNullSafeEqual(
         SqlWriter writer,
         string leftAlias,
@@ -2090,81 +2166,132 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        if (!AuthObjectDefinitions.HasAllPeopleAuthViewAssociations(concreteResources))
+        var requiredResourceNames = new[]
+        {
+            "StudentSchoolAssociation",
+            "StudentContactAssociation",
+            "StaffEducationOrganizationAssignmentAssociation",
+            "StaffEducationOrganizationEmploymentAssociation",
+            "StudentEducationOrganizationResponsibilityAssociation",
+        };
+
+        if (
+            !Array.TrueForAll(
+                requiredResourceNames,
+                requiredResourceName =>
+                    concreteResources.Any(r =>
+                        DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
+                        && r.ResourceKey.Resource.ResourceName == requiredResourceName
+                    )
+            )
+        )
         {
             return;
         }
 
-        foreach (var view in AuthObjectDefinitions.PeopleAuthViews)
+        var authSchema = AuthNames.AuthSchema;
+        string edOrgTable = Quote(AuthNames.EdOrgIdToEdOrgId);
+        string srcEdOrgId = Quote(AuthNames.SourceEdOrgId);
+        string tgtEdOrgId = Quote(AuthNames.TargetEdOrgId);
+        string schoolId = Quote(AuthNames.SchoolIdUnified);
+        string studentDocId = Quote(AuthNames.StudentDocumentId);
+        string contactDocId = Quote(AuthNames.ContactDocumentId);
+        string staffDocId = Quote(AuthNames.StaffDocumentId);
+        string edOrgEdOrgId = Quote(AuthNames.EdOrgEdOrgId);
+
+        var edfi = new DbSchemaName("edfi");
+
+        // Alphabetical order: Contact, Staff, Student, StudentThroughResponsibility
+
+        // 1. auth.EducationOrganizationIdToContactDocumentId
+        //    EdOrg hierarchy -> StudentSchoolAssociation -> StudentContactAssociation
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToContactDocumentId"));
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
         {
-            EmitPeopleAuthView(writer, view);
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"sca.{contactDocId}");
         }
-    }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentSchoolAssociation"))} ssa"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{schoolId}"
+        );
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentContactAssociation"))} sca"
+                + $" ON ssa.{studentDocId} = sca.{studentDocId}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
 
-    /// <summary>
-    /// Emits a single people auth view from its shared <see cref="AuthViewDefinition"/>: header,
-    /// arms joined by the view's set-operator, and trailing terminator.
-    /// </summary>
-    private void EmitPeopleAuthView(SqlWriter writer, AuthViewDefinition view)
-    {
-        EmitViewHeader(writer, view.View);
-
-        for (int i = 0; i < view.Arms.Count; i++)
+        // 2. auth.EducationOrganizationIdToStaffDocumentId
+        //    UNION of two arms: StaffEducationOrganizationAssignmentAssociation
+        //    and StaffEducationOrganizationEmploymentAssociation
+        //    UNION already deduplicates, so per-arm DISTINCT is not needed.
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStaffDocumentId"));
+        writer.AppendLine($"SELECT");
+        using (writer.Indent())
         {
-            if (i > 0)
-            {
-                writer.AppendLine(SetOperatorKeyword(view));
-            }
-            EmitPeopleAuthViewArm(writer, view.Arms[i]);
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seoaa.{staffDocId}");
         }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StaffEducationOrganizationAssignmentAssociation"))} seoaa"
+                + $" ON edOrg.{tgtEdOrgId} = seoaa.{edOrgEdOrgId}"
+        );
+        writer.AppendLine("UNION");
+        writer.AppendLine($"SELECT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seoea.{staffDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StaffEducationOrganizationEmploymentAssociation"))} seoea"
+                + $" ON edOrg.{tgtEdOrgId} = seoea.{edOrgEdOrgId}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
 
+        // 3. auth.EducationOrganizationIdToStudentDocumentId
+        //    EdOrg hierarchy -> StudentSchoolAssociation
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentId"));
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"ssa.{studentDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentSchoolAssociation"))} ssa"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{schoolId}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+
+        // 4. auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility
+        //    EdOrg hierarchy -> StudentEducationOrganizationResponsibilityAssociation
+        EmitViewHeader(
+            writer,
+            new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentIdThroughResponsibility")
+        );
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seora.{studentDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentEducationOrganizationResponsibilityAssociation"))} seora"
+                + $" ON edOrg.{tgtEdOrgId} = seora.{edOrgEdOrgId}"
+        );
         writer.AppendLine(";");
         writer.AppendLine();
     }
-
-    /// <summary>
-    /// Emits a single <c>SELECT [DISTINCT] ... FROM ... INNER JOIN ...</c> arm of a people auth view.
-    /// </summary>
-    private void EmitPeopleAuthViewArm(SqlWriter writer, AuthViewArm arm)
-    {
-        writer.AppendLine(arm.SelectDistinct ? "SELECT DISTINCT" : "SELECT");
-        using (writer.Indent())
-        {
-            for (int j = 0; j < arm.OutputColumns.Count; j++)
-            {
-                var column = arm.OutputColumns[j];
-                var trailing = j < arm.OutputColumns.Count - 1 ? "," : string.Empty;
-                writer.AppendLine($"{column.Alias}.{Quote(column.Column)}{trailing}");
-            }
-        }
-        writer.AppendLine($"FROM {Quote(arm.SourceTable)} {arm.SourceAlias}");
-        foreach (var join in arm.Joins)
-        {
-            var predicates = string.Join(
-                " AND ",
-                join.On.Select(p =>
-                    $"{p.LeftAlias}.{Quote(p.LeftColumn)} = {p.RightAlias}.{Quote(p.RightColumn)}"
-                )
-            );
-            writer.AppendLine($"INNER JOIN {Quote(join.Table)} {join.Alias} ON {predicates}");
-        }
-    }
-
-    private static string SetOperatorKeyword(AuthViewDefinition view) =>
-        view.ArmsSetOperator switch
-        {
-            AuthViewSetOperator.Union => "UNION",
-            AuthViewSetOperator.UnionAll => "UNION ALL",
-            AuthViewSetOperator.None => throw new InvalidOperationException(
-                $"Auth view '{view.View.Schema.Value}.{view.View.Name}' has multiple arms but "
-                    + $"ArmsSetOperator is {nameof(AuthViewSetOperator.None)}."
-            ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(view),
-                view.ArmsSetOperator,
-                "Unsupported AuthViewSetOperator."
-            ),
-        };
 
     /// <summary>
     /// Emits the dialect-specific <c>CREATE VIEW</c> header: an optional <c>GO</c> batch separator
@@ -2363,7 +2490,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     )
     {
         var quotedColumn = Quote(columnName);
-        MssqlTriggerDiffEmitter.EmitNullSafeNotEqual(
+        EmitMssqlNullSafeNotEqual(
             writer,
             leftAlias,
             quotedColumn,

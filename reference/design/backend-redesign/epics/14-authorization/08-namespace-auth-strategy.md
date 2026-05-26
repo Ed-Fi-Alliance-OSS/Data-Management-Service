@@ -30,19 +30,11 @@ Implement the namespace-based authorization strategy for all CRUD operations per
 - Namespace-based is combined with AND when other strategy types are also configured for the resource. It executes before relationship-based (OR) strategies.
 - This story replaces the temporary DMS-1055 GET-many 501 Not Implemented behavior for NamespaceBased in mixed strategy configurations. NamespaceBased is applied as an AND filter with the relationship strategy OR group instead of causing the unsupported mixed-strategy failure.
 - This story replaces the temporary DMS-1056 GET-by-id and DELETE 501 Not Implemented behavior for `NamespaceBased` in single-record relational authorization.
-- This story owns changing the DMS-1162 descriptor POST behavior to true NamespaceBased authorization. DMS-1162 intentionally accepted the current relational descriptor POST behavior while implementing EdOrg-only relationship POST-create authorization; descriptor POST must no longer be able to bypass `NamespaceBased` once this story is complete.
 - Re-enable `@relational-backend` and the appropriate `@relational-ci-shard-*` tag on the NamespaceBased E2E scenarios temporarily excluded during the DMS-1056 EdOrg-only slice because they require NamespaceBased relational CRUD authorization. Restore both tags on:
   - `Features/Descriptors/DescriptorCaseInsensitiveValidation.feature`: scenario 1.
   - `Features/Descriptors/DeleteDescriptorsValidation.feature`: scenario 01.
   - `Features/Authorization/NamespaceAuthorization.feature`: scenarios 01, 03, 04, 10, and 12.
   - `Features/Extensions/TpdmExtension.feature`: scenario 04.
-- Re-enable `@relational-backend` and the appropriate `@relational-ci-shard-*` tag on the NamespaceBased E2E scenarios temporarily excluded during DMS-1162 because they require NamespaceBased relational POST/PUT authorization. Restore both tags on:
-  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 08, "IncludeOnly nested filter profile is currently unsupported on read".
-  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 09, "ExcludeOnly nested filter profile is currently unsupported on read".
-  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 10, "IncludeOnly nested filter profile is currently unsupported on write".
-  - `Features/Profiles/ProfileCollectionFiltering.feature`: scenario 11, "ExcludeOnly nested filter profile is currently unsupported on write".
-  - `Features/Authorization/NamespaceAuthorization.feature`: scenario 09, "Ensure client can create a resource in the ns2 namespace".
-  - `Features/Authorization/NamespaceAuthorization.feature`: scenario 11, "Ensure client can update a resource in the ns2 namespace".
 - ProblemDetails follow `auth.md` §"ProblemDetails", specifically:
   - §2.9 — No namespace prefixes configured on the API client.
   - §2.10 — Namespace value uninitialized (existing data).
@@ -58,16 +50,6 @@ blocked current relational E2E setup data for profile tests: descriptor seed POS
 `EdFiSandbox` use `NamespaceBased` authorization, so the guard returned 403 before the
 descriptor write handler could persist values such as `EducationOrganizationCategoryDescriptor`
 and `GradeLevelDescriptor`.
-
-DMS-1162 expanded relational backend-planned authorization to POST so relationship POST-create
-could classify raw strategy names in the backend. Descriptor POST still exits from
-`RelationalDocumentStoreRepository.UpsertDocument` into `DescriptorWriteHandler` before generic
-resource relationship preflight, and `DescriptorWriteRequest` does not currently carry the raw
-authorization strategies. DMS-1162 accepts that current descriptor POST configuration so the
-EdOrg-only relationship slice can remain scoped to non-descriptor resources. Do not replace the
-current behavior with a descriptor POST fail-closed result; descriptor seed writes with matching
-namespace prefixes must continue to work until this story implements true descriptor namespace
-authorization.
 
 Until this story restores real relational write authorization, `If-Match` handling from DMS-1005 can still return
 `412` before a final `403` decision for existing targets; restoring the authorization-before-precondition ordering is
@@ -90,7 +72,6 @@ The restored behavior should run in the same transactional/roundtrip shape as th
 - PUT: authorize the stored namespace first, then authorize the proposed namespace before update.
 - DELETE: authorize the stored namespace before delete.
 - Descriptor writes must participate in the same NamespaceBased rules. Descriptor POST/PUT should authorize the proposed descriptor `namespace`; descriptor PUT/DELETE should authorize the stored descriptor namespace before mutation.
-- Descriptor POST/PUT must carry the effective authorization strategy context into `DescriptorWriteHandler`, or otherwise execute equivalent namespace authorization before the descriptor insert/update path. The implementation must not depend on the generic resource write executor relationship preflight, because descriptors bypass that executor.
 - If authorization fails, no insert/update/delete should execute, and the result should map to the AUTH1 ProblemDetails cases listed above.
 
 ### Tests To Restore Or Replace
@@ -110,8 +91,4 @@ When NamespaceBased write authorization is implemented, replace those tests with
 - PUT follows the same stored-then-proposed authorization order.
 - DELETE fails before delete when the stored namespace is unauthorized.
 - Descriptor setup scenarios that create descriptors in `uri://ed-fi.org` with an EdFiSandbox-style token and matching namespace prefix still pass.
-- Descriptor POST with a namespace outside the client's configured prefixes fails before the descriptor `dms.Document` and `dms.Descriptor` rows are inserted.
-- Descriptor POST through the relational pipeline proves the effective `NamespaceBased` strategy cannot be lost when POST is routed for backend-planned relationship authorization.
-- Descriptor PUT fails before mutation when either the stored descriptor namespace or proposed descriptor namespace is unauthorized, following the stored-then-proposed order.
-- Descriptor DELETE fails before deletion when the stored descriptor namespace is unauthorized.
 - The failing-path tests assert that the executor/delete command is not called and that the result is translated to the expected authorization failure.

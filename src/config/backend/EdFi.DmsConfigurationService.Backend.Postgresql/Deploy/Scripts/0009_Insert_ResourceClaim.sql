@@ -420,7 +420,23 @@ SELECT v.Id, v.ResourceName, v.ClaimName FROM (
         (418,'candidate','http://ed-fi.org/identity/claims/tpdm/candidate'),
         (419,'surveyResponsePersonTargetAssociation','http://ed-fi.org/identity/claims/tpdm/surveyResponsePersonTargetAssociation'),
         (420,'surveySectionResponsePersonTargetAssociation','http://ed-fi.org/identity/claims/tpdm/surveySectionResponsePersonTargetAssociation'),
-        (421,'snapshot','http://ed-fi.org/identity/claims/publishing/snapshot')
+        (421,'snapshot','http://ed-fi.org/identity/claims/publishing/snapshot'),
+        (422,'homograph','http://ed-fi.org/identity/claims/domains/homograph'),
+        (423,'name','http://ed-fi.org/identity/claims/homograph/name'),
+        (424,'school','http://ed-fi.org/identity/claims/homograph/school'),
+        (425,'contact','http://ed-fi.org/identity/claims/homograph/contact'),
+        (426,'student','http://ed-fi.org/identity/claims/homograph/student'),
+        (427,'staff','http://ed-fi.org/identity/claims/homograph/staff'),
+        (428,'schoolYearType','http://ed-fi.org/identity/claims/homograph/schoolYearType'),
+        (429,'studentSchoolAssociation','http://ed-fi.org/identity/claims/homograph/studentSchoolAssociation'),
+        (430,'sample','http://ed-fi.org/identity/claims/domains/sample'),
+        (431,'bus','http://ed-fi.org/identity/claims/sample/bus'),
+        (432,'busRoute','http://ed-fi.org/identity/claims/sample/busRoute'),
+        (433,'artMediumDescriptor','http://ed-fi.org/identity/claims/sample/artMediumDescriptor'),
+        (434,'favoriteBookCategoryDescriptor','http://ed-fi.org/identity/claims/sample/favoriteBookCategoryDescriptor'),
+        (435,'membershipTypeDescriptor','http://ed-fi.org/identity/claims/sample/membershipTypeDescriptor'),
+        (436,'studentArtProgramAssociation','http://ed-fi.org/identity/claims/sample/studentArtProgramAssociation'),
+        (437,'studentGraduationPlanAssociation','http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation')
 ) AS v(Id, ResourceName, ClaimName)
 WHERE NOT EXISTS (
     SELECT 1 FROM dmscs.ResourceClaim s WHERE s.Id = v.Id

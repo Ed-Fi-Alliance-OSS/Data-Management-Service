@@ -22,10 +22,10 @@ public interface IVendorRepository
 public record VendorInsertResult
 {
     /// <summary>
-    /// Successful vendor insert or update (upsert by natural key).
+    /// Successful insert or update.
     /// </summary>
-    /// <param name="Id">The Id of the inserted or updated vendor.</param>
-    /// <param name="IsNewVendor">True if the vendor was newly inserted; false if an existing vendor was updated.</param>
+    /// <param name="Id">The Id of the inserted or updated record.</param>
+    /// <param name="IsNewVendor">Flag indicating whether it's a new vendor.</param>
     public record Success(long Id, bool IsNewVendor) : VendorInsertResult();
 
     /// <summary>

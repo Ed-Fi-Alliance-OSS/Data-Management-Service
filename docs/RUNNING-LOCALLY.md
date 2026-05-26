@@ -75,29 +75,12 @@ pwsh ./start-postgresql.ps1
 $env:ConnectionStrings__DatabaseConnection = "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_dms_backend_integration;pooling=true;minimum pool size=10;maximum pool size=50;Application Name=EdFi.DataManagementService;NoResetOnClose=true;"
 ```
 
-Start SQL Server in a container, then set the admin connection string. Using
-host port `14333` avoids collisions with a developer SQL Server on the default
-port:
+Start SQL Server in a container, then set the admin connection string:
 
 ```powershell
-docker run --name dms-mssql-integration -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2022-latest
-$env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
+docker run -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<password>' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+$env:ConnectionStrings__MssqlAdmin = "Server=localhost,1433;User Id=sa;Password=<password>;TrustServerCertificate=true"
 ```
-
-If `ConnectionStrings__MssqlAdmin` is present but points at a stopped or
-missing SQL Server, MSSQL tests fail during fixture database setup instead of
-skipping. Check the endpoint before treating the test failure as product code:
-
-```powershell
-Get-ChildItem Env:ConnectionStrings__MssqlAdmin -ErrorAction SilentlyContinue
-Test-NetConnection -ComputerName localhost -Port 14333
-docker ps --filter name=dms-mssql-integration
-docker logs dms-mssql-integration --tail 80
-```
-
-If the named container already exists, restart it with
-`docker start dms-mssql-integration`. If `14333` is busy, map another host port
-and use that port in `ConnectionStrings__MssqlAdmin`.
 
 ### Run
 

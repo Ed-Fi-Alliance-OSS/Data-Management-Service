@@ -341,53 +341,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    public async Task<UpsertResult> UpsertAuthorizationRootChildAsync(
-        AuthorizationRootChildSeed seed,
-        IReadOnlyList<long> claimEducationOrganizationIds,
-        IReadOnlyList<string> strategyNames,
-        string? ifMatch = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null,
-        JsonNode? requestBody = null
-    )
-    {
-        return await UpsertAsync(
-            "authz",
-            "AuthorizationRootChildResource",
-            requestBody
-                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
-            seed.DocumentUuid,
-            $"post-auth-root-child-{seed.AuthorizationRootChildId}",
-            claimEducationOrganizationIds,
-            strategyNames,
-            ifMatch,
-            backendProfileWriteContext
-        );
-    }
-
-    public async Task<UpdateResult> UpdateAuthorizationRootChildByIdAsync(
-        AuthorizationRootChildSeed seed,
-        DocumentUuid documentUuid,
-        IReadOnlyList<long> claimEducationOrganizationIds,
-        IReadOnlyList<string> strategyNames,
-        string? ifMatch = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null,
-        JsonNode? requestBody = null
-    )
-    {
-        return await UpdateAsync(
-            "authz",
-            "AuthorizationRootChildResource",
-            requestBody
-                ?? RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
-            documentUuid,
-            $"put-auth-root-child-{seed.AuthorizationRootChildId}",
-            claimEducationOrganizationIds,
-            strategyNames,
-            ifMatch,
-            backendProfileWriteContext
-        );
-    }
-
     public async Task<UpsertResult> CreateAuthorizationChildOnlyAsync(AuthorizationChildOnlySeed seed)
     {
         return await UpsertAsync(
@@ -410,41 +363,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    public async Task<UpsertResult> UpsertAuthorizationNullableAsync(
-        AuthorizationNullableSeed seed,
-        IReadOnlyList<long> claimEducationOrganizationIds,
-        IReadOnlyList<string> strategyNames
-    )
-    {
-        return await UpsertAsync(
-            "authz",
-            "AuthorizationNullableResource",
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
-            seed.DocumentUuid,
-            $"post-auth-nullable-{seed.AuthorizationNullableId}",
-            claimEducationOrganizationIds,
-            strategyNames
-        );
-    }
-
-    public async Task<UpdateResult> UpdateAuthorizationNullableByIdAsync(
-        AuthorizationNullableSeed seed,
-        DocumentUuid documentUuid,
-        IReadOnlyList<long> claimEducationOrganizationIds,
-        IReadOnlyList<string> strategyNames
-    )
-    {
-        return await UpdateAsync(
-            "authz",
-            "AuthorizationNullableResource",
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNullableRequestBody(seed),
-            documentUuid,
-            $"put-auth-nullable-{seed.AuthorizationNullableId}",
-            claimEducationOrganizationIds,
-            strategyNames
-        );
-    }
-
     public async Task InsertAuthEdgeAsync(
         long sourceEducationOrganizationId,
         long targetEducationOrganizationId
@@ -457,39 +375,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "TargetEducationOrganizationId"
             )
             VALUES (@sourceEducationOrganizationId, @targetEducationOrganizationId);
-            """,
-            new NpgsqlParameter("sourceEducationOrganizationId", sourceEducationOrganizationId),
-            new NpgsqlParameter("targetEducationOrganizationId", targetEducationOrganizationId)
-        );
-    }
-
-    public async Task DeleteAuthEdgeAsync(
-        long sourceEducationOrganizationId,
-        long targetEducationOrganizationId
-    )
-    {
-        await Database.ExecuteNonQueryAsync(
-            """
-            DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
-            WHERE "SourceEducationOrganizationId" = @sourceEducationOrganizationId
-              AND "TargetEducationOrganizationId" = @targetEducationOrganizationId;
-            """,
-            new NpgsqlParameter("sourceEducationOrganizationId", sourceEducationOrganizationId),
-            new NpgsqlParameter("targetEducationOrganizationId", targetEducationOrganizationId)
-        );
-    }
-
-    public async Task<long> CountAuthEdgesAsync(
-        long sourceEducationOrganizationId,
-        long targetEducationOrganizationId
-    )
-    {
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)::bigint
-            FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
-            WHERE "SourceEducationOrganizationId" = @sourceEducationOrganizationId
-              AND "TargetEducationOrganizationId" = @targetEducationOrganizationId;
             """,
             new NpgsqlParameter("sourceEducationOrganizationId", sourceEducationOrganizationId),
             new NpgsqlParameter("targetEducationOrganizationId", targetEducationOrganizationId)
@@ -652,136 +537,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    public async Task<long> CountResourceRootRowsAsync(string projectEndpointName, string resourceName)
-    {
-        var writePlan = GetWritePlan(projectEndpointName, resourceName);
-        return await CountRowsInTableAsync(writePlan.Model.Root.Table);
-    }
-
-    public async Task<long> CountResourceCollectionRowsAsync(string projectEndpointName, string resourceName)
-    {
-        var writePlan = GetWritePlan(projectEndpointName, resourceName);
-        long rowCount = 0;
-
-        foreach (
-            var tablePlan in writePlan.TablePlansInDependencyOrder.Where(static tablePlan =>
-                tablePlan.TableModel.IdentityMetadata.TableKind
-                    is DbTableKind.Collection
-                        or DbTableKind.ExtensionCollection
-            )
-        )
-        {
-            rowCount += await CountRowsInTableAsync(tablePlan.TableModel.Table);
-        }
-
-        return rowCount;
-    }
-
-    public async Task<long> CountReferentialIdentityRowsForAuthorizationRootChildAsync(
-        AuthorizationRootChildSeed seed
-    )
-    {
-        var referentialId = CreateAuthorizationRootChildDocumentInfo(seed).ReferentialId;
-
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)::bigint
-            FROM "dms"."ReferentialIdentity"
-            WHERE "ReferentialId" = @referentialId;
-            """,
-            new NpgsqlParameter("referentialId", referentialId.Value)
-        );
-    }
-
-    public async Task<long> CountDocumentChangeEventRowsForResourceAsync(
-        string projectEndpointName,
-        string resourceName
-    )
-    {
-        var resourceKeyId = GetCompiledResourceKeyId(projectEndpointName, resourceName);
-
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)::bigint
-            FROM "dms"."DocumentChangeEvent"
-            WHERE "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationRootChildSideEffectStateAsync(
-        DocumentUuid documentUuid
-    )
-    {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationRootChildResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
-
-        return new AuthorizationWriteSideEffectState(
-            Document: document,
-            ResourceTables: await ReadResourceTableStatesAsync(
-                "authz",
-                "AuthorizationRootChildResource",
-                document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            ),
-            DocumentChangeEventCount: await CountDocumentChangeEventRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            )
-        );
-    }
-
-    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationNullableSideEffectStateAsync(
-        DocumentUuid documentUuid
-    )
-    {
-        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationNullableResource");
-        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
-
-        return new AuthorizationWriteSideEffectState(
-            Document: document,
-            ResourceTables: await ReadResourceTableStatesAsync(
-                "authz",
-                "AuthorizationNullableResource",
-                document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            ),
-            DocumentChangeEventCount: await CountDocumentChangeEventRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            )
-        );
-    }
-
-    public void AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert()
-    {
-        var command = GetPostCreateRelationshipAuthorizationCommand();
-
-        command!
-            .IndexOf("AUTH1", StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
-    }
-
-    public void AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert()
-    {
-        var command = GetPostCreateRelationshipAuthorizationCommand();
-
-        command.Should().Contain("= ANY(@ClaimEducationOrganizationIds) OR EXISTS");
-        command.Should().Contain("\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"");
-        command
-            .IndexOf("AUTH1", StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
-    }
-
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
@@ -843,11 +598,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         string resourceName,
         JsonNode requestBody,
         DocumentUuid documentUuid,
-        string traceId,
-        IReadOnlyList<long>? claimEducationOrganizationIds = null,
-        IReadOnlyList<string>? strategyNames = null,
-        string? ifMatch = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null
+        string traceId
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -865,278 +616,18 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             ),
             MappingSet: MappingSet,
             EdfiDoc: requestBody,
-            Headers: CreateHeaders(ifMatch),
+            Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
-            BackendProfileWriteContext: backendProfileWriteContext
-        )
-        {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
-            AuthorizationStrategyEvaluators =
-            [
-                .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(
-                    strategyName,
-                    [],
-                    FilterOperator.And
-                )),
-            ],
-        };
+            ResourceAuthorizationPathways: []
+        );
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .UpsertDocument(request);
-    }
-
-    private async Task<UpdateResult> UpdateAsync(
-        string projectEndpointName,
-        string resourceName,
-        JsonNode requestBody,
-        DocumentUuid documentUuid,
-        string traceId,
-        IReadOnlyList<long>? claimEducationOrganizationIds = null,
-        IReadOnlyList<string>? strategyNames = null,
-        string? ifMatch = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null
-    )
-    {
-        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
-
-        await using var scope = _serviceProvider.CreateAsyncScope();
-        SetSelectedInstance(scope.ServiceProvider);
-
-        var request = new UpdateRequest(
-            ResourceInfo: resourceHandle.ResourceInfo,
-            DocumentInfo: RelationalDocumentInfoTestHelper.CreateDocumentInfo(
-                requestBody,
-                resourceHandle.ResourceInfo,
-                resourceHandle.ResourceSchema,
-                MappingSet
-            ),
-            MappingSet: MappingSet,
-            EdfiDoc: requestBody,
-            Headers: CreateHeaders(ifMatch),
-            TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid,
-            DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new PostgresqlRelationalQueryNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new PostgresqlRelationalQueryAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: [],
-            BackendProfileWriteContext: backendProfileWriteContext
-        )
-        {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
-            AuthorizationStrategyEvaluators =
-            [
-                .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(
-                    strategyName,
-                    [],
-                    FilterOperator.And
-                )),
-            ],
-        };
-
-        return await scope
-            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
-            .UpdateDocumentById(request);
-    }
-
-    private async Task<AuthorizationDocumentState> ReadDocumentStateAsync(
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
-    {
-        var rows = await Database.QueryRowsAsync(
-            """
-            SELECT
-                "DocumentId",
-                "DocumentUuid",
-                "ResourceKeyId",
-                "ContentVersion",
-                "IdentityVersion",
-                "ContentLastModifiedAt",
-                "IdentityLastModifiedAt",
-                "CreatedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid
-              AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid.Value),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new AuthorizationDocumentState(
-                GetRequiredInt64(rows[0], "DocumentId"),
-                GetRequiredGuid(rows[0], "DocumentUuid"),
-                GetRequiredInt16(rows[0], "ResourceKeyId"),
-                GetRequiredInt64(rows[0], "ContentVersion"),
-                GetRequiredInt64(rows[0], "IdentityVersion"),
-                GetRequiredDateTime(rows[0], "ContentLastModifiedAt"),
-                GetRequiredDateTime(rows[0], "IdentityLastModifiedAt"),
-                GetRequiredDateTime(rows[0], "CreatedAt")
-            )
-            : throw new InvalidOperationException(
-                $"Expected one AuthorizationRootChildResource document row for '{documentUuid.Value}', but found {rows.Count}."
-            );
-    }
-
-    private async Task<IReadOnlyList<AuthorizationResourceTableState>> ReadResourceTableStatesAsync(
-        string projectEndpointName,
-        string resourceName,
-        long documentId
-    )
-    {
-        var writePlan = GetWritePlan(projectEndpointName, resourceName);
-        List<AuthorizationResourceTableState> states = [];
-
-        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
-        {
-            var table = tablePlan.TableModel.Table;
-            var columns = tablePlan.TableModel.Columns.Select(static column => column.ColumnName).ToArray();
-            var locatorColumns = tablePlan.TableModel.IdentityMetadata.RootScopeLocatorColumns;
-
-            if (locatorColumns.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    $"Table '{table.Schema.Value}.{table.Name}' has no root-scope locator columns."
-                );
-            }
-
-            var selectColumns = string.Join(", ", columns.Select(static column => $"\"{column.Value}\""));
-            var orderColumns =
-                tablePlan.TableModel.Key.Columns.Count != 0
-                    ? tablePlan.TableModel.Key.Columns.Select(static column => column.ColumnName).ToArray()
-                    : columns;
-            var orderBy = string.Join(", ", orderColumns.Select(static column => $"\"{column.Value}\""));
-            var where = string.Join(
-                " AND ",
-                locatorColumns.Select(static column => $"\"{column.Value}\" = @documentId")
-            );
-            var rows = await Database.QueryRowsAsync(
-                $"""
-                SELECT {selectColumns}
-                FROM "{table.Schema.Value}"."{table.Name}"
-                WHERE {where}
-                ORDER BY {orderBy};
-                """,
-                new NpgsqlParameter("documentId", documentId)
-            );
-
-            states.Add(
-                new AuthorizationResourceTableState(
-                    $"{table.Schema.Value}.{table.Name}",
-                    NormalizeRows(rows, columns)
-                )
-            );
-        }
-
-        return states;
-    }
-
-    private async Task<IReadOnlyList<ReferentialIdentityRow>> ReadReferentialIdentityRowsForDocumentAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await Database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-              AND "ResourceKeyId" = @resourceKeyId
-            ORDER BY "ResourceKeyId", "ReferentialId";
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return
-        [
-            .. rows.Select(row => new ReferentialIdentityRow(
-                GetRequiredGuid(row, "ReferentialId"),
-                GetRequiredInt64(row, "DocumentId"),
-                GetRequiredInt16(row, "ResourceKeyId")
-            )),
-        ];
-    }
-
-    private async Task<long> CountDocumentChangeEventRowsForDocumentAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        return await Database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)::bigint
-            FROM "dms"."DocumentChangeEvent"
-            WHERE "DocumentId" = @documentId
-              AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private DocumentInfo CreateAuthorizationRootChildDocumentInfo(AuthorizationRootChildSeed seed)
-    {
-        var resourceHandle = GetResourceHandle("authz", "AuthorizationRootChildResource");
-
-        return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
-            resourceHandle.ResourceInfo,
-            resourceHandle.ResourceSchema,
-            MappingSet
-        );
-    }
-
-    private ResourceWritePlan GetWritePlan(string projectEndpointName, string resourceName)
-    {
-        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
-        var resource = new QualifiedResourceName(
-            resourceHandle.ResourceInfo.ProjectName.Value,
-            resourceHandle.ResourceInfo.ResourceName.Value
-        );
-
-        return MappingSet.WritePlansByResource[resource];
-    }
-
-    private short GetCompiledResourceKeyId(string projectEndpointName, string resourceName)
-    {
-        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
-        var resource = new QualifiedResourceName(
-            resourceHandle.ResourceInfo.ProjectName.Value,
-            resourceHandle.ResourceInfo.ResourceName.Value
-        );
-
-        return MappingSet.ResourceKeyIdByResource[resource];
-    }
-
-    private async Task<long> CountRowsInTableAsync(DbTableName table)
-    {
-        return await Database.ExecuteScalarAsync<long>(
-            $"""
-            SELECT COUNT(*)::bigint
-            FROM "{table.Schema.Value}"."{table.Name}";
-            """
-        );
-    }
-
-    private string GetPostCreateRelationshipAuthorizationCommand()
-    {
-        var commands = _writeSessionRecorder.Commands;
-        var command = commands
-            .Select(static recorded => recorded.CommandText)
-            .FirstOrDefault(commandText =>
-                commandText.Contains("AUTH1", StringComparison.Ordinal)
-                && commandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-            );
-
-        command.Should().NotBeNull("POST create should compose authorization and dms.Document insert");
-        return command!;
     }
 
     private ResourceHandle GetResourceHandle(string projectEndpointName, string resourceName)
@@ -1411,20 +902,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     private static long GetRequiredInt64(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt64(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
-    private static short GetRequiredInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
     private static int GetRequiredInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
-    private static DateTime GetRequiredDateTime(IReadOnlyDictionary<string, object?> row, string columnName)
-    {
-        return GetRequiredValue(row, columnName) is DateTime value
-            ? value
-            : throw new InvalidOperationException(
-                $"Expected column '{columnName}' to contain a DateTime value."
-            );
-    }
 
     private static Guid GetRequiredGuid(IReadOnlyDictionary<string, object?> row, string columnName)
     {
@@ -1450,37 +929,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
         return value;
     }
-
-    private static IReadOnlyList<IReadOnlyDictionary<string, string?>> NormalizeRows(
-        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows,
-        IReadOnlyList<DbColumnName> columns
-    ) =>
-        [
-            .. rows.Select(row =>
-                (IReadOnlyDictionary<string, string?>)
-                    columns.ToDictionary(
-                        static column => column.Value,
-                        column =>
-                            row.TryGetValue(column.Value, out var value)
-                                ? NormalizeRowValue(value)
-                                : throw new InvalidOperationException(
-                                    $"Expected persisted row to contain column '{column.Value}'."
-                                ),
-                        StringComparer.Ordinal
-                    )
-            ),
-        ];
-
-    private static string? NormalizeRowValue(object? value) =>
-        value switch
-        {
-            null => null,
-            DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
-            Guid guid => guid.ToString("D"),
-            byte[] bytes => Convert.ToHexString(bytes),
-            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
-            _ => value.ToString(),
-        };
 
     private static Dictionary<string, string> CreateHeaders(string? ifMatch) =>
         ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch };
@@ -1512,98 +960,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private static bool IsPostgresqlDocumentDeleteCommand(string commandText) =>
         commandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal);
-}
-
-[TestFixture]
-[NonParallelizable]
-[Category("Authorization")]
-[Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-public class Given_A_Postgresql_Relational_Query_Authorization_With_Direct_EdOrg_Claim_Match
-{
-    private const long ClaimEducationOrganizationId =
-        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
-    private static readonly IReadOnlyList<string> _normalStrategy =
-    [
-        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-    ];
-    private static readonly QuerySchoolSeed _directClaimSchoolSeed = new(
-        new DocumentUuid(Guid.Parse("99999999-1000-0000-0000-000000000001")),
-        (int)ClaimEducationOrganizationId,
-        "Claim School"
-    );
-    private static readonly AuthorizationRootChildSeed _directClaimRootChildSeed = new(
-        new DocumentUuid(Guid.Parse("99999999-2000-0000-0000-000000000001")),
-        901,
-        "query-direct-claim",
-        (int)ClaimEducationOrganizationId,
-        []
-    );
-
-    private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
-
-    [OneTimeSetUp]
-    public async Task OneTimeSetUp()
-    {
-        _context = new PostgresqlRelationalQueryAuthorizationTestContext();
-        await _context.InitializeAsync(
-            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
-            strict: false
-        );
-        await _context.SeedSchoolDescriptorDataAsync();
-
-        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
-            await _context.CreateSchoolAsync(_directClaimSchoolSeed)
-        );
-        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
-            await _context.CreateAuthorizationRootChildAsync(_directClaimRootChildSeed)
-        );
-        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
-    }
-
-    [OneTimeTearDown]
-    public async Task OneTimeTearDown()
-    {
-        if (_context is not null)
-        {
-            await _context.DisposeAsync();
-        }
-    }
-
-    [SetUp]
-    public void SetUp()
-    {
-        _context.ResetRecorder();
-    }
-
-    [Test]
-    public async Task It_returns_get_many_results_by_direct_claim_match_without_a_hierarchy_edge()
-    {
-        (await _context.CountAuthEdgesAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId))
-            .Should()
-            .Be(0);
-
-        var result = await _context.QueryAsync(
-            "authz",
-            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
-            [ClaimEducationOrganizationId],
-            _normalStrategy
-        );
-
-        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.TotalCount.Should().Be(1);
-        success
-            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
-            .Should()
-            .Equal(_directClaimRootChildSeed.DocumentUuid.Value.ToString());
-
-        var keyset = _context.AssertSingleQueryHydration();
-        const string DirectClaimMatchSql =
-            "r.\"School_SchoolId\" = ANY(@ClaimEducationOrganizationIds) OR r.\"School_SchoolId\" IN (SELECT";
-        keyset.Plan.PageDocumentIdSql.Should().Contain(DirectClaimMatchSql);
-        keyset.Plan.TotalCountSql.Should().NotBeNull();
-        keyset.Plan.TotalCountSql!.Should().Contain(DirectClaimMatchSql);
-    }
 }
 
 [TestFixture]

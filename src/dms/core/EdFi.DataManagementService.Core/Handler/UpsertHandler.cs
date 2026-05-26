@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -77,9 +76,6 @@ internal class UpsertHandler(
                     )
                     {
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
-                        AuthorizationContext = RelationalAuthorizationContext.Create(
-                            requestInfo.ClientAuthorizations
-                        ),
                     }
                 );
             },
@@ -180,26 +176,6 @@ internal class UpsertHandler(
                     hints: failure.Hints
                 ),
                 Headers: []
-            ),
-            UpsertFailureRelationshipNotAuthorized failure => new(
-                StatusCode: 403,
-                Body: ForForbidden(
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: failure.ErrorMessages,
-                    hints: failure.Hints
-                ),
-                Headers: []
-            ),
-            UpsertFailureNotImplemented failure => new(
-                StatusCode: 501,
-                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                Headers: []
-            ),
-            UpsertFailureSecurityConfiguration failure => new(
-                StatusCode: 500,
-                Body: ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, failure.Errors),
-                Headers: [],
-                ContentType: "application/problem+json"
             ),
             UpsertFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),

@@ -8,30 +8,19 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Input for compiling a relationship authorization check for one stored or proposed root record.
+/// Input for compiling a stored-value relationship authorization check for one resolved root document.
 /// </summary>
 public sealed record SingleRecordRelationshipAuthorizationSqlSpec(
     IReadOnlyList<RelationshipAuthorizationCheckSpec> CheckSpecs,
     AuthorizationClaimEducationOrganizationIdParameterization ClaimEducationOrganizationIdParameterization,
     int EmittedAuth1Index,
-    string DocumentIdParameterName = "DocumentId",
-    IReadOnlyList<string>? ReservedParameterNames = null
+    string DocumentIdParameterName = "DocumentId"
 );
 
 /// <summary>
-/// Generated SQL parameter for one proposed authorization subject value.
-/// </summary>
-public sealed record RelationshipAuthorizationProposedValueSqlParameter(
-    int StrategyOrdinal,
-    int SubjectOrdinal,
-    string ParameterName
-);
-
-/// <summary>
-/// Compiled SQL and runtime parameter binding metadata for one relationship authorization check.
+/// Compiled SQL and runtime parameter binding metadata for one stored-value relationship authorization check.
 /// </summary>
 public sealed record SingleRecordRelationshipAuthorizationSqlPlan(
     string AuthorizationSql,
-    IReadOnlyList<QuerySqlParameter> ParametersInOrder,
-    IReadOnlyList<RelationshipAuthorizationProposedValueSqlParameter> ProposedValueParametersInOrder
+    IReadOnlyList<QuerySqlParameter> ParametersInOrder
 );
