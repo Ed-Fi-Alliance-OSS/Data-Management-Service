@@ -429,6 +429,7 @@ public sealed class RelationshipAuthorizationPlanner
                 mappingSet,
                 resource,
                 authorizationContext,
+                RelationshipAuthorizationValueSource.Stored,
                 CreateStoredCheckSpec,
                 selectedSubjects.StrategySubjects
             ),
@@ -436,6 +437,7 @@ public sealed class RelationshipAuthorizationPlanner
                 mappingSet,
                 resource,
                 authorizationContext,
+                RelationshipAuthorizationValueSource.Proposed,
                 createProposedCheckSpec,
                 selectedSubjects.StrategySubjects
             )
@@ -474,6 +476,7 @@ public sealed class RelationshipAuthorizationPlanner
             mappingSet,
             resource,
             authorizationContext,
+            valueSource,
             createCheckSpec,
             selectedSubjects.StrategySubjects
         );
@@ -608,6 +611,7 @@ public sealed class RelationshipAuthorizationPlanner
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationalAuthorizationContext authorizationContext,
+        RelationshipAuthorizationValueSource valueSource,
         CreateCheckSpec createCheckSpec,
         IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects
     )
@@ -619,6 +623,7 @@ public sealed class RelationshipAuthorizationPlanner
 
         List<RelationshipAuthorizationCheckSpec> checkSpecs = [];
         List<RelationshipAuthorizationFailureMetadata> planningFailures = [];
+        List<SupportedRelationshipAuthorizationStrategySubjects> peopleAuthViewCandidateStrategySubjects = [];
 
         foreach (var selectedStrategySubjects in strategySubjects)
         {
@@ -629,6 +634,16 @@ public sealed class RelationshipAuthorizationPlanner
                 selectedStrategySubjects.Subjects,
                 supportedStrategy
             );
+
+            if (checkSpecResult.PeopleAuthViewCandidateSubjects.Count > 0)
+            {
+                peopleAuthViewCandidateStrategySubjects.Add(
+                    new SupportedRelationshipAuthorizationStrategySubjects(
+                        supportedStrategy,
+                        checkSpecResult.PeopleAuthViewCandidateSubjects
+                    )
+                );
+            }
 
             if (checkSpecResult.Failures.Count > 0)
             {
@@ -644,8 +659,15 @@ public sealed class RelationshipAuthorizationPlanner
 
         if (planningFailures.Count > 0)
         {
+            var missingPeopleAuthViewPlanningFailures = CreateMissingPeopleAuthViewAssociationFailures(
+                mappingSet,
+                resource,
+                peopleAuthViewCandidateStrategySubjects,
+                valueSource
+            );
+
             return new RelationshipAuthorizationResult.SecurityConfigurationError([
-                .. OrderFailures(planningFailures),
+                .. OrderFailures([.. planningFailures, .. missingPeopleAuthViewPlanningFailures]),
             ]);
         }
 
@@ -695,7 +717,8 @@ public sealed class RelationshipAuthorizationPlanner
                 subjects,
                 new RelationshipAuthorizationCheckTarget.Stored(rootTable, rootDocumentIdColumn)
             ),
-            []
+            [],
+            subjects
         );
 
     private static CreateCheckSpec CreateProposedCheckSpecFactory(
@@ -725,6 +748,7 @@ public sealed class RelationshipAuthorizationPlanner
         {
             List<RelationshipAuthorizationFailureMetadata> failures = [];
             List<RelationshipAuthorizationSubject> executableSubjects = [];
+            List<RelationshipAuthorizationSubject> peopleAuthViewCandidateSubjects = [];
             List<RelationshipAuthorizationProposedValueBinding> proposedBindings = [];
             List<RelationshipAuthorizationIneligibleSubject> ineligibleSubjects = [];
 
@@ -736,6 +760,11 @@ public sealed class RelationshipAuthorizationPlanner
                 {
                     ineligibleSubjects.Add(CreateSelfPersonCreateNewIneligibleSubject(subject));
                     continue;
+                }
+
+                if (subject.PersonMetadata is not null)
+                {
+                    peopleAuthViewCandidateSubjects.Add(subject);
                 }
 
                 var anchor = CreateProposedAnchor(subject, rootTable, rootDocumentIdColumn, operationKind);
@@ -784,14 +813,15 @@ public sealed class RelationshipAuthorizationPlanner
 
             if (failures.Count > 0)
             {
-                return new CheckSpecCreationResult(null, failures);
+                return new CheckSpecCreationResult(null, failures, peopleAuthViewCandidateSubjects);
             }
 
             if (executableSubjects.Count == 0 && ineligibleSubjects.Count > 0)
             {
                 return new CheckSpecCreationResult(
                     null,
-                    [CreateNoExecutableSubjectsFailure(resource, supportedStrategy, ineligibleSubjects)]
+                    [CreateNoExecutableSubjectsFailure(resource, supportedStrategy, ineligibleSubjects)],
+                    peopleAuthViewCandidateSubjects
                 );
             }
 
@@ -807,7 +837,8 @@ public sealed class RelationshipAuthorizationPlanner
                 {
                     IneligibleSubjects = ineligibleSubjects,
                 },
-                []
+                [],
+                peopleAuthViewCandidateSubjects
             );
         };
     }
@@ -1618,7 +1649,8 @@ public sealed class RelationshipAuthorizationPlanner
 
     private sealed record CheckSpecCreationResult(
         RelationshipAuthorizationCheckSpec? CheckSpec,
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures,
+        IReadOnlyList<RelationshipAuthorizationSubject> PeopleAuthViewCandidateSubjects
     );
 
     private sealed record RelationshipAuthorizationSubjectSelectionResult(

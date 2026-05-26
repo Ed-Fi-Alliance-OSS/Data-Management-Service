@@ -157,3 +157,8 @@ Task completed: Failure Metadata - preserve selected People subjects with unreso
 Key decisions: deferred People unresolved-path early return so resolved same-strategy subjects survive security-error selection; planner now consumes subjects from People selector security-error results so missing-auth-view diagnostics can aggregate with unresolved People failures.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; selector/planner unit tests; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted touched files; RelationshipAuthorizationPlanner|RelationalPeopleAuthorizationSubjectSelector filter passed.
+
+Task completed: Auth View Selection - proposed planning failure diagnostics for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: carried operation-applicable People auth-view candidates out of check-spec creation so PlanProposedValues can report MissingPeopleAuthViewAssociations alongside MissingProposedRootBinding; skipped create-new self-person ineligible subjects so suppressed auth views do not add duplicate diagnostics.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted planner/test; RelationshipAuthorizationPlanner filter passed.

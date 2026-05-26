@@ -446,6 +446,67 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_report_missing_people_auth_view_associations_when_proposed_check_spec_planning_fails()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(resource, SecurableElementKind.Student);
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            CreateWritePlan(mappingSet, resource)
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures.Should().HaveCount(2);
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations,
+                RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+            );
+
+        var missingAuthViewFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+        );
+        missingAuthViewFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        missingAuthViewFailure.AuthObject.Should().Be(expectedAuthObject);
+        missingAuthViewFailure.PersonMetadata.Should().NotBeNull();
+        missingAuthViewFailure
+            .PersonMetadata!.PersonKind.Should()
+            .Be(RelationshipAuthorizationPersonKind.Student);
+        missingAuthViewFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        missingAuthViewFailure
+            .Location?.AuthorizationObjectName.Should()
+            .Be(expectedAuthObject.Name.ToString());
+
+        var missingBindingFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+        );
+        missingBindingFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        missingBindingFailure.AuthObject.Should().Be(expectedAuthObject);
+        missingBindingFailure.PersonMetadata.Should().NotBeNull();
+        missingBindingFailure
+            .PersonMetadata!.PersonKind.Should()
+            .Be(RelationshipAuthorizationPersonKind.Student);
+        missingBindingFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        missingBindingFailure.Location?.Table.Should().Be(Table(resource.ResourceName));
+        missingBindingFailure.Location?.Column.Should().Be(AuthNames.StudentDocumentId);
+    }
+
+    [Test]
     public void It_should_return_explicit_no_claims_results_before_parameterization()
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
@@ -1195,6 +1256,39 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_not_report_missing_people_auth_view_associations_for_ineligible_self_person_create_new_subjects()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = CreateSelfPersonMappingSet(
+            SecurableElementKind.Student,
+            includeRequiredPeopleAuthAssociationResources: false
+        );
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures.Should().ContainSingle();
+        failures[0].FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoExecutableSubjects);
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .NotContain(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+    }
+
+    [Test]
     public void It_should_omit_self_person_create_new_subjects_when_another_strategy_subject_can_execute()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "Student");
@@ -1937,11 +2031,20 @@ public class Given_RelationshipAuthorizationPlannerTests
         ]);
     }
 
-    private static MappingSet CreateSelfPersonMappingSet(SecurableElementKind securableElementKind) =>
-        CreateMappingSet([
-            CreatePersonResource(securableElementKind),
-            .. CreateRequiredPeopleAuthAssociationResources(),
-        ]);
+    private static MappingSet CreateSelfPersonMappingSet(
+        SecurableElementKind securableElementKind,
+        bool includeRequiredPeopleAuthAssociationResources = true
+    )
+    {
+        List<ConcreteResourceModel> concreteResources = [CreatePersonResource(securableElementKind)];
+
+        if (includeRequiredPeopleAuthAssociationResources)
+        {
+            concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources());
+        }
+
+        return CreateMappingSet(concreteResources);
+    }
 
     private static MappingSet CreateStudentSelfPersonAndEdOrgMappingSet()
     {
