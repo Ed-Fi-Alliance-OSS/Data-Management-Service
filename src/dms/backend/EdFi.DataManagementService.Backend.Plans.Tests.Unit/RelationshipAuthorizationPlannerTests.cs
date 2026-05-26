@@ -736,6 +736,83 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_report_missing_people_auth_views_when_auth_hierarchy_is_absent()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSetWithHierarchy = CreatePeopleSubjectMappingSet(
+            resource,
+            SecurableElementKind.Student,
+            includeRequiredPeopleAuthAssociationResources: true
+        );
+        var mappingSet = mappingSetWithHierarchy with
+        {
+            Model = mappingSetWithHierarchy.Model with { AuthEdOrgHierarchy = null },
+        };
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+        failure.Hint.Should().Contain("auth EducationOrganization hierarchy");
+        failure.Hint.Should().NotContain("missing required association resources");
+
+        foreach (var requiredResourceName in AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames)
+        {
+            failure.Hint.Should().NotContain(requiredResourceName);
+        }
+    }
+
+    [Test]
+    public void It_should_plan_people_auth_views_when_auth_hierarchy_and_required_associations_are_present()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreatePeopleSubjectMappingSet(
+                resource,
+                SecurableElementKind.Student,
+                includeRequiredPeopleAuthAssociationResources: true
+            ),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        var authorizedResult = result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>().Subject;
+
+        authorizedResult
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Which.Subjects.Should()
+            .ContainSingle()
+            .Which.AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+    }
+
+    [Test]
     public void It_should_report_missing_people_auth_view_associations_with_independent_subject_selection_failures()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedEdOrgStudentAuthorizationResource");
@@ -2743,7 +2820,8 @@ public class Given_RelationshipAuthorizationPlannerTests
                 AbstractIdentityTablesInNameOrder: [],
                 AbstractUnionViewsInNameOrder: [],
                 IndexesInCreateOrder: [],
-                TriggersInCreateOrder: []
+                TriggersInCreateOrder: [],
+                AuthEdOrgHierarchy: CreateAuthEdOrgHierarchy()
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
@@ -2758,6 +2836,16 @@ public class Given_RelationshipAuthorizationPlannerTests
                 ?? new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
         );
     }
+
+    private static AuthEdOrgHierarchy CreateAuthEdOrgHierarchy() =>
+        new([
+            new AuthEdOrgEntity(
+                "School",
+                new DbTableName(_edfiSchema, "School"),
+                new DbColumnName("SchoolId"),
+                []
+            ),
+        ]);
 
     private static RelationshipAuthorizationPlanner CreatePlanner() => new(CreateSelector());
 

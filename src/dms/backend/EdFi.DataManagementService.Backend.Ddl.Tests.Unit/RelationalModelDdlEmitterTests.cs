@@ -10,6 +10,91 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 // ═══════════════════════════════════════════════════════════════════
+// People Auth View Availability Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
+{
+    private const string StudentViewName = "EducationOrganizationIdToStudentDocumentId";
+
+    [Test]
+    public void It_should_emit_people_views_when_shared_availability_is_satisfied()
+    {
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        var availability = AuthObjectDefinitions.GetPeopleAuthViewAvailability(
+            modelSet.AuthEdOrgHierarchy,
+            modelSet.ConcreteResourcesInNameOrder
+        );
+
+        availability.IsAvailable.Should().BeTrue();
+        EmitPgsql(modelSet).Should().Contain(StudentViewName);
+    }
+
+    [Test]
+    public void It_should_not_emit_people_views_when_auth_hierarchy_is_missing_or_empty()
+    {
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+
+        AssertPeopleViewsUnavailableWithoutMissingAssociations(modelSet with { AuthEdOrgHierarchy = null });
+        AssertPeopleViewsUnavailableWithoutMissingAssociations(
+            modelSet with
+            {
+                AuthEdOrgHierarchy = new AuthEdOrgHierarchy([]),
+            }
+        );
+    }
+
+    [Test]
+    public void It_should_not_emit_people_views_when_required_association_resources_are_missing()
+    {
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        var missingResourceName = AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames[0];
+        var modelSetWithMissingAssociation = modelSet with
+        {
+            ConcreteResourcesInNameOrder =
+            [
+                .. modelSet.ConcreteResourcesInNameOrder.Where(concreteResource =>
+                    concreteResource.ResourceKey.Resource.ResourceName != missingResourceName
+                ),
+            ],
+        };
+        var availability = AuthObjectDefinitions.GetPeopleAuthViewAvailability(
+            modelSetWithMissingAssociation.AuthEdOrgHierarchy,
+            modelSetWithMissingAssociation.ConcreteResourcesInNameOrder
+        );
+
+        availability.HasAuthEdOrgHierarchy.Should().BeTrue();
+        availability.MissingAssociationResourceNames.Should().Equal(missingResourceName);
+        availability.IsAvailable.Should().BeFalse();
+        EmitPgsql(modelSetWithMissingAssociation).Should().NotContain(StudentViewName);
+    }
+
+    private static void AssertPeopleViewsUnavailableWithoutMissingAssociations(
+        DerivedRelationalModelSet modelSet
+    )
+    {
+        var availability = AuthObjectDefinitions.GetPeopleAuthViewAvailability(
+            modelSet.AuthEdOrgHierarchy,
+            modelSet.ConcreteResourcesInNameOrder
+        );
+
+        availability.HasAuthEdOrgHierarchy.Should().BeFalse();
+        availability.MissingAssociationResourceNames.Should().BeEmpty();
+        availability.IsAvailable.Should().BeFalse();
+        EmitPgsql(modelSet).Should().NotContain(StudentViewName);
+    }
+
+    private static string EmitPgsql(DerivedRelationalModelSet modelSet)
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+
+        return emitter.Emit(modelSet);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Phase Ordering Tests
 // ═══════════════════════════════════════════════════════════════════
 

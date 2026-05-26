@@ -713,5 +713,47 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs"
     ],
     "completed": true
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Medium: Align self-person unresolved path handling across the People selector, securable path resolver, and auth index inventory.",
+    "acceptance-criteria": [
+      "Only the exact self-person identity path on Student, Contact, and Staff resources is suppressed as a zero-hop self subject.",
+      "Broken or non-self same-kind person securable paths on person resources are reported as unresolved securable element configuration failures instead of being silently dropped.",
+      "SecurableElementColumnPathResolver and DeriveAuthorizationIndexInventoryPass apply the same self-person detection rule as RelationalPeopleAuthorizationSubjectSelector.",
+      "Existing valid zero-hop self-person resources still emit no person join auth index and still resolve through the root DocumentId subject in the People selector.",
+      "Unit coverage proves a person resource with both its self identity path and a broken sibling path fails consistently in compiled path resolution, auth index inventory, and People subject selection."
+    ],
+    "steps-to-verify": [
+      "Review RelationalPeopleAuthorizationSubjectSelector.IsSelfPersonIdentityPath, SecurableElementColumnPathResolver.ResolvePersonPaths, and DeriveAuthorizationIndexInventoryPass.ProcessPersonKind for a shared or equivalent exact self-path rule.",
+      "Update SecurableElementColumnPathResolver tests for a Student, Contact, or Staff resource with a broken same-kind sibling path and assert the broken path is reported.",
+      "Update DeriveAuthorizationIndexInventoryPass tests for a Student, Contact, or Staff resource with a broken same-kind sibling path and assert the broken path is reported.",
+      "Keep or add coverage showing a valid self-only person resource remains zero-hop and does not require a person join auth index.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"SecurableElementColumnPathResolver|RelationalPeopleAuthorizationSubjectSelector\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter DeriveAuthorizationIndexInventoryPass",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/SecurableElementColumnPathResolver.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Auth View Selection",
+    "description": "Medium: Align People auth view availability checks with actual DDL and manifest emission.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationPlanner treats People auth views as unavailable when AuthEdOrgHierarchy is null or empty, even if all required People association resources are present.",
+      "DDL, manifest, and planner code share one People auth view availability helper, or equivalent single-sourced logic, that includes both AuthEdOrgHierarchy presence and AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames.",
+      "MissingPeopleAuthViewAssociations diagnostics distinguish a missing auth EdOrg hierarchy from missing association resources and do not claim association resources are missing when they are present.",
+      "Planner unit coverage proves a selected People subject with all five association resources but no AuthEdOrgHierarchy returns a security-configuration failure instead of an executable spec referencing auth.EducationOrganizationIdToStudentDocumentId or another suppressed People auth view.",
+      "Planner unit coverage also proves the same selected People subject remains executable when AuthEdOrgHierarchy is present and all required association resources are present.",
+      "Existing DDL and manifest emission behavior remains unchanged except for using the shared availability helper."
+    ],
+    "steps-to-verify": [
+      "Review RelationalModelDdlEmitter.EmitPeopleAuthViews, DerivedModelSetManifestEmitter.WriteAuthObjects, AuthObjectDefinitions.HasAllPeopleAuthViewAssociations, and RelationshipAuthorizationPlanner.CreateMissingPeopleAuthViewAssociationFailures for matching availability rules.",
+      "Add or update RelationshipAuthorizationPlanner tests for missing AuthEdOrgHierarchy with complete People association resources and for available People auth views with AuthEdOrgHierarchy present.",
+      "Add or update AuthObjectDefinitions, DDL, or manifest unit coverage so the shared availability helper cannot drift from emitted auth objects.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter RelationalModelDdlEmitter",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Manifest/DerivedModelSetManifestEmitter.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": true
   }
 ]

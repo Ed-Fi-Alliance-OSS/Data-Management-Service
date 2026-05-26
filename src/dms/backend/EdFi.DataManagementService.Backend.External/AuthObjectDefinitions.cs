@@ -108,6 +108,17 @@ public sealed record AuthPeopleAuthViewDefinition(
 }
 
 /// <summary>
+/// The prerequisites that determine whether people auth views are emitted for a model set.
+/// </summary>
+public sealed record PeopleAuthViewAvailability(
+    bool HasAuthEdOrgHierarchy,
+    IReadOnlyList<string> MissingAssociationResourceNames
+)
+{
+    public bool IsAvailable => HasAuthEdOrgHierarchy && MissingAssociationResourceNames.Count == 0;
+}
+
+/// <summary>
 /// Single source of truth for the structural shape of the emitted <c>auth.*</c> database objects:
 /// the <c>auth.EducationOrganizationIdToEducationOrganizationId</c> table and the four people
 /// auth views (Contact / Staff / Student / StudentThroughResponsibility).
@@ -181,10 +192,21 @@ public static class AuthObjectDefinitions
     }
 
     /// <summary>
+    /// Returns whether the supplied model set inputs satisfy the same prerequisites used by DDL,
+    /// manifest, and relationship authorization planning for the people auth views.
+    /// </summary>
+    public static PeopleAuthViewAvailability GetPeopleAuthViewAvailability(
+        AuthEdOrgHierarchy? authHierarchy,
+        IReadOnlyList<ConcreteResourceModel> concreteResources
+    ) =>
+        new(
+            authHierarchy is { EntitiesInNameOrder.Count: > 0 },
+            GetMissingPeopleAuthAssociationResourceNames(concreteResources)
+        );
+
+    /// <summary>
     /// Returns whether the supplied concrete resources contain all five core associations required
-    /// by the people auth views. Mirrors the guard in
-    /// <c>RelationalModelDdlEmitter.EmitPeopleAuthViews</c> and the manifest emitter so the
-    /// emission decision is single-sourced.
+    /// by the people auth views.
     /// </summary>
     public static bool HasAllPeopleAuthViewAssociations(
         IReadOnlyList<ConcreteResourceModel> concreteResources

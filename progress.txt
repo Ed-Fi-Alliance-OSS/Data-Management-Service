@@ -192,3 +192,8 @@ Task completed: Simplification - unreachable non-root chain branch for reference
 Key decisions: removed selector non-root chain skip branch because PersonJoinPathResolver returns chains rooted at the subject root table; child-collection exclusion remains handled by array-nested skipped-path flow.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted selector; RelationalPeopleAuthorizationSubjectSelector filter passed. All tasks now complete.
+
+Task completed: Auth View Selection - People auth view availability aligns with DDL/manifest emission for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: added shared PeopleAuthViewAvailability based on non-empty AuthEdOrgHierarchy plus required association resources; DDL, manifest, and planner use it; missing-view diagnostics now distinguish missing hierarchy from missing association resources.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Manifest/DerivedModelSetManifestEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; planner and DDL unit tests; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted touched files; RelationshipAuthorizationPlanner and RelationalModelDdlEmitter filters passed. One incomplete task remains: self-person unresolved path alignment.

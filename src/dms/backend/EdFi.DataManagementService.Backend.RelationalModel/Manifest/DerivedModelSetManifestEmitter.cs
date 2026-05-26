@@ -464,7 +464,12 @@ public static class DerivedModelSetManifestEmitter
         IReadOnlyList<ConcreteResourceModel> concreteResources
     )
     {
-        if (authHierarchy is not { EntitiesInNameOrder.Count: > 0 })
+        var peopleAuthViewAvailability = AuthObjectDefinitions.GetPeopleAuthViewAvailability(
+            authHierarchy,
+            concreteResources
+        );
+
+        if (!peopleAuthViewAvailability.HasAuthEdOrgHierarchy)
         {
             return;
         }
@@ -474,7 +479,7 @@ public static class DerivedModelSetManifestEmitter
 
         WriteAuthTable(writer, AuthObjectDefinitions.AuthEdOrgTable);
 
-        if (AuthObjectDefinitions.HasAllPeopleAuthViewAssociations(concreteResources))
+        if (peopleAuthViewAvailability.IsAvailable)
         {
             WritePeopleAuthViews(writer, AuthObjectDefinitions.PeopleAuthViews);
         }

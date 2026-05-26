@@ -1175,12 +1175,12 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<SelectedStrategyPersonAuthView> selectedPeopleAuthViews
     )
     {
-        var missingAssociationResourceNames =
-            AuthObjectDefinitions.GetMissingPeopleAuthAssociationResourceNames(
-                mappingSet.Model.ConcreteResourcesInNameOrder
-            );
+        var peopleAuthViewAvailability = AuthObjectDefinitions.GetPeopleAuthViewAvailability(
+            mappingSet.Model.AuthEdOrgHierarchy,
+            mappingSet.Model.ConcreteResourcesInNameOrder
+        );
 
-        if (missingAssociationResourceNames.Count == 0)
+        if (peopleAuthViewAvailability.IsAvailable)
         {
             return [];
         }
@@ -1190,7 +1190,9 @@ public sealed class RelationshipAuthorizationPlanner
             return [];
         }
 
-        var missingAssociationResourceNamesText = string.Join(", ", missingAssociationResourceNames);
+        var peopleAuthViewUnavailableReason = FormatPeopleAuthViewUnavailableReason(
+            peopleAuthViewAvailability
+        );
 
         return
         [
@@ -1199,17 +1201,40 @@ public sealed class RelationshipAuthorizationPlanner
                     CreateMissingPeopleAuthViewAssociationFailure(
                         resource,
                         selectedPeopleAuthView,
-                        missingAssociationResourceNamesText
+                        peopleAuthViewUnavailableReason
                     )
                 )
             ),
         ];
     }
 
+    private static string FormatPeopleAuthViewUnavailableReason(
+        PeopleAuthViewAvailability peopleAuthViewAvailability
+    )
+    {
+        List<string> reasons = [];
+
+        if (!peopleAuthViewAvailability.HasAuthEdOrgHierarchy)
+        {
+            reasons.Add("the auth EducationOrganization hierarchy was not emitted");
+        }
+
+        if (peopleAuthViewAvailability.MissingAssociationResourceNames.Count > 0)
+        {
+            reasons.Add(
+                "missing required association resources: ["
+                    + string.Join(", ", peopleAuthViewAvailability.MissingAssociationResourceNames)
+                    + "]"
+            );
+        }
+
+        return string.Join("; ", reasons);
+    }
+
     private static RelationshipAuthorizationFailureMetadata CreateMissingPeopleAuthViewAssociationFailure(
         QualifiedResourceName resource,
         SelectedStrategyPersonAuthView selectedPeopleAuthView,
-        string missingAssociationResourceNamesText
+        string peopleAuthViewUnavailableReason
     )
     {
         var firstContributor = selectedPeopleAuthView.Contributors.FirstOrDefault();
@@ -1227,7 +1252,7 @@ public sealed class RelationshipAuthorizationPlanner
                 ReadableName: firstContributor?.ReadableName,
                 AuthorizationObjectName: selectedPeopleAuthView.AuthObject.Name.ToString()
             ),
-            Hint: $"Strategy '{selectedPeopleAuthView.ConfiguredStrategy.StrategyName}' selects {selectedPeopleAuthView.PersonKind} relationship authorization through auth view '{selectedPeopleAuthView.AuthObject.Name}', but the people auth views were not emitted for resource '{resource.ProjectName}.{resource.ResourceName}'. Missing required association resources: [{missingAssociationResourceNamesText}]."
+            Hint: $"Strategy '{selectedPeopleAuthView.ConfiguredStrategy.StrategyName}' selects {selectedPeopleAuthView.PersonKind} relationship authorization through auth view '{selectedPeopleAuthView.AuthObject.Name}', but the people auth views were not emitted for resource '{resource.ProjectName}.{resource.ResourceName}'. Reason: {peopleAuthViewUnavailableReason}."
         )
         {
             PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
