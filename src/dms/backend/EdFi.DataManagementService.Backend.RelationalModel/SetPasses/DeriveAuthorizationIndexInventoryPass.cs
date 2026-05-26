@@ -514,6 +514,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                     )
                 )
                 {
+                    anyResolved = true;
                     continue;
                 }
 

@@ -312,6 +312,41 @@ public class Given_SecurableElementColumnPathResolver
             results.Should().BeEmpty();
         }
 
+        [TestCase(
+            SecurableElementKind.Student,
+            "Student",
+            "$.studentUniqueId",
+            "$.items[*].studentReference.studentUniqueId"
+        )]
+        [TestCase(
+            SecurableElementKind.Contact,
+            "Contact",
+            "$.contactUniqueId",
+            "$.items[*].contactReference.contactUniqueId"
+        )]
+        [TestCase(
+            SecurableElementKind.Staff,
+            "Staff",
+            "$.staffUniqueId",
+            "$.items[*].staffReference.staffUniqueId"
+        )]
+        public void It_should_count_exact_self_person_identity_path_as_applicable_when_skipping_child_paths(
+            SecurableElementKind kind,
+            string resourceName,
+            string selfPath,
+            string arrayNestedPath
+        )
+        {
+            var rootTable = CreateRootTable(Table(resourceName));
+            var model = CreateModel("Ed-Fi", resourceName, rootTable);
+            var securableElements = CreatePersonSecurableElements(kind, selfPath, arrayNestedPath);
+            var concrete = CreateConcrete(1, "Ed-Fi", resourceName, model, securableElements);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().BeEmpty();
+        }
+
         [Test]
         public void It_should_resolve_student_direct_reference()
         {
@@ -445,6 +480,19 @@ public class Given_SecurableElementColumnPathResolver
             results[0].Steps[0].SourceColumnName.Should().Be(Col("Contact_DocumentId"));
             results[0].Steps[0].TargetTable.Should().Be(Table("Contact"));
         }
+
+        private static ResourceSecurableElements CreatePersonSecurableElements(
+            SecurableElementKind kind,
+            string selfPath,
+            string arrayNestedPath
+        ) =>
+            kind switch
+            {
+                SecurableElementKind.Student => new([], [], [selfPath, arrayNestedPath], [], []),
+                SecurableElementKind.Contact => new([], [], [], [selfPath, arrayNestedPath], []),
+                SecurableElementKind.Staff => new([], [], [], [], [selfPath, arrayNestedPath]),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+            };
     }
 
     [TestFixture]

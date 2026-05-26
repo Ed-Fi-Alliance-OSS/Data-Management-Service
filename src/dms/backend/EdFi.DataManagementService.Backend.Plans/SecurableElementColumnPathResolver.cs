@@ -44,6 +44,7 @@ internal static class SecurableElementColumnPathResolver
         var results = new List<ResolvedSecurableElementPath>();
         var unresolvedPaths = new List<string>();
         var skippedArrayNestedPaths = new List<string>();
+        var hasApplicablePersonPath = false;
         var resolvedEdOrgCandidates = ResolveEducationOrganizationCandidates(subjectResource);
         var resolvedEdOrgByJsonPath = resolvedEdOrgCandidates
             .ResolvedCandidates.GroupBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
@@ -103,7 +104,8 @@ internal static class SecurableElementColumnPathResolver
             resourceLookup,
             results,
             unresolvedPaths,
-            skippedArrayNestedPaths
+            skippedArrayNestedPaths,
+            ref hasApplicablePersonPath
         );
         ResolvePersonPaths(
             subjectResource,
@@ -113,7 +115,8 @@ internal static class SecurableElementColumnPathResolver
             resourceLookup,
             results,
             unresolvedPaths,
-            skippedArrayNestedPaths
+            skippedArrayNestedPaths,
+            ref hasApplicablePersonPath
         );
         ResolvePersonPaths(
             subjectResource,
@@ -123,7 +126,8 @@ internal static class SecurableElementColumnPathResolver
             resourceLookup,
             results,
             unresolvedPaths,
-            skippedArrayNestedPaths
+            skippedArrayNestedPaths,
+            ref hasApplicablePersonPath
         );
 
         if (unresolvedPaths.Count > 0)
@@ -136,7 +140,7 @@ internal static class SecurableElementColumnPathResolver
             );
         }
 
-        if (results.Count == 0 && skippedArrayNestedPaths.Count > 0)
+        if (results.Count == 0 && !hasApplicablePersonPath && skippedArrayNestedPaths.Count > 0)
         {
             var resource = subjectResource.RelationalModel.Resource;
             throw new InvalidOperationException(
@@ -226,7 +230,8 @@ internal static class SecurableElementColumnPathResolver
         Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         List<ResolvedSecurableElementPath> results,
         List<string> unresolvedPaths,
-        List<string> skippedArrayNestedPaths
+        List<string> skippedArrayNestedPaths,
+        ref bool hasApplicablePersonPath
     )
     {
         if (personPaths.Count == 0)
@@ -250,6 +255,7 @@ internal static class SecurableElementColumnPathResolver
 
             if (chain is not null)
             {
+                hasApplicablePersonPath = true;
                 results.Add(new ResolvedSecurableElementPath(kind, chain));
             }
 
@@ -265,6 +271,7 @@ internal static class SecurableElementColumnPathResolver
                     )
                 )
                 {
+                    hasApplicablePersonPath = true;
                     continue;
                 }
 

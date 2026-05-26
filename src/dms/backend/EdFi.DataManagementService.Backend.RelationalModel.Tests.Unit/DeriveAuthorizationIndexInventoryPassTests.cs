@@ -1212,6 +1212,29 @@ public class Given_Resource_With_Resolved_Student_And_Array_Nested_Contact_Path
 }
 
 /// <summary>
+/// Test fixture asserting that a zero-hop self person path counts as an applicable person
+/// subject even when child-collection person paths are skipped. The self path still emits no
+/// person-join index because the root <c>DocumentId</c> is the auth anchor.
+/// </summary>
+[TestFixture]
+public class Given_Person_Resource_With_Self_And_Array_Nested_Person_Securables
+{
+    [TestCase(SecurableElementKind.Student)]
+    [TestCase(SecurableElementKind.Contact)]
+    [TestCase(SecurableElementKind.Staff)]
+    public void It_should_not_throw_and_should_emit_no_person_join_auth_indexes(SecurableElementKind kind)
+    {
+        var modelSet = AuthorizationIndexTestRunner.Build(ctx =>
+            ctx.ConcreteResourcesInNameOrder.Add(
+                AuthIndexFixtureResources.BuildPersonResourceWithSelfAndArrayNestedPersonPath(kind)
+            )
+        );
+
+        modelSet.IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization).Should().BeEmpty();
+    }
+}
+
+/// <summary>
 /// Test fixture asserting two builds with the same input produce identical authorization
 /// index entries (determinism).
 /// </summary>
@@ -3060,6 +3083,28 @@ internal static class AuthIndexFixtureResources
             )
         );
 
+    public static ConcreteResourceModel BuildPersonResourceWithSelfAndArrayNestedPersonPath(
+        SecurableElementKind kind
+    )
+    {
+        var resourceName = GetPersonResourceName(kind);
+        var selfPath = GetSelfPersonPath(kind);
+        var arrayNestedPath = kind switch
+        {
+            SecurableElementKind.Student => "$.items[*].studentReference.studentUniqueId",
+            SecurableElementKind.Contact => "$.items[*].contactReference.contactUniqueId",
+            SecurableElementKind.Staff => "$.items[*].staffReference.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+
+        return BuildResource(
+            resourceName,
+            [BuildScalarColumn(new DbColumnName("DocumentId"))],
+            [],
+            CreatePersonSecurableElements(kind, [selfPath, arrayNestedPath])
+        );
+    }
+
     /// <summary>
     /// Builds the full set of resources for a subject resource with two Student securable paths
     /// driving two independent searches — one short (3-hop) chain to <c>Ed-Fi.Student</c> and
@@ -3821,4 +3866,34 @@ internal static class AuthIndexFixtureResources
                 Staff: []
             )
         );
+
+    private static ResourceSecurableElements CreatePersonSecurableElements(
+        SecurableElementKind kind,
+        IReadOnlyList<string> paths
+    ) =>
+        kind switch
+        {
+            SecurableElementKind.Student => new([], [], paths, [], []),
+            SecurableElementKind.Contact => new([], [], [], paths, []),
+            SecurableElementKind.Staff => new([], [], [], [], paths),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+
+    private static string GetPersonResourceName(SecurableElementKind kind) =>
+        kind switch
+        {
+            SecurableElementKind.Student => "Student",
+            SecurableElementKind.Contact => "Contact",
+            SecurableElementKind.Staff => "Staff",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+
+    private static string GetSelfPersonPath(SecurableElementKind kind) =>
+        kind switch
+        {
+            SecurableElementKind.Student => "$.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
 }
