@@ -1616,7 +1616,7 @@ The default `ReadChanges` authorization strategy for descriptors is `NoFurtherAu
 
 #### SchoolYearType
 
-`SchoolYearType` is treated as a regular resource for DMS Change Queries. MetaEd emits `SchoolYearType` `/deletes` and `/keyChanges` paths with the rest of the resource Change Query OpenAPI surface, and runtime route resolution serves those endpoints through the same model-driven resource path used for other resources.
+`SchoolYearType` is treated as a regular resource for DMS Change Queries. MetaEd emits `SchoolYearType` `/deletes` and `/keyChanges` paths with the rest of the resource Change Query OpenAPI surface, and runtime route resolution serves those endpoints through the same DMS effective resource model path used for other resources.
 
 `ReadChanges` authorization for `SchoolYearType` is resolved through the same authorization metadata as other resources. Because its identity is immutable, `/keyChanges` is expected to return an empty result unless a future model allows identity updates; that follows the normal key-change tracking semantics and does not require a `SchoolYearType`-specific routing or authorization exception.
 
@@ -1628,9 +1628,17 @@ This carries a direct authorization payoff: the ODS-era `OrganizationDepartment`
 
 Other concrete abstract resources with SecurableElement overrides — including any introduced via extensions — get the same benefit automatically.
 
+### Change Query route source of truth
+
+OpenAPI advertises and documents the Change Query surface, but it is not the runtime source of truth for Change Query route generation.
+
+The `/changeQueries/v1/availableChangeVersions` endpoint is a fixed DMS runtime route. It does not come from `ApiSchema.json` resource metadata.
+
+Resource and descriptor `/deletes` and `/keyChanges` routes are resolved by classifying the trailing path segment, then resolving `{schema}/{resource}` through DMS effective resource metadata: the effective `ApiSchema.json` endpoint mappings and the compiled RelationalBackend `MappingSet.Model` / `ConcreteResourceModel` inventory. The OpenAPI surface should match the supported runtime surface for discoverability, but DMS must not use OpenAPI paths as the authority for whether a resource or descriptor Change Query route exists.
+
 ### /deletes endpoints
 
-Each known resource and descriptor can route to an accompanying `/deletes` endpoint, and the response body remains the same as ODS. The emitted OpenAPI surface advertises the supported discoverable endpoints.
+Each resource and descriptor known to the DMS effective resource model can route to an accompanying `/deletes` endpoint, and the response body remains the same as ODS. The emitted OpenAPI surface advertises the supported discoverable endpoints.
 
 An example generated SQL query used to fulfill the `GET grades/deletes` request is:
 
@@ -1733,7 +1741,7 @@ ORDER BY
 
 ### /keyChanges endpoints
 
-Each known resource and descriptor can route to an accompanying `/keyChanges` endpoint, and the response body remains the same as ODS. The emitted OpenAPI surface advertises the supported discoverable endpoints.
+Each resource and descriptor known to the DMS effective resource model can route to an accompanying `/keyChanges` endpoint, and the response body remains the same as ODS. The emitted OpenAPI surface advertises the supported discoverable endpoints.
 
 An example generated SQL query used to fulfill the `GET grades/keyChanges` request is:
 
@@ -1801,7 +1809,7 @@ Note that, to avoid introducing breaking changes, the `/deletes` and `/keyChange
 
 ### /availableChangeVersions endpoint
 
-DMS will introduce the `/changeQueries/v1/availableChangeVersions` endpoint with the same request/response bodies and query strings as ODS.
+DMS will introduce the hardcoded `/changeQueries/v1/availableChangeVersions` endpoint with the same request/response bodies and query strings as ODS. This endpoint is not derived from `ApiSchema.json` or OpenAPI metadata.
 The `oldestChangeVersion` remains hardcoded to `0`.
 
 One distinction is that `GetMaxChangeVersion()` function will reside in the `dms` schema instead of `changes` to be consistent with existing DMS schemas.
@@ -1943,7 +1951,7 @@ These errors indicate that the requested Change Queries route or resource cannot
 | Scenario | Error |
 |---|---|
 | `/deletes` or `/keyChanges` is requested for an unknown `{schema}/{resource}` pair | *(empty)* |
-| `/changeQueries/v1/availableChangeVersions` is not routed because the Change Queries API surface is not enabled | `Path '{path}' does not exist. Check the resource name and try again.` |
+| `/changeQueries/v1/availableChangeVersions` is not routed because Change Queries support is not available in the runtime | `Path '{path}' does not exist. Check the resource name and try again.` |
 
 #### 3. Feature Disabled (404 Not Found)
 

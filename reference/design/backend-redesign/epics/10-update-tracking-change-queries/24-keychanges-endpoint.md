@@ -16,11 +16,14 @@ Descriptor identities are immutable in DMS v1, so descriptor `/keyChanges` endpo
 This story reuses the shared Change Query endpoint foundation established by
 `23-deletes-endpoint.md`.
 
+Runtime resource and descriptor route resolution uses the shared model-driven foundation from `23-deletes-endpoint.md`: classify the trailing `/keyChanges` segment, resolve `{schema}/{resource}` through the effective `ApiSchema.json` endpoint mappings, and resolve the corresponding RelationalBackend `ConcreteResourceModel` or descriptor discriminator from the compiled `MappingSet.Model`. OpenAPI advertises the endpoint surface but is not the runtime source of truth.
+
 ## Acceptance Criteria
 
 - Each regular resource with Change Query support can serve `GET /data/v3/{schema}/{resource}/keyChanges`.
 - Each descriptor with Change Query support can serve `GET /data/v3/{schema}/{descriptor}/keyChanges`.
 - The endpoint reuses the shared Change Query route/resource resolution, paging, totalCount, and response-shaping foundation from `23-deletes-endpoint.md`.
+- Route/resource resolution is driven by effective `ApiSchema.json` endpoint mappings and `MappingSet.Model`, not OpenAPI paths.
 - Regular resource key changes are selected from tracked-change rows where an appropriate `New_*` identity column is not null.
 - The endpoint filters by `minChangeVersion` and `maxChangeVersion`.
 - The endpoint supports `limit`, `offset`, and `totalCount`.

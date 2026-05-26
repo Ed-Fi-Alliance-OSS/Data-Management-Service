@@ -20,13 +20,15 @@ split into a separate ticket, so the foundation is proven by the first concrete
 endpoint implementation. `24-keychanges-endpoint.md` reuses this foundation for
 `/keyChanges`.
 
+Runtime resource and descriptor route resolution is driven by DMS effective resource metadata, not by OpenAPI paths. The foundation classifies the trailing `/deletes` or `/keyChanges` segment, resolves `{schema}/{resource}` through the effective `ApiSchema.json` endpoint mappings, and then resolves the corresponding RelationalBackend `ConcreteResourceModel` or descriptor discriminator from the compiled `MappingSet.Model`.
+
 ## Acceptance Criteria
 
 ### Shared endpoint foundation
 
-- DMS route resolution identifies `/deletes` and `/keyChanges` by classifying the trailing path segment and resolving `{schema}/{resource}` through the effective resource model.
-- DMS route resolution identifies `/deletes` and `/keyChanges` for advertised known resources.
-- Unknown `{schema}/{resource}` pairs (resources not present in the effective resource model) return the not-found behavior defined in `change-queries.md`.
+- DMS route resolution identifies `/deletes` and `/keyChanges` by classifying the trailing path segment and resolving `{schema}/{resource}` through the effective `ApiSchema.json` endpoint mappings and compiled `MappingSet.Model`.
+- DMS route resolution identifies `/deletes` and `/keyChanges` for resources and descriptors known to the effective model, independent of whether OpenAPI was the source of the request.
+- Unknown `{schema}/{resource}` pairs (resources not present in the effective `ApiSchema.json` / `MappingSet.Model`) return the not-found behavior defined in `change-queries.md`.
 - The endpoint foundation resolves the target `ConcreteResourceModel` or descriptor discriminator.
 - The foundation resolves the matching `TrackedChangeTableInfo`.
 - Shared paging supports `limit` and `offset` consistently with existing GET-many behavior.
