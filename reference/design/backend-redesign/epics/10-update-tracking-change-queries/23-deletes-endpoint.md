@@ -25,8 +25,7 @@ endpoint implementation. `24-keychanges-endpoint.md` reuses this foundation for
 ### Shared endpoint foundation
 
 - DMS route resolution identifies `/deletes` and `/keyChanges` by classifying the trailing path segment and resolving `{schema}/{resource}` through the effective resource model.
-- DMS route resolution identifies `/deletes` and `/keyChanges` for known resources regardless of whether the endpoints are emitted in the effective OpenAPI Change Query surface.
-- Known resources excluded from the OpenAPI Change Query surface, such as `SchoolYearType`, resolve as known Change Query requests and do not take the unknown-resource not-found path. The final `403` behavior is covered by `26-school-year-type-readchanges-forbidden.md` after `ReadChanges` authorization is applied.
+- DMS route resolution identifies `/deletes` and `/keyChanges` for advertised known resources.
 - Unknown `{schema}/{resource}` pairs (resources not present in the effective resource model) return the not-found behavior defined in `change-queries.md`.
 - The endpoint foundation resolves the target `ConcreteResourceModel` or descriptor discriminator.
 - The foundation resolves the matching `TrackedChangeTableInfo`.
@@ -37,7 +36,7 @@ endpoint implementation. `24-keychanges-endpoint.md` reuses this foundation for
 - Descriptor responses use descriptor public identity fields, not internal descriptor IDs.
 - Internal descriptor IDs are not returned in descriptor identity fields or descriptor reference fields.
 - Shared SQL planning can compose change-version windows, tombstone/key-change filters, recreated-resource suppression where applicable, paging, totalCount, and authorization predicates when supplied by `25-readchanges-authorization.md`.
-- Tests cover route classification, resource resolution, descriptor resolution, known-resource resolution for OpenAPI-excluded resources such as `SchoolYearType`, paging, totalCount, and field-name mapping without duplicating full endpoint behavior.
+- Tests cover route classification, resource resolution, descriptor resolution, paging, totalCount, and field-name mapping without duplicating full endpoint behavior.
 
 ### `/deletes` behavior
 

@@ -49,7 +49,7 @@ Deliverables include:
 - `DMS-1186` — `23-deletes-endpoint.md` — Serve `/deletes` from tracked-change tombstones and establish the shared Change Query endpoint foundation
 - `DMS-1187` — `24-keychanges-endpoint.md` — Serve `/keyChanges` from tracked-change key-change rows
 - `DMS-1188` — `25-readchanges-authorization.md` — Apply `ReadChanges` authorization to `/deletes` and `/keyChanges`
-- `DMS-1189` — `26-school-year-type-readchanges-forbidden.md` — Return `403 Forbidden` for crafted `SchoolYearType` Change Query requests
+- `DMS-1189` — `26-school-year-type-readchanges-forbidden.md` — _Retired_ No longer needed
 - `DMS-1194` — `32-document-v1-release-note-deferrals.md` — Document DMS v1.0 Change Queries deferred features in release notes
 
 ## Deferred Stories (post-v1.0)

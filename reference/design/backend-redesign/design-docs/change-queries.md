@@ -1616,9 +1616,9 @@ The default `ReadChanges` authorization strategy for descriptors is `NoFurtherAu
 
 #### SchoolYearType
 
-The `ReadChanges` action is not configured for `SchoolYearType`. MetaEd excludes `SchoolYearType` from the emitted OpenAPI for `/deletes` and `/keyChanges`, so clients do not discover these endpoints from metadata.
+`SchoolYearType` is treated as a regular resource for DMS Change Queries. MetaEd emits `SchoolYearType` `/deletes` and `/keyChanges` paths with the rest of the resource Change Query OpenAPI surface, and runtime route resolution serves those endpoints through the same model-driven resource path used for other resources.
 
-A request crafted directly against `/data/v3/ed-fi/schoolYearTypes/deletes` or `/keyChanges` still classifies as a Change Query request because `schoolYearTypes` is a known resource in the effective model. It returns `403 Forbidden` with the `Authorization Denied` ProblemDetails described in [auth.md](auth.md) §2, matching ODS behavior. The 403 comes from missing `ReadChanges` authorization, not from the missing OpenAPI path.
+`ReadChanges` authorization for `SchoolYearType` is resolved through the same authorization metadata as other resources. Because its identity is immutable, `/keyChanges` is expected to return an empty result unless a future model allows identity updates; that follows the normal key-change tracking semantics and does not require a `SchoolYearType`-specific routing or authorization exception.
 
 #### Concrete abstract resources
 
