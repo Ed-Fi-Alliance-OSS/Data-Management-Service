@@ -56,23 +56,21 @@ public static class RelationshipAuthorizationFailureMapper
         var checkSpecsByStrategyIdentity = checkSpecs.ToDictionary(static checkSpec =>
             (checkSpec.ConfiguredStrategy.RawConfiguredIndex, checkSpec.RelationshipLocalOrder)
         );
+        var noClaimsFailuresByStrategyIdentity = noClaimsFailures
+            .GroupBy(static failure =>
+                (failure.ConfiguredStrategy!.RawConfiguredIndex, failure.RelationshipLocalOrder!.Value)
+            )
+            .ToDictionary(static group => group.Key, static group => group.ToArray());
         List<RelationshipAuthorizationFailedStrategy> failedStrategies = [];
-        HashSet<(int ConfiguredStrategyIndex, int RelationshipLocalOrder)> seenStrategyIdentities = [];
 
         foreach (
-            var noClaimsFailure in noClaimsFailures
-                .OrderBy(static failure => failure.ConfiguredStrategy!.RawConfiguredIndex)
-                .ThenBy(static failure => failure.RelationshipLocalOrder!.Value)
+            var failureGroup in noClaimsFailuresByStrategyIdentity
+                .OrderBy(static group => group.Key.RawConfiguredIndex)
+                .ThenBy(static group => group.Key.Value)
         )
         {
-            var strategyIdentity = (
-                noClaimsFailure.ConfiguredStrategy!.RawConfiguredIndex,
-                noClaimsFailure.RelationshipLocalOrder!.Value
-            );
-
             if (
-                !seenStrategyIdentities.Add(strategyIdentity)
-                || !checkSpecsByStrategyIdentity.TryGetValue(strategyIdentity, out var checkSpec)
+                !checkSpecsByStrategyIdentity.TryGetValue(failureGroup.Key, out var checkSpec)
                 || checkSpec.Subjects.Count == 0
             )
             {
@@ -84,26 +82,39 @@ public static class RelationshipAuthorizationFailureMapper
                     checkSpec.ConfiguredStrategy.RawConfiguredIndex,
                     checkSpec.RelationshipLocalOrder,
                     checkSpec.ConfiguredStrategy.StrategyName,
-                    MapStrategyKind(checkSpec.Direction),
-                    MapAuthObject(noClaimsFailure.AuthObject ?? checkSpec.AuthObject),
+                    MapStrategyKind(checkSpec),
+                    MapAuthObject(SelectStrategyAuthObject(checkSpec, failureGroup.Value)),
                     [
                         .. checkSpec.Subjects.Select(
                             (subject, subjectIndex) =>
-                                MapSubject(
+                            {
+                                var subjectFailureMetadata = SelectNoClaimsSubjectFailureMetadata(
+                                    subject,
+                                    checkSpec.AuthObject,
+                                    failureGroup.Value
+                                );
+
+                                return MapSubject(
                                     subjectIndex,
                                     RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
                                     subject,
-                                    noClaimsFailure.Hint
+                                    subjectFailureMetadata?.Hint
                                         ?? "Relationship authorization requires at least one claim EducationOrganizationId."
-                                )
+                                );
+                            }
                         ),
                     ],
-                    noClaimsFailure.Hint
+                    SelectStrategyHint(failureGroup.Value)
                 )
             );
         }
 
-        if (failedStrategies.Count == 0)
+        if (
+            failedStrategies.Count == 0
+            || noClaimsFailuresByStrategyIdentity.Keys.Any(strategyIdentity =>
+                !checkSpecsByStrategyIdentity.ContainsKey(strategyIdentity)
+            )
+        )
         {
             return false;
         }
@@ -227,7 +238,7 @@ public static class RelationshipAuthorizationFailureMapper
             checkSpec.ConfiguredStrategy.RawConfiguredIndex,
             checkSpec.RelationshipLocalOrder,
             checkSpec.ConfiguredStrategy.StrategyName,
-            MapStrategyKind(checkSpec.Direction),
+            MapStrategyKind(checkSpec),
             MapAuthObject(checkSpec.AuthObject),
             [.. failedSubjects]
         );
@@ -258,7 +269,61 @@ public static class RelationshipAuthorizationFailureMapper
                 ),
             ],
             hint
+        )
+        {
+            PersonSubject = MapPersonSubject(subject),
+        };
+
+    private static RelationshipAuthorizationFailureMetadata? SelectNoClaimsSubjectFailureMetadata(
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationAuthObject strategyAuthObject,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
+    )
+    {
+        var subjectAuthObject = SelectSubjectAuthObject(subject, strategyAuthObject);
+
+        if (subject.PersonMetadata is { } personMetadata)
+        {
+            return failureGroup.FirstOrDefault(failure =>
+                    failure.PersonMetadata?.PersonKind == personMetadata.PersonKind
+                    && failure.PersonMetadata.AuthObject == personMetadata.AuthObject
+                ) ?? failureGroup.FirstOrDefault(failure => failure.AuthObject == subjectAuthObject);
+        }
+
+        return failureGroup.FirstOrDefault(failure =>
+                failure.PersonMetadata is null && failure.AuthObject == subjectAuthObject
+            ) ?? failureGroup.FirstOrDefault(failure => failure.PersonMetadata is null);
+    }
+
+    private static RelationshipAuthorizationAuthObject SelectStrategyAuthObject(
+        RelationshipAuthorizationCheckSpec checkSpec,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
+    ) => failureGroup.FirstOrDefault()?.AuthObject ?? checkSpec.AuthObject;
+
+    private static RelationshipAuthorizationAuthObject SelectSubjectAuthObject(
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationAuthObject strategyAuthObject
+    ) => subject.PersonMetadata?.AuthObject ?? strategyAuthObject;
+
+    private static string? SelectStrategyHint(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
+    ) => failureGroup.Select(static failure => failure.Hint).FirstOrDefault(static hint => hint is not null);
+
+    private static RelationshipAuthorizationPersonSubjectInfo? MapPersonSubject(
+        RelationshipAuthorizationSubject subject
+    )
+    {
+        if (subject.PersonMetadata is not { } personMetadata)
+        {
+            return null;
+        }
+
+        return new RelationshipAuthorizationPersonSubjectInfo(
+            personMetadata.PersonKind.ToString(),
+            MapAuthObject(personMetadata.AuthObject),
+            personMetadata.AuthObject.FailureHint
         );
+    }
 
     private static bool HasDuplicateSubjectFailureOrdinals(
         IReadOnlyList<RelationshipAuthorizationAuth1SubjectFailure> subjectFailures
@@ -322,7 +387,27 @@ public static class RelationshipAuthorizationFailureMapper
             ),
         };
 
-    private static string MapStrategyKind(RelationshipAuthorizationHierarchyDirection direction) =>
+    private static string MapStrategyKind(RelationshipAuthorizationCheckSpec checkSpec) =>
+        checkSpec.ConfiguredStrategy.StrategyName switch
+        {
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+            or AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted => MapEdOrgStrategyKind(
+                checkSpec.Direction
+            ),
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly =>
+                AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly =>
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility =>
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            _ => MapEdOrgStrategyKind(checkSpec.Direction),
+        };
+
+    private static string MapEdOrgStrategyKind(RelationshipAuthorizationHierarchyDirection direction) =>
         direction switch
         {
             RelationshipAuthorizationHierarchyDirection.Normal =>

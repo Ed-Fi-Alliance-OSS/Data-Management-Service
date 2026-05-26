@@ -484,6 +484,59 @@ public class Given_RelationshipAuthorizationPlannerTests
         noClaimsResult.Failures[0].RelationshipLocalOrder.Should().Be(0);
     }
 
+    [Test]
+    public void It_should_return_people_no_claims_metadata_with_selected_auth_view_and_contributors()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(
+            resource,
+            SecurableElementKind.Student,
+            includeRequiredPeopleAuthAssociationResources: true
+        );
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        noClaimsResult.CheckSpecs.Should().ContainSingle();
+        noClaimsResult.Failures.Should().ContainSingle();
+
+        var failure = noClaimsResult.Failures[0];
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure
+            .PersonMetadata.Should()
+            .Be(
+                new RelationshipAuthorizationPersonFailureMetadata(
+                    RelationshipAuthorizationPersonKind.Student,
+                    expectedAuthObject
+                )
+            );
+        failure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        failure.Location?.ReadableName.Should().Be("StudentUniqueId");
+        failure.Location?.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
+        failure.Contributors.Should().ContainSingle();
+        failure.Contributors[0].Kind.Should().Be(SecurableElementKind.Student);
+        failure.Hint.Should().Contain(expectedAuthObject.Name.ToString());
+        failure.Hint.Should().Contain(expectedAuthObject.FailureHint);
+    }
+
     [TestCaseSource(nameof(PeopleAuthViewSelectionCases))]
     public void It_should_report_missing_people_auth_view_associations_for_selected_people_subjects(
         SecurableElementKind securableElementKind,
@@ -520,8 +573,14 @@ public class Given_RelationshipAuthorizationPlannerTests
         failure.AuthObject.Should().Be(expectedAuthObject);
         failure.AuthObject?.SubjectValueColumn.Should().Be(expectedAuthObject.SubjectValueColumn);
         failure.AuthObject?.FailureHint.Should().Be(expectedAuthObject.FailureHint);
+        failure
+            .PersonMetadata.Should()
+            .Be(new RelationshipAuthorizationPersonFailureMetadata(personKind, expectedAuthObject));
         failure.Location?.Kind.Should().Be(securableElementKind);
+        failure.Location?.JsonPath.Should().Be(GetPersonReferenceJsonPath(securableElementKind));
         failure.Location?.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
+        failure.Contributors.Should().ContainSingle();
+        failure.Contributors[0].Kind.Should().Be(securableElementKind);
         failure.Hint.Should().Contain(resource.ResourceName);
         failure.Hint.Should().Contain(strategyName);
         failure.Hint.Should().Contain(personKind.ToString());

@@ -147,7 +147,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationFailureMapper",
       "Add unit tests for People no-claims, stored invalid-data metadata, proposed missing metadata, auth-view hints, and ordinal-to-metadata mapping."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Execution Boundaries",

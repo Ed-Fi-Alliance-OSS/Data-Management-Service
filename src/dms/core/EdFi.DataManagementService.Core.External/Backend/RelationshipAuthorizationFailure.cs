@@ -59,7 +59,10 @@ public sealed record RelationshipAuthorizationFailedSubject(
     RelationshipAuthorizationRootBinding RootBinding,
     RelationshipAuthorizationSecurableElement[] SecurableElements,
     string? Hint = null
-);
+)
+{
+    public RelationshipAuthorizationPersonSubjectInfo? PersonSubject { get; init; }
+}
 
 /// <summary>
 /// User-readable and schema-position metadata for a contributing securable element.
@@ -86,4 +89,13 @@ public sealed record RelationshipAuthorizationAuthObjectInfo(
     string Name,
     string SubjectValueColumn,
     string ClaimEducationOrganizationIdColumn
+);
+
+/// <summary>
+/// Person-specific authorization metadata for a failed relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonSubjectInfo(
+    string PersonKind,
+    RelationshipAuthorizationAuthObjectInfo AuthObject,
+    string? Hint = null
 );

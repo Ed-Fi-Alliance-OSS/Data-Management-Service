@@ -373,6 +373,11 @@ public sealed record RelationshipAuthorizationFailureLocation(
     string? AuthorizationObjectName = null
 );
 
+public sealed record RelationshipAuthorizationPersonFailureMetadata(
+    RelationshipAuthorizationPersonKind PersonKind,
+    RelationshipAuthorizationAuthObject AuthObject
+);
+
 public sealed record RelationshipAuthorizationFailureMetadata(
     RelationshipAuthorizationFailureKind FailureKind,
     QualifiedResourceName Resource,
@@ -384,6 +389,10 @@ public sealed record RelationshipAuthorizationFailureMetadata(
     string? Hint = null
 )
 {
+    public RelationshipAuthorizationPersonFailureMetadata? PersonMetadata { get; init; }
+
+    public IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors { get; init; } = [];
+
     public IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors { get; init; } =
     [];
 

@@ -450,18 +450,40 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                     .SelectMany(eligibleSubject =>
                         unresolvedPaths
                             .Where(unresolvedPath => unresolvedPath.Kind == eligibleSubject.Kind)
-                            .Select(unresolvedPath => new RelationshipAuthorizationFailureMetadata(
-                                RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
-                                resource,
-                                supportedStrategy.ConfiguredStrategy,
-                                supportedStrategy.RelationshipLocalOrder,
-                                Location: new RelationshipAuthorizationFailureLocation(
+                            .Select(unresolvedPath =>
+                            {
+                                var authObject = RelationshipAuthorizationAuthObject.CreatePerson(
+                                    eligibleSubject.PersonAuthViewKind!.Value
+                                );
+                                var personKind = MapPersonKind(unresolvedPath.Kind);
+                                var contributor = new RelationshipAuthorizationSubjectContributor(
                                     unresolvedPath.Kind,
                                     unresolvedPath.JsonPath,
                                     unresolvedPath.ReadableName
-                                ),
-                                Hint: "Person securable element did not resolve to a DocumentId-based relational path."
-                            ))
+                                );
+
+                                return new RelationshipAuthorizationFailureMetadata(
+                                    RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
+                                    resource,
+                                    supportedStrategy.ConfiguredStrategy,
+                                    supportedStrategy.RelationshipLocalOrder,
+                                    AuthObject: authObject,
+                                    Location: new RelationshipAuthorizationFailureLocation(
+                                        unresolvedPath.Kind,
+                                        unresolvedPath.JsonPath,
+                                        unresolvedPath.ReadableName,
+                                        AuthorizationObjectName: authObject.Name.ToString()
+                                    ),
+                                    Hint: "Person securable element did not resolve to a DocumentId-based relational path."
+                                )
+                                {
+                                    PersonMetadata = new RelationshipAuthorizationPersonFailureMetadata(
+                                        personKind,
+                                        authObject
+                                    ),
+                                    Contributors = [contributor],
+                                };
+                            })
                     )
             ),
         ];
@@ -489,6 +511,13 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             Hint: $"Person securable element skipped by subject-scope filtering: {skippedContributor.Reason}."
         )
         {
+            PersonMetadata =
+                skippedContributor.PersonKind is null || skippedContributor.AuthObject is null
+                    ? null
+                    : new RelationshipAuthorizationPersonFailureMetadata(
+                        skippedContributor.PersonKind.Value,
+                        skippedContributor.AuthObject
+                    ),
             SkippedContributors = [skippedContributor],
         });
 
@@ -619,6 +648,19 @@ public static class RelationalPeopleAuthorizationSubjectSelector
 
     private static bool IsArrayNestedPath(string jsonPath) =>
         jsonPath.Contains("[*]", StringComparison.Ordinal);
+
+    private static RelationshipAuthorizationPersonKind MapPersonKind(SecurableElementKind kind) =>
+        kind switch
+        {
+            SecurableElementKind.Student => RelationshipAuthorizationPersonKind.Student,
+            SecurableElementKind.Contact => RelationshipAuthorizationPersonKind.Contact,
+            SecurableElementKind.Staff => RelationshipAuthorizationPersonKind.Staff,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind),
+                kind,
+                "Unsupported relationship authorization person securable element kind."
+            ),
+        };
 
     private static DbColumnName GetRootDocumentIdColumn(DbTableModel rootTableModel)
     {
