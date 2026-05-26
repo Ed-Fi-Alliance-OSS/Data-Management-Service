@@ -549,6 +549,42 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_preserve_contribution_order_for_multiple_unresolved_people_paths()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedStudentCarrier");
+        var firstConfiguredPath = "$.zStudentReference.studentUniqueId";
+        var secondConfiguredPath = "$.aStudentReference.studentUniqueId";
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                resource.ResourceName,
+                CreateModelWithTables(
+                    resource.ResourceName,
+                    CreateRootTable(Table(resource.ResourceName)),
+                    []
+                ),
+                new ResourceSecurableElements([], [], [firstConfiguredPath, secondConfiguredPath], [], [])
+            )
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            resource,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+
+        result
+            .SecurityConfigurationFailures.Select(static failure =>
+                (failure.Location!.JsonPath, failure.Contributors.Single().ContributionOrder)
+            )
+            .Should()
+            .Equal((firstConfiguredPath, 0), (secondConfiguredPath, 1));
+    }
+
+    [Test]
     public void It_should_create_one_subject_per_independent_declared_person_path()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "DualStudentCarrier");

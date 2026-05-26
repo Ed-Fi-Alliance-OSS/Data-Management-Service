@@ -289,7 +289,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                     unresolvedRootLevelPaths.Select(unresolvedRootLevelPath => new UnresolvedPersonPath(
                         securableElementKind,
                         unresolvedRootLevelPath,
-                        ToReadableName(unresolvedRootLevelPath)
+                        ToReadableName(unresolvedRootLevelPath),
+                        contributionOrder
                     ))
                 );
             }
@@ -470,7 +471,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                                 var contributor = new RelationshipAuthorizationSubjectContributor(
                                     unresolvedPath.Kind,
                                     unresolvedPath.JsonPath,
-                                    unresolvedPath.ReadableName
+                                    unresolvedPath.ReadableName,
+                                    unresolvedPath.ContributionOrder
                                 );
 
                                 return new RelationshipAuthorizationFailureMetadata(
@@ -594,9 +596,16 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         failures
             .OrderBy(static failure => failure.ConfiguredStrategy?.RawConfiguredIndex ?? int.MaxValue)
             .ThenBy(static failure => failure.RelationshipLocalOrder ?? int.MaxValue)
+            .ThenBy(GetUnresolvedContributionOrder)
             .ThenBy(static failure => failure.Location?.JsonPath, StringComparer.Ordinal)
             .ThenBy(static failure => failure.Location?.ReadableName, StringComparer.Ordinal)
             .ThenBy(static failure => failure.Hint, StringComparer.Ordinal);
+
+    private static int GetUnresolvedContributionOrder(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+        && failure.Contributors.Count > 0
+            ? failure.Contributors.Min(static contributor => contributor.ContributionOrder)
+            : int.MaxValue;
 
     private static string ToReadableName(string jsonPath)
     {
@@ -783,7 +792,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
     private sealed record UnresolvedPersonPath(
         SecurableElementKind Kind,
         string JsonPath,
-        string ReadableName
+        string ReadableName,
+        int ContributionOrder
     );
 
     private sealed record SkippedPersonPath(
