@@ -185,5 +185,54 @@
       "Run git diff -- tasks.json and confirm no production or test source files were edited by the task-refinement pass itself."
     ],
     "completed": true
+  },
+  {
+    "category": "Execution Boundaries",
+    "description": "Medium: Preserve security-configuration precedence before returning People endpoint staging failures.",
+    "acceptance-criteria": [
+      "GET-many, GET-by-id, POST, PUT, and DELETE relationship authorization paths do not short-circuit to a People not-implemented response before relationship planning has identified true security-configuration failures.",
+      "When effective authorization contains both a People relationship strategy and invalid or unresolved security metadata, the endpoint returns the existing security-configuration failure surface instead of a 501 not-implemented response.",
+      "When effective authorization contains People relationship strategies but no security-configuration failures, the endpoint continues to return the staged not-implemented response until DMS-1095 or DMS-1158 consumes the People core.",
+      "Known-but-not-enabled strategy diagnostics are not lost when People staging remains the final response."
+    ],
+    "steps-to-verify": [
+      "Review RelationalDocumentStoreRepository People staging guard placement against RelationshipAuthorizationPlanner security-configuration precedence.",
+      "Add focused repository unit coverage for a People relationship strategy combined with an invalid strategy name and verify the security-configuration result wins.",
+      "Add focused repository unit coverage for a People relationship strategy without security-configuration failures and verify the staged not-implemented result remains.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Simplification",
+    "description": "Low: Remove the unused People auth view selector or wire it into the planner if it is still needed.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationPeopleAuthViewSelector and RelationshipAuthorizationSelectedPeopleAuthView are either removed or have a real production call site.",
+      "People auth view selection has a single authoritative implementation that cannot drift from RelationalPeopleAuthorizationSubjectSelector and RelationshipAuthorizationPlanner.",
+      "No tests depend on a dead helper that production planning never uses."
+    ],
+    "steps-to-verify": [
+      "Run rg \"RelationshipAuthorizationPeopleAuthViewSelector|RelationshipAuthorizationSelectedPeopleAuthView\" src/dms and confirm there are no unused production-only definitions.",
+      "Review People auth view selection paths in RelationshipAuthorizationPlanner and RelationalPeopleAuthorizationSubjectSelector for duplicated logic.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Failure Metadata",
+    "description": "Medium: Preserve People DocumentId path and anchor metadata when mapping relationship failures to the external DTO.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationPersonSubjectInfo, or an equivalent external DTO shape, includes the person subject path kind and ordered DocumentId path steps for direct, transitive, and self-person subjects.",
+      "Mapped People failure DTOs preserve proposed anchor metadata when it exists, including whether the anchor is the root row or first hop.",
+      "Transitive People failures no longer expose only the terminal intermediate table and column as a misleading root binding.",
+      "Existing EdOrg-only relationship failure DTO behavior remains unchanged.",
+      "Unit coverage proves direct, transitive, and self-person failure mapping preserve person kind, auth view, hint, DocumentId path, and proposed anchor metadata."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core.External/Backend/RelationshipAuthorizationFailure.cs for People path and anchor fields on the external failure DTO.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs to confirm PersonMetadata.Path and ProposedAnchor are mapped without re-resolving securable elements.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload"
+    ],
+    "completed": false
   }
 ]
