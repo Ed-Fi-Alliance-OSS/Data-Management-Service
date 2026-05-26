@@ -389,7 +389,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
             );
             await conn.OpenAsync();
             await conn.ExecuteAsync("DELETE FROM dmscs.ClaimsHierarchy");
-            const string orphanJson = """
+            const string OrphanJson = """
                 [
                   {
                     "name": "http://ed-fi.org/identity/claims/fake/doesNotExistInResourceClaimTable",
@@ -410,7 +410,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 """;
             await conn.ExecuteAsync(
                 "INSERT INTO dmscs.ClaimsHierarchy(hierarchy) VALUES (@Hierarchy::jsonb)",
-                new { Hierarchy = orphanJson }
+                new { Hierarchy = OrphanJson }
             );
         }
 
@@ -460,7 +460,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
             );
             await conn.OpenAsync();
             await conn.ExecuteAsync("DELETE FROM dmscs.ClaimsHierarchy");
-            const string badActionJson = """
+            const string BadActionJson = """
                 [
                   {
                     "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
@@ -481,7 +481,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 """;
             await conn.ExecuteAsync(
                 "INSERT INTO dmscs.ClaimsHierarchy(hierarchy) VALUES (@Hierarchy::jsonb)",
-                new { Hierarchy = badActionJson }
+                new { Hierarchy = BadActionJson }
             );
         }
 
@@ -514,7 +514,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
             );
             await conn.OpenAsync();
             await conn.ExecuteAsync("DELETE FROM dmscs.ClaimsHierarchy");
-            const string badStrategyJson = """
+            const string BadStrategyJson = """
                 [
                   {
                     "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
@@ -535,7 +535,7 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 """;
             await conn.ExecuteAsync(
                 "INSERT INTO dmscs.ClaimsHierarchy(hierarchy) VALUES (@Hierarchy::jsonb)",
-                new { Hierarchy = badStrategyJson }
+                new { Hierarchy = BadStrategyJson }
             );
         }
 
@@ -614,14 +614,18 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
         }
 
         [Test]
-        public async Task It_succeeds_for_actions_regardless_of_tenant_id()
+        public async Task It_fails_for_actions_when_tenant_scoped_auth_strategy_lookup_has_no_matching_rows()
         {
-            // ResourceClaim metadata (TenantId IS NULL) must be visible regardless of tenant context.
+            // ResourceClaim metadata (TenantId IS NULL) remains visible, but authorization strategies
+            // still follow the tenant-scoped IClaimSetRepository behavior. With no strategies for this
+            // tenant, DefaultAuthorization references cannot resolve. Per story line 104, endpoints
+            // must fail closed when any referenced auth strategy cannot be resolved, even if the
+            // endpoint doesn't return auth strategies in its response.
             var multitenantContext = new TenantContext.Multitenant(999, "test-tenant");
             var result = await CreateRepository(multitenantContext)
                 .GetResourceClaimActions(new ResourceClaimActionQuery());
 
-            result.Should().BeOfType<ResourceClaimActionListResult.Success>();
+            result.Should().BeOfType<ResourceClaimActionListResult.FailureProjectionIntegrity>();
         }
 
         [Test]
@@ -635,6 +639,50 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
                 .GetResourceClaimActionAuthStrategies(new ResourceClaimActionAuthStrategyQuery());
 
             result.Should().BeOfType<ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_multiple_hierarchies : ResourceClaimRepositoryTests
+    {
+        [SetUp]
+        public async Task SetUp()
+        {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy();
+
+            // Insert a second hierarchy row to trigger FailureMultipleHierarchiesFound
+            await using var connection = new NpgsqlConnection(
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            );
+            await connection.ExecuteAsync(
+                "INSERT INTO dmscs.ClaimsHierarchy (Hierarchy) VALUES (@hierarchy::jsonb)",
+                new { hierarchy = """[{"name":"http://duplicate.claim","claimSets":[]}]""" }
+            );
+        }
+
+        [Test]
+        public async Task It_returns_failure_unknown_for_resource_claims()
+        {
+            var result = await CreateRepository().GetResourceClaims(new ResourceClaimQuery());
+
+            result.Should().BeOfType<ResourceClaimListResult.FailureUnknown>();
+        }
+
+        [Test]
+        public async Task It_returns_failure_unknown_for_resource_claim_actions()
+        {
+            var result = await CreateRepository().GetResourceClaimActions(new ResourceClaimActionQuery());
+
+            result.Should().BeOfType<ResourceClaimActionListResult.FailureUnknown>();
+        }
+
+        [Test]
+        public async Task It_returns_failure_unknown_for_resource_claim_action_auth_strategies()
+        {
+            var result = await CreateRepository()
+                .GetResourceClaimActionAuthStrategies(new ResourceClaimActionAuthStrategyQuery());
+
+            result.Should().BeOfType<ResourceClaimActionAuthStrategyListResult.FailureUnknown>();
         }
     }
 }
