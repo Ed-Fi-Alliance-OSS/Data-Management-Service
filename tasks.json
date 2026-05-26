@@ -184,6 +184,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationExecutor",
       "Run git diff -- tasks.json and confirm no production or test source files were edited by the task-refinement pass itself."
     ],
-    "completed": false
+    "completed": true
   }
 ]
