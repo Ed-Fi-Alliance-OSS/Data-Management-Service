@@ -975,64 +975,59 @@ public sealed class RelationshipAuthorizationPlanner
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoClaimsFailures(
         QualifiedResourceName resource,
         RelationshipAuthorizationCheckSpec checkSpec
+    ) =>
+        checkSpec
+            .Subjects.GroupBy(static subject => subject.AuthObject)
+            .Select(subjectGroup =>
+                CreateNoClaimsFailure(resource, checkSpec, subjectGroup.Key, subjectGroup.ToArray())
+            );
+
+    private static RelationshipAuthorizationFailureMetadata CreateNoClaimsFailure(
+        QualifiedResourceName resource,
+        RelationshipAuthorizationCheckSpec checkSpec,
+        RelationshipAuthorizationAuthObject authObject,
+        IReadOnlyList<RelationshipAuthorizationSubject> subjects
     )
     {
-        if (checkSpec.Subjects.All(static subject => !subject.IsPersonSubject))
+        var personSubject = subjects.FirstOrDefault(static subject => subject.PersonMetadata is not null);
+
+        if (personSubject is null)
         {
-            yield return new RelationshipAuthorizationFailureMetadata(
+            return new RelationshipAuthorizationFailureMetadata(
                 RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
                 resource,
                 checkSpec.ConfiguredStrategy,
                 checkSpec.RelationshipLocalOrder,
                 ValueSource: checkSpec.ValueSource,
-                AuthObject: checkSpec.Subjects[0].AuthObject,
-                Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
-            );
-            yield break;
-        }
-
-        if (checkSpec.Subjects.Any(static subject => !subject.IsPersonSubject))
-        {
-            yield return new RelationshipAuthorizationFailureMetadata(
-                RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
-                resource,
-                checkSpec.ConfiguredStrategy,
-                checkSpec.RelationshipLocalOrder,
-                ValueSource: checkSpec.ValueSource,
-                AuthObject: checkSpec.Subjects.First(static subject => !subject.IsPersonSubject).AuthObject,
+                AuthObject: authObject,
                 Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
             );
         }
 
-        foreach (
-            var subject in checkSpec.Subjects.Where(static subject => subject.PersonMetadata is not null)
+        var personMetadata = personSubject.PersonMetadata!;
+        var firstContributor = subjects.SelectMany(static subject => subject.Contributors).FirstOrDefault();
+
+        return new RelationshipAuthorizationFailureMetadata(
+            RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+            resource,
+            checkSpec.ConfiguredStrategy,
+            checkSpec.RelationshipLocalOrder,
+            ValueSource: checkSpec.ValueSource,
+            AuthObject: authObject,
+            Location: new RelationshipAuthorizationFailureLocation(
+                Kind: firstContributor?.Kind ?? MapPersonSecurableElementKind(personMetadata.PersonKind),
+                JsonPath: firstContributor?.JsonPath,
+                ReadableName: firstContributor?.ReadableName,
+                Table: personSubject.Table,
+                Column: personSubject.Column,
+                AuthorizationObjectName: authObject.Name.ToString()
+            ),
+            Hint: BuildNoClaimsPeopleHint(authObject)
         )
         {
-            var personMetadata = subject.PersonMetadata!;
-            var firstContributor = subject.Contributors.FirstOrDefault();
-
-            yield return new RelationshipAuthorizationFailureMetadata(
-                RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
-                resource,
-                checkSpec.ConfiguredStrategy,
-                checkSpec.RelationshipLocalOrder,
-                ValueSource: checkSpec.ValueSource,
-                AuthObject: subject.AuthObject,
-                Location: new RelationshipAuthorizationFailureLocation(
-                    Kind: firstContributor?.Kind ?? MapPersonSecurableElementKind(personMetadata.PersonKind),
-                    JsonPath: firstContributor?.JsonPath,
-                    ReadableName: firstContributor?.ReadableName,
-                    Table: subject.Table,
-                    Column: subject.Column,
-                    AuthorizationObjectName: subject.AuthObject.Name.ToString()
-                ),
-                Hint: BuildNoClaimsPeopleHint(subject.AuthObject)
-            )
-            {
-                PersonMetadata = CreatePersonFailureMetadata(subject),
-                Contributors = subject.Contributors,
-            };
-        }
+            PersonMetadata = CreatePersonFailureMetadata(personSubject),
+            Contributors = [.. subjects.SelectMany(static subject => subject.Contributors)],
+        };
     }
 
     private static string BuildNoClaimsPeopleHint(RelationshipAuthorizationAuthObject authObject) =>

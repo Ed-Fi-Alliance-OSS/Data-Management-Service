@@ -352,7 +352,7 @@
       "Add or update planner tests for proposed People anchor transformation, mixed-auth-object no-claims metadata, homogeneous People no-claims metadata, and EdOrg-only no-claims behavior.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Execution Boundaries",

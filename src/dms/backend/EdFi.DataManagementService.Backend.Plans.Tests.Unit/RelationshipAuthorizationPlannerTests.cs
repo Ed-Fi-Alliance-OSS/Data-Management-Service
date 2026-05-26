@@ -537,6 +537,100 @@ public class Given_RelationshipAuthorizationPlannerTests
         failure.Hint.Should().Contain(expectedAuthObject.FailureHint);
     }
 
+    [Test]
+    public void It_should_return_mixed_auth_object_no_claims_metadata_from_subject_auth_objects()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MixedAuthorizationResource");
+        var expectedEdOrgAuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Normal
+        );
+        var expectedStudentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        noClaimsResult.CheckSpecs.Should().ContainSingle();
+        noClaimsResult.CheckSpecs[0].Subjects.Should().HaveCount(2);
+        noClaimsResult
+            .Failures.Select(static failure => failure.AuthObject)
+            .Should()
+            .Equal(expectedEdOrgAuthObject, expectedStudentAuthObject);
+
+        var peopleFailure = noClaimsResult.Failures.Single(static failure =>
+            failure.PersonMetadata is not null
+        );
+
+        peopleFailure
+            .PersonMetadata.Should()
+            .Be(
+                new RelationshipAuthorizationPersonFailureMetadata(
+                    RelationshipAuthorizationPersonKind.Student,
+                    expectedStudentAuthObject
+                )
+            );
+        peopleFailure
+            .Location?.AuthorizationObjectName.Should()
+            .Be(expectedStudentAuthObject.Name.ToString());
+        peopleFailure.Contributors.Should().ContainSingle();
+        peopleFailure.Hint.Should().Contain(expectedStudentAuthObject.FailureHint);
+    }
+
+    [Test]
+    public void It_should_collapse_homogeneous_people_no_claims_metadata_by_subject_auth_object()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MultipleStudentAuthorizationResource");
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMultipleStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        noClaimsResult.CheckSpecs.Should().ContainSingle();
+        noClaimsResult.CheckSpecs[0].Subjects.Should().HaveCount(2);
+        noClaimsResult.Failures.Should().ContainSingle();
+
+        var failure = noClaimsResult.Failures[0];
+
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure
+            .PersonMetadata.Should()
+            .Be(
+                new RelationshipAuthorizationPersonFailureMetadata(
+                    RelationshipAuthorizationPersonKind.Student,
+                    expectedAuthObject
+                )
+            );
+        failure
+            .Contributors.Select(static contributor => contributor.JsonPath)
+            .Should()
+            .Equal("$.studentReference.studentUniqueId", "$.alternateStudentReference.studentUniqueId");
+    }
+
     [TestCaseSource(nameof(PeopleAuthViewSelectionCases))]
     public void It_should_report_missing_people_auth_view_associations_for_selected_people_subjects(
         SecurableElementKind securableElementKind,
@@ -796,6 +890,13 @@ public class Given_RelationshipAuthorizationPlannerTests
         var subject = checkSpec.Subjects.Should().ContainSingle().Subject;
         var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)checkSpec.CheckTarget;
 
+        subject
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
         subject.PersonMetadata!.ProposedAnchor.Should().NotBeNull();
         subject
             .PersonMetadata.ProposedAnchor!.Kind.Should()
@@ -842,6 +943,13 @@ public class Given_RelationshipAuthorizationPlannerTests
         subject
             .PersonMetadata!.Path.Kind.Should()
             .Be(RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath);
+        subject
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
         subject
             .PersonMetadata.ProposedAnchor!.Kind.Should()
             .Be(RelationshipAuthorizationPersonProposedAnchorKind.FirstHop);
@@ -1794,6 +1902,108 @@ public class Given_RelationshipAuthorizationPlannerTests
                                 rootTable.Table,
                                 personDocumentIdColumn,
                                 Table(GetPersonResourceName(securableElementKind)),
+                                _documentId
+                            ),
+                        ]
+                    ),
+                ],
+            }
+        );
+    }
+
+    private static MappingSet CreateMultipleStudentSubjectMappingSet(QualifiedResourceName resource)
+    {
+        const string studentPath = "$.studentReference.studentUniqueId";
+        const string alternateStudentPath = "$.alternateStudentReference.studentUniqueId";
+        var alternateStudentDocumentId = Col("AlternateStudent_DocumentId");
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    AuthNames.StudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(studentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+                new DbColumnModel(
+                    alternateStudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(alternateStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(studentPath)),
+                        rootTable.Table,
+                        AuthNames.StudentDocumentId,
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(studentPath),
+                                Path(studentPath),
+                                Col("StudentUniqueId")
+                            ),
+                        ]
+                    ),
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(alternateStudentPath)),
+                        rootTable.Table,
+                        alternateStudentDocumentId,
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(alternateStudentPath),
+                                Path(alternateStudentPath),
+                                Col("AlternateStudentUniqueId")
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements([], [], [studentPath, alternateStudentPath], [], [])
+        );
+
+        return CreateMappingSet(
+            [
+                concreteResource,
+                CreatePersonResource(SecurableElementKind.Student),
+                .. CreateRequiredPeopleAuthAssociationResources(),
+            ],
+            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>
+            {
+                [resource] =
+                [
+                    new ResolvedSecurableElementPath(
+                        SecurableElementKind.Student,
+                        [
+                            new ColumnPathStep(
+                                rootTable.Table,
+                                AuthNames.StudentDocumentId,
+                                Table("Student"),
+                                _documentId
+                            ),
+                        ]
+                    ),
+                    new ResolvedSecurableElementPath(
+                        SecurableElementKind.Student,
+                        [
+                            new ColumnPathStep(
+                                rootTable.Table,
+                                alternateStudentDocumentId,
+                                Table("Student"),
                                 _documentId
                             ),
                         ]
