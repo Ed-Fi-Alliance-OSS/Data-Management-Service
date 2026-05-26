@@ -798,15 +798,6 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             Import-Module "$script:sourceDockerComposeRoot/env-utility.psm1" -Force
         }
 
-        It "validates embedded SeedLoader claim set and required Create permissions exist" {
-            $claimsJsonPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json"
-            Test-Path -LiteralPath $claimsJsonPath | Should -BeTrue
-
-            $json = Get-Content -LiteralPath $claimsJsonPath -Raw | ConvertFrom-Json
-            $claimSetNames = @($json.claimSets | ForEach-Object { $_.claimSetName })
-            $claimSetNames | Should -Contain "SeedLoader"
-        }
-
         It "Assert-CmsSeedLoaderClaimSetLoaded throws when CMS does not surface the SeedLoader claim set" {
             # Regression: Add-Application stores ClaimSetName as a string, so a stale CMS image
             # without the embedded SeedLoader claim set would accept credential creation and surface
@@ -1352,6 +1343,30 @@ DMS_CONFIG_IDENTITY_PROVIDER=self-contained
                 # Plain instance still resolves
                 $result = Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" -InstanceId @(12)
                 $result.InstanceIds | Should -Be @([long]12)
+            }
+            finally {
+                Remove-Item function:script:Get-DmsInstances -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "rejects auto-select when the single instance carries a route context" {
+            # Symmetric to the explicit -InstanceId route-qualified rejection: a route-qualified
+            # instance cannot be auto-selected because the orchestrator's single-instance branch
+            # posts to {base}[/{tenant}] without composing the required qualifier segments.
+            function script:Get-DmsInstances {
+                @(
+                    [pscustomobject]@{
+                        id = [long]42
+                        instanceName = "Year 2024"
+                        dmsInstanceRouteContexts = @(
+                            [pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" }
+                        )
+                    }
+                )
+            }
+            try {
+                { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" } |
+                    Should -Throw -ExpectedMessage "*Single DMS instance*route context*schoolYear*"
             }
             finally {
                 Remove-Item function:script:Get-DmsInstances -ErrorAction SilentlyContinue

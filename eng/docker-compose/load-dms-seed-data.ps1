@@ -918,8 +918,18 @@ function Resolve-SeedTargetInstances {
         throw "Multiple DMS instances exist; cannot auto-select. Pass -InstanceId or -SchoolYear to target specific instances:`n$listing"
     }
 
+    $soleInstance = $instances[0]
+    $soleRouteContexts = @()
+    if ($soleInstance.dmsInstanceRouteContexts -is [System.Collections.IEnumerable]) {
+        $soleRouteContexts = @($soleInstance.dmsInstanceRouteContexts)
+    }
+    if ($soleRouteContexts.Count -gt 0) {
+        $contextKeys = ($soleRouteContexts | ForEach-Object { [string]$_.contextKey }) -join ", "
+        throw "Single DMS instance $(Format-LogSafeText $soleInstance.id) carries $($soleRouteContexts.Count) route context(s) ($(Format-LogSafeText $contextKeys)). Auto-select cannot compose the required URL qualifier segments. Pass -SchoolYear (or the matching selector) to target this instance with the correct route."
+    }
+
     return @{
-        InstanceIds = [long[]]@([long]$instances[0].id)
+        InstanceIds = [long[]]@([long]$soleInstance.id)
     }
 }
 
