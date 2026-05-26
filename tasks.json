@@ -622,5 +622,96 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
     ],
     "completed": true
+  },
+  {
+    "category": "Simplification",
+    "description": "Low: Remove the unreachable non-root chain branch from People subject selection or make the resolver contract support it explicitly.",
+    "acceptance-criteria": [
+      "RelationalPeopleAuthorizationSubjectSelector no longer contains a non-root chain guard that cannot be reached under the current PersonJoinPathResolver contract.",
+      "Child-collection People path exclusion continues to be handled by the existing skipped array-nested path flow with ChildCollectionPersonPathOutsideSubjectScope diagnostics.",
+      "Direct, transitive, self-person, and child-collection People selector unit coverage remains unchanged in behavior.",
+      "If non-root first-hop chains are intended to become possible, PersonJoinPathResolver documents and tests that contract before the selector relies on it."
+    ],
+    "steps-to-verify": [
+      "Review PersonJoinPathResolver.ResolveShortestPersonChain and confirm returned chains always start from the subject root table under the current contract.",
+      "Review RelationalPeopleAuthorizationSubjectSelector.ResolvePersonCandidates and remove or justify the chain[0].SourceTable non-root branch.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Medium: Keep compiled securable path metadata and auth index inventory aligned with all executable People subject paths.",
+    "acceptance-criteria": [
+      "SecurableElementColumnPathResolver records each independent root-scope Student, Contact, and Staff securable element path that can become an executable People relationship subject.",
+      "DeriveAuthorizationIndexInventoryPass emits or widens auth indexes for every resolved independent People join path selected by the People core, not only the shortest path for the person kind.",
+      "Shortest-path selection remains limited to alternate alias or key-unification routes for one declared securable element path.",
+      "Resources with multiple independent Student, Contact, or Staff references have compiled path metadata and auth index inventory entries for every executable path.",
+      "Existing behavior for unresolved person paths and child-collection People paths remains unchanged."
+    ],
+    "steps-to-verify": [
+      "Review SecurableElementColumnPathResolver.ResolvePersonPaths and DeriveAuthorizationIndexInventoryPass.ProcessPersonKind for per-path People resolution instead of one per person kind.",
+      "Add unit coverage with a resource that declares two independent Student securable paths and assert both compiled path metadata entries are present.",
+      "Add unit coverage with the same resource and assert auth indexes are emitted or widened for both People join paths.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SecurableElementColumnPathResolver",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter DeriveAuthorizationIndexInventoryPass",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/SecurableElementColumnPathResolver.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Simplification",
+    "description": "Low: Resolve People authorization subject candidates once per planning pass instead of once per configured strategy.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationPlanner does not call RelationalPeopleAuthorizationSubjectSelector.Select separately for each supported strategy when planning one resource.",
+      "People candidate resolution runs once per resource and mapping set for the supported strategy set, then planner consumption preserves per-strategy OR ordering and diagnostics.",
+      "NoApplicableRootSubject, UnresolvedSecurableElement, skipped contributor, and MissingPeopleAuthViewAssociations failures remain deterministic and are not duplicated.",
+      "Duplicate configured People relationship strategies remain distinct OR entries with their raw configured indexes and relationship-local order.",
+      "Existing EdOrg-only and mixed EdOrg-and-People planner behavior remains unchanged."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.SelectSupportedStrategySubjects and RelationalPeopleAuthorizationSubjectSelector.Select for one-pass People subject selection.",
+      "Add planner or selector unit coverage with multiple People strategies on one resource and assert selected subjects and failures are not duplicated.",
+      "Add coverage proving duplicate configured People strategies remain separate OR entries after the one-pass selection change.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlanner|RelationalPeopleAuthorizationSubjectSelector\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Auth View Selection",
+    "description": "Medium: Single-source People relationship auth object metadata from emitted auth view definitions.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationAuthObject.CreatePerson no longer hard-codes People auth view names or expected person DocumentId output columns independently from AuthObjectDefinitions.PeopleAuthViews, or both components read those values from shared named constants.",
+      "DDL and manifest emission and relationship authorization planning use the same DbTableName, person DocumentId output column, and claim EducationOrganizationId column metadata for Student, Contact, Staff, and Student-through-responsibility auth views.",
+      "People auth view failure hints still match the auth.md hint text for all four supported People auth views.",
+      "Unit coverage fails if a People auth view name or person DocumentId output column drifts between the emitted auth object definition and the planner auth object metadata."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs for a shared source of People auth view names and output columns.",
+      "Add or update unit coverage in RelationshipAuthorizationContractsTests that compares CreatePerson outputs against AuthObjectDefinitions.PeopleAuthViews for Student, Contact, Staff, and StudentThroughResponsibility.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationContracts",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs src/dms/backend/EdFi.DataManagementService.Backend.External/AuthEdOrgHierarchyContracts.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationContractsTests.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Failure Metadata",
+    "description": "Low: Preserve contribution order for unresolved People securable path diagnostics.",
+    "acceptance-criteria": [
+      "UnresolvedPersonPath carries the contribution order assigned while enumerating the resource's Student, Contact, or Staff securable element paths.",
+      "Unresolved People security-configuration failures populate RelationshipAuthorizationSubjectContributor.ContributionOrder from the unresolved path metadata instead of relying on the default value.",
+      "Unresolved People failure ordering uses configured contribution order before fallback JSON path and readable-name ordering, while keeping deterministic ordering across multiple configured strategies.",
+      "Resolved People subjects and skipped child-collection contributor ordering remain unchanged.",
+      "Unit coverage proves two unresolved People paths whose lexical order differs from configured order are reported in configured contribution order."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs around UnresolvedPersonPath creation, CreateUnresolvedPersonFailures, and OrderFailures.",
+      "Add or update RelationalPeopleAuthorizationSubjectSelector tests for multiple unresolved Student, Contact, or Staff paths with non-lexical configured ordering.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs"
+    ],
+    "completed": false
   }
 ]

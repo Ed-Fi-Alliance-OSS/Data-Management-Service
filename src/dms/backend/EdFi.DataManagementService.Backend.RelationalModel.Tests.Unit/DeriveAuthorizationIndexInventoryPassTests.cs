@@ -620,10 +620,9 @@ public class Given_Person_Resource_With_Self_Securable
 }
 
 /// <summary>
-/// Pins the shortest-wins contract (DMS-1053, auth.md L879): when a subject declares two
-/// Student securable paths that resolve to distinct join chains (3-hop short vs. 4-hop long,
-/// each via its own intermediate resources), the pass emits auth indexes for the hops of the
-/// shorter chain only. The longer chain's hops are not indexed.
+/// Pins the independent-path contract: when a subject declares two Student securable paths that
+/// resolve to distinct join chains (3-hop short vs. 4-hop long, each via its own intermediate
+/// resources), the pass emits auth indexes for every hop in both chains.
 /// </summary>
 [TestFixture]
 public class Given_Resource_Chain_Of_Three_Hops
@@ -646,7 +645,7 @@ public class Given_Resource_Chain_Of_Three_Hops
     }
 
     [Test]
-    public void It_should_emit_the_subject_hop_on_the_short_chain_only()
+    public void It_should_emit_the_subject_hop_on_each_independent_chain()
     {
         _authIndexes
             .Should()
@@ -655,13 +654,13 @@ public class Given_Resource_Chain_Of_Three_Hops
             );
         _authIndexes
             .Should()
-            .NotContain(i =>
+            .Contain(i =>
                 i.Table.Name == "ThreeHopChainSubject" && i.KeyColumns[0].Value == "LongHop1_DocumentId"
             );
     }
 
     [Test]
-    public void It_should_emit_every_intermediate_hop_on_the_short_chain()
+    public void It_should_emit_every_intermediate_hop_on_each_independent_chain()
     {
         _authIndexes
             .Should()
@@ -669,6 +668,15 @@ public class Given_Resource_Chain_Of_Three_Hops
         _authIndexes
             .Should()
             .Contain(i => i.Table.Name == "ShortHop2" && i.KeyColumns[0].Value == "Student_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop1" && i.KeyColumns[0].Value == "LongHop2_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop2" && i.KeyColumns[0].Value == "LongHop3_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop3" && i.KeyColumns[0].Value == "Student_DocumentId");
     }
 }
 
@@ -1980,15 +1988,12 @@ public class Given_Intermediate_With_Multiple_Root_Bindings_Only_Securable_Is_Fo
 }
 
 /// <summary>
-/// Pins the walker's try-alternates-and-pick-shortest contract (DMS-1094 Round 8 Fix #2):
-/// when an intermediate declares multiple Student securables — one going through a detour
-/// resource, one going directly to <c>Ed-Fi.Student</c> — the walker enumerates both
-/// candidates at the hop and selects the shorter continuation. A greedy first-match walker
-/// (Round 7 behavior) would emit indexes for whichever declaration came first in the list,
-/// possibly the longer detour.
+/// Pins per-path index emission when an intermediate declares multiple Student securables —
+/// one going through a detour resource and one going directly to <c>Ed-Fi.Student</c>. The
+/// intermediate's independent executable paths are both indexed.
 /// </summary>
 [TestFixture]
-public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Shortest
+public class Given_Intermediate_With_Multiple_Securable_Paths_Emits_Each_Independent_Path
 {
     private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
 
@@ -1998,9 +2003,7 @@ public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Short
         _authIndexes = AuthorizationIndexTestRunner
             .Build(ctx =>
             {
-                foreach (
-                    var r in AuthIndexFixtureResources.BuildIntermediateWithMultipleSecurablePathsWalkerPicksShortest()
-                )
+                foreach (var r in AuthIndexFixtureResources.BuildIntermediateWithMultipleSecurablePaths())
                 {
                     ctx.ConcreteResourcesInNameOrder.Add(r);
                 }
@@ -2010,12 +2013,8 @@ public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Short
     }
 
     [Test]
-    public void It_should_emit_the_hop_on_the_shorter_alternate()
+    public void It_should_emit_the_direct_hop()
     {
-        // The intermediate's SECOND declared Student securable is the direct hop to
-        // Ed-Fi.Student via DirectStudentHop_DocumentId. With try-alternates + shortest-wins,
-        // the walker picks this branch over the longer detour. A greedy first-match walker
-        // would have picked the detour (listed FIRST) and indexed DetourHop_DocumentId instead.
         _authIndexes
             .Should()
             .Contain(i =>
@@ -2025,14 +2024,11 @@ public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Short
     }
 
     [Test]
-    public void It_should_not_emit_the_hop_on_the_longer_alternate_when_routing_from_the_subject()
+    public void It_should_emit_the_detour_hop_as_an_independent_person_path()
     {
-        // The detour hop only appears in the auth-index inventory if some subject's resolved
-        // chain routes through it. Under shortest-wins, neither WalkerShortestSubject nor the
-        // intermediate-as-subject picks the detour, so the detour FK is not indexed.
         _authIndexes
             .Should()
-            .NotContain(i =>
+            .Contain(i =>
                 i.Table.Name == "WalkerShortestIntermediate"
                 && i.KeyColumns.Any(c => c.Value == "DetourHop_DocumentId")
             );
@@ -3072,10 +3068,9 @@ internal static class AuthIndexFixtureResources
         );
 
     /// <summary>
-    /// Builds the full set of resources for the three-hop BFS shortest-path scenario: a subject
-    /// resource with two Student securable paths driving two independent BFS searches — one
-    /// short (3-hop) chain to <c>Ed-Fi.Student</c> and one longer (4-hop) chain. The pass must
-    /// pick the shortest. Emitted indexes are expected to cover the short chain only.
+    /// Builds the full set of resources for a subject resource with two Student securable paths
+    /// driving two independent searches — one short (3-hop) chain to <c>Ed-Fi.Student</c> and
+    /// one longer (4-hop) chain. Emitted indexes are expected to cover both chains.
     /// </summary>
     public static IReadOnlyList<ConcreteResourceModel> BuildResourceChainOfThreeHops()
     {
@@ -3687,14 +3682,12 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Builds the resources for the
-    /// <c>Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Shortest</c> test. The
-    /// intermediate <c>WalkerShortestIntermediate</c> declares TWO Student securables, listed
-    /// in order: the FIRST (<c>$.detourRef.studentUniqueId</c>) goes through a detour
-    /// resource that itself reaches Student in one more hop (2-step continuation); the SECOND
-    /// (<c>$.studentRef.studentUniqueId</c>) targets <c>Ed-Fi.Student</c> directly (1-step
-    /// continuation). The walker must enumerate both candidates and pick the shorter one.
+    /// <c>Given_Intermediate_With_Multiple_Securable_Paths_Emits_Each_Independent_Path</c> test. The
+    /// intermediate <c>WalkerShortestIntermediate</c> declares TWO Student securables: one goes
+    /// through a detour resource that itself reaches Student in one more hop, and one targets
+    /// <c>Ed-Fi.Student</c> directly. The index pass must emit both independent paths.
     /// </summary>
-    public static IReadOnlyList<ConcreteResourceModel> BuildIntermediateWithMultipleSecurablePathsWalkerPicksShortest()
+    public static IReadOnlyList<ConcreteResourceModel> BuildIntermediateWithMultipleSecurablePaths()
     {
         const string subjectName = "WalkerShortestSubject";
         var subjectRoot = new DbTableName(_edfiSchema, subjectName);
@@ -3772,8 +3765,7 @@ internal static class AuthIndexFixtureResources
                 BuildScalarColumn(detourFk),
                 BuildScalarColumn(directStudentFk),
             ],
-            // Detour binding listed FIRST so a greedy first-match walker would pick it. The
-            // try-alternates walker must enumerate both and pick the shorter (direct) branch.
+            // Detour binding listed first to keep fixture ordering deterministic.
             [detourBinding, directStudentBinding],
             new ResourceSecurableElements(
                 EducationOrganization: [],
@@ -3784,9 +3776,7 @@ internal static class AuthIndexFixtureResources
             )
         );
 
-        // WalkerShortestDetour reaches Student in one hop via its own declared securable. With
-        // it in place, intermediate-as-subject's $.detourRef path resolves to a 2-step chain
-        // (I -> Detour -> Student); the direct path's 1-step chain wins shortest.
+        // WalkerShortestDetour reaches Student in one hop via its own declared securable.
         var detourFkOnDetour = new DbColumnName("Student_DocumentId");
         var detourToStudentBinding = new DocumentReferenceBinding(
             IsIdentityComponent: true,

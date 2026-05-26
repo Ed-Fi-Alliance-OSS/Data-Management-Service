@@ -209,14 +209,13 @@ internal static class SecurableElementColumnPathResolver
     ) => SecurableElementLocationResolver.ResolvePreferred(resource, securableElementPath);
 
     /// <summary>
-    /// Resolves person (Student/Contact/Staff) securable element paths. Delegates the
-    /// shortest-path resolution to
-    /// <see cref="PersonJoinPathResolver.ResolveShortestPersonChain"/> — one
+    /// Resolves person (Student/Contact/Staff) securable element paths. One
     /// <see cref="ResolvedSecurableElementPath"/> is appended to <paramref name="results"/>
-    /// per kind: the shortest chain among all declared person paths (auth.md L879). The
-    /// "subject IS the person resource" case is the only path where a null resolved chain
-    /// plus non-empty root-level paths is not an error — see
-    /// <see cref="PersonJoinPathResolver.IsPersonResource"/>.
+    /// per declared root-level person path that resolves to a DocumentId chain. The
+    /// shortest-path rule is scoped to alternate routes for that one declared path, not to
+    /// collapsing independent declared paths for the same person kind. The "subject IS the
+    /// person resource" case is the only path where a null resolved chain plus non-empty
+    /// root-level paths is not an error — see <see cref="PersonJoinPathResolver.IsPersonResource"/>.
     /// </summary>
     private static void ResolvePersonPaths(
         ConcreteResourceModel subjectResource,
@@ -234,32 +233,37 @@ internal static class SecurableElementColumnPathResolver
             return;
         }
 
-        var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
-            subjectResource,
-            personPaths,
-            personResourceName,
-            resourceLookup,
-            skippedArrayNestedPaths,
-            out var unresolvedRootLevelPaths
+        var subjectIsPersonResource = PersonJoinPathResolver.IsPersonResource(
+            subjectResource.RelationalModel.Resource,
+            personResourceName
         );
 
-        if (chain is not null)
+        foreach (var personPath in personPaths)
         {
-            results.Add(new ResolvedSecurableElementPath(kind, chain));
-        }
+            List<string> skippedPathsForElement = [];
+            var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
+                subjectResource,
+                [personPath],
+                personResourceName,
+                resourceLookup,
+                skippedPathsForElement,
+                out var unresolvedRootLevelPaths
+            );
 
-        // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
-        // person resource, in which case unresolved paths are self-references and silently
-        // skipped (e.g. Contact declaring $.contactUniqueId).
-        if (
-            unresolvedRootLevelPaths.Count > 0
-            && !PersonJoinPathResolver.IsPersonResource(
-                subjectResource.RelationalModel.Resource,
-                personResourceName
-            )
-        )
-        {
-            unresolvedPaths.AddRange(unresolvedRootLevelPaths);
+            skippedArrayNestedPaths.AddRange(skippedPathsForElement);
+
+            if (chain is not null)
+            {
+                results.Add(new ResolvedSecurableElementPath(kind, chain));
+            }
+
+            // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
+            // person resource, in which case unresolved paths are self-references and silently
+            // skipped (e.g. Contact declaring $.contactUniqueId).
+            if (unresolvedRootLevelPaths.Count > 0 && !subjectIsPersonResource)
+            {
+                unresolvedPaths.AddRange(unresolvedRootLevelPaths);
+            }
         }
     }
 

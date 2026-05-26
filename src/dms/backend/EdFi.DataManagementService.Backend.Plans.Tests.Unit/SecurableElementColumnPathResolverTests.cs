@@ -553,12 +553,11 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_pick_the_shortest_chain_when_alternatives_exist()
+        public void It_should_resolve_each_independent_root_level_person_path()
         {
             // Resource declares two Student securable paths: one direct (1 hop) and one through
-            // an intermediate (2 hops). Per the DMS-1053 design contract (auth.md L879), the
-            // resolver follows each path and returns the shortest — only the direct chain
-            // becomes a ResolvedSecurableElementPath.
+            // an intermediate (2 hops). Each independent declared person path becomes compiled
+            // path metadata so People authorization planning and auth-index emission agree.
             var rootTable = CreateRootTable(
                 Table("TestResource"),
                 [
@@ -653,8 +652,6 @@ public class Given_SecurableElementColumnPathResolver
             );
             var studentModel = CreateModel("Ed-Fi", "Student", studentRoot);
 
-            // Two alternative paths to the same person kind: direct (1 hop) and indirect
-            // (2 hops). Shortest wins.
             var securableElements = new ResourceSecurableElements(
                 [],
                 [],
@@ -686,11 +683,21 @@ public class Given_SecurableElementColumnPathResolver
                 [testConcrete, intermediateConcrete, studentConcrete]
             );
 
-            results.Should().HaveCount(1);
-            results[0].Kind.Should().Be(SecurableElementKind.Student);
-            results[0].Steps.Should().HaveCount(1);
-            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
-            results[0].Steps[0].TargetTable.Should().Be(Table("Student"));
+            results.Should().HaveCount(2);
+            results.Should().AllSatisfy(result => result.Kind.Should().Be(SecurableElementKind.Student));
+
+            var directPath = results.Single(result => result.Steps.Count == 1);
+            directPath.Steps[0].SourceTable.Should().Be(Table("TestResource"));
+            directPath.Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            directPath.Steps[0].TargetTable.Should().Be(Table("Student"));
+
+            var transitivePath = results.Single(result => result.Steps.Count == 2);
+            transitivePath.Steps[0].SourceTable.Should().Be(Table("TestResource"));
+            transitivePath.Steps[0].SourceColumnName.Should().Be(Col("Intermediate_DocumentId"));
+            transitivePath.Steps[0].TargetTable.Should().Be(Table("Intermediate"));
+            transitivePath.Steps[1].SourceTable.Should().Be(Table("Intermediate"));
+            transitivePath.Steps[1].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            transitivePath.Steps[1].TargetTable.Should().Be(Table("Student"));
         }
     }
 

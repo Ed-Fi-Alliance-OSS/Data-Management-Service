@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
-/// Resolves the shortest column-path chain from a subject resource to a named person resource
+/// Resolves column-path chains from a subject resource to a named person resource
 /// (<c>Student</c>, <c>Contact</c>, or <c>Staff</c>) via the subject's Student / Contact /
 /// Staff securable element JSON paths.
 /// </summary>
@@ -57,9 +57,10 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     as the chain hop, emitting auth indexes that the runtime resolver does not use.</description>
 ///   </item>
 ///   <item>
-///     <description>Among all root-level paths that produced a chain, return the shortest.
-///     Ties break first-wins (input order). This matches the DMS-1053 design contract that
-///     multiple person paths are alternatives, not independent references.</description>
+///     <description>Among all supplied root-level paths that produced a chain, return the
+///     shortest. Ties break first-wins (input order). Callers that need executable metadata for
+///     every independent declared person path call this resolver once per path; the shortest
+///     choice then applies only to alternate continuation routes for that declared path.</description>
 ///   </item>
 /// </list>
 /// <para>Returns <see langword="null"/> when no non-array-nested path resolves. Callers decide
@@ -81,11 +82,12 @@ public static class PersonJoinPathResolver
     /// named person resource via the supplied securable element JSON paths.
     /// </summary>
     /// <remarks>
-    /// Per the DMS-1053 design contract (auth.md L879), multiple root-level person paths are
-    /// alternatives: the function follows each one and returns the shortest resolved chain.
-    /// Equal-length ties break first-wins in input order. Paths that fail to resolve (binding
-    /// not found, target missing from the resource lookup, all declared securables at some
-    /// intermediate cycle or dead-end) are accumulated into
+    /// If multiple root-level person paths are supplied, the function follows each one and
+    /// returns the shortest resolved chain. Equal-length ties break first-wins in input order.
+    /// Runtime People subject planning, compiled mapping metadata, and authorization index
+    /// derivation pass one declared person path at a time so independent paths are preserved.
+    /// Paths that fail to resolve (binding not found, target missing from the resource lookup,
+    /// all declared securables at some intermediate cycle or dead-end) are accumulated into
     /// <paramref name="unresolvedRootLevelPaths"/> for callers to surface.
     /// </remarks>
     /// <param name="subjectResource">Subject resource declaring the person securable element(s).</param>

@@ -36,13 +36,11 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 ///   </item>
 ///   <item>
 ///     <description>One index per join hop required to reach a Student / Contact / Staff
-///     person resource from a subject resource that declares the corresponding securable
-///     element. Each index keys on the FK <c>_DocumentId</c> column at the hop and INCLUDEs
-///     the source table's <c>DocumentId</c> (covering index for the runtime auth filter join).
-///     Behavior-aligned with
-///     <c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver.ResolvePersonPaths</c>
-///     / <c>BfsToPersonResource</c>: BFS over root-table <see cref="DocumentReferenceBinding"/>s
-///     to the shortest chain reaching the person resource; array-nested paths (<c>[*]</c>) are
+///     person resource from each independent declared root-scope securable element path. Each
+///     index keys on the FK <c>_DocumentId</c> column at the hop and INCLUDEs the source table's
+///     <c>DocumentId</c> (covering index for the runtime auth filter join). Behavior-aligned with
+///     <c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver.ResolvePersonPaths</c>:
+///     every executable root-scope person path is indexed; array-nested paths (<c>[*]</c>) are
 ///     silently skipped when any other securable path resolves, or throw with the runtime's
 ///     "unsupported child-table traversal" message when no path resolves at all.</description>
 ///   </item>
@@ -364,13 +362,12 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
     /// <summary>
     /// Emits per-hop authorization indexes for Student / Contact / Staff securable elements.
-    /// For each concrete resource declaring such an element, walks the shortest join chain from
-    /// the subject root table to the person resource via BFS over root-table
-    /// <see cref="DocumentReferenceBinding"/>s, and emits an auth index on each
-    /// <c>(sourceTable, FK column)</c> hop that INCLUDEs the source table's <c>DocumentId</c>.
-    /// Mirrors <c>SecurableElementColumnPathResolver.ResolvePersonPaths</c> /
-    /// <c>BfsToPersonResource</c> so the runtime auth filter and the emitted indexes agree on
-    /// which <c>(table, column)</c> carries each hop.
+    /// For each concrete resource declaring such an element, walks every independent declared
+    /// root-scope person path from the subject root table to the person resource, and emits an
+    /// auth index on each <c>(sourceTable, FK column)</c> hop that INCLUDEs the source table's
+    /// <c>DocumentId</c>.
+    /// Mirrors <c>SecurableElementColumnPathResolver.ResolvePersonPaths</c> so the runtime auth
+    /// filter and the emitted indexes agree on which <c>(table, column)</c> carries each hop.
     /// </summary>
     /// <remarks>
     /// Subjects that ARE the person resource itself (e.g. Student with <c>$.studentUniqueId</c>)
@@ -455,10 +452,9 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
     /// <summary>
     /// Processes one person kind (Student / Contact / Staff) for a single subject resource.
-    /// Delegates path resolution to <see cref="PersonJoinPathResolver.ResolveShortestPersonChain"/>
-    /// and emits an auth index per hop of the shortest resolved chain via
-    /// <see cref="AddPersonJoinIndex"/>. Only the source side of each
-    /// <see cref="ColumnPathStep"/> is consumed — the target side is the next resource's
+    /// Resolves each declared root-scope person path independently and emits an auth index per
+    /// hop of every resolved chain via <see cref="AddPersonJoinIndex"/>. Only the source side of
+    /// each <see cref="ColumnPathStep"/> is consumed — the target side is the next resource's
     /// <c>DocumentId</c>, which is the next iteration's source.
     /// </summary>
     private static void ProcessPersonKind(
@@ -478,36 +474,41 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             return;
         }
 
-        var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
-            subjectResource,
-            personPaths,
-            personResourceName,
-            resourceLookup,
-            skippedArrayNestedPaths,
-            out var unresolvedRootLevelPaths
+        var subjectIsPersonResource = PersonJoinPathResolver.IsPersonResource(
+            subjectResource.RelationalModel.Resource,
+            personResourceName
         );
 
-        if (chain is not null)
+        foreach (var personPath in personPaths)
         {
-            anyResolved = true;
-            foreach (var step in chain)
-            {
-                AddPersonJoinIndex(context, step.SourceTable, step.SourceColumnName, authIndexLookup);
-            }
-        }
+            List<string> skippedPathsForElement = [];
+            var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
+                subjectResource,
+                [personPath],
+                personResourceName,
+                resourceLookup,
+                skippedPathsForElement,
+                out var unresolvedRootLevelPaths
+            );
 
-        // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
-        // person resource, in which case unresolved paths are self-references and silently
-        // skipped (e.g. Student declaring $.studentUniqueId).
-        if (
-            unresolvedRootLevelPaths.Count > 0
-            && !PersonJoinPathResolver.IsPersonResource(
-                subjectResource.RelationalModel.Resource,
-                personResourceName
-            )
-        )
-        {
-            unresolvedPaths.AddRange(unresolvedRootLevelPaths);
+            skippedArrayNestedPaths.AddRange(skippedPathsForElement);
+
+            if (chain is not null)
+            {
+                anyResolved = true;
+                foreach (var step in chain)
+                {
+                    AddPersonJoinIndex(context, step.SourceTable, step.SourceColumnName, authIndexLookup);
+                }
+            }
+
+            // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
+            // person resource, in which case unresolved paths are self-references and silently
+            // skipped (e.g. Student declaring $.studentUniqueId).
+            if (unresolvedRootLevelPaths.Count > 0 && !subjectIsPersonResource)
+            {
+                unresolvedPaths.AddRange(unresolvedRootLevelPaths);
+            }
         }
     }
 
