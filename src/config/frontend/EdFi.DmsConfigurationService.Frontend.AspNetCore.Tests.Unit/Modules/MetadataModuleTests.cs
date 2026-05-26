@@ -91,6 +91,9 @@ public class MetadataModuleTests
             "/v2/profiles",
             "/v2/dmsInstanceDerivatives",
             "/v2/dmsinstanceroutecontexts",
+            "/v2/resourceClaims",
+            "/v2/resourceClaimActions",
+            "/v2/resourceClaimActionAuthStrategies",
         };
 
         var requiredParams = new[] { "offset", "limit", "orderby", "direction" };

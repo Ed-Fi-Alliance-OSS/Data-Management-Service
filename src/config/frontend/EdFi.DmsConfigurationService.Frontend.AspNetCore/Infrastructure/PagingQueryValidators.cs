@@ -198,3 +198,49 @@ public class ProfilePagingQueryValidator : PagingQueryValidator<FrontendProfileQ
     public ProfilePagingQueryValidator()
         : base(AllowedFields) { }
 }
+
+public class ResourceClaimPagingQueryValidator : PagingQueryValidator<FrontendResourceClaimQuery>
+{
+    private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "id",
+        "name",
+        "parentId",
+        "parentName",
+    };
+
+    public ResourceClaimPagingQueryValidator()
+        : base(AllowedFields) { }
+}
+
+public class ResourceClaimActionPagingQueryValidator : PagingQueryValidator<FrontendResourceClaimActionQuery>
+{
+    private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "resourceClaimId",
+        "resourceName",
+    };
+
+    public ResourceClaimActionPagingQueryValidator()
+        : base(AllowedFields) { }
+}
+
+public class ResourceClaimActionAuthStrategyPagingQueryValidator
+    : PagingQueryValidator<FrontendResourceClaimActionAuthStrategyQuery>
+{
+    private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "resourceClaimId",
+        "resourceName",
+        "claimName",
+    };
+
+    public ResourceClaimActionAuthStrategyPagingQueryValidator()
+        : base(AllowedFields) { }
+}

@@ -851,4 +851,69 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
         return str;
     }
+
+    [Then("the response body is a non-empty array")]
+    public async Task ThenTheResponseBodyIsANonEmptyArray()
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+        jsonArray.Should().NotBeNull("response body should be a JSON array");
+        jsonArray.Should().NotBeEmpty("response array should not be empty");
+    }
+
+    [Then("the response body is an array")]
+    public async Task ThenTheResponseBodyIsAnArray()
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+        jsonArray.Should().NotBeNull("response body should be a JSON array");
+    }
+
+    [Then("the response body has property {string}")]
+    public async Task ThenTheResponseBodyHasProperty(string propertyName)
+    {
+        string content = await _apiResponse.TextAsync();
+        var json = JsonNode.Parse(content);
+        json.Should().NotBeNull("response body should be valid JSON");
+        var obj = json!.AsObject();
+        obj.Should().ContainKey(propertyName, $"response should have property '{propertyName}'");
+    }
+
+    [Then("the response body property {string} is an array")]
+    public async Task ThenTheResponseBodyPropertyIsAnArray(string propertyName)
+    {
+        string content = await _apiResponse.TextAsync();
+        var json = JsonNode.Parse(content);
+        json.Should().NotBeNull("response body should be valid JSON");
+        var obj = json!.AsObject();
+        obj.Should().ContainKey(propertyName, $"response should have property '{propertyName}'");
+        obj[propertyName]?.AsArray().Should().NotBeNull($"property '{propertyName}' should be an array");
+    }
+
+    [Then("the first response item has property {string}")]
+    public async Task ThenTheFirstResponseItemHasProperty(string propertyName)
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+        jsonArray.Should().NotBeNull("response body should be a JSON array");
+        jsonArray.Should().NotBeEmpty("response array should not be empty");
+        var firstItem = jsonArray![0]?.AsObject();
+        firstItem.Should().ContainKey(propertyName, $"first item should have property '{propertyName}'");
+    }
+
+    [Then("the first response item property {string} is an array")]
+    public async Task ThenTheFirstResponseItemPropertyIsAnArray(string propertyName)
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+        jsonArray.Should().NotBeNull("response body should be a JSON array");
+        jsonArray.Should().NotBeEmpty("response array should not be empty");
+        var firstItem = jsonArray![0]?.AsObject();
+        firstItem.Should().ContainKey(propertyName, $"first item should have property '{propertyName}'");
+        firstItem!
+            [propertyName]
+            ?.AsArray()
+            .Should()
+            .NotBeNull($"property '{propertyName}' should be an array");
+    }
 }
