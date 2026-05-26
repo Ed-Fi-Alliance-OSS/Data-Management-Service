@@ -173,6 +173,20 @@ public class ResourceClaimModuleTests
         }
 
         [Test]
+        public async Task It_ignores_query_parameters_on_getById()
+        {
+            var client = SetUpClient();
+            var response = await client.GetAsync(
+                "/v2/resourceClaims/1?orderBy=invalidField&direction=sideways&limit=999"
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var content = await response.Content.ReadAsStringAsync();
+            var claim = JsonSerializer.Deserialize<ResourceClaimResponse>(content, JsonOptions)!;
+            claim.Name.Should().Be("types");
+        }
+
+        [Test]
         public async Task It_returns_200_with_actions()
         {
             var client = SetUpClient();

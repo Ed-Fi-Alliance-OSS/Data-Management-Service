@@ -108,19 +108,12 @@ public class ResourceClaimRepository(
         return node;
     }
 
-    private static bool IsDescending(PagingQuery query) =>
-        query.Direction is not null
-        && (
-            query.Direction.Equals("desc", StringComparison.OrdinalIgnoreCase)
-            || query.Direction.Equals("descending", StringComparison.OrdinalIgnoreCase)
-        );
-
     private static IEnumerable<ResourceClaimResponse> SortAndPage(
         IEnumerable<ResourceClaimResponse> items,
         ResourceClaimQuery query
     )
     {
-        bool desc = IsDescending(query);
+        bool desc = query.IsDescending;
         IEnumerable<ResourceClaimResponse> result = (query.OrderBy?.ToLowerInvariant() ?? "name") switch
         {
             "id" => desc ? items.OrderByDescending(r => r.Id) : items.OrderBy(r => r.Id),
@@ -148,7 +141,7 @@ public class ResourceClaimRepository(
         ResourceClaimActionQuery query
     )
     {
-        bool desc = IsDescending(query);
+        bool desc = query.IsDescending;
         IEnumerable<ResourceClaimActionResponse> result = (
             query.OrderBy?.ToLowerInvariant() ?? "resourceclaimid"
         ) switch
@@ -176,7 +169,7 @@ public class ResourceClaimRepository(
         ResourceClaimActionAuthStrategyQuery query
     )
     {
-        bool desc = IsDescending(query);
+        bool desc = query.IsDescending;
         IEnumerable<ResourceClaimActionAuthStrategyResponse> result = (
             query.OrderBy?.ToLowerInvariant() ?? "resourceclaimid"
         ) switch
@@ -327,6 +320,20 @@ public class ResourceClaimRepository(
                 .GetActions()
                 .ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
 
+            var authStrategiesResult = await claimSetRepository.GetAuthorizationStrategies();
+            if (authStrategiesResult is not AuthorizationStrategyGetResult.Success authStrategiesSuccess)
+            {
+                logger.LogError("Failed to load authorization strategies.");
+                return new ResourceClaimActionListResult.FailureUnknown(
+                    "Failed to load authorization strategies."
+                );
+            }
+            var knownAuthStrategies = authStrategiesSuccess.AuthorizationStrategy.ToDictionary(
+                s => s.AuthorizationStrategyName,
+                s => s,
+                StringComparer.OrdinalIgnoreCase
+            );
+
             var items = new List<ResourceClaimActionResponse>();
             foreach (var (node, originalClaim) in projection.AllNodes)
             {
@@ -350,6 +357,24 @@ public class ResourceClaimRepository(
                         );
                         return new ResourceClaimActionListResult.FailureProjectionIntegrity(msg);
                     }
+
+                    // Validate all strategies exist before processing
+                    var invalidStrategy = action.AuthorizationStrategies.Find(s =>
+                        !knownAuthStrategies.ContainsKey(s.Name)
+                    );
+                    if (invalidStrategy is not null)
+                    {
+                        var msg =
+                            $"Authorization strategy '{invalidStrategy.Name}' in DefaultAuthorization for claim '{originalClaim.Name}', action '{action.Name}' could not be resolved.";
+                        logger.LogError(
+                            "Authorization strategy '{StrategyName}' in DefaultAuthorization for claim '{ClaimUri}', action '{ActionName}' could not be resolved.",
+                            invalidStrategy.Name,
+                            originalClaim.Name,
+                            action.Name
+                        );
+                        return new ResourceClaimActionListResult.FailureProjectionIntegrity(msg);
+                    }
+
                     actionNames.Add(new ActionNameResponse { Name = knownAction.Name });
                 }
 #pragma warning restore S3267

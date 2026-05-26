@@ -3,11 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-#pragma warning disable S1128 // Query types in Model, response types in Model.ResourceClaims - both needed
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
-using EdFi.DmsConfigurationService.DataModel.Model.ResourceClaims;
-#pragma warning restore S1128
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 
