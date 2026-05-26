@@ -5,15 +5,27 @@
 
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 [TestFixture]
 public class MssqlUnsupportedResourceClaimRepositoryTests
 {
-    private readonly IResourceClaimRepository _repository = new MssqlUnsupportedResourceClaimRepository();
+    private readonly ILogger<MssqlUnsupportedResourceClaimRepository> _logger = A.Fake<
+        ILogger<MssqlUnsupportedResourceClaimRepository>
+    >();
+    private IResourceClaimRepository _repository = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _repository = new MssqlUnsupportedResourceClaimRepository(_logger);
+    }
 
     [Test]
     public async Task It_returns_failure_unknown_for_get_resource_claims()
@@ -21,6 +33,7 @@ public class MssqlUnsupportedResourceClaimRepositoryTests
         var result = await _repository.GetResourceClaims(new ResourceClaimQuery());
 
         result.Should().BeOfType<ResourceClaimListResult.FailureUnknown>();
+        _logger.VerifyLogError("ResourceClaim endpoints are not supported for MSSQL.");
     }
 
     [Test]
@@ -29,6 +42,7 @@ public class MssqlUnsupportedResourceClaimRepositoryTests
         var result = await _repository.GetResourceClaim(1L);
 
         result.Should().BeOfType<ResourceClaimGetResult.FailureUnknown>();
+        _logger.VerifyLogError("ResourceClaim endpoints are not supported for MSSQL.");
     }
 
     [Test]
@@ -37,6 +51,7 @@ public class MssqlUnsupportedResourceClaimRepositoryTests
         var result = await _repository.GetResourceClaimActions(new ResourceClaimActionQuery());
 
         result.Should().BeOfType<ResourceClaimActionListResult.FailureUnknown>();
+        _logger.VerifyLogError("ResourceClaim endpoints are not supported for MSSQL.");
     }
 
     [Test]
@@ -47,5 +62,6 @@ public class MssqlUnsupportedResourceClaimRepositoryTests
         );
 
         result.Should().BeOfType<ResourceClaimActionAuthStrategyListResult.FailureUnknown>();
+        _logger.VerifyLogError("ResourceClaim endpoints are not supported for MSSQL.");
     }
 }

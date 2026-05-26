@@ -5,28 +5,42 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 
-public class MssqlUnsupportedResourceClaimRepository : IResourceClaimRepository
+public class MssqlUnsupportedResourceClaimRepository(ILogger<MssqlUnsupportedResourceClaimRepository> logger)
+    : IResourceClaimRepository
 {
     private const string Message = "ResourceClaim endpoints are not supported for MSSQL.";
 
-    public Task<ResourceClaimListResult> GetResourceClaims(ResourceClaimQuery query) =>
-        Task.FromResult<ResourceClaimListResult>(new ResourceClaimListResult.FailureUnknown(Message));
+    public Task<ResourceClaimListResult> GetResourceClaims(ResourceClaimQuery query)
+    {
+        logger.LogError(Message);
+        return Task.FromResult<ResourceClaimListResult>(new ResourceClaimListResult.FailureUnknown(Message));
+    }
 
-    public Task<ResourceClaimGetResult> GetResourceClaim(long id) =>
-        Task.FromResult<ResourceClaimGetResult>(new ResourceClaimGetResult.FailureUnknown(Message));
+    public Task<ResourceClaimGetResult> GetResourceClaim(long id)
+    {
+        logger.LogError(Message);
+        return Task.FromResult<ResourceClaimGetResult>(new ResourceClaimGetResult.FailureUnknown(Message));
+    }
 
-    public Task<ResourceClaimActionListResult> GetResourceClaimActions(ResourceClaimActionQuery query) =>
-        Task.FromResult<ResourceClaimActionListResult>(
+    public Task<ResourceClaimActionListResult> GetResourceClaimActions(ResourceClaimActionQuery query)
+    {
+        logger.LogError(Message);
+        return Task.FromResult<ResourceClaimActionListResult>(
             new ResourceClaimActionListResult.FailureUnknown(Message)
         );
+    }
 
     public Task<ResourceClaimActionAuthStrategyListResult> GetResourceClaimActionAuthStrategies(
         ResourceClaimActionAuthStrategyQuery query
-    ) =>
-        Task.FromResult<ResourceClaimActionAuthStrategyListResult>(
+    )
+    {
+        logger.LogError(Message);
+        return Task.FromResult<ResourceClaimActionAuthStrategyListResult>(
             new ResourceClaimActionAuthStrategyListResult.FailureUnknown(Message)
         );
+    }
 }

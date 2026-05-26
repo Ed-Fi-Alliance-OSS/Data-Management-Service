@@ -148,7 +148,7 @@ This contract defines observable behavior, not an implementation shape. The impl
 - Successful resource-claim hierarchy projection for the list endpoint.
 - Successful single-item projection with full recursive subtree.
 - Lookup by id - found and not found.
-- Resource-claim list filtering by root and child `id`/`name`, including the rule that matching child nodes are returned with their own full subtree.
+- Resource-claim list filtering by root `id`/`name`, including the rule that filters apply to the top-level root-node collection only and matching root nodes are returned with their own full recursive subtree.
 - Successful resource-claim-actions projection.
 - Successful action/auth-strategy projection.
 - Empty-result behavior for `resourceClaimActions` and `resourceClaimActionAuthStrategies` filters.

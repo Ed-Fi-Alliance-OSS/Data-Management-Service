@@ -916,4 +916,31 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             .Should()
             .NotBeNull($"property '{propertyName}' should be an array");
     }
+
+    [Then("the response body contains an item with property {string} having value {string}")]
+    public async Task ThenTheResponseBodyContainsAnItemWithPropertyHavingValue(
+        string propertyName,
+        string expectedValue
+    )
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+        jsonArray.Should().NotBeNull("response body should be a JSON array");
+
+        bool found = jsonArray!.Any(item =>
+        {
+            if (item is not JsonObject obj || !obj.ContainsKey(propertyName))
+            {
+                return false;
+            }
+            var actualValue = obj[propertyName]?.ToString();
+            return string.Equals(actualValue, expectedValue, StringComparison.OrdinalIgnoreCase);
+        });
+
+        found
+            .Should()
+            .BeTrue(
+                $"No item in the array had property '{propertyName}' with value '{expectedValue}' (case-insensitive)"
+            );
+    }
 }

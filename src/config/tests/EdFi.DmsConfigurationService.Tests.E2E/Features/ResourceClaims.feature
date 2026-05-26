@@ -34,6 +34,7 @@ Feature: ResourceClaims endpoints
              When a GET request is made to "/v2/resourceClaims?name=assessmentMetadata"
              Then it should respond with 200
               And the response body is an array
+              And the response body contains an item with property "name" having value "assessmentMetadata"
 
         Scenario: 07 Ensure validation fails for unsupported orderBy field
              When a GET request is made to "/v2/resourceClaims?orderBy=unsupportedField"
@@ -48,6 +49,7 @@ Feature: ResourceClaims endpoints
              When a GET request is made to "/v2/resourceClaimActions?resourceName=assessmentMetadata"
              Then it should respond with 200
               And the response body is an array
+              And the response body contains an item with property "resourceName" having value "assessmentMetadata"
 
         Scenario: 10 Ensure clients can GET resource claim action auth strategies
              When a GET request is made to "/v2/resourceClaimActionAuthStrategies"
@@ -58,6 +60,7 @@ Feature: ResourceClaims endpoints
              When a GET request is made to "/v2/resourceClaimActionAuthStrategies?resourceName=assessmentMetadata"
              Then it should respond with 200
               And the response body is an array
+              And the response body contains an item with property "resourceName" having value "assessmentMetadata"
 
         Scenario: 12 Ensure resource claims include recursive children structure
              When a GET request is made to "/v2/resourceClaims/1"
