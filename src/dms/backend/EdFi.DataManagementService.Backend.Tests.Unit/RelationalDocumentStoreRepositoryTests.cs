@@ -6915,6 +6915,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
                                 "edfi.School",
                                 "SchoolId"
                             ),
+                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                "auth.EducationOrganizationIdToEducationOrganizationId",
+                                "TargetEducationOrganizationId",
+                                "SourceEducationOrganizationId"
+                            ),
                             SecurableElements:
                             [
                                 new RelationshipAuthorizationSecurableElement(
@@ -6956,6 +6961,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
                                 "Ed-Fi.School",
                                 "edfi.School",
                                 "SchoolId"
+                            ),
+                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                "auth.EducationOrganizationIdToEducationOrganizationId",
+                                "TargetEducationOrganizationId",
+                                "SourceEducationOrganizationId"
                             ),
                             SecurableElements:
                             [

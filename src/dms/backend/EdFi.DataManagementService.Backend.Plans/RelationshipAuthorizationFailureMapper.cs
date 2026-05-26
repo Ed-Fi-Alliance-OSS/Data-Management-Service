@@ -77,32 +77,34 @@ public static class RelationshipAuthorizationFailureMapper
                 return false;
             }
 
+            var failedSubjects = checkSpec
+                .Subjects.Select(
+                    (subject, subjectIndex) =>
+                    {
+                        var subjectFailureMetadata = SelectNoClaimsSubjectFailureMetadata(
+                            subject,
+                            failureGroup.Value
+                        );
+
+                        return MapSubject(
+                            subjectIndex,
+                            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                            subject,
+                            subjectFailureMetadata?.Hint
+                                ?? "Relationship authorization requires at least one claim EducationOrganizationId."
+                        );
+                    }
+                )
+                .ToArray();
+
             failedStrategies.Add(
                 new RelationshipAuthorizationFailedStrategy(
                     checkSpec.ConfiguredStrategy.RawConfiguredIndex,
                     checkSpec.RelationshipLocalOrder,
                     checkSpec.ConfiguredStrategy.StrategyName,
                     MapStrategyKind(checkSpec),
-                    MapAuthObject(SelectStrategyAuthObject(checkSpec, failureGroup.Value)),
-                    [
-                        .. checkSpec.Subjects.Select(
-                            (subject, subjectIndex) =>
-                            {
-                                var subjectFailureMetadata = SelectNoClaimsSubjectFailureMetadata(
-                                    subject,
-                                    failureGroup.Value
-                                );
-
-                                return MapSubject(
-                                    subjectIndex,
-                                    RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
-                                    subject,
-                                    subjectFailureMetadata?.Hint
-                                        ?? "Relationship authorization requires at least one claim EducationOrganizationId."
-                                );
-                            }
-                        ),
-                    ],
+                    SelectHomogeneousStrategyAuthObject(failedSubjects),
+                    failedSubjects,
                     SelectStrategyHint(failureGroup.Value)
                 )
             );
@@ -238,7 +240,7 @@ public static class RelationshipAuthorizationFailureMapper
             checkSpec.RelationshipLocalOrder,
             checkSpec.ConfiguredStrategy.StrategyName,
             MapStrategyKind(checkSpec),
-            MapAuthObject(SelectStrategyAuthObject(checkSpec, [])),
+            SelectHomogeneousStrategyAuthObject(failedSubjects),
             [.. failedSubjects]
         );
         return true;
@@ -258,6 +260,7 @@ public static class RelationshipAuthorizationFailureMapper
                 subject.Table.ToString(),
                 subject.Column.Value
             ),
+            MapAuthObject(subject.AuthObject),
             [
                 .. subject.Contributors.Select(
                     static contributor => new RelationshipAuthorizationSecurableElement(
@@ -291,16 +294,17 @@ public static class RelationshipAuthorizationFailureMapper
             ) ?? failureGroup.FirstOrDefault(failure => failure.PersonMetadata is null);
     }
 
-    private static RelationshipAuthorizationAuthObject SelectStrategyAuthObject(
-        RelationshipAuthorizationCheckSpec checkSpec,
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
-    ) => failureGroup.FirstOrDefault()?.AuthObject ?? SelectStrategyAuthObject(checkSpec);
+    private static RelationshipAuthorizationAuthObjectInfo? SelectHomogeneousStrategyAuthObject(
+        IReadOnlyList<RelationshipAuthorizationFailedSubject> failedSubjects
+    )
+    {
+        var distinctAuthObjects = failedSubjects
+            .Select(static subject => subject.AuthObject)
+            .Distinct()
+            .ToArray();
 
-    private static RelationshipAuthorizationAuthObject SelectStrategyAuthObject(
-        RelationshipAuthorizationCheckSpec checkSpec
-    ) =>
-        checkSpec.Subjects.FirstOrDefault(static subject => !subject.IsPersonSubject)?.AuthObject
-        ?? checkSpec.Subjects[0].AuthObject;
+        return distinctAuthObjects.Length == 1 ? distinctAuthObjects[0] : null;
+    }
 
     private static string? SelectStrategyHint(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
@@ -317,7 +321,6 @@ public static class RelationshipAuthorizationFailureMapper
 
         return new RelationshipAuthorizationPersonSubjectInfo(
             personMetadata.PersonKind.ToString(),
-            MapAuthObject(subject.AuthObject),
             personMetadata.Path.Kind.ToString(),
             MapDocumentIdPath(personMetadata.Path),
             new RelationshipAuthorizationPersonStoredAnchorInfo(

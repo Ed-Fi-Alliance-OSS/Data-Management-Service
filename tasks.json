@@ -407,7 +407,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload",
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"GetByIdHandlerTests|DeleteByIdHandlerTests|UpsertHandlerTests|UpdateByIdHandlerTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Failure Mapping",

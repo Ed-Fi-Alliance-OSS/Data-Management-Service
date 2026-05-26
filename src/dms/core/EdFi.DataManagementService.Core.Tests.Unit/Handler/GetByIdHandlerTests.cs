@@ -57,6 +57,11 @@ public class GetByIdHandlerTests
                                 TableName: "edfi.School",
                                 ColumnName: "SchoolId"
                             ),
+                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                Name: "auth.EdOrgIdToEdOrgId",
+                                SubjectValueColumn: "TargetEdOrgId",
+                                ClaimEducationOrganizationIdColumn: "SourceEdOrgId"
+                            ),
                             SecurableElements:
                             [
                                 new RelationshipAuthorizationSecurableElement(
@@ -710,6 +715,11 @@ actual: {requestInfo.FrontendResponse.Body}
                                         ResourceName: "SampleExtension.Student",
                                         TableName: "sample.Student",
                                         ColumnName: "SchoolId"
+                                    ),
+                                    AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                        Name: "auth.EdOrgIdToEdOrgId",
+                                        SubjectValueColumn: "TargetEdOrgId",
+                                        ClaimEducationOrganizationIdColumn: "SourceEdOrgId"
                                     ),
                                     SecurableElements:
                                     [

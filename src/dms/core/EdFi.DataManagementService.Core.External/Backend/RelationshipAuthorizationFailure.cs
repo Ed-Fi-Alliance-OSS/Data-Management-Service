@@ -57,6 +57,7 @@ public sealed record RelationshipAuthorizationFailedSubject(
     int SubjectIndex,
     RelationshipAuthorizationSubjectFailureKind FailureKind,
     RelationshipAuthorizationRootBinding RootBinding,
+    RelationshipAuthorizationAuthObjectInfo AuthObject,
     RelationshipAuthorizationSecurableElement[] SecurableElements,
     string? Hint = null
 )
@@ -96,7 +97,6 @@ public sealed record RelationshipAuthorizationAuthObjectInfo(
 /// </summary>
 public sealed record RelationshipAuthorizationPersonSubjectInfo(
     string PersonKind,
-    RelationshipAuthorizationAuthObjectInfo AuthObject,
     string PathKind,
     RelationshipAuthorizationPersonDocumentIdPathStepInfo[] DocumentIdPath,
     RelationshipAuthorizationPersonStoredAnchorInfo StoredAnchor,
