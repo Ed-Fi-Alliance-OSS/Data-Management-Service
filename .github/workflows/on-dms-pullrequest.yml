@@ -108,9 +108,25 @@ jobs:
       - name: Install Pester
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
 
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
       - name: Run Bootstrap Pester Tests
+        env:
+          # Opts the BulkLoadClient real-package smoke test into the CI run so a regression in the
+          # pinned package version (e.g. a build that breaks the XML-mode CLI surface) is caught
+          # here in seconds instead of waiting for the E2E lane to fail. The setup-dotnet step
+          # above provides the SDK the smoke test needs; without it the test would self-skip
+          # silently.
+          DMS_BOOTSTRAP_RUN_PACKAGE_TESTS: "true"
         run: |
-          $result = Invoke-Pester -Path eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1 -Output Detailed -PassThru
+          $paths = @(
+            "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1"
+          )
+          $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
           if ($result.FailedCount -gt 0) {
               throw "$($result.FailedCount) bootstrap Pester test(s) failed."
           }

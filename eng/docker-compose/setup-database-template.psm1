@@ -3,6 +3,14 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+# Retained pending the implementation gate in reference/design/backend-redesign/design-docs/
+# bootstrap/bootstrap-design.md §6.4 (line 1250). The design authorizes deleting this module
+# alongside the -LoadSeedData removal from start-(local|published)-dms.ps1, but the deletion
+# is explicitly gated on "verifying the repo-pinned BulkLoadClient XML mode against DMS
+# discovery, dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." That
+# verification depends on Story 04's XSD staging, which has not landed. The slice that
+# closes the gate owns this module's removal.
+
 function LoadSeedData {
     param (
         [string]$EnvironmentFile

@@ -73,8 +73,31 @@ function Invoke-Api {
         $invokeParams.Body = $Body
     }
 
-    $response = Invoke-RestMethod @invokeParams
-    return $response
+    try {
+        $response = Invoke-RestMethod @invokeParams
+        return $response
+    }
+    catch {
+        # PowerShell auto-disposes the underlying HttpResponseMessage Content stream once the
+        # exception propagates, so any later call to ReadAsStringAsync() throws "Cannot access
+        # a disposed object" and masks the actual API error. Read the body now while the
+        # response is still alive, and stash it on ErrorDetails so Get-HttpErrorResponse and
+        # other callers can surface it without touching the disposed Content.
+        $httpResponse = $_.Exception.Response
+        if ($httpResponse -is [System.Net.Http.HttpResponseMessage] -and $httpResponse.Content) {
+            try {
+                $body = $httpResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if (-not [string]::IsNullOrEmpty($body)) {
+                    $_.ErrorDetails = [System.Management.Automation.ErrorDetails]::new($body)
+                }
+            }
+            catch {
+                # If the body can't be read for any reason, fall through and re-throw the
+                # original error untouched. We never want this helper to mask the real failure.
+            }
+        }
+        throw
+    }
 }
 
 function Get-HttpErrorResponse {
@@ -86,22 +109,31 @@ function Get-HttpErrorResponse {
     )
 
     $response = $ErrorRecord.Exception.Response
+    $statusCode = if ($response -is [System.Net.Http.HttpResponseMessage]) {
+        [int]$response.StatusCode
+    } else {
+        $null
+    }
 
-    if ($response -isnot [System.Net.Http.HttpResponseMessage]) {
-        return @{
-            StatusCode = $null
-            Body = ""
+    # Prefer the body captured by Invoke-Api before the response was disposed. Fall back to
+    # reading the live response only when ErrorDetails is empty (e.g. callers that bypass
+    # Invoke-Api). The fallback path can still hit "Cannot access a disposed object" for
+    # responses that have already propagated, so wrap it defensively.
+    $responseBody = ""
+    if ($ErrorRecord.ErrorDetails -and -not [string]::IsNullOrEmpty($ErrorRecord.ErrorDetails.Message)) {
+        $responseBody = $ErrorRecord.ErrorDetails.Message
+    }
+    elseif ($response -is [System.Net.Http.HttpResponseMessage] -and $response.Content) {
+        try {
+            $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        }
+        catch {
+            $responseBody = ""
         }
     }
 
-    $responseBody = ""
-
-    if ($response.Content) {
-        $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-    }
-
     return @{
-        StatusCode = [int]$response.StatusCode
+        StatusCode = $statusCode
         Body = $responseBody
     }
 }
@@ -133,7 +165,7 @@ function Test-IsDuplicateCmsClientRegistrationError {
 function ConvertTo-FormBody {
     param (
         [Parameter(Mandatory)]
-        [hashtable]$Data
+        [System.Collections.IDictionary]$Data
     )
 
     return ($Data.GetEnumerator() | ForEach-Object {
@@ -283,6 +315,101 @@ function Get-CmsToken {
     $response = Invoke-Api @invokeParams
 
     return $response.access_token
+}
+
+<#
+    .SYNOPSIS
+        Polls the CMS OAuth token endpoint with a freshly-created client_credentials grant until
+        OpenIddict has surfaced the new application and returns a 200, or until the budget is
+        exhausted.
+
+    .DESCRIPTION
+        Application creation through `Add-Application` writes to `dmscs.application` /
+        `dmscs.openiddictapplication`, but OpenIddict's runtime view of the application store
+        catches up asynchronously. The first OAuth grant immediately after `Add-Application`
+        typically returns 401 ("Invalid client or Invalid client credentials") on a cold stack
+        before settling. This helper closes that race by polling `/connect/token` until the
+        grant succeeds, so callers of `New-SeedLoaderCredentials` and similar receive credentials
+        that are usable on first call.
+
+    .PARAMETER CmsUrl
+        The base URL of the Configuration Service (e.g., http://localhost:8081).
+
+    .PARAMETER ClientId
+        The just-issued OAuth client_id (Key) to validate.
+
+    .PARAMETER ClientSecret
+        The just-issued OAuth client_secret (Secret) to validate.
+
+    .PARAMETER MaxAttempts
+        Maximum number of poll attempts. Default: 30 (paired with default DelayMs gives a 15-second ceiling).
+
+    .PARAMETER DelayMs
+        Milliseconds to wait between attempts. Default: 500.
+
+    .PARAMETER Invoker
+        Test seam: when supplied, the scriptblock is invoked instead of `Invoke-WebRequest`.
+        Receives ($uri, $body, $attemptIndex) and must return an integer HTTP status code.
+
+    .OUTPUTS
+        None. Throws when the client doesn't become available before the budget is exhausted.
+
+    .EXAMPLE
+        Wait-CmsClientAvailable -CmsUrl "http://localhost:8081" -ClientId $newCreds.Key -ClientSecret $newCreds.Secret
+#>
+function Wait-CmsClientAvailable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$CmsUrl,
+        [Parameter(Mandatory)] [string]$ClientId,
+        [Parameter(Mandatory)] [string]$ClientSecret,
+        [int]$MaxAttempts = 30,
+        [int]$DelayMs = 500,
+        [scriptblock]$Invoker = $null
+    )
+
+    if ($MaxAttempts -lt 1) { throw "Wait-CmsClientAvailable: MaxAttempts must be >= 1." }
+    if ($DelayMs -lt 0)     { throw "Wait-CmsClientAvailable: DelayMs must be >= 0." }
+
+    $uri = "$($CmsUrl.TrimEnd('/'))/connect/token"
+    $body = ConvertTo-FormBody -Data ([ordered]@{
+        client_id     = $ClientId
+        client_secret = $ClientSecret
+        grant_type    = "client_credentials"
+    })
+    $lastStatus = $null
+
+    for ($i = 1; $i -le $MaxAttempts; $i++) {
+        if ($null -ne $Invoker) {
+            $status = [int](& $Invoker $uri $body $i)
+        }
+        else {
+            try {
+                $resp = Invoke-WebRequest `
+                    -Uri $uri `
+                    -Method Post `
+                    -Body $body `
+                    -ContentType "application/x-www-form-urlencoded" `
+                    -SkipHttpErrorCheck
+                $status = [int]$resp.StatusCode
+            }
+            catch {
+                $status = -1
+            }
+        }
+
+        $lastStatus = $status
+        if ($status -eq 200) {
+            return
+        }
+
+        if ($i -lt $MaxAttempts) {
+            Start-Sleep -Milliseconds $DelayMs
+        }
+    }
+
+    $waitSeconds = [math]::Round(($MaxAttempts * $DelayMs) / 1000.0, 1)
+    throw "CMS client '$ClientId' did not become available at $uri within ${waitSeconds}s ($MaxAttempts attempts). Last status: $lastStatus."
 }
 
 <#
@@ -996,4 +1123,398 @@ function Add-Tenant {
     return $response.id
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Add-DmsInstanceRouteContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api
+<#
+.SYNOPSIS
+    Returns the de-duplicated, ordered namespace prefix list a SeedLoader vendor needs.
+
+.DESCRIPTION
+    Combines the two baseline seed prefixes (uri://ed-fi.org and uri://gbisd.edu) with any
+    extension and additional prefixes supplied by the caller. Validates that every non-baseline
+    prefix is non-null, non-whitespace, and starts with "uri://". De-duplicates using
+    first-occurrence order (case-sensitive).
+
+.PARAMETER ExtensionPrefixes
+    Namespace prefixes from the bootstrap manifest seed.extensionNamespacePrefixes.
+
+.PARAMETER AdditionalPrefixes
+    Namespace prefixes supplied via -AdditionalNamespacePrefix by the caller.
+
+.OUTPUTS
+    [string[]] De-duplicated ordered prefix array.
+
+.EXAMPLE
+    $prefixes = Get-SeedLoaderNamespacePrefixes -AdditionalPrefixes @("uri://example.org")
+#>
+function Get-SeedLoaderNamespacePrefixes {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [string[]]$ExtensionPrefixes = @(),
+        [string[]]$AdditionalPrefixes = @()
+    )
+
+    $baseline = @("uri://ed-fi.org", "uri://gbisd.edu")
+
+    # Validate each non-baseline prefix before building the list
+    foreach ($prefix in ($ExtensionPrefixes + $AdditionalPrefixes)) {
+        if ([string]::IsNullOrWhiteSpace($prefix)) {
+            throw "Namespace prefix must not be null or whitespace."
+        }
+        if (-not $prefix.StartsWith("uri://")) {
+            throw "Namespace prefix '$prefix' is invalid. Every prefix must start with 'uri://'."
+        }
+    }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $result = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($prefix in ($baseline + $ExtensionPrefixes + $AdditionalPrefixes)) {
+        if ($seen.Add($prefix)) {
+            $result.Add($prefix)
+        }
+    }
+
+    return , [string[]]$result.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Looks up an existing CMS application by name and vendor ID.
+
+.DESCRIPTION
+    GETs v2/vendors/{vendorId}/applications and filters by applicationName client-side.
+    Returns the matching application ID or $null. When multiple matches are found the first
+    is returned and a warning is written.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server. Defaults to http://localhost:8081.
+
+.PARAMETER VendorId
+    The vendor ID to match (mandatory).
+
+.PARAMETER ApplicationName
+    The exact application name to match (mandatory).
+
+.PARAMETER AccessToken
+    Bearer token for authorization (mandatory).
+
+.PARAMETER Tenant
+    Optional tenant header value.
+
+.OUTPUTS
+    [long] or $null — the application ID if found, $null if not found.
+
+.EXAMPLE
+    $appIds = Find-CmsApplicationIdsByNameAndVendor -VendorId 42 -ApplicationName "Seed Loader" -AccessToken $token
+#>
+function Find-CmsApplicationIdsByNameAndVendor {
+    [CmdletBinding()]
+    [OutputType([long[]])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory)]
+        [long]$VendorId,
+
+        [Parameter(Mandatory)]
+        [string]$ApplicationName,
+
+        [Parameter(Mandatory)]
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
+    )
+
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
+    $invokeParams = @{
+        BaseUrl     = $CmsUrl
+        RelativeUrl = "v2/vendors/$VendorId/applications"
+        Method      = "Get"
+        ContentType = "application/json"
+        Headers     = $headers
+    }
+
+    $response = Invoke-Api @invokeParams
+
+    $matches = @($response | Where-Object { $_.applicationName -eq $ApplicationName })
+    return [long[]]@($matches | ForEach-Object { [long]$_.id })
+}
+
+<#
+.SYNOPSIS
+    Deletes a CMS application by ID.
+
+.DESCRIPTION
+    Sends DELETE v2/applications/{id}. Treats 404 as already-deleted (warns instead of throwing).
+
+.PARAMETER CmsUrl
+    The base URL of the Config server. Defaults to http://localhost:8081.
+
+.PARAMETER ApplicationId
+    The ID of the application to delete (mandatory).
+
+.PARAMETER AccessToken
+    Bearer token for authorization (mandatory).
+
+.PARAMETER Tenant
+    Optional tenant header value.
+
+.EXAMPLE
+    Remove-CmsApplication -ApplicationId 99 -AccessToken $token
+#>
+function Remove-CmsApplication {
+    [CmdletBinding()]
+    param(
+        [ValidateNotNull()]
+        [uri]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory)]
+        [long]$ApplicationId,
+
+        [Parameter(Mandatory)]
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
+    )
+
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
+    $fullUri = [uri]::new($CmsUrl, "v2/applications/$ApplicationId").AbsoluteUri
+
+    try {
+        Invoke-RestMethod -Uri $fullUri -Method Delete -Headers $headers | Out-Null
+    }
+    catch {
+        $errorResponse = Get-HttpErrorResponse -ErrorRecord $_
+        if ($errorResponse.StatusCode -eq 404) {
+            Write-Warning "Application $ApplicationId not found during delete; treating as already deleted."
+            return
+        }
+        throw
+    }
+}
+
+<#
+.SYNOPSIS
+    Creates a fresh SeedLoader vendor/application and returns in-memory credentials.
+
+.DESCRIPTION
+    Orchestrates the CMS bootstrap steps required for seed delivery:
+      1. Registers the admin client (idempotent).
+      2. Obtains a CMS bearer token.
+      3. Creates (or reuses) the SeedLoader vendor.
+      4. Deletes any existing Seed Loader application for that vendor so fresh credentials are returned.
+      5. Creates a new application with ClaimSetName="SeedLoader" bound to the supplied DMS instance IDs.
+    Returns Key, Secret, VendorId, and ApplicationId in a hashtable; credentials are not logged.
+
+    This helper is for the bootstrap seed flow only. It does not call smoke-test credential helpers.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server. Defaults to http://localhost:8081.
+
+.PARAMETER AdminClientId
+    The admin client ID used to obtain a CMS token.
+
+.PARAMETER AdminClientSecret
+    The admin client secret.
+
+.PARAMETER VendorCompany
+    The vendor company name for the SeedLoader vendor.
+
+.PARAMETER ApplicationName
+    The application name for the SeedLoader application. Defaults to "Seed Loader".
+
+.PARAMETER NamespacePrefixes
+    The ordered, de-duplicated namespace prefix array (mandatory). Build with Get-SeedLoaderNamespacePrefixes.
+
+.PARAMETER DmsInstanceIds
+    The DMS instance IDs to bind the application to (mandatory).
+
+.PARAMETER Tenant
+    Optional tenant header value.
+
+.PARAMETER AdminToken
+    Optional pre-obtained sys-admin access token. When supplied, the helper skips its internal
+    Add-CmsClient + Get-CmsToken calls and uses the provided token for downstream vendor/application
+    operations. Callers that already hold a fresh admin token (e.g. load-dms-seed-data.ps1's
+    Step 4) should pass it here to avoid the duplicate Add-CmsClient warning and the redundant
+    OAuth round-trip. Omitting the parameter preserves the original behavior for direct callers.
+
+.OUTPUTS
+    Hashtable with Key, Secret, VendorId, ApplicationId.
+
+.EXAMPLE
+    $prefixes = Get-SeedLoaderNamespacePrefixes
+    $creds = New-SeedLoaderCredentials -NamespacePrefixes $prefixes -DmsInstanceIds @(1)
+#>
+function New-SeedLoaderCredentials {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [string]$AdminClientId = "sys-admin",
+
+        [string]$AdminClientSecret = "SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9",
+
+        [string]$VendorCompany = "DMS Bootstrap Seed Loader",
+
+        [string]$ApplicationName = "Seed Loader",
+
+        [Parameter(Mandatory)]
+        [string[]]$NamespacePrefixes,
+
+        [Parameter(Mandatory)]
+        [long[]]$DmsInstanceIds,
+
+        # Education organization IDs to associate with the SeedLoader vendor. Resources whose
+        # claims use the RelationshipsWithEdOrgsAndPeople authorization strategy (Section,
+        # CourseOffering, StudentSchoolAssociation, etc.) require the vendor to have explicit
+        # EdOrg associations; an empty list 403s those resources. The default covers every
+        # top-level EdOrg present in the v5.x Sample Data inventory.
+        [long[]]$EducationOrganizationIds = @([long]255950, [long]255901, [long]255901001, [long]255901044, [long]255901107, [long]19, [long]6000203),
+
+        [string]$Tenant = "",
+
+        [string]$AdminToken = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($AdminToken)) {
+        $token = $AdminToken
+    }
+    else {
+        Add-CmsClient `
+            -CmsUrl $CmsUrl `
+            -ClientId $AdminClientId `
+            -ClientSecret $AdminClientSecret `
+            -DisplayName "System Administrator"
+
+        $token = Get-CmsToken `
+            -CmsUrl $CmsUrl `
+            -ClientId $AdminClientId `
+            -ClientSecret $AdminClientSecret
+    }
+
+    $vendorId = Add-Vendor `
+        -CmsUrl $CmsUrl `
+        -Company $VendorCompany `
+        -NamespacePrefixes ($NamespacePrefixes -join ", ") `
+        -AccessToken $token `
+        -Tenant $Tenant
+
+    # Discard ALL existing applications matching the SeedLoader name so fresh credentials
+    # are returned each invocation. Previous runs that leaked duplicates would otherwise leave
+    # phantom apps behind when only the first match was deleted. The story disallows plaintext
+    # caching of credentials across bootstrap runs.
+    $existingAppIds = Find-CmsApplicationIdsByNameAndVendor `
+        -CmsUrl $CmsUrl `
+        -VendorId $vendorId `
+        -ApplicationName $ApplicationName `
+        -AccessToken $token `
+        -Tenant $Tenant
+
+    foreach ($appId in $existingAppIds) {
+        Remove-CmsApplication `
+            -CmsUrl $CmsUrl `
+            -ApplicationId $appId `
+            -AccessToken $token `
+            -Tenant $Tenant
+    }
+
+    $result = Add-Application `
+        -CmsUrl $CmsUrl `
+        -ApplicationName $ApplicationName `
+        -ClaimSetName "SeedLoader" `
+        -VendorId $vendorId `
+        -AccessToken $token `
+        -EducationOrganizationIds $EducationOrganizationIds `
+        -DmsInstanceIds $DmsInstanceIds `
+        -Tenant $Tenant
+
+    # Close the OpenIddict CDC race: on a cold stack the just-created application is in the DB
+    # but not yet surfaced into OpenIddict's runtime application store, so the first OAuth grant
+    # returns 401. Polling /connect/token confirms the client is usable before we hand
+    # credentials back to the caller.
+    Wait-CmsClientAvailable -CmsUrl $CmsUrl -ClientId $result.Key -ClientSecret $result.Secret
+
+    return @{
+        Key           = $result.Key
+        Secret        = $result.Secret
+        VendorId      = $vendorId
+        ApplicationId = $result.Id
+    }
+}
+
+<#
+.SYNOPSIS
+    Confirms CMS has the 'SeedLoader' claim set loaded before SeedLoader credentials are minted.
+
+.DESCRIPTION
+    Add-Application stores the ClaimSetName as a string. A stale Config image that predates
+    DMS-1152's embedded Claims.json would accept the application creation but then BulkLoadClient
+    would surface confusing 401/403 noise on the first call because the runtime grant resolution
+    can't find the SeedLoader claim set. This fail-fast preflight queries /v2/claimSets and throws
+    with a clear remediation message when the claim set is absent.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server.
+
+.PARAMETER AccessToken
+    Admin bearer token (mandatory).
+
+.PARAMETER Tenant
+    Optional tenant header value.
+#>
+function Assert-CmsSeedLoaderClaimSetLoaded {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$CmsUrl,
+
+        [Parameter(Mandatory)]
+        [string]$AccessToken,
+
+        [string]$Tenant = "",
+
+        # Test-only seam: Pester tests pass a scriptblock that returns a fake response so the
+        # preflight can be exercised without a live CMS. Module functions calling Invoke-Api
+        # bind to the module's own scope, so a script-level function override in tests does
+        # not propagate — hence this explicit invoker.
+        [scriptblock]$ApiInvoker = $null
+    )
+
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
+    $invokeParams = @{
+        BaseUrl     = $CmsUrl
+        RelativeUrl = "v2/claimSets?offset=0&limit=500"
+        Method      = "Get"
+        ContentType = "application/json"
+        Headers     = $headers
+    }
+
+    $response = if ($null -ne $ApiInvoker) {
+        & $ApiInvoker @invokeParams
+    }
+    else {
+        Invoke-Api @invokeParams
+    }
+
+    if (-not ($response | Where-Object { $_.name -eq "SeedLoader" })) {
+        throw "CMS does not have the 'SeedLoader' claim set loaded at $CmsUrl. The Configuration Service image likely predates DMS-1152's embedded Claims.json. Rebuild or pull a current Config image and re-run."
+    }
+}
+
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Add-DmsInstanceRouteContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody
