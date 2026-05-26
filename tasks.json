@@ -387,7 +387,7 @@
       "Add or update execution-boundary tests proving People subject auth objects still produce the current staged unsupported result.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"PageDocumentIdAuthorizationSpecAdapter|RelationshipAuthorizationEndpointExecutionBoundary\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Failure DTO",

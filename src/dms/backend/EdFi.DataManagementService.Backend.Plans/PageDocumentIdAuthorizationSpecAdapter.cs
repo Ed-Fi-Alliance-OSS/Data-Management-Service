@@ -61,7 +61,22 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
 
     private static RelationshipAuthorizationAuthObject SelectPageDocumentIdAuthObject(
         RelationshipAuthorizationCheckSpec checkSpec
-    ) => checkSpec.Subjects[0].AuthObject;
+    )
+    {
+        var authObjects = checkSpec
+            .Subjects.Select(static subject => subject.AuthObject)
+            .Distinct()
+            .ToArray();
+
+        if (authObjects.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "PageDocumentId authorization requires exactly one EdOrg auth object."
+            );
+        }
+
+        return authObjects[0];
+    }
 
     private static PageDocumentIdAuthorizationSubject AdaptSubject(
         DbTableName rootTable,

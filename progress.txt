@@ -102,3 +102,8 @@ Task completed: Execution Boundaries - single-record SQL compiler subject AuthOb
 Key decisions: compiler already emitted subject.AuthObject through auth success/existence helpers; added mixed-auth-object boundary coverage so unsupported People auth object remains staged before SQL execution.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted touched test; SingleRecordRelationshipAuthorizationSqlCompiler filter passed. Next task should update PageDocumentId adapter/execution-boundary coverage.
+
+Task completed: Execution Boundaries - page-document adapter subject AuthObject validation for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: kept endpoint boundary as first unsupported People/non-EdOrg guard; made page-document adapter require one distinct subject AuthObject after boundary acceptance; added coverage for mixed EdOrg auth objects, non-EdOrg subject auth objects, and single-record People staging.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdAuthorizationSpecAdapter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdAuthorizationSpecAdapterTests.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted adapter/test; PageDocumentIdAuthorizationSpecAdapter|RelationshipAuthorizationEndpointExecutionBoundary filter passed. Next task should update external failure DTO subject-level auth object shape.
