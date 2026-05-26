@@ -204,7 +204,8 @@ public sealed record RelationshipAuthorizationAuthObject(
 public sealed record RelationshipAuthorizationSubjectContributor(
     SecurableElementKind Kind,
     string JsonPath,
-    string ReadableName
+    string ReadableName,
+    int ContributionOrder = 0
 );
 
 public enum RelationshipAuthorizationPersonSubjectPathKind

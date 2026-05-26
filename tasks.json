@@ -71,7 +71,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector",
       "Add unit tests covering a direct Student reference, a transitive CourseTranscript-to-Student path, Contact and Staff references, and zero-hop Student/Contact/Staff self subjects."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Subject Scope",
