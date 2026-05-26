@@ -48,15 +48,20 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
         }
 
         RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForPageDocumentId(checkSpec);
+        var authObject = SelectPageDocumentIdAuthObject(checkSpec);
 
         return new PageDocumentIdAuthorizationStrategy(
             MapKind(checkSpec.Direction),
             [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
             checkSpec.ConfiguredStrategy.RawConfiguredIndex,
             checkSpec.RelationshipLocalOrder,
-            checkSpec.AuthObject.AllowsDirectClaimMatch
+            authObject.AllowsDirectClaimMatch
         );
     }
+
+    private static RelationshipAuthorizationAuthObject SelectPageDocumentIdAuthObject(
+        RelationshipAuthorizationCheckSpec checkSpec
+    ) => checkSpec.Subjects[0].AuthObject;
 
     private static PageDocumentIdAuthorizationSubject AdaptSubject(
         DbTableName rootTable,

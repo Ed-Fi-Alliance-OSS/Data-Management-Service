@@ -72,7 +72,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
         subject.PersonMetadata.Path.Steps[0].TargetTable.Should().Be(Table("Student"));
         subject.PersonMetadata.Path.Steps[0].TargetColumnName.Should().Be(_documentId);
         subject
-            .PersonMetadata.AuthObject.Should()
+            .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreatePerson(
                     RelationshipAuthorizationPersonAuthViewKind.Student
@@ -120,7 +120,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             .PersonMetadata.Path.Kind.Should()
             .Be(RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn);
         subject
-            .PersonMetadata.AuthObject.Should()
+            .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreatePerson(GetPersonAuthViewKind(securableElementKind))
             );
@@ -581,7 +581,7 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
         result.StrategySubjectSelections.Should().HaveCount(2);
         result
             .StrategySubjectSelections.Select(static selection =>
-                selection.Subjects.Single().PersonMetadata!.AuthObject.Name.Name
+                selection.Subjects.Single().AuthObject.Name.Name
             )
             .Should()
             .Equal(

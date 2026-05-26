@@ -318,7 +318,7 @@
       "Run rg \"checkSpec\\.AuthObject|CreateCheckSpecAuthObject|PersonMetadata\\?\\.AuthObject|personMetadata\\.AuthObject\" src/dms and confirm no stale executable-subject auth object reads remain.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Subject Selection",

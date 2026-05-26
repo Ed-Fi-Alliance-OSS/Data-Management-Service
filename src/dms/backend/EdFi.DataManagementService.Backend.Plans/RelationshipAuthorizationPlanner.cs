@@ -682,7 +682,6 @@ public sealed class RelationshipAuthorizationPlanner
                 supportedStrategy.RelationshipLocalOrder,
                 supportedStrategy.Direction,
                 RelationshipAuthorizationValueSource.Stored,
-                CreateCheckSpecAuthObject(supportedStrategy, subjects),
                 subjects,
                 new RelationshipAuthorizationCheckTarget.Stored(rootTable, rootDocumentIdColumn)
             ),
@@ -792,7 +791,6 @@ public sealed class RelationshipAuthorizationPlanner
                     supportedStrategy.RelationshipLocalOrder,
                     supportedStrategy.Direction,
                     RelationshipAuthorizationValueSource.Proposed,
-                    CreateCheckSpecAuthObject(supportedStrategy, executableSubjects),
                     executableSubjects,
                     new RelationshipAuthorizationCheckTarget.Proposed(rootTable, proposedBindings)
                 )
@@ -894,7 +892,7 @@ public sealed class RelationshipAuthorizationPlanner
     {
         var firstSubject = ineligibleSubjects[0].Subject;
         var firstContributor = firstSubject.Contributors.FirstOrDefault();
-        var authObject = CreateSubjectFailureAuthObject(firstSubject, supportedStrategy);
+        var authObject = firstSubject.AuthObject;
         var reasons = string.Join(
             ", ",
             ineligibleSubjects
@@ -923,7 +921,7 @@ public sealed class RelationshipAuthorizationPlanner
         {
             PersonMetadata = firstSubject.PersonMetadata is null
                 ? null
-                : CreatePersonFailureMetadata(firstSubject.PersonMetadata),
+                : CreatePersonFailureMetadata(firstSubject),
             Contributors =
             [
                 .. ineligibleSubjects.SelectMany(static ineligible => ineligible.Subject.Contributors),
@@ -987,7 +985,7 @@ public sealed class RelationshipAuthorizationPlanner
                 checkSpec.ConfiguredStrategy,
                 checkSpec.RelationshipLocalOrder,
                 ValueSource: checkSpec.ValueSource,
-                AuthObject: checkSpec.AuthObject,
+                AuthObject: checkSpec.Subjects[0].AuthObject,
                 Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
             );
             yield break;
@@ -1001,7 +999,7 @@ public sealed class RelationshipAuthorizationPlanner
                 checkSpec.ConfiguredStrategy,
                 checkSpec.RelationshipLocalOrder,
                 ValueSource: checkSpec.ValueSource,
-                AuthObject: RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(checkSpec.Direction),
+                AuthObject: checkSpec.Subjects.First(static subject => !subject.IsPersonSubject).AuthObject,
                 Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
             );
         }
@@ -1019,19 +1017,19 @@ public sealed class RelationshipAuthorizationPlanner
                 checkSpec.ConfiguredStrategy,
                 checkSpec.RelationshipLocalOrder,
                 ValueSource: checkSpec.ValueSource,
-                AuthObject: personMetadata.AuthObject,
+                AuthObject: subject.AuthObject,
                 Location: new RelationshipAuthorizationFailureLocation(
                     Kind: firstContributor?.Kind ?? MapPersonSecurableElementKind(personMetadata.PersonKind),
                     JsonPath: firstContributor?.JsonPath,
                     ReadableName: firstContributor?.ReadableName,
                     Table: subject.Table,
                     Column: subject.Column,
-                    AuthorizationObjectName: personMetadata.AuthObject.Name.ToString()
+                    AuthorizationObjectName: subject.AuthObject.Name.ToString()
                 ),
-                Hint: BuildNoClaimsPeopleHint(personMetadata.AuthObject)
+                Hint: BuildNoClaimsPeopleHint(subject.AuthObject)
             )
             {
-                PersonMetadata = CreatePersonFailureMetadata(personMetadata),
+                PersonMetadata = CreatePersonFailureMetadata(subject),
                 Contributors = subject.Contributors,
             };
         }
@@ -1043,8 +1041,18 @@ public sealed class RelationshipAuthorizationPlanner
             : $"Relationship authorization through auth view '{authObject.Name}' requires at least one claim EducationOrganizationId. {authObject.FailureHint}";
 
     private static RelationshipAuthorizationPersonFailureMetadata CreatePersonFailureMetadata(
-        RelationshipAuthorizationPersonSubjectMetadata personMetadata
-    ) => new(personMetadata.PersonKind, personMetadata.AuthObject);
+        RelationshipAuthorizationSubject subject
+    )
+    {
+        var personMetadata =
+            subject.PersonMetadata
+            ?? throw new ArgumentException("Subject must include person metadata.", nameof(subject));
+
+        return new RelationshipAuthorizationPersonFailureMetadata(
+            personMetadata.PersonKind,
+            subject.AuthObject
+        );
+    }
 
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateMissingPeopleAuthViewAssociationFailures(
         MappingSet mappingSet,
@@ -1156,7 +1164,7 @@ public sealed class RelationshipAuthorizationPlanner
                                 valueSource,
                                 SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
                                 personMetadata.PersonKind,
-                                personMetadata.AuthObject,
+                                subject.AuthObject,
                                 subject.Contributors
                             );
                         })
@@ -1191,7 +1199,7 @@ public sealed class RelationshipAuthorizationPlanner
                                 checkSpec.ValueSource,
                                 SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
                                 personMetadata.PersonKind,
-                                personMetadata.AuthObject,
+                                subject.AuthObject,
                                 subject.Contributors
                             );
                         })
@@ -1208,23 +1216,6 @@ public sealed class RelationshipAuthorizationPlanner
                     )
                 ),
         ];
-
-    private static RelationshipAuthorizationAuthObject CreateCheckSpecAuthObject(
-        SupportedRelationshipAuthorizationStrategy supportedStrategy,
-        IReadOnlyList<RelationshipAuthorizationSubject> subjects
-    )
-    {
-        if (subjects.Any(static subject => !subject.IsPersonSubject))
-        {
-            return RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction);
-        }
-
-        return subjects
-                .Select(static subject => subject.PersonMetadata?.AuthObject)
-                .OfType<RelationshipAuthorizationAuthObject>()
-                .FirstOrDefault()
-            ?? RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction);
-    }
 
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoApplicableSubjectFailures(
         QualifiedResourceName resource,
@@ -1433,7 +1424,7 @@ public sealed class RelationshipAuthorizationPlanner
             supportedStrategy.ConfiguredStrategy,
             supportedStrategy.RelationshipLocalOrder,
             ValueSource: RelationshipAuthorizationValueSource.Proposed,
-            AuthObject: CreateSubjectFailureAuthObject(subject, supportedStrategy),
+            AuthObject: subject.AuthObject,
             Location: new RelationshipAuthorizationFailureLocation(
                 contributor.Kind,
                 contributor.JsonPath,
@@ -1444,9 +1435,7 @@ public sealed class RelationshipAuthorizationPlanner
             Hint: "Selected root-table authorization subject does not have a matching root write binding."
         )
         {
-            PersonMetadata = subject.PersonMetadata is null
-                ? null
-                : CreatePersonFailureMetadata(subject.PersonMetadata),
+            PersonMetadata = subject.PersonMetadata is null ? null : CreatePersonFailureMetadata(subject),
             Contributors = [contributor],
         });
 
@@ -1489,13 +1478,6 @@ public sealed class RelationshipAuthorizationPlanner
             }),
         ];
     }
-
-    private static RelationshipAuthorizationAuthObject CreateSubjectFailureAuthObject(
-        RelationshipAuthorizationSubject subject,
-        SupportedRelationshipAuthorizationStrategy supportedStrategy
-    ) =>
-        subject.PersonMetadata?.AuthObject
-        ?? RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction);
 
     private static RelationshipAuthorizationAuthObject CreateFailureAuthObject(
         RelationshipAuthorizationFailureMetadata failure,

@@ -5111,6 +5111,9 @@ public class Given_Default_Relational_Write_Executor
             request.WritePlan.Model.Resource,
             rootPlan.TableModel.Table,
             schoolIdBinding.binding.Column.ColumnName,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.EducationOrganization,
@@ -5127,9 +5130,6 @@ public class Given_Default_Relational_Write_Executor
             0,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationValueSource.Proposed,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
-                RelationshipAuthorizationHierarchyDirection.Normal
-            ),
             [subject],
             new RelationshipAuthorizationCheckTarget.Proposed(
                 rootPlan.TableModel.Table,
@@ -5175,9 +5175,6 @@ public class Given_Default_Relational_Write_Executor
             0,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationValueSource.Stored,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
-                RelationshipAuthorizationHierarchyDirection.Normal
-            ),
             [subject],
             new RelationshipAuthorizationCheckTarget.Stored(
                 rootPlan.TableModel.Table,
@@ -5211,7 +5208,7 @@ public class Given_Default_Relational_Write_Executor
                     checkSpec.ConfiguredStrategy,
                     checkSpec.RelationshipLocalOrder,
                     checkSpec.ValueSource,
-                    checkSpec.AuthObject,
+                    checkSpec.Subjects[0].AuthObject,
                     new RelationshipAuthorizationFailureLocation(
                         Kind: SecurableElementKind.EducationOrganization,
                         JsonPath: "$.schoolId",
@@ -5392,8 +5389,14 @@ public class Given_Default_Relational_Write_Executor
             relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Proposed,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
-            subjects,
+            [
+                .. subjects.Select(subject =>
+                    subject with
+                    {
+                        AuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+                    }
+                ),
+            ],
             new RelationshipAuthorizationCheckTarget.Proposed(rootPlan.TableModel.Table, bindings)
         );
 
@@ -5413,6 +5416,9 @@ public class Given_Default_Relational_Write_Executor
             request.WritePlan.Model.Resource,
             rootPlan.TableModel.Table,
             binding.binding.Column.ColumnName,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.EducationOrganization,

@@ -98,7 +98,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Should()
             .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Stored);
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject)
             .Should()
             .Equal(
                 RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
@@ -109,7 +109,7 @@ public class Given_RelationshipAuthorizationPlannerTests
                 )
             );
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject.AllowsDirectClaimMatch)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject.AllowsDirectClaimMatch)
             .Should()
             .OnlyContain(static allowsDirectClaimMatch => allowsDirectClaimMatch);
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(2, 2);
@@ -172,7 +172,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Should()
             .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Proposed);
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject)
             .Should()
             .OnlyContain(static authObject =>
                 authObject.Equals(
@@ -182,7 +182,7 @@ public class Given_RelationshipAuthorizationPlannerTests
                 )
             );
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject.AllowsDirectClaimMatch)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject.AllowsDirectClaimMatch)
             .Should()
             .OnlyContain(static allowsDirectClaimMatch => allowsDirectClaimMatch);
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(1, 1);
@@ -614,6 +614,7 @@ public class Given_RelationshipAuthorizationPlannerTests
         authorized.CheckSpecs.Should().ContainSingle();
         authorized
             .CheckSpecs[0]
+            .Subjects[0]
             .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
@@ -650,13 +651,17 @@ public class Given_RelationshipAuthorizationPlannerTests
         checkSpec.ConfiguredStrategy.RawConfiguredIndex.Should().Be(0);
         checkSpec.RelationshipLocalOrder.Should().Be(0);
         checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
             .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
                     RelationshipAuthorizationHierarchyDirection.Normal
                 )
             );
-        checkSpec.AuthObject.AllowsDirectClaimMatch.Should().BeTrue();
+        checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
+            .AuthObject.AllowsDirectClaimMatch.Should()
+            .BeTrue();
         checkSpec.Subjects.Should().HaveCount(2);
         checkSpec.Subjects.Count(static subject => !subject.IsPersonSubject).Should().Be(1);
         checkSpec.Subjects.Count(static subject => subject.IsPersonSubject).Should().Be(1);
@@ -665,7 +670,7 @@ public class Given_RelationshipAuthorizationPlannerTests
 
         personSubject.Column.Should().Be(AuthNames.StudentDocumentId);
         personSubject
-            .PersonMetadata!.AuthObject.Should()
+            .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreatePerson(
                     RelationshipAuthorizationPersonAuthViewKind.Student
@@ -697,16 +702,20 @@ public class Given_RelationshipAuthorizationPlannerTests
 
         checkSpec.Direction.Should().Be(RelationshipAuthorizationHierarchyDirection.Inverted);
         checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
             .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
                     RelationshipAuthorizationHierarchyDirection.Inverted
                 )
             );
-        checkSpec.AuthObject.AllowsDirectClaimMatch.Should().BeTrue();
+        checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
+            .AuthObject.AllowsDirectClaimMatch.Should()
+            .BeTrue();
         checkSpec
             .Subjects.Single(static subject => subject.IsPersonSubject)
-            .PersonMetadata!.AuthObject.Should()
+            .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreatePerson(
                     RelationshipAuthorizationPersonAuthViewKind.Student
@@ -741,6 +750,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Subject;
 
         checkSpec
+            .Subjects[0]
             .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreatePerson(
@@ -947,7 +957,7 @@ public class Given_RelationshipAuthorizationPlannerTests
         checkSpec.Subjects[0].IsPersonSubject.Should().BeTrue();
         checkSpec
             .Subjects[0]
-            .PersonMetadata!.AuthObject.Should()
+            .AuthObject.Should()
             .Be(
                 RelationshipAuthorizationAuthObject.CreatePerson(
                     RelationshipAuthorizationPersonAuthViewKind.Student

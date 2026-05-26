@@ -90,7 +90,6 @@ public static class RelationshipAuthorizationFailureMapper
                             {
                                 var subjectFailureMetadata = SelectNoClaimsSubjectFailureMetadata(
                                     subject,
-                                    checkSpec.AuthObject,
                                     failureGroup.Value
                                 );
 
@@ -239,7 +238,7 @@ public static class RelationshipAuthorizationFailureMapper
             checkSpec.RelationshipLocalOrder,
             checkSpec.ConfiguredStrategy.StrategyName,
             MapStrategyKind(checkSpec),
-            MapAuthObject(checkSpec.AuthObject),
+            MapAuthObject(SelectStrategyAuthObject(checkSpec, [])),
             [.. failedSubjects]
         );
         return true;
@@ -276,34 +275,32 @@ public static class RelationshipAuthorizationFailureMapper
 
     private static RelationshipAuthorizationFailureMetadata? SelectNoClaimsSubjectFailureMetadata(
         RelationshipAuthorizationSubject subject,
-        RelationshipAuthorizationAuthObject strategyAuthObject,
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
     )
     {
-        var subjectAuthObject = SelectSubjectAuthObject(subject, strategyAuthObject);
-
         if (subject.PersonMetadata is { } personMetadata)
         {
             return failureGroup.FirstOrDefault(failure =>
                     failure.PersonMetadata?.PersonKind == personMetadata.PersonKind
-                    && failure.PersonMetadata.AuthObject == personMetadata.AuthObject
-                ) ?? failureGroup.FirstOrDefault(failure => failure.AuthObject == subjectAuthObject);
+                    && failure.PersonMetadata.AuthObject == subject.AuthObject
+                ) ?? failureGroup.FirstOrDefault(failure => failure.AuthObject == subject.AuthObject);
         }
 
         return failureGroup.FirstOrDefault(failure =>
-                failure.PersonMetadata is null && failure.AuthObject == subjectAuthObject
+                failure.PersonMetadata is null && failure.AuthObject == subject.AuthObject
             ) ?? failureGroup.FirstOrDefault(failure => failure.PersonMetadata is null);
     }
 
     private static RelationshipAuthorizationAuthObject SelectStrategyAuthObject(
         RelationshipAuthorizationCheckSpec checkSpec,
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
-    ) => failureGroup.FirstOrDefault()?.AuthObject ?? checkSpec.AuthObject;
+    ) => failureGroup.FirstOrDefault()?.AuthObject ?? SelectStrategyAuthObject(checkSpec);
 
-    private static RelationshipAuthorizationAuthObject SelectSubjectAuthObject(
-        RelationshipAuthorizationSubject subject,
-        RelationshipAuthorizationAuthObject strategyAuthObject
-    ) => subject.PersonMetadata?.AuthObject ?? strategyAuthObject;
+    private static RelationshipAuthorizationAuthObject SelectStrategyAuthObject(
+        RelationshipAuthorizationCheckSpec checkSpec
+    ) =>
+        checkSpec.Subjects.FirstOrDefault(static subject => !subject.IsPersonSubject)?.AuthObject
+        ?? checkSpec.Subjects[0].AuthObject;
 
     private static string? SelectStrategyHint(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
@@ -320,7 +317,7 @@ public static class RelationshipAuthorizationFailureMapper
 
         return new RelationshipAuthorizationPersonSubjectInfo(
             personMetadata.PersonKind.ToString(),
-            MapAuthObject(personMetadata.AuthObject),
+            MapAuthObject(subject.AuthObject),
             personMetadata.Path.Kind.ToString(),
             MapDocumentIdPath(personMetadata.Path),
             new RelationshipAuthorizationPersonStoredAnchorInfo(
@@ -328,7 +325,7 @@ public static class RelationshipAuthorizationFailureMapper
                 personMetadata.StoredAnchor.RootDocumentIdColumn.Value
             ),
             MapProposedAnchor(personMetadata.ProposedAnchor),
-            personMetadata.AuthObject.FailureHint
+            subject.AuthObject.FailureHint
         );
     }
 

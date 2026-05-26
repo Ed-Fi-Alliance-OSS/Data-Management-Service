@@ -398,11 +398,11 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                         resource,
                         candidate.TerminalTable,
                         candidate.TerminalColumn,
+                        authObject,
                         [contributor],
                         new RelationshipAuthorizationPersonSubjectMetadata(
                             candidate.PersonKind,
                             candidate.Path,
-                            authObject,
                             candidate.StoredAnchor,
                             ProposedAnchor: null
                         )

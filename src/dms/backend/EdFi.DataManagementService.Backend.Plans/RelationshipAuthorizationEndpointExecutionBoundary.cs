@@ -71,9 +71,13 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
         string messagePrefix
     )
     {
-        if (!UsesEdOrgHierarchyAuthObject(checkSpec.AuthObject))
+        var unsupportedSubject = checkSpec.Subjects.FirstOrDefault(static subject =>
+            !UsesEdOrgHierarchyAuthObject(subject.AuthObject)
+        );
+
+        if (unsupportedSubject is not null)
         {
-            return $"{messagePrefix} Auth object '{checkSpec.AuthObject.Name}' is not supported.";
+            return $"{messagePrefix} Auth object '{unsupportedSubject.AuthObject.Name}' is not supported.";
         }
 
         var nonEdOrgSubject = checkSpec.Subjects.FirstOrDefault(static subject =>

@@ -2576,10 +2576,15 @@ public sealed class RelationalDocumentStoreRepository(
         return authViewName is null ? string.Empty : $"Auth view: '{authViewName}'. ";
     }
 
-    private static string? GetPeopleAuthViewName(RelationshipAuthorizationFailureMetadata failure) =>
-        failure.PersonMetadata?.AuthObject.Name.ToString()
-        ?? failure.AuthObject?.Name.ToString()
-        ?? failure.Location?.AuthorizationObjectName;
+    private static string? GetPeopleAuthViewName(RelationshipAuthorizationFailureMetadata failure)
+    {
+        if (failure.PersonMetadata is { AuthObject: var authObject })
+        {
+            return authObject.Name.ToString();
+        }
+
+        return failure.AuthObject?.Name.ToString() ?? failure.Location?.AuthorizationObjectName;
+    }
 
     private static string FormatPeopleLocationSentence(RelationshipAuthorizationFailureMetadata failure)
     {

@@ -288,7 +288,6 @@ public sealed record RelationshipAuthorizationPersonProposedAnchor(
 public sealed record RelationshipAuthorizationPersonSubjectMetadata(
     RelationshipAuthorizationPersonKind PersonKind,
     RelationshipAuthorizationPersonSubjectPath Path,
-    RelationshipAuthorizationAuthObject AuthObject,
     RelationshipAuthorizationPersonStoredAnchor StoredAnchor,
     RelationshipAuthorizationPersonProposedAnchor? ProposedAnchor
 );
@@ -297,6 +296,7 @@ public sealed record RelationshipAuthorizationSubject(
     QualifiedResourceName Resource,
     DbTableName Table,
     DbColumnName Column,
+    RelationshipAuthorizationAuthObject AuthObject,
     IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors,
     RelationshipAuthorizationPersonSubjectMetadata? PersonMetadata = null
 )
@@ -341,7 +341,6 @@ public sealed record RelationshipAuthorizationCheckSpec(
     int RelationshipLocalOrder,
     RelationshipAuthorizationHierarchyDirection Direction,
     RelationshipAuthorizationValueSource ValueSource,
-    RelationshipAuthorizationAuthObject AuthObject,
     IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
     RelationshipAuthorizationCheckTarget CheckTarget
 )

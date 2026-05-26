@@ -165,6 +165,13 @@ public class Given_RelationshipAuthorizationContracts
 
         directStudentSubject.IsPersonSubject.Should().BeTrue();
         directStudentSubject
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        directStudentSubject
             .PersonMetadata!.PersonKind.Should()
             .Be(RelationshipAuthorizationPersonKind.Student);
         directStudentSubject
@@ -244,7 +251,6 @@ public class Given_RelationshipAuthorizationContracts
         var personMetadata = new RelationshipAuthorizationPersonSubjectMetadata(
             personKind,
             new RelationshipAuthorizationPersonSubjectPath(pathKind, pathSteps),
-            authObject,
             new RelationshipAuthorizationPersonStoredAnchor(table, _documentIdColumn),
             proposedAnchor
         );
@@ -253,6 +259,7 @@ public class Given_RelationshipAuthorizationContracts
             new QualifiedResourceName("Ed-Fi", table.Name),
             table,
             column,
+            authObject,
             [
                 new RelationshipAuthorizationSubjectContributor(
                     MapSecurableElementKind(personKind),

@@ -306,12 +306,12 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             RelationshipLocalOrder: 0,
             direction,
             RelationshipAuthorizationValueSource.Stored,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
             [
                 new RelationshipAuthorizationSubject(
                     new QualifiedResourceName("Ed-Fi", "School"),
                     new DbTableName(new DbSchemaName("edfi"), "School"),
                     new DbColumnName("SchoolId"),
+                    RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
                     [
                         new RelationshipAuthorizationSubjectContributor(
                             SecurableElementKind.EducationOrganization,
@@ -339,14 +339,14 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             RelationshipLocalOrder: 0,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationValueSource.Stored,
-            RelationshipAuthorizationAuthObject.CreatePerson(
-                RelationshipAuthorizationPersonAuthViewKind.Student
-            ),
             [
                 new RelationshipAuthorizationSubject(
                     new QualifiedResourceName("Ed-Fi", "School"),
                     rootTable,
                     AuthNames.StudentDocumentId,
+                    RelationshipAuthorizationAuthObject.CreatePerson(
+                        RelationshipAuthorizationPersonAuthViewKind.Student
+                    ),
                     [
                         new RelationshipAuthorizationSubjectContributor(
                             SecurableElementKind.Student,
@@ -359,9 +359,6 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
                         new RelationshipAuthorizationPersonSubjectPath(
                             RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
                             [new ColumnPathStep(rootTable, AuthNames.StudentDocumentId, null, null)]
-                        ),
-                        RelationshipAuthorizationAuthObject.CreatePerson(
-                            RelationshipAuthorizationPersonAuthViewKind.Student
                         ),
                         new RelationshipAuthorizationPersonStoredAnchor(
                             rootTable,

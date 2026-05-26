@@ -741,27 +741,18 @@ public class Given_RelationshipAuthorizationFailureMapper
                 AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
                 40,
                 0,
-                RelationshipAuthorizationAuthObject.CreatePerson(
-                    RelationshipAuthorizationPersonAuthViewKind.Student
-                ),
                 directStudentSubject
             ),
             CreatePeopleProposedCheckSpec(
                 AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
                 41,
                 1,
-                RelationshipAuthorizationAuthObject.CreatePerson(
-                    RelationshipAuthorizationPersonAuthViewKind.Student
-                ),
                 transitiveStudentSubject
             ),
             CreatePeopleProposedCheckSpec(
                 AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                 42,
                 2,
-                RelationshipAuthorizationAuthObject.CreatePerson(
-                    RelationshipAuthorizationPersonAuthViewKind.Staff
-                ),
                 selfStaffSubject
             ),
         };
@@ -901,8 +892,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Stored,
-            authObject,
-            subjects,
+            StampNonPersonSubjects(authObject, subjects),
             new RelationshipAuthorizationCheckTarget.Stored(
                 new DbTableName(new DbSchemaName("edfi"), "School"),
                 new DbColumnName("DocumentId")
@@ -928,8 +918,10 @@ public class Given_RelationshipAuthorizationFailureMapper
             relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Proposed,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
-            subjects,
+            StampNonPersonSubjects(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+                subjects
+            ),
             new RelationshipAuthorizationCheckTarget.Proposed(
                 rootTable,
                 [
@@ -952,7 +944,6 @@ public class Given_RelationshipAuthorizationFailureMapper
         string strategyName,
         int configuredStrategyIndex,
         int relationshipLocalOrder,
-        RelationshipAuthorizationAuthObject authObject,
         RelationshipAuthorizationSubject subject
     )
     {
@@ -968,7 +959,6 @@ public class Given_RelationshipAuthorizationFailureMapper
             relationshipLocalOrder,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationValueSource.Proposed,
-            authObject,
             [subject],
             new RelationshipAuthorizationCheckTarget.Proposed(
                 proposedAnchor.Binding.Table,
@@ -982,6 +972,9 @@ public class Given_RelationshipAuthorizationFailureMapper
             new QualifiedResourceName("Ed-Fi", "School"),
             new DbTableName(new DbSchemaName("edfi"), "School"),
             new DbColumnName(columnName),
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.EducationOrganization,
@@ -1022,16 +1015,26 @@ public class Given_RelationshipAuthorizationFailureMapper
             new QualifiedResourceName("Ed-Fi", resourceName),
             subjectTable,
             personDocumentIdColumn,
+            authObject,
             [new RelationshipAuthorizationSubjectContributor(securableElementKind, jsonPath, readableName)],
             new RelationshipAuthorizationPersonSubjectMetadata(
                 personKind,
                 new RelationshipAuthorizationPersonSubjectPath(pathKind, subjectPathSteps),
-                authObject,
                 new RelationshipAuthorizationPersonStoredAnchor(subjectRootTable, documentIdColumn),
                 proposedAnchor
             )
         );
     }
+
+    private static RelationshipAuthorizationSubject[] StampNonPersonSubjects(
+        RelationshipAuthorizationAuthObject authObject,
+        IReadOnlyList<RelationshipAuthorizationSubject> subjects
+    ) =>
+        [
+            .. subjects.Select(subject =>
+                subject.IsPersonSubject ? subject : subject with { AuthObject = authObject }
+            ),
+        ];
 
     private static RelationshipAuthorizationProposedValueBinding CreateProposedBinding(
         DbTableName table,
@@ -1362,19 +1365,20 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             new DbColumnName("StudentUniqueId"),
             AuthNames.SourceEdOrgId
         );
+        var checkSpec = CreateProposedCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("StudentUniqueId", "$.studentReference.studentUniqueId")
+        );
 
         var compile = () =>
             compiler.Compile(
                 new SingleRecordRelationshipAuthorizationSqlSpec(
                     [
-                        CreateProposedCheckSpec(
-                            RelationshipAuthorizationHierarchyDirection.Normal,
-                            0,
-                            0,
-                            CreateSubject("StudentUniqueId", "$.studentReference.studentUniqueId")
-                        ) with
+                        checkSpec with
                         {
-                            AuthObject = customAuthObject,
+                            Subjects = [checkSpec.Subjects[0] with { AuthObject = customAuthObject }],
                         },
                     ],
                     parameterization,
@@ -1551,8 +1555,10 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Stored,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
-            subjects,
+            StampNonPersonSubjects(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+                subjects
+            ),
             new RelationshipAuthorizationCheckTarget.Stored(
                 new DbTableName(new DbSchemaName("edfi"), "School"),
                 new DbColumnName("DocumentId")
@@ -1565,10 +1571,22 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         int relationshipLocalOrder,
         params RelationshipAuthorizationSubject[] subjects
     ) =>
-        CreateStoredCheckSpec(direction, configuredStrategyIndex, relationshipLocalOrder, subjects) with
-        {
-            AuthObject = CreateHierarchyOnlyAuthObject(direction),
-        };
+        new(
+            new ConfiguredAuthorizationStrategy(
+                direction is RelationshipAuthorizationHierarchyDirection.Normal
+                    ? AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    : AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                configuredStrategyIndex
+            ),
+            relationshipLocalOrder,
+            direction,
+            RelationshipAuthorizationValueSource.Stored,
+            StampNonPersonSubjects(CreateHierarchyOnlyAuthObject(direction), subjects),
+            new RelationshipAuthorizationCheckTarget.Stored(
+                new DbTableName(new DbSchemaName("edfi"), "School"),
+                new DbColumnName("DocumentId")
+            )
+        );
 
     private static RelationshipAuthorizationAuthObject CreateHierarchyOnlyAuthObject(
         RelationshipAuthorizationHierarchyDirection direction
@@ -1611,8 +1629,10 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Proposed,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
-            subjects,
+            StampNonPersonSubjects(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+                subjects
+            ),
             new RelationshipAuthorizationCheckTarget.Proposed(
                 rootTable,
                 [
@@ -1636,6 +1656,9 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             new QualifiedResourceName("Ed-Fi", "School"),
             new DbTableName(new DbSchemaName("edfi"), "School"),
             new DbColumnName(columnName),
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.EducationOrganization,
@@ -1644,4 +1667,14 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                 ),
             ]
         );
+
+    private static RelationshipAuthorizationSubject[] StampNonPersonSubjects(
+        RelationshipAuthorizationAuthObject authObject,
+        IReadOnlyList<RelationshipAuthorizationSubject> subjects
+    ) =>
+        [
+            .. subjects.Select(subject =>
+                subject.IsPersonSubject ? subject : subject with { AuthObject = authObject }
+            ),
+        ];
 }

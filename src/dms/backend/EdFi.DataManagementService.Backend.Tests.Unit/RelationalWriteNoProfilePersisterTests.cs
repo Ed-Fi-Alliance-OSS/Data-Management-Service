@@ -1564,6 +1564,9 @@ public class Given_Relational_Write_No_Profile_Persister
             request.WritePlan.Model.Resource,
             rootPlan.TableModel.Table,
             binding.binding.Column.ColumnName,
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.EducationOrganization,
@@ -1587,9 +1590,6 @@ public class Given_Relational_Write_No_Profile_Persister
             0,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationValueSource.Proposed,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
-                RelationshipAuthorizationHierarchyDirection.Normal
-            ),
             [subject],
             new RelationshipAuthorizationCheckTarget.Proposed(
                 rootPlan.TableModel.Table,

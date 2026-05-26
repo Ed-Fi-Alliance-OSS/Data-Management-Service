@@ -596,7 +596,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append(" IS NULL OR NOT ");
             AppendAuthorizationSuccessSql(
                 writer,
-                checkSpec,
+                subject.AuthObject,
                 subjectValueWriter => AppendTargetColumn(subjectValueWriter, subject.Column),
                 authorizationClaimParameterization,
                 authAlias
@@ -669,6 +669,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
     )
     {
+        var subject = checkSpec.Subjects[subjectOrdinal];
         var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
 
         writer.AppendLine("SELECT");
@@ -686,7 +687,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append(" IS NULL OR NOT ");
             AppendAuthorizationSuccessSql(
                 writer,
-                checkSpec,
+                subject.AuthObject,
                 subjectValueWriter =>
                     AppendProposedSubjectValueSql(subjectValueWriter, proposedValueParameterName),
                 authorizationClaimParameterization,
@@ -715,13 +716,13 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
     private static void AppendAuthorizationSuccessSql(
         SqlWriter writer,
-        RelationshipAuthorizationCheckSpec checkSpec,
+        RelationshipAuthorizationAuthObject authObject,
         Action<SqlWriter> appendSubjectValue,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
     {
-        if (checkSpec.AuthObject.AllowsDirectClaimMatch)
+        if (authObject.AllowsDirectClaimMatch)
         {
             writer.Append("(");
             appendSubjectValue(writer);
@@ -732,7 +733,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append(" OR EXISTS (");
             AppendAuthorizationExistsSelectSql(
                 writer,
-                checkSpec,
+                authObject,
                 appendSubjectValue,
                 authorizationClaimParameterization,
                 authAlias
@@ -744,7 +745,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         writer.Append("EXISTS (");
         AppendAuthorizationExistsSelectSql(
             writer,
-            checkSpec,
+            authObject,
             appendSubjectValue,
             authorizationClaimParameterization,
             authAlias
@@ -754,20 +755,20 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
     private static void AppendAuthorizationExistsSelectSql(
         SqlWriter writer,
-        RelationshipAuthorizationCheckSpec checkSpec,
+        RelationshipAuthorizationAuthObject authObject,
         Action<SqlWriter> appendSubjectValue,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
     {
         writer.Append("SELECT 1 FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(checkSpec.AuthObject.Name));
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(authObject.Name));
         writer.Append($" {authAlias} WHERE {authAlias}.");
-        writer.AppendQuoted(checkSpec.AuthObject.SubjectValueColumn.Value);
+        writer.AppendQuoted(authObject.SubjectValueColumn.Value);
         writer.Append(" = ");
         appendSubjectValue(writer);
         writer.Append($" AND {authAlias}.");
-        writer.AppendQuoted(checkSpec.AuthObject.ClaimEducationOrganizationIdColumn.Value);
+        writer.AppendQuoted(authObject.ClaimEducationOrganizationIdColumn.Value);
         AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
             writer,
             authorizationClaimParameterization

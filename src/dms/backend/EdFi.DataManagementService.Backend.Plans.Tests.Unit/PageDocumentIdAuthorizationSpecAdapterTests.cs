@@ -131,9 +131,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                     RelationshipLocalOrder: 0,
                     RelationshipAuthorizationHierarchyDirection.Normal,
                     RelationshipAuthorizationValueSource.Stored,
-                    RelationshipAuthorizationAuthObject.CreatePerson(
-                        RelationshipAuthorizationPersonAuthViewKind.Student
-                    ),
                     [CreatePersonSubject()],
                     new RelationshipAuthorizationCheckTarget.Stored(_rootTable, _documentIdColumn)
                 ),
@@ -168,8 +165,14 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
             relationshipLocalOrder,
             direction,
             RelationshipAuthorizationValueSource.Stored,
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
-            subjects,
+            [
+                .. subjects.Select(subject =>
+                    subject with
+                    {
+                        AuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction),
+                    }
+                ),
+            ],
             new RelationshipAuthorizationCheckTarget.Stored(_rootTable, _documentIdColumn)
         );
 
@@ -178,6 +181,9 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
             _resource,
             _rootTable,
             new DbColumnName(columnName),
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.EducationOrganization,
@@ -192,6 +198,9 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
             _resource,
             _rootTable,
             AuthNames.StudentDocumentId,
+            RelationshipAuthorizationAuthObject.CreatePerson(
+                RelationshipAuthorizationPersonAuthViewKind.Student
+            ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.Student,
@@ -204,9 +213,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                 new RelationshipAuthorizationPersonSubjectPath(
                     RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
                     [new ColumnPathStep(_rootTable, AuthNames.StudentDocumentId, null, null)]
-                ),
-                RelationshipAuthorizationAuthObject.CreatePerson(
-                    RelationshipAuthorizationPersonAuthViewKind.Student
                 ),
                 new RelationshipAuthorizationPersonStoredAnchor(_rootTable, _documentIdColumn),
                 ProposedAnchor: null
