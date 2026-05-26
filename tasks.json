@@ -504,7 +504,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationExecutor",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Contracts",

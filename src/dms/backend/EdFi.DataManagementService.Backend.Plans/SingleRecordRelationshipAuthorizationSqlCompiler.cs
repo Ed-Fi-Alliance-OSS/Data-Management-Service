@@ -92,6 +92,9 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             );
         }
 
+        RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForSingleRecordSql(
+            spec.CheckSpecs
+        );
         var rootTarget = NormalizeCheckTargets(spec);
 
         var mismatchedSubject = spec
@@ -106,9 +109,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             );
         }
 
-        RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForSingleRecordSql(
-            spec.CheckSpecs
-        );
         ValidateAuthorizationClaimParameterization(spec.ClaimEducationOrganizationIdParameterization);
         var proposedValueParametersInOrder =
             rootTarget is RelationshipAuthorizationCheckTarget.Proposed

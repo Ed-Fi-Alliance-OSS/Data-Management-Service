@@ -270,6 +270,34 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
         commandExecutor.Commands.Should().BeEmpty();
     }
 
+    [Test]
+    public async Task It_rejects_staged_transitive_people_proposed_specs_before_same_column_validation()
+    {
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var sut = new SingleRecordRelationshipAuthorizationExecutor(commandExecutor);
+
+        Func<Task> execute = async () =>
+            await sut.ExecuteAsync(
+                new SingleRecordRelationshipAuthorizationExecutionRequest(
+                    CreateMappingSet(SqlDialect.Pgsql),
+                    DocumentId: 350L,
+                    [CreatePeopleTransitiveProposedCheckSpec()],
+                    AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                        SqlDialect.Pgsql,
+                        [100L],
+                        "ClaimEducationOrganizationIds"
+                    ),
+                    EmittedAuth1Index: 0
+                )
+            );
+
+        await execute
+            .Should()
+            .ThrowAsync<ArgumentException>()
+            .WithMessage("*RelationshipsWithStudentsOnly*DMS-1158*");
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
     private static MappingSet CreateMappingSet(SqlDialect dialect) =>
         new(
             new MappingSetKey("schema-hash", dialect, "v1"),
@@ -369,6 +397,82 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
                 ),
             ],
             new RelationshipAuthorizationCheckTarget.Stored(rootTable, new DbColumnName("DocumentId"))
+        );
+    }
+
+    private static RelationshipAuthorizationCheckSpec CreatePeopleTransitiveProposedCheckSpec()
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var courseTranscriptStudentSchoolAssociationIdColumn = new DbColumnName(
+            "StudentSchoolAssociation_DocumentId"
+        );
+        var studentSchoolAssociationTable = new DbTableName(
+            new DbSchemaName("edfi"),
+            "StudentSchoolAssociation"
+        );
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var proposedBinding = new RelationshipAuthorizationProposedValueBinding(
+            rootTable,
+            courseTranscriptStudentSchoolAssociationIdColumn,
+            BindingIndex: 0,
+            LogicalKey: courseTranscriptStudentSchoolAssociationIdColumn.Value,
+            ParameterSeed: "studentSchoolAssociation_DocumentId"
+        );
+
+        return new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RawConfiguredIndex: 0
+            ),
+            RelationshipLocalOrder: 0,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Proposed,
+            [
+                new RelationshipAuthorizationSubject(
+                    new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+                    studentSchoolAssociationTable,
+                    AuthNames.StudentDocumentId,
+                    RelationshipAuthorizationAuthObject.CreatePerson(
+                        RelationshipAuthorizationPersonAuthViewKind.Student
+                    ),
+                    [
+                        new RelationshipAuthorizationSubjectContributor(
+                            SecurableElementKind.Student,
+                            "$.studentReference.studentUniqueId",
+                            "StudentUniqueId"
+                        ),
+                    ],
+                    new RelationshipAuthorizationPersonSubjectMetadata(
+                        RelationshipAuthorizationPersonKind.Student,
+                        new RelationshipAuthorizationPersonSubjectPath(
+                            RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+                            [
+                                new ColumnPathStep(
+                                    rootTable,
+                                    courseTranscriptStudentSchoolAssociationIdColumn,
+                                    studentSchoolAssociationTable,
+                                    new DbColumnName("DocumentId")
+                                ),
+                                new ColumnPathStep(
+                                    studentSchoolAssociationTable,
+                                    AuthNames.StudentDocumentId,
+                                    studentTable,
+                                    AuthNames.StudentDocumentId
+                                ),
+                            ]
+                        ),
+                        new RelationshipAuthorizationPersonStoredAnchor(
+                            rootTable,
+                            new DbColumnName("DocumentId")
+                        ),
+                        new RelationshipAuthorizationPersonProposedAnchor(
+                            RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
+                            proposedBinding
+                        )
+                    )
+                ),
+            ],
+            new RelationshipAuthorizationCheckTarget.Proposed(rootTable, [proposedBinding])
         );
     }
 
