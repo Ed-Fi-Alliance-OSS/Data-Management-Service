@@ -34,6 +34,27 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
     internal RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
         QualifiedResourceName resource,
+        SupportedRelationshipAuthorizationStrategy supportedStrategy
+    )
+    {
+        ArgumentNullException.ThrowIfNull(supportedStrategy);
+
+        return Select(
+            mappingSet,
+            resource,
+            [
+                new SupportedRelationshipAuthorizationStrategySelection(
+                    supportedStrategy.ConfiguredStrategy,
+                    supportedStrategy.RelationshipLocalOrder,
+                    RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction)
+                ),
+            ]
+        );
+    }
+
+    internal RelationalEdOrgAuthorizationSubjectSelection Select(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
         IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies
     ) =>
         Select(

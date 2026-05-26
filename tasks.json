@@ -335,7 +335,7 @@
       "Add or update unit tests for normal EdOrg, inverted EdOrg, mixed EdOrg plus Student, and People-only Student plus Contact subject auth object stamping.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Planner Integration",

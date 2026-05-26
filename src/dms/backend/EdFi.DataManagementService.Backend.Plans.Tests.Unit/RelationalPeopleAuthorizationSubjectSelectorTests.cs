@@ -127,6 +127,65 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_stamp_people_only_student_and_contact_subjects_with_distinct_auth_objects()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentContactCarrier");
+        var studentReferencePath = "$.studentReference.studentUniqueId";
+        var contactReferencePath = "$.contactReference.contactUniqueId";
+        var mappingSet = CreateMappingSet(
+            CreateCarrierResource(
+                resource.ResourceName,
+                new PersonReferenceSpec(
+                    SecurableElementKind.Student,
+                    studentReferencePath,
+                    Col("Student_DocumentId")
+                ),
+                new PersonReferenceSpec(
+                    SecurableElementKind.Contact,
+                    contactReferencePath,
+                    Col("Contact_DocumentId")
+                )
+            ),
+            CreatePersonResource(SecurableElementKind.Student),
+            CreatePersonResource(SecurableElementKind.Contact)
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            resource,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        );
+
+        result.Outcome.Should().Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.Success);
+
+        var strategySelection = result.StrategySubjectSelections.Should().ContainSingle().Subject;
+
+        strategySelection.Subjects.Should().HaveCount(2);
+
+        var subjectsByKind = strategySelection.Subjects.ToDictionary(static subject =>
+            subject.Contributors.Single().Kind
+        );
+
+        subjectsByKind[SecurableElementKind.Student]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        subjectsByKind[SecurableElementKind.Contact]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Contact
+                )
+            );
+        subjectsByKind[SecurableElementKind.Student]
+            .AuthObject.Should()
+            .NotBe(subjectsByKind[SecurableElementKind.Contact].AuthObject);
+    }
+
+    [Test]
     public void It_should_select_a_transitive_course_transcript_to_student_path()
     {
         var courseTranscript = new QualifiedResourceName("Ed-Fi", "CourseTranscript");
@@ -551,6 +610,15 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
             .StrategySubjectSelections.Select(static selection => selection.Subjects.Single().Column.Value)
             .Should()
             .Equal("Student_DocumentId", "Student_DocumentId");
+        result
+            .StrategySubjectSelections.Select(static selection => selection.Subjects.Single().AuthObject)
+            .Should()
+            .OnlyContain(static authObject =>
+                authObject
+                == RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
     }
 
     [Test]

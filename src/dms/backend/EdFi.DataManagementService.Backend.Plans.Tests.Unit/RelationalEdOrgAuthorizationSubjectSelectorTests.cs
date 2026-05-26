@@ -69,6 +69,45 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         result.Subjects[0].Column.Should().Be(new DbColumnName("SchoolId"));
     }
 
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+        RelationshipAuthorizationHierarchyDirection.Normal,
+        "TargetEducationOrganizationId",
+        "SourceEducationOrganizationId"
+    )]
+    [TestCase(
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+        RelationshipAuthorizationHierarchyDirection.Inverted,
+        "SourceEducationOrganizationId",
+        "TargetEducationOrganizationId"
+    )]
+    public void It_should_stamp_edorg_subjects_with_direction_specific_auth_objects(
+        string strategyName,
+        RelationshipAuthorizationHierarchyDirection direction,
+        string subjectValueColumn,
+        string claimEducationOrganizationIdColumn
+    )
+    {
+        (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+
+        var result = SelectSubjects(
+            mappingSet,
+            new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+            CreateConfiguredAuthorizationStrategies(strategyName)
+        );
+
+        result.Outcome.Should().Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success);
+
+        var subject = result.Subjects.Should().ContainSingle().Subject;
+
+        subject.AuthObject.Should().Be(RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction));
+        subject.AuthObject.AllowsDirectClaimMatch.Should().BeTrue();
+        subject.AuthObject.SubjectValueColumn.Should().Be(new DbColumnName(subjectValueColumn));
+        subject
+            .AuthObject.ClaimEducationOrganizationIdColumn.Should()
+            .Be(new DbColumnName(claimEducationOrganizationIdColumn));
+    }
+
     [Test]
     public void It_should_retain_distinct_root_subjects_that_share_a_metaed_name()
     {

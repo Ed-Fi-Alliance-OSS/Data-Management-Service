@@ -531,7 +531,7 @@ public sealed class RelationshipAuthorizationPlanner
             return new RelationshipAuthorizationStrategySubjectSelection([], []);
         }
 
-        var selection = _edOrgAuthorizationSubjectSelector.Select(mappingSet, resource, [supportedStrategy]);
+        var selection = _edOrgAuthorizationSubjectSelector.Select(mappingSet, resource, supportedStrategy);
 
         return selection.Outcome switch
         {
