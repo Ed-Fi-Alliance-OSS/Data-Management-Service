@@ -22,6 +22,9 @@
     </ItemGroup>
     <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>EdFi.DmsConfigurationService.Backend.Tests.Unit</_Parameter1>
+        </AssemblyAttribute>
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />

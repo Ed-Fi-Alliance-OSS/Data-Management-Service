@@ -51,13 +51,7 @@ public class ResourceClaimRepositorySortingTests
         var claims = CreateTestClaims();
         var query = new ResourceClaimQuery();
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.Name).Should().Equal("Alice", "Bob", "Charlie");
     }
@@ -68,13 +62,7 @@ public class ResourceClaimRepositorySortingTests
         var claims = CreateTestClaims();
         var query = new ResourceClaimQuery { OrderBy = "id", Direction = "asc" };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.Id).Should().Equal(1, 2, 3);
     }
@@ -85,13 +73,7 @@ public class ResourceClaimRepositorySortingTests
         var claims = CreateTestClaims();
         var query = new ResourceClaimQuery { OrderBy = "id", Direction = "desc" };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.Id).Should().Equal(3, 2, 1);
     }
@@ -128,13 +110,7 @@ public class ResourceClaimRepositorySortingTests
         };
         var query = new ResourceClaimQuery { OrderBy = "name" };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.Name).Should().Equal("APPLE", "banana", "zebra");
     }
@@ -145,13 +121,7 @@ public class ResourceClaimRepositorySortingTests
         var claims = CreateTestClaims();
         var query = new ResourceClaimQuery { OrderBy = "name", Offset = 1 };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.Name).Should().Equal("Bob", "Charlie");
     }
@@ -162,13 +132,7 @@ public class ResourceClaimRepositorySortingTests
         var claims = CreateTestClaims();
         var query = new ResourceClaimQuery { OrderBy = "name", Limit = 2 };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.Name).Should().Equal("Alice", "Bob");
     }
@@ -184,13 +148,7 @@ public class ResourceClaimRepositorySortingTests
             Limit = 1,
         };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Should().ContainSingle().Which.Name.Should().Be("Bob");
     }
@@ -227,13 +185,7 @@ public class ResourceClaimRepositorySortingTests
         };
         var query = new ResourceClaimQuery { OrderBy = "parentName" };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.ParentName).Should().Equal("Apple", "Banana", "Zebra");
     }
@@ -270,13 +222,7 @@ public class ResourceClaimRepositorySortingTests
         };
         var query = new ResourceClaimQuery { OrderBy = "parentId" };
 
-        var method = typeof(ResourceClaimRepository).GetMethod(
-            "SortAndPage",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IEnumerable<ResourceClaimResponse>), typeof(ResourceClaimQuery)]
-        );
-
-        var result = (IEnumerable<ResourceClaimResponse>)method!.Invoke(null, [claims, query])!;
+        var result = ResourceClaimRepository.SortAndPage(claims, query);
 
         result.Select(r => r.ParentId).Should().Equal(10, 20, 30);
     }

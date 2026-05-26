@@ -108,7 +108,7 @@ public class ResourceClaimRepository(
         return node;
     }
 
-    private static IEnumerable<ResourceClaimResponse> SortAndPage(
+    internal static IEnumerable<ResourceClaimResponse> SortAndPage(
         IEnumerable<ResourceClaimResponse> items,
         ResourceClaimQuery query
     )
@@ -136,7 +136,7 @@ public class ResourceClaimRepository(
         return result;
     }
 
-    private static IEnumerable<ResourceClaimActionResponse> SortAndPage(
+    internal static IEnumerable<ResourceClaimActionResponse> SortAndPage(
         IEnumerable<ResourceClaimActionResponse> items,
         ResourceClaimActionQuery query
     )
@@ -164,7 +164,7 @@ public class ResourceClaimRepository(
         return result;
     }
 
-    private static IEnumerable<ResourceClaimActionAuthStrategyResponse> SortAndPage(
+    internal static IEnumerable<ResourceClaimActionAuthStrategyResponse> SortAndPage(
         IEnumerable<ResourceClaimActionAuthStrategyResponse> items,
         ResourceClaimActionAuthStrategyQuery query
     )
