@@ -97,5 +97,46 @@ public sealed record RelationshipAuthorizationAuthObjectInfo(
 public sealed record RelationshipAuthorizationPersonSubjectInfo(
     string PersonKind,
     RelationshipAuthorizationAuthObjectInfo AuthObject,
+    string PathKind,
+    RelationshipAuthorizationPersonDocumentIdPathStepInfo[] DocumentIdPath,
+    RelationshipAuthorizationPersonStoredAnchorInfo StoredAnchor,
+    RelationshipAuthorizationPersonProposedAnchorInfo? ProposedAnchor,
     string? Hint = null
+);
+
+/// <summary>
+/// One ordered hop in the DocumentId path used to resolve a person relationship authorization value.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonDocumentIdPathStepInfo(
+    string SourceTableName,
+    string SourceColumnName,
+    string? TargetTableName,
+    string? TargetColumnName
+);
+
+/// <summary>
+/// Stored-value root row anchor for a person relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonStoredAnchorInfo(
+    string RootTableName,
+    string RootDocumentIdColumnName
+);
+
+/// <summary>
+/// Proposed-value anchor for a person relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonProposedAnchorInfo(
+    string Kind,
+    RelationshipAuthorizationPersonProposedValueBindingInfo Binding
+);
+
+/// <summary>
+/// Proposed root-row binding used as the anchor for a person relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonProposedValueBindingInfo(
+    string TableName,
+    string ColumnName,
+    int BindingIndex,
+    string LogicalKey,
+    string ParameterSeed
 );

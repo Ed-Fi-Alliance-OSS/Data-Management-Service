@@ -233,6 +233,6 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationFailureMapper.cs to confirm PersonMetadata.Path and ProposedAnchor are mapped without re-resolving securable elements.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationAuth1FailurePayload"
     ],
-    "completed": false
+    "completed": true
   }
 ]

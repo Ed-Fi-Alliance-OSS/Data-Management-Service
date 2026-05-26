@@ -321,7 +321,47 @@ public static class RelationshipAuthorizationFailureMapper
         return new RelationshipAuthorizationPersonSubjectInfo(
             personMetadata.PersonKind.ToString(),
             MapAuthObject(personMetadata.AuthObject),
+            personMetadata.Path.Kind.ToString(),
+            MapDocumentIdPath(personMetadata.Path),
+            new RelationshipAuthorizationPersonStoredAnchorInfo(
+                personMetadata.StoredAnchor.RootTable.ToString(),
+                personMetadata.StoredAnchor.RootDocumentIdColumn.Value
+            ),
+            MapProposedAnchor(personMetadata.ProposedAnchor),
             personMetadata.AuthObject.FailureHint
+        );
+    }
+
+    private static RelationshipAuthorizationPersonDocumentIdPathStepInfo[] MapDocumentIdPath(
+        RelationshipAuthorizationPersonSubjectPath path
+    ) =>
+        [
+            .. path.Steps.Select(static step => new RelationshipAuthorizationPersonDocumentIdPathStepInfo(
+                step.SourceTable.ToString(),
+                step.SourceColumnName.Value,
+                step.TargetTable?.ToString(),
+                step.TargetColumnName?.Value
+            )),
+        ];
+
+    private static RelationshipAuthorizationPersonProposedAnchorInfo? MapProposedAnchor(
+        RelationshipAuthorizationPersonProposedAnchor? proposedAnchor
+    )
+    {
+        if (proposedAnchor is null)
+        {
+            return null;
+        }
+
+        return new RelationshipAuthorizationPersonProposedAnchorInfo(
+            proposedAnchor.Kind.ToString(),
+            new RelationshipAuthorizationPersonProposedValueBindingInfo(
+                proposedAnchor.Binding.Table.ToString(),
+                proposedAnchor.Binding.Column.Value,
+                proposedAnchor.Binding.BindingIndex,
+                proposedAnchor.Binding.LogicalKey,
+                proposedAnchor.Binding.ParameterSeed
+            )
         );
     }
 
