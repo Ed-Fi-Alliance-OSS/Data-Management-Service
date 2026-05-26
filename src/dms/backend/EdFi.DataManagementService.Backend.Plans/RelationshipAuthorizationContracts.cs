@@ -66,11 +66,27 @@ public enum RelationshipAuthorizationValueSource
     Proposed,
 }
 
+public enum RelationshipAuthorizationPersonKind
+{
+    Student,
+    Contact,
+    Staff,
+}
+
+public enum RelationshipAuthorizationPersonAuthViewKind
+{
+    Student,
+    Contact,
+    Staff,
+    StudentThroughResponsibility,
+}
+
 public sealed record RelationshipAuthorizationAuthObject(
     DbTableName Name,
     DbColumnName SubjectValueColumn,
     DbColumnName ClaimEducationOrganizationIdColumn,
-    bool AllowsDirectClaimMatch = false
+    bool AllowsDirectClaimMatch = false,
+    string? FailureHint = null
 )
 {
     public static RelationshipAuthorizationAuthObject CreateEdOrgHierarchy(
@@ -96,6 +112,46 @@ public sealed record RelationshipAuthorizationAuthObject(
                 "Unsupported relationship authorization hierarchy direction."
             ),
         };
+
+    public static RelationshipAuthorizationAuthObject CreatePerson(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind
+    ) =>
+        authViewKind switch
+        {
+            RelationshipAuthorizationPersonAuthViewKind.Student => new RelationshipAuthorizationAuthObject(
+                new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStudentDocumentId"),
+                AuthNames.StudentDocumentId,
+                AuthNames.SourceEdOrgId,
+                FailureHint: "You may need to create a corresponding 'StudentSchoolAssociation' item."
+            ),
+            RelationshipAuthorizationPersonAuthViewKind.Contact => new RelationshipAuthorizationAuthObject(
+                new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToContactDocumentId"),
+                AuthNames.ContactDocumentId,
+                AuthNames.SourceEdOrgId,
+                FailureHint: "You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
+            ),
+            RelationshipAuthorizationPersonAuthViewKind.Staff => new RelationshipAuthorizationAuthObject(
+                new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStaffDocumentId"),
+                AuthNames.StaffDocumentId,
+                AuthNames.SourceEdOrgId,
+                FailureHint: "You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
+            ),
+            RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility =>
+                new RelationshipAuthorizationAuthObject(
+                    new DbTableName(
+                        AuthNames.AuthSchema,
+                        "EducationOrganizationIdToStudentDocumentIdThroughResponsibility"
+                    ),
+                    AuthNames.StudentDocumentId,
+                    AuthNames.SourceEdOrgId,
+                    FailureHint: "You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item."
+                ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(authViewKind),
+                authViewKind,
+                "Unsupported person relationship authorization view kind."
+            ),
+        };
 }
 
 public sealed record RelationshipAuthorizationSubjectContributor(
@@ -104,12 +160,84 @@ public sealed record RelationshipAuthorizationSubjectContributor(
     string ReadableName
 );
 
+public enum RelationshipAuthorizationPersonSubjectPathKind
+{
+    DirectRootColumn,
+    TransitiveJoinPath,
+    SelfRootDocumentId,
+}
+
+public sealed record RelationshipAuthorizationPersonSubjectPath
+{
+    public RelationshipAuthorizationPersonSubjectPath(
+        RelationshipAuthorizationPersonSubjectPathKind kind,
+        IReadOnlyList<ColumnPathStep> steps
+    )
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+
+        switch (kind)
+        {
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn when steps.Count != 1:
+                throw new ArgumentException(
+                    "Direct person root-column bindings require exactly one column path step.",
+                    nameof(steps)
+                );
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath when steps.Count < 2:
+                throw new ArgumentException(
+                    "Transitive person bindings require at least two ordered column path steps.",
+                    nameof(steps)
+                );
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId when steps.Count != 0:
+                throw new ArgumentException(
+                    "Self person root DocumentId bindings must be represented as a zero-hop path.",
+                    nameof(steps)
+                );
+        }
+
+        Kind = kind;
+        Steps = steps;
+    }
+
+    public RelationshipAuthorizationPersonSubjectPathKind Kind { get; init; }
+
+    public IReadOnlyList<ColumnPathStep> Steps { get; init; }
+}
+
+public sealed record RelationshipAuthorizationPersonStoredAnchor(
+    DbTableName RootTable,
+    DbColumnName RootDocumentIdColumn
+);
+
+public enum RelationshipAuthorizationPersonProposedAnchorKind
+{
+    RootRow,
+    FirstHop,
+}
+
+public sealed record RelationshipAuthorizationPersonProposedAnchor(
+    RelationshipAuthorizationPersonProposedAnchorKind Kind,
+    RelationshipAuthorizationProposedValueBinding Binding
+);
+
+public sealed record RelationshipAuthorizationPersonSubjectMetadata(
+    RelationshipAuthorizationPersonKind PersonKind,
+    RelationshipAuthorizationPersonSubjectPath Path,
+    RelationshipAuthorizationAuthObject AuthObject,
+    RelationshipAuthorizationPersonStoredAnchor StoredAnchor,
+    RelationshipAuthorizationPersonProposedAnchor? ProposedAnchor
+);
+
 public sealed record RelationshipAuthorizationSubject(
     QualifiedResourceName Resource,
     DbTableName Table,
     DbColumnName Column,
-    IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors
-);
+    IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors,
+    RelationshipAuthorizationPersonSubjectMetadata? PersonMetadata = null
+)
+{
+    public bool IsPersonSubject => PersonMetadata is not null;
+}
 
 public abstract record RelationshipAuthorizationCheckTarget
 {
