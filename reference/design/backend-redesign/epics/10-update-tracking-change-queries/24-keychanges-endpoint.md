@@ -37,10 +37,11 @@ Runtime resource and descriptor route resolution uses the shared model-driven fo
 - A totalCount regression comparable to ODS-5423 is covered.
 - Descriptor empty-result behavior comparable to ODS-5422 is covered.
 - Concrete-abstract-resource empty-result behavior is covered alongside the descriptor case.
-- PostgreSQL and SQL Server tests cover regular resources, descriptors, collapsed windows, paging, and totalCount.
+- Tests cover regular resources, descriptors, collapsed windows, paging, and totalCount.
+- E2E tests cover common and edge-case scenarios.
 
 ## Out of Scope
 
-- `ReadChanges` authorization, handled by `25-readchanges-authorization.md`.
+- `ReadChanges` authorization, split across `25-readchanges-authorization.md` and `27-no-further-and-namespace-readchanges-authorization.md`.
 - `/deletes`.
 - Snapshot support.

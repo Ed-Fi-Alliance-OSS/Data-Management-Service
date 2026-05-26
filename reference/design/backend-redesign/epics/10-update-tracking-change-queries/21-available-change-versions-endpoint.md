@@ -21,6 +21,7 @@ The endpoint is a fixed DMS route, not a resource route generated from `ApiSchem
 - Route availability does not depend on `ApiSchema.json` or effective OpenAPI path presence.
 - Tests cover successful routing, response shape, and the database call to `dms.GetMaxChangeVersion()`.
 - PostgreSQL and SQL Server coverage proves the endpoint works against both implementations of the function.
+- E2E tests cover common and edge-case scenarios.
 
 ## Out of Scope
 

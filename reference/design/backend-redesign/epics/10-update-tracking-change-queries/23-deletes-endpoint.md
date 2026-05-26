@@ -27,7 +27,7 @@ Runtime resource and descriptor route resolution is driven by DMS effective reso
 ### Shared endpoint foundation
 
 - DMS route resolution identifies `/deletes` and `/keyChanges` by classifying the trailing path segment and resolving `{schema}/{resource}` through the effective `ApiSchema.json` endpoint mappings and compiled `MappingSet.Model`.
-- DMS route resolution identifies `/deletes` and `/keyChanges` for resources and descriptors known to the effective model, independent of whether OpenAPI was the source of the request.
+- DMS route resolution identifies `/deletes` and `/keyChanges` for resources and descriptors known to the effective model.
 - Unknown `{schema}/{resource}` pairs (resources not present in the effective `ApiSchema.json` / `MappingSet.Model`) return the not-found behavior defined in `change-queries.md`.
 - The endpoint foundation resolves the target `ConcreteResourceModel` or descriptor discriminator.
 - The foundation resolves the matching `TrackedChangeTableInfo`.
@@ -37,7 +37,7 @@ Runtime resource and descriptor route resolution is driven by DMS effective reso
 - Descriptor reference public fields in shaped responses compose the tracked `Namespace` and `CodeValue` values as a single string in `"<namespace>#<codeValue>"` form.
 - Descriptor responses use descriptor public identity fields, not internal descriptor IDs.
 - Internal descriptor IDs are not returned in descriptor identity fields or descriptor reference fields.
-- Shared SQL planning can compose change-version windows, tombstone/key-change filters, recreated-resource suppression where applicable, paging, totalCount, and authorization predicates when supplied by `25-readchanges-authorization.md`.
+- Shared SQL planning can compose change-version windows, tombstone/key-change filters, recreated-resource suppression where applicable, paging, totalCount, and authorization predicates when supplied by the split `ReadChanges` authorization stories.
 - Tests cover route classification, resource resolution, descriptor resolution, paging, totalCount, and field-name mapping without duplicating full endpoint behavior.
 
 ### `/deletes` behavior
@@ -55,9 +55,10 @@ Runtime resource and descriptor route resolution is driven by DMS effective reso
 - Descriptor `/deletes` responses include public descriptor identity fields only.
 - Cascading delete scenarios for abstract-resource families are covered, including a scenario comparable to ODS-4087.
 - Tests cover regular resources, descriptors, recreated resources, recreated descriptors, pagination, totalCount, and both dialects.
+- E2E tests cover common and edge-case scenarios.
 
 ## Out of Scope
 
-- `ReadChanges` authorization, handled by `25-readchanges-authorization.md`.
+- `ReadChanges` authorization, split across `25-readchanges-authorization.md` and `27-no-further-and-namespace-readchanges-authorization.md`.
 - `/keyChanges` query semantics, handled by `24-keychanges-endpoint.md`.
 - Snapshot support.

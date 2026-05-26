@@ -29,7 +29,7 @@ Deliverables include:
 - `DMS-1004` — `02-derived-metadata.md` — Serve `_etag/_lastModifiedDate/ChangeVersion` from stored stamps
 - `DMS-1005` — `03-if-match.md` — Enforce optimistic concurrency using stored `_etag`
 - `DMS-1006` — `04-change-query-selection.md` — _Retired_ (superseded by DMS-1182 + DMS-1186 + DMS-1187)
-- `DMS-1007` — `05-change-query-api.md` — _Retired_ (superseded by DMS-1184 through DMS-1189)
+- `DMS-1007` — `05-change-query-api.md` — _Retired_ (superseded by DMS-1184, DMS-1186, DMS-1187, DMS-1188, and the split non-relationship `ReadChanges` strategy story)
 - `DMS-1008` — `06-descriptor-stamping.md` — Ensure descriptor writes stamp/journal correctly (triggers on `dms.Descriptor`)
 - `DMS-1168` — `07-get-max-change-version-function.md` — Emit `dms.GetMaxChangeVersion()` function for `/availableChangeVersions`
 - `DMS-1169` — `08-remove-document-change-event.md` — Remove `dms.DocumentChangeEvent`; superseded by the per-resource `tracked_changes_*` tables and the `ContentVersion` mirror
@@ -48,8 +48,9 @@ Deliverables include:
 - `DMS-1184` — `21-available-change-versions-endpoint.md` — Serve `/changeQueries/v1/availableChangeVersions`
 - `DMS-1186` — `23-deletes-endpoint.md` — Serve `/deletes` from tracked-change tombstones and establish the shared Change Query endpoint foundation
 - `DMS-1187` — `24-keychanges-endpoint.md` — Serve `/keyChanges` from tracked-change key-change rows
-- `DMS-1188` — `25-readchanges-authorization.md` — Apply `ReadChanges` authorization to `/deletes` and `/keyChanges`
+- `DMS-1188` — `25-readchanges-authorization.md` — Apply relationship-based `ReadChanges` authorization to `/deletes` and `/keyChanges`
 - `DMS-1189` — `26-school-year-type-readchanges-forbidden.md` — _Retired_ No longer needed
+- `DMS-TBD` — `27-no-further-and-namespace-readchanges-authorization.md` — Apply `NoFurtherAuthorizationRequired` and `NamespaceBased` `ReadChanges` authorization to Change Query endpoints
 - `DMS-1194` — `32-document-v1-release-note-deferrals.md` — Document DMS v1.0 Change Queries deferred features in release notes
 
 ## Deferred Stories (post-v1.0)

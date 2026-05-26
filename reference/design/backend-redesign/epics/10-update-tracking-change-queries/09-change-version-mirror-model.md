@@ -18,6 +18,8 @@ The shared `dms.Descriptor` table gets the same two columns through the core DDL
 
 The mirror supports live resource and descriptor `minChangeVersion` / `maxChangeVersion` filters without joining `dms.Document`, and gives SQL-side integrators the same ODS-shaped row-local watermark that many existing tools expect.
 
+Note: The derived relational model changes described here and in the `change-queries.md` document are a starting point. Feel free to modify them as needed.
+
 ## Acceptance Criteria
 
 - Every `StorageKind = RelationalTables` concrete resource root table in every project schema has synthesized `ContentVersion` and `ContentLastModifiedAt` columns in its `DbTableModel`.

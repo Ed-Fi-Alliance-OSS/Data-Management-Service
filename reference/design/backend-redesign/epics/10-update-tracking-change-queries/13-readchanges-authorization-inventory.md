@@ -11,6 +11,8 @@ Derive `ReadChangesAuthorizationViewInfo` entries for the authorization views us
 
 The derived inventory describes the four `*IncludingDeletes` views as SQL-free model data, including view names, output columns, and ordered union arms over current tables and tracked-change tables. Dialect DDL emitters render the views from this inventory, and runtime authorization planners consume the same metadata.
 
+Note: The derived relational model changes described here and in the `change-queries.md` document are a starting point. Feel free to modify them as needed.
+
 ## Acceptance Criteria
 
 - The derived model includes `ReadChangesAuthorizationViewInfo` for:

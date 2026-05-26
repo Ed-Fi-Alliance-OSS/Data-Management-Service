@@ -13,6 +13,8 @@ The inventory describes per-resource tracked-change tables, the shared descripto
 
 This story owns semantic derivation only. Dialect renderers and endpoint planners consume the derived inventory mechanically.
 
+Note: The derived relational model changes described here and in the `change-queries.md` document are a starting point. Feel free to modify them as needed.
+
 ## Acceptance Criteria
 
 - `TrackedChangeTableInfo` is derived for every concrete resource that needs a tracked-change table.
