@@ -922,14 +922,16 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
                                 RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
                                 RelationshipAuthorizationHierarchyDirection.Normal,
                                 configuredStrategy,
-                                relationshipLocalOrder
+                                relationshipLocalOrder,
+                                [new(SecurableElementKind.EducationOrganization)]
                             ),
                         AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted =>
                             new SupportedRelationshipAuthorizationStrategy(
                                 RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
                                 RelationshipAuthorizationHierarchyDirection.Inverted,
                                 configuredStrategy,
-                                relationshipLocalOrder
+                                relationshipLocalOrder,
+                                [new(SecurableElementKind.EducationOrganization)]
                             ),
                         _ => throw new ArgumentOutOfRangeException(
                             nameof(configuredStrategy),

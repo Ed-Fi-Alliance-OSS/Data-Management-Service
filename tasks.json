@@ -33,7 +33,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationStrategyClassifier",
       "Add or update unit tests that assert the subject-kind matrix for all five People strategies."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Auth View Selection",

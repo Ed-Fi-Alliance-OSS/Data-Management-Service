@@ -940,7 +940,8 @@ public class Given_RelationshipAuthorizationPlannerTests
                         RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
                         RelationshipAuthorizationHierarchyDirection.Normal,
                         configuredStrategy,
-                        relationshipLocalOrder
+                        relationshipLocalOrder,
+                        [new(SecurableElementKind.EducationOrganization)]
                     )
             ),
         ];

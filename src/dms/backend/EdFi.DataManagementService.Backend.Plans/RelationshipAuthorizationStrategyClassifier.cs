@@ -13,6 +13,39 @@ internal static class RelationshipAuthorizationStrategyClassifier
     private const string CustomViewConvention = "{BasisResource}With...";
     private const string StandardProjectName = "Ed-Fi";
 
+    private static readonly IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> _edOrgOnlySubjects =
+    [
+        new(SecurableElementKind.EducationOrganization),
+    ];
+
+    private static readonly IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> _edOrgAndPeopleSubjects =
+    [
+        new(SecurableElementKind.EducationOrganization),
+        new(SecurableElementKind.Student, RelationshipAuthorizationPersonAuthViewKind.Student),
+        new(SecurableElementKind.Contact, RelationshipAuthorizationPersonAuthViewKind.Contact),
+        new(SecurableElementKind.Staff, RelationshipAuthorizationPersonAuthViewKind.Staff),
+    ];
+
+    private static readonly IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> _peopleOnlySubjects =
+    [
+        new(SecurableElementKind.Student, RelationshipAuthorizationPersonAuthViewKind.Student),
+        new(SecurableElementKind.Contact, RelationshipAuthorizationPersonAuthViewKind.Contact),
+        new(SecurableElementKind.Staff, RelationshipAuthorizationPersonAuthViewKind.Staff),
+    ];
+
+    private static readonly IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> _studentsOnlySubjects =
+    [
+        new(SecurableElementKind.Student, RelationshipAuthorizationPersonAuthViewKind.Student),
+    ];
+
+    private static readonly IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> _studentsOnlyThroughResponsibilitySubjects =
+    [
+        new(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility
+        ),
+    ];
+
     private static readonly IReadOnlyDictionary<
         string,
         RelationshipAuthorizationStrategyKind
@@ -24,16 +57,6 @@ internal static class RelationshipAuthorizationStrategyClassifier
             RelationshipAuthorizationStrategyKind.NamespaceBased,
         [AuthorizationStrategyNameConstants.OwnershipBased] =
             RelationshipAuthorizationStrategyKind.OwnershipBased,
-        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople] =
-            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
-        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted] =
-            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
-        [AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly] =
-            RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
-        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly] =
-            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
-        [AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility] =
-            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
     };
 
     public static RelationshipAuthorizationClassification Classify(
@@ -77,7 +100,8 @@ internal static class RelationshipAuthorizationStrategyClassifier
                             RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
                             RelationshipAuthorizationHierarchyDirection.Normal,
                             configuredStrategy,
-                            currentRelationshipLocalOrder
+                            currentRelationshipLocalOrder,
+                            _edOrgOnlySubjects
                         )
                     );
                     continue;
@@ -88,7 +112,68 @@ internal static class RelationshipAuthorizationStrategyClassifier
                             RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
                             RelationshipAuthorizationHierarchyDirection.Inverted,
                             configuredStrategy,
-                            currentRelationshipLocalOrder
+                            currentRelationshipLocalOrder,
+                            _edOrgOnlySubjects
+                        )
+                    );
+                    continue;
+
+                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople:
+                    supportedStrategies.Add(
+                        new SupportedRelationshipAuthorizationStrategy(
+                            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            configuredStrategy,
+                            currentRelationshipLocalOrder,
+                            _edOrgAndPeopleSubjects
+                        )
+                    );
+                    continue;
+
+                case AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted:
+                    supportedStrategies.Add(
+                        new SupportedRelationshipAuthorizationStrategy(
+                            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
+                            RelationshipAuthorizationHierarchyDirection.Inverted,
+                            configuredStrategy,
+                            currentRelationshipLocalOrder,
+                            _edOrgAndPeopleSubjects
+                        )
+                    );
+                    continue;
+
+                case AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly:
+                    supportedStrategies.Add(
+                        new SupportedRelationshipAuthorizationStrategy(
+                            RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            configuredStrategy,
+                            currentRelationshipLocalOrder,
+                            _peopleOnlySubjects
+                        )
+                    );
+                    continue;
+
+                case AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly:
+                    supportedStrategies.Add(
+                        new SupportedRelationshipAuthorizationStrategy(
+                            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            configuredStrategy,
+                            currentRelationshipLocalOrder,
+                            _studentsOnlySubjects
+                        )
+                    );
+                    continue;
+
+                case AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility:
+                    supportedStrategies.Add(
+                        new SupportedRelationshipAuthorizationStrategy(
+                            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
+                            RelationshipAuthorizationHierarchyDirection.Normal,
+                            configuredStrategy,
+                            currentRelationshipLocalOrder,
+                            _studentsOnlyThroughResponsibilitySubjects
                         )
                     );
                     continue;

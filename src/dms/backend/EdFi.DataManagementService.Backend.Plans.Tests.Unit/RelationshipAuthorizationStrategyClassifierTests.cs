@@ -148,41 +148,72 @@ public class Given_RelationshipAuthorizationStrategyClassifier
         classification.SecurityConfigurationFailures.Should().BeEmpty();
     }
 
-    [TestCase(
-        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-        RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople
-    )]
-    [TestCase(
-        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
-        RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted
-    )]
-    [TestCase(
-        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
-        RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly
-    )]
-    [TestCase(
-        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
-        RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly
-    )]
-    [TestCase(
-        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-        RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility
-    )]
-    public void It_classifies_known_people_and_student_relationship_strategies_as_known_but_not_enabled(
+    [TestCaseSource(nameof(PeopleStrategyCases))]
+    public void It_classifies_people_relationship_strategies_as_supported_with_subject_kind_eligibility(
         string strategyName,
-        RelationshipAuthorizationStrategyKind expectedKind
+        RelationshipAuthorizationStrategyKind expectedKind,
+        RelationshipAuthorizationHierarchyDirection expectedDirection,
+        RelationshipAuthorizationStrategySubjectEligibility[] expectedEligibleSubjects
     )
     {
         var classification = Classify(CreateMappingSet(_queryResource), strategyName);
 
-        classification.Outcome.Should().Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);
-        classification.SupportedStrategies.Should().BeEmpty();
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
         classification.NoFurtherAuthorizationRequiredStrategies.Should().BeEmpty();
         classification.SecurityConfigurationFailures.Should().BeEmpty();
-        classification.KnownButNotEnabledStrategies.Should().ContainSingle();
-        classification.KnownButNotEnabledStrategies[0].Kind.Should().Be(expectedKind);
-        classification.KnownButNotEnabledStrategies[0].ConfiguredStrategy.RawConfiguredIndex.Should().Be(0);
-        classification.KnownButNotEnabledStrategies[0].RelationshipLocalOrder.Should().Be(0);
+        classification.KnownButNotEnabledStrategies.Should().BeEmpty();
+        classification.SupportedStrategies.Should().ContainSingle();
+
+        var supportedStrategy = classification.SupportedStrategies[0];
+        supportedStrategy.Kind.Should().Be(expectedKind);
+        supportedStrategy.Direction.Should().Be(expectedDirection);
+        supportedStrategy.ConfiguredStrategy.RawConfiguredIndex.Should().Be(0);
+        supportedStrategy.RelationshipLocalOrder.Should().Be(0);
+        supportedStrategy.EligibleSubjects.Should().Equal(expectedEligibleSubjects);
+    }
+
+    [Test]
+    public void It_preserves_duplicate_supported_people_strategies_as_distinct_or_entries()
+    {
+        var classification = Classify(
+            CreateMappingSet(_queryResource),
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
+        );
+
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SupportedStrategies);
+        classification
+            .SupportedStrategies.Select(static strategy => strategy.Kind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility
+            );
+        classification
+            .SupportedStrategies.Select(static strategy => strategy.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(0, 1, 2, 3);
+        classification
+            .SupportedStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1, 2, 3);
+        classification
+            .SupportedStrategies[2]
+            .EligibleSubjects.Should()
+            .Equal(
+                new RelationshipAuthorizationStrategySubjectEligibility(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility
+                )
+            );
     }
 
     [Test]
@@ -297,6 +328,108 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             configuredAuthorizationStrategies
         );
     }
+
+    private static IEnumerable<TestCaseData> PeopleStrategyCases()
+    {
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            new[]
+            {
+                EdOrgEligibility(),
+                PersonEligibility(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                PersonEligibility(
+                    SecurableElementKind.Contact,
+                    RelationshipAuthorizationPersonAuthViewKind.Contact
+                ),
+                PersonEligibility(
+                    SecurableElementKind.Staff,
+                    RelationshipAuthorizationPersonAuthViewKind.Staff
+                ),
+            }
+        ).SetName("RelationshipsWithEdOrgsAndPeople");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
+            RelationshipAuthorizationHierarchyDirection.Inverted,
+            new[]
+            {
+                EdOrgEligibility(),
+                PersonEligibility(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                PersonEligibility(
+                    SecurableElementKind.Contact,
+                    RelationshipAuthorizationPersonAuthViewKind.Contact
+                ),
+                PersonEligibility(
+                    SecurableElementKind.Staff,
+                    RelationshipAuthorizationPersonAuthViewKind.Staff
+                ),
+            }
+        ).SetName("RelationshipsWithEdOrgsAndPeopleInverted");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            RelationshipAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            new[]
+            {
+                PersonEligibility(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                PersonEligibility(
+                    SecurableElementKind.Contact,
+                    RelationshipAuthorizationPersonAuthViewKind.Contact
+                ),
+                PersonEligibility(
+                    SecurableElementKind.Staff,
+                    RelationshipAuthorizationPersonAuthViewKind.Staff
+                ),
+            }
+        ).SetName("RelationshipsWithPeopleOnly");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            new[]
+            {
+                PersonEligibility(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+            }
+        ).SetName("RelationshipsWithStudentsOnly");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            new[]
+            {
+                PersonEligibility(
+                    SecurableElementKind.Student,
+                    RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility
+                ),
+            }
+        ).SetName("RelationshipsWithStudentsOnlyThroughResponsibility");
+    }
+
+    private static RelationshipAuthorizationStrategySubjectEligibility EdOrgEligibility() =>
+        new(SecurableElementKind.EducationOrganization);
+
+    private static RelationshipAuthorizationStrategySubjectEligibility PersonEligibility(
+        SecurableElementKind kind,
+        RelationshipAuthorizationPersonAuthViewKind authViewKind
+    ) => new(kind, authViewKind);
 
     private static MappingSet CreateMappingSet(params QualifiedResourceName[] resources)
     {

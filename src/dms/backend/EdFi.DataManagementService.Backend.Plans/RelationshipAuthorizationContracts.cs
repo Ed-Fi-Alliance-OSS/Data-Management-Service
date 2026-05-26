@@ -32,11 +32,58 @@ public enum RelationshipAuthorizationStrategyKind
 
 public sealed record ConfiguredAuthorizationStrategy(string StrategyName, int RawConfiguredIndex);
 
+public sealed record RelationshipAuthorizationStrategySubjectEligibility
+{
+    public RelationshipAuthorizationStrategySubjectEligibility(
+        SecurableElementKind kind,
+        RelationshipAuthorizationPersonAuthViewKind? personAuthViewKind = null
+    )
+    {
+        var isPersonKind =
+            kind
+            is SecurableElementKind.Student
+                or SecurableElementKind.Contact
+                or SecurableElementKind.Staff;
+
+        if (kind is SecurableElementKind.Namespace)
+        {
+            throw new ArgumentException(
+                "Namespace securable elements are not relationship authorization subjects.",
+                nameof(kind)
+            );
+        }
+
+        if (isPersonKind && personAuthViewKind is null)
+        {
+            throw new ArgumentException(
+                "Person relationship authorization subjects require an auth view kind.",
+                nameof(personAuthViewKind)
+            );
+        }
+
+        if (!isPersonKind && personAuthViewKind is not null)
+        {
+            throw new ArgumentException(
+                "Only person relationship authorization subjects can carry a person auth view kind.",
+                nameof(personAuthViewKind)
+            );
+        }
+
+        Kind = kind;
+        PersonAuthViewKind = personAuthViewKind;
+    }
+
+    public SecurableElementKind Kind { get; init; }
+
+    public RelationshipAuthorizationPersonAuthViewKind? PersonAuthViewKind { get; init; }
+}
+
 public sealed record SupportedRelationshipAuthorizationStrategy(
     RelationshipAuthorizationStrategyKind Kind,
     RelationshipAuthorizationHierarchyDirection Direction,
     ConfiguredAuthorizationStrategy ConfiguredStrategy,
-    int RelationshipLocalOrder
+    int RelationshipLocalOrder,
+    IReadOnlyList<RelationshipAuthorizationStrategySubjectEligibility> EligibleSubjects
 );
 
 public sealed record KnownButNotEnabledRelationshipAuthorizationStrategy(
