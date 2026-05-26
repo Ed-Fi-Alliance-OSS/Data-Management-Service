@@ -37,12 +37,6 @@ The mirror supports live resource and descriptor `minChangeVersion` / `maxChange
 - `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope concrete resource root table and from `dms.Descriptor`.
 - Fixture or manifest coverage proves mirrors and indexes are emitted for core resources, extension-project resources, and descriptors.
 
-## Dependencies
-
-- Existing `00-token-stamping.md` for the document-stamping trigger inventory.
-- Existing `06-descriptor-stamping.md` for the descriptor trigger entry.
-- `10-mirror-stamping-triggers.md` consumes `MirrorStampTargetTable`.
-
 ## Out of Scope
 
 - Runtime `minChangeVersion` / `maxChangeVersion` query planning.

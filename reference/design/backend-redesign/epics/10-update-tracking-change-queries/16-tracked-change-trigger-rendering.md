@@ -35,12 +35,6 @@ Concrete abstract resources (e.g., `School`, `LocalEducationAgency`, `Organizati
 - Concrete abstract resources write tombstones to their own tracked-change tables on delete but do not emit key-change rows (their inherited identity is immutable in practice).
 - Tests cover deletes, identity changes, cascading key changes, descriptor paths, people securable paths, key-unification paths, multi-row updates, and root deletes with cascaded child / `_ext` rows in both dialects. The root-delete cascade tests must include at least one child-bearing resource and one extension-bearing resource on PostgreSQL and SQL Server.
 
-## Dependencies
-
-- `10-mirror-stamping-triggers.md`.
-- `12-tracked-change-inventory.md`.
-- `14-tracked-change-table-ddl.md`.
-
 ## Out of Scope
 
 - Runtime `/deletes` or `/keyChanges` endpoint queries.

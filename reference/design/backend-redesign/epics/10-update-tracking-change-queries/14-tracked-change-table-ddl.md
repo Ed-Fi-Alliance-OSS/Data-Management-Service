@@ -28,10 +28,6 @@ The tables are append-only stores for delete tombstones and key-change rows. The
 - DDL manifests include tracked-change tables and columns.
 - PostgreSQL and SQL Server fixture tests cover a regular resource, a concrete abstract resource, and the shared descriptor table.
 
-## Dependencies
-
-- `12-tracked-change-inventory.md`.
-
 ## Out of Scope
 
 - Populating tracked-change tables.

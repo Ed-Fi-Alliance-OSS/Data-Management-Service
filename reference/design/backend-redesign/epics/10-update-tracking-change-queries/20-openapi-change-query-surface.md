@@ -29,15 +29,6 @@ This ticket is intentionally cross-project because the API contract is split acr
 - Tests cover OpenAPI generation for regular resources, descriptors, and `SchoolYearType` exclusion.
 - DMS tests cover startup/loading of the updated OpenAPI, route classification for advertised Change Query endpoints, and model-driven resolution for known resources excluded from the OpenAPI Change Query surface.
 
-## Dependencies
-
-- Effective schema loading and OpenAPI path normalization.
-- Endpoint implementation tickets consume this contract:
-  - `21-available-change-versions-endpoint.md`
-  - `23-deletes-endpoint.md` (including the shared `/deletes` and `/keyChanges` endpoint foundation)
-  - `24-keychanges-endpoint.md`
-  - `19-live-change-version-filters.md`
-
 ## Out of Scope
 
 - Implementing the endpoint runtime behavior.

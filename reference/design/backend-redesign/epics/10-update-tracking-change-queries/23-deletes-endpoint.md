@@ -55,15 +55,6 @@ endpoint implementation. `24-keychanges-endpoint.md` reuses this foundation for
 - Cascading delete scenarios for abstract-resource families are covered, including a scenario comparable to ODS-4087.
 - Tests cover regular resources, descriptors, recreated resources, recreated descriptors, pagination, totalCount, and both dialects.
 
-## Dependencies
-
-- `11-refkey-documentid-ordering.md`.
-- `12-tracked-change-inventory.md`.
-- `16-tracked-change-trigger-rendering.md`.
-- `17-delete-by-id-tombstone-ordering.md`.
-- `18-change-version-parameter-validation.md`.
-- `20-openapi-change-query-surface.md`.
-
 ## Out of Scope
 
 - `ReadChanges` authorization, handled by `25-readchanges-authorization.md`.

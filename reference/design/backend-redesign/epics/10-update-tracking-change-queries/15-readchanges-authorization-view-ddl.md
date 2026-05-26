@@ -28,11 +28,6 @@ These views preserve ODS Change Query authorization semantics while adapting the
 - DDL manifests include the emitted authorization views.
 - PostgreSQL and SQL Server fixture tests validate the rendered view shape, including use of `UNION` and absence of `UNION ALL`.
 
-## Dependencies
-
-- `13-readchanges-authorization-inventory.md`.
-- `14-tracked-change-table-ddl.md`.
-
 ## Out of Scope
 
 - Runtime authorization predicate generation.

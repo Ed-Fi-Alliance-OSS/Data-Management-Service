@@ -22,11 +22,6 @@ The endpoint returns the same request and response contract as ODS. `oldestChang
 - Tests cover successful routing, response shape, and the database call to `dms.GetMaxChangeVersion()`.
 - PostgreSQL and SQL Server coverage proves the endpoint works against both implementations of the function.
 
-## Dependencies
-
-- Existing `07-get-max-change-version-function.md`.
-- `20-openapi-change-query-surface.md`.
-
 ## Out of Scope
 
 - `/deletes` and `/keyChanges`.

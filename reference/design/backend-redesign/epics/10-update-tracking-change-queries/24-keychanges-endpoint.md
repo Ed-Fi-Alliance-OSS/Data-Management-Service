@@ -36,11 +36,6 @@ This story reuses the shared Change Query endpoint foundation established by
 - Concrete-abstract-resource empty-result behavior is covered alongside the descriptor case.
 - PostgreSQL and SQL Server tests cover regular resources, descriptors, collapsed windows, paging, and totalCount.
 
-## Dependencies
-
-- `16-tracked-change-trigger-rendering.md`.
-- `23-deletes-endpoint.md`.
-
 ## Out of Scope
 
 - `ReadChanges` authorization, handled by `25-readchanges-authorization.md`.

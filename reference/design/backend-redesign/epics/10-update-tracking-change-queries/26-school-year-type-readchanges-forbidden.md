@@ -24,13 +24,6 @@ MetaEd excludes `SchoolYearType` from emitted `/deletes` and `/keyChanges` OpenA
 - Normal OpenAPI emission still excludes `SchoolYearType` `/deletes` and `/keyChanges` paths.
 - Tests cover both `/deletes` and `/keyChanges`.
 
-## Dependencies
-
-- `20-openapi-change-query-surface.md`.
-- `23-deletes-endpoint.md`.
-- `24-keychanges-endpoint.md`.
-- `25-readchanges-authorization.md`.
-
 ## Out of Scope
 
 - Adding `SchoolYearType` to OpenAPI Change Query paths.

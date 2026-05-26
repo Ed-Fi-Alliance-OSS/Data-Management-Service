@@ -28,11 +28,6 @@ The first delete fires the resource or descriptor stamping trigger while `dms.Do
 - Delete conflict behavior and diagnostics remain consistent with the delete-path epic.
 - PostgreSQL and SQL Server integration tests cover regular resources, descriptors, at least one cascading-delete scenario for an abstract-resource family, at least one child-bearing resource delete, and at least one extension-bearing resource delete.
 
-## Dependencies
-
-- Existing delete-by-id story in `../11-delete-path/00-delete-by-id.md`.
-- `16-tracked-change-trigger-rendering.md`.
-
 ## Out of Scope
 
 - Supporting direct `DELETE FROM dms.Document` outside the DMS write path as a Change Query tombstone-producing operation.

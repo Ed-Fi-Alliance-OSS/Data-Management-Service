@@ -24,11 +24,6 @@ The `/deletes` endpoint suppresses tombstones for resources that were deleted an
 - Existing reference and descriptor resolution tests continue to pass.
 - The change is reflected consistently in PostgreSQL and SQL Server DDL.
 
-## Dependencies
-
-- Existing relational model and DDL inventory for reference-key indexes.
-- `23-deletes-endpoint.md` benefits from this index shape.
-
 ## Out of Scope
 
 - Adding new descriptor identity lookup indexes for descriptor `/deletes`.

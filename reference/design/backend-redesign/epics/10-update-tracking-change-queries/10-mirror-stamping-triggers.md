@@ -27,12 +27,6 @@ The trigger's affected-document detection must also ignore updates whose only di
 - Multi-row updates allocate one distinct `ContentVersion` per affected document and mirror each value correctly.
 - PostgreSQL and SQL Server integration tests cover at least a root-only resource, a child-bearing resource, an `_ext`-bearing resource, an extension-project resource, and a descriptor.
 
-## Dependencies
-
-- `09-change-version-mirror-model.md`.
-- Existing `00-token-stamping.md`.
-- Existing `06-descriptor-stamping.md`.
-
 ## Out of Scope
 
 - Adding tracked-change tombstone or key-change inserts.

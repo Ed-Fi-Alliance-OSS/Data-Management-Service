@@ -31,13 +31,6 @@ Response metadata remains sourced from `dms.Document` for now.
   - one extension-project resource endpoint.
 - Integration tests prove resources outside the range are excluded and resources inside the range are returned.
 
-## Dependencies
-
-- `09-change-version-mirror-model.md`.
-- `10-mirror-stamping-triggers.md`.
-- `18-change-version-parameter-validation.md`.
-- Existing relational GET-many query execution.
-
 ## Out of Scope
 
 - `/deletes`, `/keyChanges`, and `/availableChangeVersions`.

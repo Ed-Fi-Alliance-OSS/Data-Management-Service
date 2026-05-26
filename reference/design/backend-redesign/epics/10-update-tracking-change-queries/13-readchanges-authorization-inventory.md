@@ -25,11 +25,6 @@ The derived inventory describes the four `*IncludingDeletes` views as SQL-free m
 - The inventory uses tracked-change old-value columns for deleted or key-changed associations.
 - Fixture coverage validates the expected union arms and column references.
 
-## Dependencies
-
-- `12-tracked-change-inventory.md`.
-- Existing relationship authorization model and PrimaryAssociation resource detection.
-
 ## Out of Scope
 
 - Rendering authorization view SQL.

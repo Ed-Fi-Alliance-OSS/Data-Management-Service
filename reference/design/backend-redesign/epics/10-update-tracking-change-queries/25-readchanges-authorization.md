@@ -33,13 +33,6 @@ Unsupported `ReadChanges` strategies are treated as unavailable authorization st
 - Unsupported-strategy coverage includes `OwnershipBased`, `RelationshipsWithPeopleOnly`, `RelationshipsWithEdOrgsAndPeopleInverted`, and custom view-based `ReadChanges` strategies deferred from v1.
 - Tests cover `/deletes` and `/keyChanges` for namespace, EdOrg-only, EdOrg-and-people, students-only, and responsibility-through-deleted strategies.
 
-## Dependencies
-
-- `15-readchanges-authorization-view-ddl.md`.
-- `23-deletes-endpoint.md`.
-- `24-keychanges-endpoint.md`.
-- Existing relational authorization strategy infrastructure.
-
 ## Out of Scope
 
 - Custom view-based authorization strategies.

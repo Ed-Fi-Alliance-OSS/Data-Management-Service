@@ -29,12 +29,6 @@ This story owns semantic derivation only. Dialect renderers and endpoint planner
 - Key-change row derivation uses the owning `DbTriggerInfo.IdentityProjectionColumns` workset rather than SQL target-list checks.
 - Manifest or fixture output exposes tracked-change tables, value columns, descriptor joins, person joins, and trigger attachments.
 
-## Dependencies
-
-- Existing derived relational model set builder.
-- Existing authorization path resolution for securable elements.
-- Existing identity projection metadata used by document-stamping triggers.
-
 ## Out of Scope
 
 - Rendering tracked-change tables.

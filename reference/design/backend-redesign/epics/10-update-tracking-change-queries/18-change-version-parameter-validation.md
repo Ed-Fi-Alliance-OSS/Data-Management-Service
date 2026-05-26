@@ -25,10 +25,6 @@ Validation must preserve the ODS-compatible ProblemDetails shape described in `c
 - Validation is shared by live GET-many, `/deletes`, and `/keyChanges` rather than duplicated in each handler.
 - Tests cover valid ranges, missing bounds, invalid values, negative values, and inverted ranges.
 
-## Dependencies
-
-- Existing request validation middleware and ProblemDetails infrastructure.
-
 ## Out of Scope
 
 - Snapshot-header validation.
