@@ -127,3 +127,8 @@ Task completed: Regression Coverage for reference/design/backend-redesign/epics/
 Key decisions: treated existing focused refactor coverage as sufficient after full required feedback loop; csharpier changed no files; final implementation diff limited to task tracking.
 Files changed: tasks.json; progress.txt.
 Blockers/notes: Plans full suite, backend relationship/write filter, and core handler filter passed. All refactor tasks complete.
+
+Task completed: Contracts - duplicate auth object ownership verification for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: verified duplicate medium Contracts task was already satisfied by prior refactor; subject owns AuthObject, check spec has no AuthObject, People metadata no longer duplicates executable auth object; no source edits.
+Files changed: tasks.json; progress.txt.
+Blockers/notes: RelationshipAuthorization broad filter and SingleRecordRelationshipAuthorizationExecutor passed; two incomplete medium tasks remain.
