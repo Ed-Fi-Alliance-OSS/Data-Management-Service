@@ -584,7 +584,9 @@ public sealed class RelationshipAuthorizationPlanner
                 ),
             RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError =>
                 new RelationshipAuthorizationStrategySubjectSelection(
-                    [],
+                    selection
+                        .StrategySubjectSelections.SelectMany(static strategy => strategy.Subjects)
+                        .ToArray(),
                     selection.SecurityConfigurationFailures
                 ),
             _ => throw new InvalidOperationException(

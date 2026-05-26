@@ -52,15 +52,6 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             ),
         ];
 
-        if (securityConfigurationFailures.Count > 0)
-        {
-            return new RelationalPeopleAuthorizationSubjectSelection(
-                RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError,
-                [],
-                [.. OrderFailures(securityConfigurationFailures)]
-            );
-        }
-
         var subjectsByStrategy = new List<RelationalPeopleAuthorizationStrategySubjectSelection>(
             supportedStrategies.Count
         );
@@ -104,7 +95,7 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         {
             return new RelationalPeopleAuthorizationSubjectSelection(
                 RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError,
-                [],
+                subjectsByStrategy,
                 [.. OrderFailures(securityConfigurationFailures)]
             );
         }

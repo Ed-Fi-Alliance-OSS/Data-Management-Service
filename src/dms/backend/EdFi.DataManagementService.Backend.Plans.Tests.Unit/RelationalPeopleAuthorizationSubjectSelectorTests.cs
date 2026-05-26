@@ -420,6 +420,68 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_preserve_resolved_people_subjects_when_other_same_strategy_people_paths_are_unresolved()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "PartiallyResolvedStudentCarrier");
+        var resolvedStudentPath = "$.studentReference.studentUniqueId";
+        var unresolvedStudentPath = "$.missingStudentReference.studentUniqueId";
+        var studentDocumentIdColumn = Col("Student_DocumentId");
+        var rootTable = CreateRootTable(Table(resource.ResourceName));
+        var model = CreateModelWithTables(
+            resource.ResourceName,
+            rootTable,
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    Path("$.studentReference"),
+                    rootTable.Table,
+                    studentDocumentIdColumn,
+                    new QualifiedResourceName("Ed-Fi", "Student"),
+                    [
+                        new ReferenceIdentityBinding(
+                            Path(resolvedStudentPath),
+                            Path(resolvedStudentPath),
+                            Col("StudentUniqueId")
+                        ),
+                    ]
+                ),
+            ]
+        );
+        var mappingSet = CreateMappingSet(
+            CreateConcrete(
+                resource.ResourceName,
+                model,
+                new ResourceSecurableElements([], [], [resolvedStudentPath, unresolvedStudentPath], [], [])
+            ),
+            CreatePersonResource(SecurableElementKind.Student)
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            resource,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        );
+
+        result
+            .Outcome.Should()
+            .Be(RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+
+        var strategySelection = result.StrategySubjectSelections.Should().ContainSingle().Subject;
+        var subject = strategySelection.Subjects.Should().ContainSingle().Subject;
+
+        subject.Table.Should().Be(Table(resource.ResourceName));
+        subject.Column.Should().Be(studentDocumentIdColumn);
+        subject.Contributors.Should().ContainSingle().Which.JsonPath.Should().Be(resolvedStudentPath);
+
+        var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.UnresolvedSecurableElement);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location.JsonPath.Should().Be(unresolvedStudentPath);
+        failure.Contributors.Should().ContainSingle().Which.JsonPath.Should().Be(unresolvedStudentPath);
+    }
+
+    [Test]
     public void It_should_create_one_subject_per_independent_declared_person_path()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "DualStudentCarrier");
