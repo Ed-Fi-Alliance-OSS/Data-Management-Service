@@ -192,7 +192,10 @@ direct-SQL path as an ongoing or permanent alternative.
   run. `SeedLoader` credential bootstrap and every BulkLoadClient invocation receive those instance IDs
   via in-memory forwarding within a single wrapper invocation, or via explicit `-InstanceId`/`-SchoolYear`
   selectors in a manual phase flow; they must not perform their own CMS instance creation, broad
-  target-selection policy, or non-selector-driven discovery pass.
+  target-selection policy, or non-selector-driven discovery pass. The only permitted no-selector case is
+  the existing phase-command rerun convenience: if CMS contains exactly one route-unqualified DMS instance
+  in the current tenant scope, seed delivery may auto-select that instance. Zero instances, multiple
+  instances, or one route-qualified instance must fail fast with selector guidance.
   See [`EPIC.md`](EPIC.md) Scope Guardrails for the selector resolution rules.
 - BulkLoadClient invocation uses:
   - the DMS base URL supplied to `load-dms-seed-data.ps1 -DmsBaseUrl` for the current flow,

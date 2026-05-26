@@ -44,14 +44,7 @@ function Get-EffectiveBootstrapEnvFile {
         [switch]$SeedDataPathSupplied
     )
 
-    if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
-        $defaultEnv = Join-Path $PSScriptRoot ".env"
-        $fallbackEnv = Join-Path $PSScriptRoot ".env.example"
-        $BaseEnvironmentFile = if (Test-Path -LiteralPath $defaultEnv) { $defaultEnv } else { $fallbackEnv }
-    }
-    elseif (-not [System.IO.Path]::IsPathRooted($BaseEnvironmentFile)) {
-        $BaseEnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $BaseEnvironmentFile))
-    }
+    $BaseEnvironmentFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $BaseEnvironmentFile
 
     if (-not $LoadSeedDataRequested) { return $BaseEnvironmentFile }
 
@@ -80,6 +73,27 @@ function Get-EffectiveBootstrapEnvFile {
     return $result
 }
 
+function Resolve-WrapperEnvironmentFilePath {
+    <#
+    .SYNOPSIS
+    Resolves the base env file path using the same defaults as the wrapper and start scripts.
+    #>
+    param(
+        [string]$BaseEnvironmentFile
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
+        $defaultEnv = Join-Path $PSScriptRoot ".env"
+        $fallbackEnv = Join-Path $PSScriptRoot ".env.example"
+        $BaseEnvironmentFile = if (Test-Path -LiteralPath $defaultEnv) { $defaultEnv } else { $fallbackEnv }
+    }
+    elseif (-not [System.IO.Path]::IsPathRooted($BaseEnvironmentFile)) {
+        $BaseEnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $BaseEnvironmentFile))
+    }
+
+    return $BaseEnvironmentFile
+}
+
 function Resolve-WrapperIdentityProvider {
     <#
     .SYNOPSIS
@@ -95,8 +109,14 @@ function Resolve-WrapperIdentityProvider {
         [string]$EffectiveEnvironmentFile
     )
 
+    $supported = @("keycloak", "self-contained")
+
     if ($ExplicitProviderSupplied -and -not [string]::IsNullOrWhiteSpace($ExplicitProvider)) {
-        return $ExplicitProvider
+        $provider = $ExplicitProvider.Trim().ToLowerInvariant()
+        if ($supported -notcontains $provider) {
+            throw "Unsupported identity provider '$ExplicitProvider'. Supported values: $($supported -join ', ')."
+        }
+        return $provider
     }
 
     $envUtilityPath = Join-Path $PSScriptRoot "env-utility.psm1"
@@ -113,7 +133,11 @@ function Resolve-WrapperIdentityProvider {
     if ($envValues -is [System.Collections.IDictionary] -and $envValues.ContainsKey("DMS_CONFIG_IDENTITY_PROVIDER")) {
         $envValue = [string]$envValues["DMS_CONFIG_IDENTITY_PROVIDER"]
         if (-not [string]::IsNullOrWhiteSpace($envValue)) {
-            return $envValue.Trim().ToLowerInvariant()
+            $provider = $envValue.Trim().ToLowerInvariant()
+            if ($supported -notcontains $provider) {
+                throw "Unsupported identity provider '$envValue' (from env file). Supported values: $($supported -join ', ')."
+            }
+            return $provider
         }
     }
     return "self-contained"
@@ -238,15 +262,11 @@ function Invoke-BootstrapWrapper {
 
     Push-Location $PSScriptRoot
     try {
-        # Resolve the effective env file. When seed loading is requested, materialize a derived env
-        # with the bootstrap profile so BulkLoadClient 7.3.1 doesn't NRE on Sample's inline-object
-        # array shapes and the circuit breaker tolerates the bulk-load failure ratio.
-        $effectiveEnvFile = Get-EffectiveBootstrapEnvFile `
-            -BaseEnvironmentFile $EnvironmentFile `
-            -LoadSeedDataRequested:$LoadSeedData `
-            -SeedDataPathSupplied:$seedDataPathSupplied
+        $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
 
-        # Resolve identity provider once and forward the same value to both phases. The start
+        # Resolve identity provider once and forward the same value to both phases. This runs before
+        # derived-env materialization so an unsupported env-file value fails without writing .env.derived.
+        # The start
         # scripts default to "self-contained" and would otherwise diverge from the seed phase,
         # which resolves DMS_CONFIG_IDENTITY_PROVIDER from the env file. Without this, a single
         # wrapper invocation could start infra under one provider and authenticate seeds under
@@ -254,7 +274,15 @@ function Invoke-BootstrapWrapper {
         $resolvedIdentityProvider = Resolve-WrapperIdentityProvider `
             -ExplicitProvider $IdentityProvider `
             -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) `
-            -EffectiveEnvironmentFile $effectiveEnvFile
+            -EffectiveEnvironmentFile $baseEnvFile
+
+        # Resolve the effective env file. When seed loading is requested, materialize a derived env
+        # with the bootstrap profile so BulkLoadClient 7.3.1 doesn't NRE on Sample's inline-object
+        # array shapes and the circuit breaker tolerates the bulk-load failure ratio.
+        $effectiveEnvFile = Get-EffectiveBootstrapEnvFile `
+            -BaseEnvironmentFile $baseEnvFile `
+            -LoadSeedDataRequested:$LoadSeedData `
+            -SeedDataPathSupplied:$seedDataPathSupplied
 
         # Infrastructure phase
         $startArgs = @{ IdentityProvider = $resolvedIdentityProvider }

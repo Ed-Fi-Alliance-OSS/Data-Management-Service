@@ -632,6 +632,39 @@ Describe "DMS-1152 API seed delivery bootstrap" {
 
             Remove-Item -LiteralPath $cacheRoot -Recurse -Force
         }
+
+        It "Resolve-BootstrapDataStandard wraps fetch failures with the pinned tag" {
+            $bootstrapRoot = New-TestDirectory
+            function script:Get-BootstrapRoot { $bootstrapRoot }
+            function script:Get-DataStandardRepo { throw "simulated fetch failure" }
+
+            try {
+                { Resolve-BootstrapDataStandard } |
+                    Should -Throw -ExpectedMessage "*Data Standard repo resolution failed for tag v5.2.0*simulated fetch failure*"
+            }
+            finally {
+                Remove-Item function:script:Get-BootstrapRoot -ErrorAction SilentlyContinue
+                Remove-Item function:script:Get-DataStandardRepo -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $bootstrapRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "Resolve-BootstrapDataStandard rejects a missing extracted directory with the resolved path" {
+            $bootstrapRoot = New-TestDirectory
+            $missingRepoRoot = Join-Path $bootstrapRoot "data-standard/v5.2.0"
+            function script:Get-BootstrapRoot { $bootstrapRoot }
+            function script:Get-DataStandardRepo { $missingRepoRoot }
+
+            try {
+                { Resolve-BootstrapDataStandard } |
+                    Should -Throw -ExpectedMessage "*Data Standard repo directory not found after fetch*$missingRepoRoot*"
+            }
+            finally {
+                Remove-Item function:script:Get-BootstrapRoot -ErrorAction SilentlyContinue
+                Remove-Item function:script:Get-DataStandardRepo -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $bootstrapRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     Context "seed workspace materialization" {
@@ -1835,6 +1868,44 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
+        It "bootstrap-local-dms.ps1 rejects unsupported env identity provider before derived-env or phase invocation" {
+            $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
+            $tmpRoot = New-TestDirectory
+            $tmpDockerCompose = Join-Path $tmpRoot "eng/docker-compose"
+            New-Item -ItemType Directory -Path $tmpDockerCompose -Force | Out-Null
+
+            Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
+            foreach ($moduleName in @("bootstrap-wrapper.psm1", "env-utility.psm1", "bootstrap-manifest.psm1")) {
+                Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $moduleName) -Destination $tmpDockerCompose
+            }
+
+            $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
+            New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
+            '{"schema":{"selectionMode":"Standard"}}' | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
+
+            $envFile = Join-Path $tmpRoot "bad-idp.env"
+            "DMS_CONFIG_IDENTITY_PROVIDER=oauth`n" | Set-Content -LiteralPath $envFile -Encoding utf8
+
+            $startProbe = Join-Path $tmpRoot "start-invoked.txt"
+            $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
+
+            "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$startProbe' -Value 'invoked' -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "start-local-dms.ps1") -Encoding utf8
+            "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$seedProbe' -Value 'invoked' -Encoding utf8" |
+                Set-Content -LiteralPath (Join-Path $tmpDockerCompose "load-dms-seed-data.ps1") -Encoding utf8
+
+            $wrapperCopy = Join-Path $tmpDockerCompose "bootstrap-local-dms.ps1"
+
+            { & $wrapperCopy -LoadSeedData -EnvironmentFile $envFile } |
+                Should -Throw -ExpectedMessage "*Unsupported identity provider*oauth*from env file*"
+
+            Test-Path -LiteralPath (Join-Path $bootstrapDir ".env.derived") | Should -BeFalse -Because "invalid env provider must fail before derived env is written"
+            Test-Path -LiteralPath $startProbe | Should -BeFalse -Because "start phase must not run when wrapper identity provider validation fails"
+            Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run when wrapper identity provider validation fails"
+
+            Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+        }
+
         It "bootstrap-local-dms.ps1 rejects descending -SchoolYearRange before any phase invocation" {
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             $tmpRoot = New-TestDirectory
@@ -2201,6 +2272,25 @@ EdFi.BulkLoadClient.Console fake
             # the Sample/Homograph exclusion list must be empty when the switch is not set.
             $script:envUtilityContent | Should -Match '\[switch\]\$FilterSampleHomograph' -Because "Resolve-BootstrapDerivedEnv must accept -FilterSampleHomograph"
             $script:envUtilityContent | Should -Match '(?s)if\s*\(\s*\$FilterSampleHomograph\s*\)\s*\{[^}]*EdFi\.Sample\.ApiSchema[^}]*EdFi\.Homograph\.ApiSchema' -Because "the exclusion list must live inside the if(FilterSampleHomograph) branch"
+        }
+
+        It "seed-delivery pinned constants require inventory review when changed" {
+            # The SeedLoader claims fixture and default EdOrg envelope are hand-curated against the
+            # v5.2.0 Sample XML inventory and the current BulkLoadClient XML surface. A bump here
+            # must intentionally update those inventories in the same change.
+            $script:seedScriptContent | Should -Match '\$script:BulkLoadClientPackageVersion\s*=\s*"7\.3\.10212"' -Because "BulkLoadClient changes require reviewing the XML flag preflight and invocation shape"
+            $script:seedScriptContent | Should -Match '\$script:DataStandardRefTag\s*=\s*"v5\.2\.0"' -Because "DataStandardRefTag changes require regenerating the SeedLoader claims inventory and EdOrg envelope"
+        }
+
+        It "SeedLoader default EdOrg envelope remains pinned to the v5.2.0 Sample XML top-level EdOrgs" {
+            $mgmtContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "../Dms-Management.psm1") -Raw
+            $mgmtContent | Should -Match '\[long\[\]\]\$EducationOrganizationIds\s*=\s*@\(\[long\]255950,\s*\[long\]255901,\s*\[long\]255901001,\s*\[long\]255901044,\s*\[long\]255901107,\s*\[long\]19,\s*\[long\]6000203\)' -Because "EdOrg envelope changes must be reviewed against the pinned Sample XML inventory"
+        }
+
+        It "Wait-CmsClientAvailable defaults to a 30-second cold-stack budget" {
+            $mgmtContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "../Dms-Management.psm1") -Raw
+            $mgmtContent | Should -Match '\[int\]\$MaxAttempts\s*=\s*60' -Because "60 attempts x 500ms gives the intended 30-second default wait budget"
+            $mgmtContent | Should -Match '\[int\]\$DelayMs\s*=\s*500'
         }
     }
 }

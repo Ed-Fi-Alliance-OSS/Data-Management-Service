@@ -342,7 +342,7 @@ function Get-CmsToken {
         The just-issued OAuth client_secret (Secret) to validate.
 
     .PARAMETER MaxAttempts
-        Maximum number of poll attempts. Default: 30 (paired with default DelayMs gives a 15-second ceiling).
+        Maximum number of poll attempts. Default: 60 (paired with default DelayMs gives a 30-second ceiling).
 
     .PARAMETER DelayMs
         Milliseconds to wait between attempts. Default: 500.
@@ -363,7 +363,7 @@ function Wait-CmsClientAvailable {
         [Parameter(Mandatory)] [string]$CmsUrl,
         [Parameter(Mandatory)] [string]$ClientId,
         [Parameter(Mandatory)] [string]$ClientSecret,
-        [int]$MaxAttempts = 30,
+        [int]$MaxAttempts = 60,
         [int]$DelayMs = 500,
         [scriptblock]$Invoker = $null
     )
