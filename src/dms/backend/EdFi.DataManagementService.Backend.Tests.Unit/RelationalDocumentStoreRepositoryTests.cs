@@ -5542,6 +5542,57 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_preserves_mixed_auth_object_relationship_failure_details_when_delete_authorization_fails()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var relationshipFailure = CreateMixedAuthObjectRelationshipFailure();
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
+        ConfigureDeleteRelationshipAuthorization(
+            new SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized(relationshipFailure)
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901L]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
+        failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
+        failure
+            .ErrorMessages.Should()
+            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
+        failure
+            .ErrorMessages.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("'SchoolId'")
+            .And.Contain("'StudentUniqueId'")
+            .And.NotContain("auth.EducationOrganizationIdToStudentDocumentId")
+            .And.NotContain("auth.EducationOrganizationIdToEducationOrganizationId");
+        var failedStrategy = failure.RelationshipFailure.FailedStrategies.Should().ContainSingle().Which;
+        failedStrategy.AuthObject.Should().BeNull();
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.AuthObject.Name)
+            .Should()
+            .Equal(
+                "auth.EducationOrganizationIdToEducationOrganizationId",
+                "auth.EducationOrganizationIdToStudentDocumentId"
+            );
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_short_circuits_delete_relationship_authorization_with_empty_edorg_claims()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -6930,6 +6981,91 @@ public class Given_RelationalDocumentStoreRepositoryTests
                             ],
                             Hint: "No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds."
                         ),
+                    ]
+                ),
+            ],
+            ClaimEducationOrganizationIds: [new EducationOrganizationId(255901)]
+        );
+
+    private static RelationshipAuthorizationFailure CreateMixedAuthObjectRelationshipFailure() =>
+        new(
+            RelationshipAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            FailedStrategies:
+            [
+                new RelationshipAuthorizationFailedStrategy(
+                    ConfiguredStrategyIndex: 0,
+                    RelationshipLocalOrder: 0,
+                    StrategyName: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+                    StrategyKind: AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+                    AuthObject: null,
+                    FailedSubjects:
+                    [
+                        new RelationshipAuthorizationFailedSubject(
+                            SubjectIndex: 0,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                            RootBinding: new RelationshipAuthorizationRootBinding(
+                                "Ed-Fi.School",
+                                "edfi.School",
+                                "SchoolId"
+                            ),
+                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                "auth.EducationOrganizationIdToEducationOrganizationId",
+                                "TargetEducationOrganizationId",
+                                "SourceEducationOrganizationId"
+                            ),
+                            SecurableElements:
+                            [
+                                new RelationshipAuthorizationSecurableElement(
+                                    "EducationOrganization",
+                                    "$.schoolId",
+                                    "SchoolId"
+                                ),
+                            ]
+                        ),
+                        new RelationshipAuthorizationFailedSubject(
+                            SubjectIndex: 1,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                            RootBinding: new RelationshipAuthorizationRootBinding(
+                                "Ed-Fi.StudentSchoolAssociation",
+                                "edfi.StudentSchoolAssociation",
+                                "Student_DocumentId"
+                            ),
+                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                "auth.EducationOrganizationIdToStudentDocumentId",
+                                "Student_DocumentId",
+                                "SourceEducationOrganizationId"
+                            ),
+                            SecurableElements:
+                            [
+                                new RelationshipAuthorizationSecurableElement(
+                                    "Student",
+                                    "$.studentReference.studentUniqueId",
+                                    "StudentUniqueId"
+                                ),
+                            ]
+                        )
+                        {
+                            PersonSubject = new RelationshipAuthorizationPersonSubjectInfo(
+                                PersonKind: "Student",
+                                PathKind: "DirectRootColumn",
+                                DocumentIdPath:
+                                [
+                                    new RelationshipAuthorizationPersonDocumentIdPathStepInfo(
+                                        "edfi.StudentSchoolAssociation",
+                                        "Student_DocumentId",
+                                        TargetTableName: null,
+                                        TargetColumnName: null
+                                    ),
+                                ],
+                                StoredAnchor: new RelationshipAuthorizationPersonStoredAnchorInfo(
+                                    "edfi.StudentSchoolAssociation",
+                                    "DocumentId"
+                                ),
+                                ProposedAnchor: null,
+                                Hint: "You may need to create a corresponding 'StudentSchoolAssociation' item."
+                            ),
+                        },
                     ]
                 ),
             ],

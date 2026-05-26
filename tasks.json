@@ -444,7 +444,7 @@
       "Add or update repository tests for People staging failures, mixed-auth-object failures, and EdOrg-only failure message regressions.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Regression Coverage",

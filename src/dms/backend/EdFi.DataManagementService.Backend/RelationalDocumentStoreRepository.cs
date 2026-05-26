@@ -2578,9 +2578,17 @@ public sealed class RelationalDocumentStoreRepository(
 
     private static string? GetPeopleAuthViewName(RelationshipAuthorizationFailureMetadata failure)
     {
-        if (failure.PersonMetadata is { AuthObject: var authObject })
+        var subjectAuthViewNames = failure
+            .IneligibleSubjects.Where(static ineligibleSubject =>
+                ineligibleSubject.Subject.PersonMetadata is not null
+            )
+            .Select(static ineligibleSubject => ineligibleSubject.Subject.AuthObject.Name.ToString())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (subjectAuthViewNames.Length == 1)
         {
-            return authObject.Name.ToString();
+            return subjectAuthViewNames[0];
         }
 
         return failure.AuthObject?.Name.ToString() ?? failure.Location?.AuthorizationObjectName;
@@ -2650,8 +2658,11 @@ public sealed class RelationalDocumentStoreRepository(
                         )
                         .FirstOrDefault(static detail => detail is not null)
                     ?? $"'{ineligibleSubject.Subject.Table}.{ineligibleSubject.Subject.Column.Value}'";
+                var authViewDetail = ineligibleSubject.Subject.PersonMetadata is not null
+                    ? $"; auth view: '{ineligibleSubject.Subject.AuthObject.Name}'"
+                    : string.Empty;
 
-                return $"{contributorDetail} (reason: {ineligibleSubject.Reason})";
+                return $"{contributorDetail} (reason: {ineligibleSubject.Reason}{authViewDetail})";
             })
         );
 
