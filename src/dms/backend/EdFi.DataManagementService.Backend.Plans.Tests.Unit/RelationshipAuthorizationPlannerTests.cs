@@ -1055,6 +1055,50 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Be(subject.PersonMetadata.ProposedAnchor.Binding);
     }
 
+    [TestCaseSource(nameof(SelfPersonExistingResourceCases))]
+    public void It_should_plan_existing_resource_self_person_proposed_specs_with_target_document_id_anchors(
+        SecurableElementKind securableElementKind,
+        string strategyName
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind));
+        var mappingSet = CreateSelfPersonMappingSet(securableElementKind);
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(strategyName),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.ProposedValues.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result.ProposedValues)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+        var subject = checkSpec.Subjects.Should().ContainSingle().Subject;
+        var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)checkSpec.CheckTarget;
+
+        subject
+            .PersonMetadata!.Path.Kind.Should()
+            .Be(RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId);
+        subject
+            .PersonMetadata.ProposedAnchor!.Kind.Should()
+            .Be(RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId);
+        subject.PersonMetadata.ProposedAnchor.Binding.Table.Should().Be(Table(resource.ResourceName));
+        subject.PersonMetadata.ProposedAnchor.Binding.Column.Should().Be(_documentId);
+        subject.PersonMetadata.ProposedAnchor.Binding.BindingIndex.Should().Be(0);
+        proposedTarget
+            .SubjectBindingsInOrder.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(subject.PersonMetadata.ProposedAnchor.Binding);
+    }
+
     [Test]
     public void It_should_mark_self_person_create_new_subjects_ineligible_when_no_subject_can_execute()
     {
@@ -2453,6 +2497,24 @@ public class Given_RelationshipAuthorizationPlannerTests
             RelationshipAuthorizationPersonKind.Student,
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
         ).SetName("StudentThroughResponsibility");
+    }
+
+    private static IEnumerable<TestCaseData> SelfPersonExistingResourceCases()
+    {
+        yield return new TestCaseData(
+            SecurableElementKind.Student,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        ).SetName("Student");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Contact,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Contact");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Staff,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Staff");
     }
 
     private static ResourceSecurableElements CreatePersonSecurableElements(

@@ -736,7 +736,7 @@ public sealed class RelationshipAuthorizationPlanner
                     continue;
                 }
 
-                var anchor = CreateProposedAnchor(subject, rootTable, rootDocumentIdColumn);
+                var anchor = CreateProposedAnchor(subject, rootTable, rootDocumentIdColumn, operationKind);
 
                 if (!anchor.Table.Equals(rootTable))
                 {
@@ -830,7 +830,8 @@ public sealed class RelationshipAuthorizationPlanner
     private static ProposedAnchor CreateProposedAnchor(
         RelationshipAuthorizationSubject subject,
         DbTableName rootTable,
-        DbColumnName rootDocumentIdColumn
+        DbColumnName rootDocumentIdColumn,
+        ProposedValueOperationKind operationKind
     )
     {
         var personMetadata = subject.PersonMetadata;
@@ -855,7 +856,9 @@ public sealed class RelationshipAuthorizationPlanner
                 personMetadata.Path.Steps[0]
             ),
             RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId => new ProposedAnchor(
-                RelationshipAuthorizationPersonProposedAnchorKind.RootRow,
+                operationKind is ProposedValueOperationKind.ExistingResource
+                    ? RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId
+                    : RelationshipAuthorizationPersonProposedAnchorKind.RootRow,
                 rootTable,
                 rootDocumentIdColumn
             ),

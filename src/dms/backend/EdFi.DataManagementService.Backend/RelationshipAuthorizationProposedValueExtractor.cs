@@ -45,6 +45,13 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         RelationshipAuthorizationResult.Authorized authorized,
         RootWriteRowBuffer rootRow,
         int emittedAuth1Index
+    ) => Extract(authorized, rootRow, emittedAuth1Index, targetContext: null);
+
+    public static ProposedRelationshipAuthorizationExtractionResult Extract(
+        RelationshipAuthorizationResult.Authorized authorized,
+        RootWriteRowBuffer rootRow,
+        int emittedAuth1Index,
+        RelationalWriteTargetContext? targetContext
     )
     {
         ArgumentNullException.ThrowIfNull(authorized);
@@ -143,7 +150,20 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                     );
                 }
 
-                var value = GetBoundSqlValue(rootRow.Values[binding.BindingIndex]);
+                var valueResult = GetRuntimeValue(
+                    rootRow.Values[binding.BindingIndex],
+                    subject,
+                    targetContext,
+                    strategyOrdinal,
+                    subjectOrdinal
+                );
+
+                if (valueResult is ProposedRuntimeValue.Invalid invalidValue)
+                {
+                    return Invalid(invalidValue.FailureMessage);
+                }
+
+                var value = ((ProposedRuntimeValue.Ready)valueResult).Value;
 
                 runtimeSubjects.Add(
                     new ProposedRelationshipAuthorizationRuntimeSubject(
@@ -174,6 +194,38 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         );
     }
 
+    private static ProposedRuntimeValue GetRuntimeValue(
+        FlattenedWriteValue boundValue,
+        RelationshipAuthorizationSubject subject,
+        RelationalWriteTargetContext? targetContext,
+        int strategyOrdinal,
+        int subjectOrdinal
+    )
+    {
+        if (
+            subject.PersonMetadata?.ProposedAnchor?.Kind
+            is RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId
+        )
+        {
+            return targetContext switch
+            {
+                RelationalWriteTargetContext.ExistingDocument existingDocument =>
+                    new ProposedRuntimeValue.Ready(existingDocument.DocumentId),
+                RelationalWriteTargetContext.CreateNew => new ProposedRuntimeValue.Invalid(
+                    $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires an existing target DocumentId, but the write targets a new document."
+                ),
+                null => new ProposedRuntimeValue.Invalid(
+                    $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires an existing target DocumentId, but no target context was provided."
+                ),
+                _ => new ProposedRuntimeValue.Invalid(
+                    $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires an existing target DocumentId, but target context '{targetContext.GetType().Name}' is unsupported."
+                ),
+            };
+        }
+
+        return new ProposedRuntimeValue.Ready(GetBoundSqlValue(boundValue));
+    }
+
     private static object? GetBoundSqlValue(FlattenedWriteValue value)
     {
         if (value is FlattenedWriteValue.Literal { Value: { } literalValue } && literalValue is not DBNull)
@@ -196,6 +248,18 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             personMetadata?.Path.Kind is not RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath
         )
         {
+            if (
+                personMetadata?.ProposedAnchor?.Kind
+                is RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId
+            )
+            {
+                return new ProposedBindingTarget.Ready(
+                    personMetadata.ProposedAnchor.Binding.Table,
+                    personMetadata.ProposedAnchor.Binding.Column,
+                    "existing-resource self People proposed anchor"
+                );
+            }
+
             return new ProposedBindingTarget.Ready(subject.Table, subject.Column, "subject");
         }
 
@@ -232,5 +296,14 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             : ProposedBindingTarget;
 
         public sealed record Invalid(string FailureMessage) : ProposedBindingTarget;
+    }
+
+    private abstract record ProposedRuntimeValue
+    {
+        private ProposedRuntimeValue() { }
+
+        public sealed record Ready(object? Value) : ProposedRuntimeValue;
+
+        public sealed record Invalid(string FailureMessage) : ProposedRuntimeValue;
     }
 }

@@ -278,6 +278,7 @@ public enum RelationshipAuthorizationPersonProposedAnchorKind
 {
     RootRow,
     FirstHop,
+    ExistingTargetDocumentId,
 }
 
 public sealed record RelationshipAuthorizationPersonProposedAnchor(
