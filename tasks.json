@@ -755,5 +755,63 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Manifest/DerivedModelSetManifestEmitter.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
     ],
     "completed": true
+  },
+  {
+    "category": "Execution Boundaries",
+    "description": "Medium: Reconcile branch-introduced People auth DDL, manifest, and index behavior with the Slice 5 core-only scope.",
+    "acceptance-criteria": [
+      "The DMS-1164 Slice 5 implementation does not introduce new production DDL, manifest, or authorization-index behavior for People auth database objects beyond narrow compatibility fixes required for People core planning metadata.",
+      "Branch deltas in RelationalModelDdlEmitter, DerivedModelSetManifestEmitter, and DeriveAuthorizationIndexInventoryPass are reviewed against origin/main and either removed from this core-only branch, split to the existing DMS-1050/DMS-1094 auth-object ownership lane, or explicitly documented as required Slice 5 compatibility fixes.",
+      "The review distinguishes pre-existing People auth view and person-join index ownership from behavior newly introduced by this branch.",
+      "People relationship planning still carries auth view names, output columns, hints, and missing-view diagnostics needed by downstream DMS-1095 and DMS-1158 consumers.",
+      "Endpoint execution remains staged for People relationship strategies and does not rely on newly emitted People auth database objects in this story.",
+      "Updated unit coverage reflects the final scope decision without weakening existing EdOrg-only authorization coverage."
+    ],
+    "steps-to-verify": [
+      "Review reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md out-of-scope items against the changed DDL, manifest, and index-emission files.",
+      "Review reference/design/backend-redesign/epics/14-authorization/02-emit-people-auth-views.md, reference/design/backend-redesign/epics/14-authorization/05b-emit-person-join-indexes.md, and reference/design/backend-redesign/design-docs/auth.md to identify pre-existing People auth object and index ownership.",
+      "Run git diff origin/main...HEAD -- src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Manifest/DerivedModelSetManifestEmitter.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs and confirm each branch-introduced DDL/manifest/index delta is either removed, split, or justified as a Slice 5 planning-compatibility fix.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter RelationalModelDdlEmitter if DDL scope remains in a separate reviewed change."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Simplification",
+    "description": "Low: Remove the unused People subject selection outcome.",
+    "acceptance-criteria": [
+      "RelationalPeopleAuthorizationSubjectSelection no longer carries an Outcome value that production planning ignores.",
+      "RelationalPeopleAuthorizationSubjectSelectionOutcome is removed unless a concrete production branch needs a non-binary state that cannot be represented by successful strategy selections plus security-configuration failures.",
+      "The selector result shape remains sufficient to preserve successful per-strategy subjects and security-configuration failures in deterministic order.",
+      "No tests assert an outcome enum that has no behavioral effect.",
+      "People strategy subject selection and failure handling behavior remains unchanged."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs and src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs for the final selector result shape.",
+      "Run rg \"RelationalPeopleAuthorizationSubjectSelectionOutcome|\\.Outcome\" src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit and confirm there is no ignored outcome state.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Medium: Count zero-hop self-person subjects as applicable when filtering child-collection People paths.",
+    "acceptance-criteria": [
+      "SecurableElementColumnPathResolver does not throw the array-nested-only failure when a Student, Contact, or Staff resource has its exact self identity securable element plus one or more child-collection person paths.",
+      "DeriveAuthorizationIndexInventoryPass applies the same rule and treats an exact zero-hop self-person path as an applicable People subject path for the purpose of skipping child-collection person paths.",
+      "The resolver and index pass track applicability separately from emitted join paths or emitted indexes, because zero-hop self-person subjects intentionally produce no join chain.",
+      "Valid zero-hop self-person subjects still emit no person join authorization index.",
+      "Child-collection person paths still fail when they are the only applicable People relationship subject paths on the resource.",
+      "Broken or non-self same-kind person paths on person resources continue to surface as unresolved securable element failures."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SecurableElementColumnPathResolver.cs and src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs for consistent zero-hop self-person handling.",
+      "Add or update SecurableElementColumnPathResolver unit coverage for Student, Contact, and Staff resources with their exact self identity path plus a child-collection person path.",
+      "Add or update DeriveAuthorizationIndexInventoryPass unit coverage for the same self-plus-child path cases and for the child-only failure case.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SecurableElementColumnPathResolver",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter DeriveAuthorizationIndexInventoryPass",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/SecurableElementColumnPathResolver.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs"
+    ],
+    "completed": false
   }
 ]
