@@ -5,6 +5,8 @@
 
 #Requires -Version 7
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Bootstrap entry script intentionally writes operator progress to the console.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function names match established bootstrap helper terminology and existing call sites.')]
 [CmdletBinding()]
 param(
     [string]$EnvironmentFile,
@@ -54,7 +56,7 @@ function Test-SeedXmlIsLoadable {
 }
 
 # ---------------------------------------------------------------------------
-# Section A — BulkLoadClient resolver
+# Section A - BulkLoadClient resolver
 # ---------------------------------------------------------------------------
 
 function Resolve-BootstrapBulkLoadClient {
@@ -73,7 +75,7 @@ function Resolve-BootstrapBulkLoadClient {
         throw "BulkLoadClient package resolution returned an empty path for version $(Format-LogSafeText $script:BulkLoadClientPackageVersion)."
     }
 
-    # Parse "net<major>.<minor>" → numeric [Version] for deterministic ordering. Lexical
+    # Parse "net<major>.<minor>" to numeric [Version] for deterministic ordering. Lexical
     # descending sort would put "net9.0" above "net10.0", silently skipping newer TFMs.
     $tfmVersion = {
         param($name)
@@ -156,7 +158,7 @@ function Assert-BulkLoadClientXmlInterface {
 }
 
 # ---------------------------------------------------------------------------
-# Section A2 — Core seed data materialization helpers
+# Section A2 - Core seed data materialization helpers
 # ---------------------------------------------------------------------------
 
 function Invoke-SchoolYearTypeRestPrecondition {
@@ -167,7 +169,7 @@ function Invoke-SchoolYearTypeRestPrecondition {
     so seed delivery creates these rows directly through the DMS REST API before any BulkLoadClient
     pass. Idempotent: existing rows respond 409 and are tolerated.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper — no -WhatIf end-to-end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
     param(
         [Parameter(Mandatory)] [string]$DmsBaseUrl,
         [Parameter(Mandatory)] [string]$Key,
@@ -235,7 +237,7 @@ function Invoke-SchoolYearTypeRestPrecondition {
             200 { $created++ }
             409 { $exists++ }
             default {
-                throw "SchoolYearType precondition failed for year $(Format-LogSafeText $year): HTTP $(Format-LogSafeText $r.StatusCode) — $(Format-LogSafeText $r.Content)"
+                throw "SchoolYearType precondition failed for year $(Format-LogSafeText $year): HTTP $(Format-LogSafeText $r.StatusCode) - $(Format-LogSafeText $r.Content)"
             }
         }
     }
@@ -277,15 +279,15 @@ function Initialize-CoreSeedSource {
     resource pass independently.
 
     For Minimal:
-      <templateDir>/descriptors/  — every *.xml from <repo>/Descriptors/
+      <templateDir>/descriptors/  - every *.xml from <repo>/Descriptors/
 
     For Populated:
-      <templateDir>/descriptors/  — every *.xml from <repo>/Descriptors/
+      <templateDir>/descriptors/  - every *.xml from <repo>/Descriptors/
                                     PLUS every *Descriptor.xml from <repo>/Samples/Sample XML/
                                     (sample-only descriptors that the resource XML references but that
                                     are not duplicated under <repo>/Descriptors/; they must load before
                                     the resource pass to avoid foreign-key 409s).
-      <templateDir>/resources/    — every non-*Descriptor.xml from <repo>/Samples/Sample XML/
+      <templateDir>/resources/    - every non-*Descriptor.xml from <repo>/Samples/Sample XML/
 
     SchoolYearType rows are NOT staged through XML. v5.x data standards model SchoolYearType as a closed
     XSD enumeration that no Interchange-*.xsd allows at the top level, so seed delivery POSTs the required
@@ -293,7 +295,7 @@ function Initialize-CoreSeedSource {
 
     Returns a hashtable with keys: TemplateDirectory, DescriptorsDirectory, ResourcesDirectory (null for Minimal).
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper — no -WhatIf end-to-end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
     param(
         [Parameter(Mandatory)]
         [ValidateSet("Minimal", "Populated")]
@@ -381,7 +383,7 @@ function Initialize-CoreSeedSource {
 }
 
 # ---------------------------------------------------------------------------
-# Section B — Manifest read + validation
+# Section B - Manifest read + validation
 # ---------------------------------------------------------------------------
 
 function Read-SeedManifest {
@@ -462,7 +464,7 @@ function Read-SeedManifest {
 }
 
 # ---------------------------------------------------------------------------
-# Section C — Seed source selection
+# Section C - Seed source selection
 # ---------------------------------------------------------------------------
 
 function Resolve-ExtensionSeedSources {
@@ -501,7 +503,7 @@ function Resolve-ExtensionSeedSources {
             continue
         }
 
-        # Extension is catalog-advertised — resolve and fail-fast if missing
+        # Extension is catalog-advertised; resolve and fail-fast if missing.
         $extEntry = $extensions[$ext]
         if ($extEntry -isnot [System.Collections.IDictionary] -or -not $extEntry.ContainsKey("directory")) {
             throw "Seed catalog entry for extension '$(Format-LogSafeText $ext)' is malformed (missing 'directory')."
@@ -553,7 +555,7 @@ function Assert-SeedSelectionInputs {
     Validates user-supplied seed selection flags against the manifest's schema mode.
     Throws immediately on invalid input so that external-asset resolution (BulkLoadClient
     package, pinned data-standard repo tag) does not mask flag-validation failures.
-    Pure flag/mode validation only — no IO on user-supplied paths.
+    Pure flag/mode validation only - no IO on user-supplied paths.
     #>
     param(
         [hashtable]$Manifest,
@@ -636,7 +638,7 @@ function Resolve-SeedSource {
         }
     }
 
-    # Standard mode with -SeedTemplate or default — use the materialized workspace directory
+    # Standard mode with -SeedTemplate or default; use the materialized workspace directory.
     $effectiveTemplate = if ([string]::IsNullOrWhiteSpace($SeedTemplate)) { "Minimal" } else { $SeedTemplate }
     $builtInDir = Join-Path $BuiltInSourceRoot $effectiveTemplate.ToLowerInvariant()
 
@@ -680,7 +682,7 @@ function Resolve-SeedSource {
 }
 
 # ---------------------------------------------------------------------------
-# Section D — Workspace materialization
+# Section D - Workspace materialization
 # ---------------------------------------------------------------------------
 
 function Remove-SeedWorkspace {
@@ -688,7 +690,7 @@ function Remove-SeedWorkspace {
     .SYNOPSIS
     Removes the .bootstrap/seed/ subtree if it exists.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper — no -WhatIf end-to-end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
     param(
         [string]$BootstrapRoot
     )
@@ -711,8 +713,8 @@ function Get-SeedFileTargetName {
         [string]$RelativePath
     )
 
-    $input = "$SourceKey|$($RelativePath.ToLowerInvariant())"
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($input)
+    $hashInput = "$SourceKey|$($RelativePath.ToLowerInvariant())"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($hashInput)
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
         $hash = [System.Convert]::ToHexString($sha256.ComputeHash($bytes)).Substring(0, 8).ToLowerInvariant()
@@ -734,7 +736,7 @@ function New-SeedWorkspace {
     Collision detection runs before any copy so the workspace is never partially populated when
     a collision is found.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper — no -WhatIf end-to-end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
     param(
         [string]$BootstrapRoot,
         [string[]]$SourceDirectories
@@ -763,7 +765,7 @@ function New-SeedWorkspace {
         # extras with the same leaf (e.g., two extensions exporting `resources/`) don't share a
         # source key and collide on every shared filename. The hash inside Get-SeedFileTargetName
         # already prevents target-name collisions, but the source key also surfaces in error
-        # messages and target filenames — readable disambiguation makes failures debuggable.
+        # messages and target filenames; readable disambiguation makes failures debuggable.
         $leaf = Split-Path -Leaf $sourceDir
         $parent = Split-Path -Parent $sourceDir
         $parentLeaf = if ([string]::IsNullOrWhiteSpace($parent)) { "" } else { Split-Path -Leaf $parent }
@@ -794,10 +796,10 @@ function New-SeedWorkspace {
     }
 
     if ($collisions.Count -gt 0) {
-        throw "Seed workspace would have deterministic name collisions — aborting before any copy:`n$($collisions -join "`n")"
+        throw "Seed workspace would have deterministic name collisions - aborting before any copy:`n$($collisions -join "`n")"
     }
 
-    # All clear — perform the copies
+    # All clear; perform the copies.
     $stagedFiles = [System.Collections.Generic.List[string]]::new()
     foreach ($entry in $plan) {
         $dest = Join-Path $dataDir $entry.TargetName
@@ -813,7 +815,7 @@ function New-SeedWorkspace {
 }
 
 # ---------------------------------------------------------------------------
-# Section E — Credential, health, selector, XSD, and invocation helpers (W3)
+# Section E - Credential, health, selector, XSD, and invocation helpers (W3)
 # ---------------------------------------------------------------------------
 
 function Wait-DmsHealthy {
@@ -838,7 +840,8 @@ function Wait-DmsHealthy {
             }
         }
         catch {
-            # Not healthy yet — continue polling
+            # Not healthy yet; continue polling.
+            $null = $_
         }
 
         if ([datetime]::UtcNow -ge $deadline) {
@@ -872,7 +875,7 @@ function Resolve-SeedTargetInstances {
         [string]$Tenant = ""
     )
 
-    # CMS instance list is needed for every branch now — explicit -InstanceId must verify the
+    # CMS instance list is needed for every branch now; explicit -InstanceId must verify the
     # instance exists and has zero route qualifiers, because DMS rejects requests whose URL
     # qualifier count does not match the instance's dmsInstanceRouteContexts.
     $instances = @(Get-DmsInstances -CmsUrl $CmsUrl -AccessToken $AccessToken -Tenant $Tenant)
@@ -931,7 +934,7 @@ function Resolve-SeedTargetInstances {
         }
     }
 
-    # No selector — auto-select if exactly one instance
+    # No selector; auto-select if exactly one instance.
     if ($instances.Count -eq 0) {
         throw "No DMS instances found in CMS. Run configure-local-dms-instance.ps1 to create instances, then re-run seed delivery."
     }
@@ -1052,7 +1055,7 @@ function Get-SeedXsdDirectory {
     }
 
     if ($xsdCollisions.Count -gt 0) {
-        throw "Staged XSD files would have deterministic name collisions — aborting before any copy:`n$($xsdCollisions -join "`n")"
+        throw "Staged XSD files would have deterministic name collisions - aborting before any copy:`n$($xsdCollisions -join "`n")"
     }
 
     if ($xsdPlan.Count -eq 0) {
@@ -1113,7 +1116,7 @@ function Invoke-BulkLoadClient {
 }
 
 # ---------------------------------------------------------------------------
-# Section F — Top-level orchestrator
+# Section F - Top-level orchestrator
 # ---------------------------------------------------------------------------
 
 # Skip orchestration when dot-sourced (tests load helpers without running the pipeline).
@@ -1166,7 +1169,7 @@ Assert-SeedSelectionInputs `
     -InstanceId $InstanceId `
     -SchoolYear $SchoolYear
 
-# Validate the local seed path now too — a typo in -SeedDataPath should surface here, not
+# Validate the local seed path now too; a typo in -SeedDataPath should surface here, not
 # behind a NuGet/feed/dotnet failure during BulkLoadClient resolution. Resolve-SeedSource
 # will repeat this check downstream; the duplicate is intentional and cheap.
 if (-not [string]::IsNullOrWhiteSpace($SeedDataPath)) {
@@ -1295,7 +1298,7 @@ else {
 
 # --- Step 2: DMS health check (before credentials) ---
 # DMS maps /health only at the unqualified root (see HealthCheckEndpointModule.cs), so this
-# probe cannot be extended to per-year `{base}/{year}/health` URLs — those 404 and stall. A
+# probe cannot be extended to per-year `{base}/{year}/health` URLs; those 404 and stall. A
 # per-year route-context preflight would need a different endpoint (e.g. `/{year}/metadata`)
 # and is tracked as a follow-up; for now, route-context misconfig surfaces at the first
 # per-year POST in Step 7+.
@@ -1330,13 +1333,13 @@ $targets = Resolve-SeedTargetInstances `
 
 # --- Step 6: SeedLoader credentials ---
 # EdOrg scoping uses New-SeedLoaderCredentials' default (top-level LEA/SEA IDs from the
-# standard bootstrap path). Per bootstrap-design.md §7.2, DMS-916 does not add a second
-# parameter surface for arbitrary seed-specific EdOrg scoping — custom -SeedDataPath
+# standard bootstrap path). Per bootstrap-design.md Section 7.2, DMS-916 does not add a second
+# parameter surface for arbitrary seed-specific EdOrg scoping; custom -SeedDataPath
 # scenarios are supported as alternate payload sources, not as a custom authorization-model
 # designer.
 Write-Host "Creating SeedLoader credentials (in-memory only)..."
 # Forward the existing admin token so the helper skips its internal Add-CmsClient + Get-CmsToken
-# round-trip — the orchestrator already authenticated as sys-admin at Step 4.
+# round-trip; the orchestrator already authenticated as sys-admin at Step 4.
 $creds = New-SeedLoaderCredentials `
     -CmsUrl $cmsUrl `
     -NamespacePrefixes $nsPrefixes `
@@ -1350,11 +1353,11 @@ $creds = New-SeedLoaderCredentials `
 #   (b) BulkLoadClient pass per tier (descriptors, then resources, then any custom path tier)
 #
 # Each tier stages its own seed workspace because the source directories differ, then re-stages
-# the XSD copy alongside it. The workspace is recreated each call by design — descriptors persist
+# the XSD copy alongside it. The workspace is recreated each call by design; descriptors persist
 # in the database between tier invocations, so wiping the staged XML between passes is safe.
 
 function Invoke-SeedTierLoad {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper — no -WhatIf end-to-end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
     param(
         [hashtable]$Tier,
         [string]$BulkLoadClientDll,
@@ -1386,7 +1389,7 @@ function Invoke-SeedTierLoad {
 
 # $runSchoolYearTypePrecondition and $resolvedXsdDir were resolved above (before any CMS mutation).
 # The SchoolYearType precondition is only invoked for BuiltIn templates (Minimal/Populated). Custom
-# -SeedDataPath payloads bring their own SchoolYear lifecycle — the bootstrap script does not mutate
+# -SeedDataPath payloads bring their own SchoolYear lifecycle; the bootstrap script does not mutate
 # data outside the developer-supplied XML for custom tiers.
 
 if ($SchoolYear.Count -gt 0) {

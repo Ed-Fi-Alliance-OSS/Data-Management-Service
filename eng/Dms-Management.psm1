@@ -94,6 +94,7 @@ function Invoke-Api {
             catch {
                 # If the body can't be read for any reason, fall through and re-throw the
                 # original error untouched. We never want this helper to mask the real failure.
+                $null = $_
             }
         }
         throw
@@ -1146,6 +1147,7 @@ function Add-Tenant {
     $prefixes = Get-SeedLoaderNamespacePrefixes -AdditionalPrefixes @("uri://example.org")
 #>
 function Get-SeedLoaderNamespacePrefixes {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function name describes a list-returning helper and matches the exported bootstrap API.')]
     [CmdletBinding()]
     [OutputType([string[]])]
     param(
@@ -1174,7 +1176,7 @@ function Get-SeedLoaderNamespacePrefixes {
         }
     }
 
-    return , [string[]]$result.ToArray()
+    return [string[]]$result.ToArray()
 }
 
 <#
@@ -1202,7 +1204,7 @@ function Get-SeedLoaderNamespacePrefixes {
     Optional tenant header value.
 
 .OUTPUTS
-    [long] or $null — the application ID if found, $null if not found.
+    [long] or $null - the application ID if found, $null if not found.
 
 .EXAMPLE
     $appIds = Find-CmsApplicationIdsByNameAndVendor -VendorId 42 -ApplicationName "Seed Loader" -AccessToken $token
@@ -1241,8 +1243,8 @@ function Find-CmsApplicationIdsByNameAndVendor {
 
     $response = Invoke-Api @invokeParams
 
-    $matches = @($response | Where-Object { $_.applicationName -eq $ApplicationName })
-    return [long[]]@($matches | ForEach-Object { [long]$_.id })
+    $matchingApplications = @($response | Where-Object { $_.applicationName -eq $ApplicationName })
+    return [long[]]@($matchingApplications | ForEach-Object { [long]$_.id })
 }
 
 <#
@@ -1268,6 +1270,7 @@ function Find-CmsApplicationIdsByNameAndVendor {
     Remove-CmsApplication -ApplicationId 99 -AccessToken $token
 #>
 function Remove-CmsApplication {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap cleanup helper; callers do not expose -WhatIf.')]
     [CmdletBinding()]
     param(
         [ValidateNotNull()]
@@ -1356,6 +1359,8 @@ function Remove-CmsApplication {
     $creds = New-SeedLoaderCredentials -NamespacePrefixes $prefixes -DmsInstanceIds @(1)
 #>
 function New-SeedLoaderCredentials {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function returns a key/secret credential pair and matches the exported bootstrap API.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap credential helper; callers do not expose -WhatIf end-to-end.')]
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
@@ -1488,7 +1493,7 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
         # Test-only seam: Pester tests pass a scriptblock that returns a fake response so the
         # preflight can be exercised without a live CMS. Module functions calling Invoke-Api
         # bind to the module's own scope, so a script-level function override in tests does
-        # not propagate — hence this explicit invoker.
+        # not propagate - hence this explicit invoker.
         [scriptblock]$ApiInvoker = $null
     )
 

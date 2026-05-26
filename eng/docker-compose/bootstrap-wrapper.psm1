@@ -31,7 +31,7 @@ function Get-EffectiveBootstrapEnvFile {
 
     Wrapper-only convenience: this materialization is intentionally scoped to wrapper invocation
     so each phase command keeps its supplied env file authoritative (see
-    `command-boundaries.md` §3 phase ownership and `02-api-seed-delivery.md` acceptance criteria
+    `command-boundaries.md` Section 3 phase ownership and `02-api-seed-delivery.md` acceptance criteria
     for the disclosure to direct-invocation callers).
 
     The wrapper-argument Pester tests sandbox the wrapper + this module in a temp directory
@@ -69,7 +69,7 @@ function Get-EffectiveBootstrapEnvFile {
         -DerivedTargetPath $derivedPath `
         -FilterSampleHomograph:$filterSampleHomograph
     $filterNote = if ($filterSampleHomograph) { "Sample/Homograph filtered (built-in seed path)" } else { "Sample/Homograph retained (-SeedDataPath supplied)" }
-    Write-Host "Bootstrap-derived env written: $derivedPath (FAILURE_RATIO=0.95; $filterNote)."
+    Write-Information "Bootstrap-derived env written: $derivedPath (FAILURE_RATIO=0.95; $filterNote)." -InformationAction Continue
     return $result
 }
 
@@ -99,7 +99,7 @@ function Resolve-WrapperIdentityProvider {
     .SYNOPSIS
     Resolves the identity provider used by BOTH the start and seed phases so a single wrapper
     invocation can't end up with infra started under one provider and seed authenticated under
-    another. Order: explicit wrapper flag → effective env file's DMS_CONFIG_IDENTITY_PROVIDER →
+    another. Order: explicit wrapper flag, effective env file's DMS_CONFIG_IDENTITY_PROVIDER,
     "self-contained" fallback (matching the start scripts' default). Degrades to "self-contained"
     when the env-utility sibling module is unavailable (wrapper-argument Pester test sandbox).
     #>

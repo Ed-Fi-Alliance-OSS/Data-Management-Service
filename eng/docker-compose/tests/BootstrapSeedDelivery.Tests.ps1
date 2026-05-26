@@ -3,6 +3,10 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester callback scriptblocks keep delegate-compatible signatures.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
+param()
+
 Describe "DMS-1152 API seed delivery bootstrap" {
     BeforeAll {
         $script:sourceRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
@@ -176,7 +180,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         It "rejects both InstanceId and SchoolYear when supplied together" {
             # Regression: passing -InstanceId @(7) -SchoolYear @(2024) would short-circuit instance
             # selection to id 7 but the orchestrator loop still iterated $SchoolYear, building
-            # /{year} URLs that routed to whichever instance had the matching route context — not
+            # /{year} URLs that routed to whichever instance had the matching route context - not
             # instance 7. The credentials and the URL silently disagreed.
             $manifest = @{
                 schema = @{ selectionMode = "Standard"; selectedExtensions = @() }
@@ -454,7 +458,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             (Join-Path $result.ResourcesDirectory "DiagnosisDescriptor.xml") | Should -Not -Exist
 
             # Descriptors-tier file count is the union minus the duplicate: 2 unique (DiagnosisDescriptor,
-            # ADescriptor) — the sample-side DiagnosisDescriptor overwrote, not appended.
+            # ADescriptor) - the sample-side DiagnosisDescriptor overwrote, not appended.
             $stagedDescriptors = @(Get-ChildItem -LiteralPath $result.DescriptorsDirectory -File -Filter "*.xml")
             $stagedDescriptors.Count | Should -Be 2
 
@@ -798,7 +802,8 @@ Describe "DMS-1152 API seed delivery bootstrap" {
                     -SourceDirectories @($srcA, $srcA)
             }
             catch {
-                # Expected — collision was detected
+                # Expected; collision was detected.
+                $null = $_
             }
 
             $failedSeedRoot = Join-Path $script:repo.BootstrapRoot "seed"
@@ -906,7 +911,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         }
 
         It "creates SeedLoader credentials distinct from smoke-test credentials and not persisted to disk" {
-            # Static content check — smoke-test helpers must not be wired into seed delivery.
+            # Static content check: smoke-test helpers must not be wired into seed delivery.
             $scriptContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "load-dms-seed-data.ps1") -Raw
             $scriptContent | Should -Not -Match "(?i)smoke"
             $scriptContent | Should -Not -Match "Add-SmokeTest"
@@ -1103,7 +1108,7 @@ SCHEMA_PACKAGES='[
             }
         }
 
-        It "Write-DerivedEnvFile is idempotent across reruns (same input → same output)" {
+        It "Write-DerivedEnvFile is idempotent across reruns (same input to same output)" {
             $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
             $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
             @"
@@ -1459,11 +1464,11 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
 
         It "fails when no selector resolves or multiple instances match without explicit selection" {
             try {
-                # Zero instances — no selector
+                # Zero instances, no selector.
                 function script:Get-DmsInstances { @() }
                 { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" } | Should -Throw -ExpectedMessage "*No DMS instances*"
 
-                # Multiple instances — no selector
+                # Multiple instances, no selector.
                 function script:Get-DmsInstances {
                     @(
                         [pscustomobject]@{ id = [long]1; instanceName = "A"; dmsInstanceRouteContexts = @() },
@@ -1819,7 +1824,7 @@ EdFi.BulkLoadClient.Console fake
             "<root />" | Set-Content -LiteralPath (Join-Path $seedDataDir "marker.xml") -Encoding utf8
 
             $failingInvoker = {
-                param([string]$dll, [string[]]$args)
+                param([string]$dll, [string[]]$invokerArgs)
                 return 1
             }
 
@@ -1937,7 +1942,7 @@ EdFi.BulkLoadClient.Console fake
 
             $wrapperCopy = Join-Path $tmpDockerCompose "bootstrap-local-dms.ps1"
 
-            # -LoadSeedData alone (no explicit -EnableConfig) — wrapper must force config on
+            # -LoadSeedData alone (no explicit -EnableConfig); wrapper must force config on.
             & $wrapperCopy -LoadSeedData
             $captured = Get-Content -LiteralPath $startArgsProbe -Raw
             $captured.Trim() | Should -Be "EnableConfig=True" -Because "wrapper must force -EnableConfig when -LoadSeedData is supplied"
@@ -1981,7 +1986,7 @@ EdFi.BulkLoadClient.Console fake
 
         It "bootstrap-local-dms.ps1 rejects missing bootstrap manifest before any phase invocation when -LoadSeedData is supplied" {
             # Regression: an absent .bootstrap/bootstrap-manifest.json used to throw only inside
-            # load-dms-seed-data.ps1 — after the wrapper had already invoked start-local-dms.ps1
+            # load-dms-seed-data.ps1 after the wrapper had already invoked start-local-dms.ps1
             # and spun up Docker + CMS. The wrapper must catch this BEFORE the start phase.
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             $tmpRoot = New-TestDirectory
@@ -2265,7 +2270,7 @@ EdFi.BulkLoadClient.Console fake
         }
 
         It "start-(local|published)-dms.ps1 still declare -LoadSeedData pending Story 04 verification gate" {
-            # bootstrap-design.md §6.4 (line 1250) gates the removal of -LoadSeedData on
+            # bootstrap-design.md Section 6.4 gates the removal of -LoadSeedData on
             # "verifying the repo-pinned BulkLoadClient XML mode against DMS discovery,
             # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Story 04
             # owns the XSD staging that closes this gate. Until then, -LoadSeedData stays on
@@ -2278,7 +2283,7 @@ EdFi.BulkLoadClient.Console fake
                 $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
                 $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
                     ForEach-Object { $_.Groups[1].Value }
-                $declaredParams | Should -Contain "LoadSeedData" -Because "$name must retain -LoadSeedData until the Story 04 verification gate closes per bootstrap-design.md §6.4"
+                $declaredParams | Should -Contain "LoadSeedData" -Because "$name must retain -LoadSeedData until the Story 04 verification gate closes per bootstrap-design.md Section 6.4"
             }
         }
 
@@ -2308,7 +2313,7 @@ EdFi.BulkLoadClient.Console fake
             # and would have crashed at PowerShell parameter binding. Multi-instance branch did it
             # correctly. This test asserts both branches share the same call shape so they cannot
             # drift apart silently again.
-            # Filter to actual call sites only — the function definition looks like
+            # Filter to actual call sites only; the function definition looks like
             # "Invoke-SeedTierLoad {", whereas a call site is "Invoke-SeedTierLoad `" (backtick
             # line-continuation followed by -Tier ...).
             $invocations = ($script:seedScriptContent -split '(?=Invoke-SeedTierLoad)') |
@@ -2366,7 +2371,7 @@ EdFi.BulkLoadClient.Console fake
         It "build-dms.ps1 -LoadSeedData routes to the direct-SQL path via start-(local|published)-dms.ps1" {
             # Round 3: build-dms.ps1 forwards -LoadSeedData directly to start-(local|published)-dms.ps1,
             # which loads the populated DB template via setup-database-template.psm1. The deletion of
-            # this path is gated on bootstrap-design.md §6.4 (line 1250) Story-04 XSD verification.
+            # this path is gated on bootstrap-design.md Section 6.4 Story-04 XSD verification.
             # The new API-based path (bootstrap-(local|published)-dms.ps1 + load-dms-seed-data.ps1)
             # ships in parallel as the forward developer-facing contract.
             $script:buildDmsContent | Should -Match 'start-local-dms\.ps1[^\n]+-LoadSeedData' -Because "build-dms.ps1 must forward -LoadSeedData to start-local-dms.ps1"
@@ -2391,7 +2396,7 @@ EdFi.BulkLoadClient.Console fake
         It "shared wrapper module reuses the validated SchoolYearRange parse for seed args" {
             # Regression guard: the wrapper validates -SchoolYearRange once at entry (captures
             # $rangeStartYear/$rangeEndYear), and the seed-args block must reuse those values
-            # instead of re-parsing the regex — single source of truth for the validated range.
+            # instead of re-parsing the regex - single source of truth for the validated range.
             $script:wrapperModuleContent | Should -Match '\$seedArgs\.SchoolYear\s*=\s*@\(\$rangeStartYear\.\.\$rangeEndYear\)' -Because "seed args must reuse the captured range bounds rather than re-parsing -SchoolYearRange"
         }
 

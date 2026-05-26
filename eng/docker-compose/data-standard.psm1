@@ -40,7 +40,7 @@ function Get-DataStandardRepo {
     .OUTPUTS
         [string] Absolute path to the extracted repository root (<CacheRoot>/<RefTag>/).
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper — no -WhatIf surface needed.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf surface needed.')]
     param(
         [Parameter(Mandatory)] [string]$RefTag,
         [Parameter(Mandatory)] [string]$CacheRoot,
