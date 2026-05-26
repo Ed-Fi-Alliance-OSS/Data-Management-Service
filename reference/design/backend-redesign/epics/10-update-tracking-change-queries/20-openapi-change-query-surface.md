@@ -34,8 +34,7 @@ This ticket is intentionally cross-project because the API contract is split acr
 - Effective schema loading and OpenAPI path normalization.
 - Endpoint implementation tickets consume this contract:
   - `21-available-change-versions-endpoint.md`
-  - `22-change-query-endpoint-foundation.md`
-  - `23-deletes-endpoint.md`
+  - `23-deletes-endpoint.md` (including the shared `/deletes` and `/keyChanges` endpoint foundation)
   - `24-keychanges-endpoint.md`
   - `19-live-change-version-filters.md`
 

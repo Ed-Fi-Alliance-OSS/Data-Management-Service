@@ -13,10 +13,14 @@ The endpoint returns old and new identifying values in the requested change-vers
 
 Descriptor identities are immutable in DMS v1, so descriptor `/keyChanges` endpoints exist but return an empty array. Concrete abstract resources (e.g., `School`, `LocalEducationAgency`, `OrganizationDepartment`) likewise return an empty array because their inherited identity (e.g., `EducationOrganizationId`) is immutable in practice; this matches the legacy ODS behavior for derived resources.
 
+This story reuses the shared Change Query endpoint foundation established by
+`23-deletes-endpoint.md`.
+
 ## Acceptance Criteria
 
 - Each regular resource with Change Query support can serve `GET /data/v3/{schema}/{resource}/keyChanges`.
 - Each descriptor with Change Query support can serve `GET /data/v3/{schema}/{descriptor}/keyChanges`.
+- The endpoint reuses the shared Change Query route/resource resolution, paging, totalCount, and response-shaping foundation from `23-deletes-endpoint.md`.
 - Regular resource key changes are selected from tracked-change rows where an appropriate `New_*` identity column is not null.
 - The endpoint filters by `minChangeVersion` and `maxChangeVersion`.
 - The endpoint supports `limit`, `offset`, and `totalCount`.
@@ -35,7 +39,7 @@ Descriptor identities are immutable in DMS v1, so descriptor `/keyChanges` endpo
 ## Dependencies
 
 - `16-tracked-change-trigger-rendering.md`.
-- `22-change-query-endpoint-foundation.md`.
+- `23-deletes-endpoint.md`.
 
 ## Out of Scope
 

@@ -46,8 +46,8 @@ Deliverables include:
 - `DMS-1182` — `19-live-change-version-filters.md` — Filter live resource and descriptor GET-many endpoints by mirrored `ContentVersion`
 - `DMS-1183` — `20-openapi-change-query-surface.md` — Extend MetaEd and DMS OpenAPI metadata for Change Queries
 - `DMS-1184` — `21-available-change-versions-endpoint.md` — Serve `/changeQueries/v1/availableChangeVersions`
-- `DMS-1185` — `22-change-query-endpoint-foundation.md` — Add shared route, paging, total-count, and response foundation for `/deletes` and `/keyChanges`
-- `DMS-1186` — `23-deletes-endpoint.md` — Serve `/deletes` from tracked-change tombstones
+- `DMS-1185` — `22-change-query-endpoint-foundation.md` — _Retired_ (merged into DMS-1186)
+- `DMS-1186` — `23-deletes-endpoint.md` — Serve `/deletes` from tracked-change tombstones and establish the shared Change Query endpoint foundation
 - `DMS-1187` — `24-keychanges-endpoint.md` — Serve `/keyChanges` from tracked-change key-change rows
 - `DMS-1188` — `25-readchanges-authorization.md` — Apply `ReadChanges` authorization to `/deletes` and `/keyChanges`
 - `DMS-1189` — `26-school-year-type-readchanges-forbidden.md` — Return `403 Forbidden` for crafted `SchoolYearType` Change Query requests

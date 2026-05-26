@@ -27,7 +27,8 @@ MetaEd excludes `SchoolYearType` from emitted `/deletes` and `/keyChanges` OpenA
 ## Dependencies
 
 - `20-openapi-change-query-surface.md`.
-- `22-change-query-endpoint-foundation.md`.
+- `23-deletes-endpoint.md`.
+- `24-keychanges-endpoint.md`.
 - `25-readchanges-authorization.md`.
 
 ## Out of Scope

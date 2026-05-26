@@ -3,43 +3,28 @@ jira: DMS-1185
 jira_url: https://edfi.atlassian.net/browse/DMS-1185
 ---
 
-# Story: Add Shared Foundation for `/deletes` and `/keyChanges`
+# Story: Add Shared Foundation for `/deletes` and `/keyChanges` _(Retired)_
 
 ## Description
 
-Add the shared runtime foundation used by resource and descriptor `/deletes` and `/keyChanges` endpoints.
+This story is retired. Its shared foundation scope has been merged into
+`23-deletes-endpoint.md` (`DMS-1186`) so the foundation is delivered with the
+first concrete endpoint vertical slice rather than implemented in isolation.
 
-This includes route/resource resolution, endpoint classification, paging, totalCount handling, response-field mapping, and shared SQL-planning primitives. The resource-specific endpoint behavior is delivered by separate `/deletes` and `/keyChanges` tickets.
-
-Runtime resource Change Query routing is driven by generic `/deletes` and `/keyChanges` suffix classification plus effective resource-model resolution. OpenAPI remains the discovery surface, but emitted OpenAPI paths are not the sole runtime source of truth.
-
-The response payload must use identifying field names as they appear in the resource's `queryFieldMapping` in `ApiSchema.json`, preserving the ODS-compatible API contract.
+`DMS-1187` (`24-keychanges-endpoint.md`) depends on the shared endpoint
+foundation established by `DMS-1186`.
 
 ## Acceptance Criteria
 
-- DMS route resolution identifies `/deletes` and `/keyChanges` by classifying the trailing path segment and resolving `{schema}/{resource}` through the effective resource model.
-- DMS route resolution identifies `/deletes` and `/keyChanges` for known resources regardless of whether the endpoints are emitted in the effective OpenAPI Change Query surface.
-- Known resources excluded from the OpenAPI Change Query surface, such as `SchoolYearType`, resolve to a Change Query handler and proceed to authorization evaluation, which may return `403`; they MUST NOT take the unknown-resource not-found path.
-- Unknown `{schema}/{resource}` pairs (resources not present in the effective resource model) return the not-found behavior defined in `change-queries.md`.
-- The endpoint foundation resolves the target `ConcreteResourceModel` or descriptor discriminator.
-- The foundation resolves the matching `TrackedChangeTableInfo`.
-- Shared paging supports `limit` and `offset` consistently with existing GET-many behavior.
-- Shared totalCount support counts after endpoint filters and authorization filters.
-- Response shaping maps tracked old/new storage columns back to public query-field names from `queryFieldMapping`.
-- Descriptor reference public fields in shaped responses compose the tracked `Namespace` and `CodeValue` values as a single string in `"<namespace>#<codeValue>"` form.
-- Descriptor responses use descriptor public identity fields, not internal descriptor IDs.
-- Internal descriptor IDs are not returned in descriptor identity fields or descriptor reference fields.
-- Shared SQL planning can compose change-version windows, tombstone/key-change filters, recreated-resource suppression where applicable, paging, totalCount, and authorization predicates.
-- Tests cover route classification, resource resolution, descriptor resolution, known-resource resolution for OpenAPI-excluded resources such as `SchoolYearType`, paging, totalCount, and field-name mapping without duplicating full endpoint behavior.
+- No implementation work is tracked directly by this story.
+- The original acceptance criteria are carried by `23-deletes-endpoint.md`.
+- Existing references to this file should be replaced with `23-deletes-endpoint.md`
+  when describing implementation dependencies.
 
 ## Dependencies
 
-- `12-tracked-change-inventory.md`.
-- `18-change-version-parameter-validation.md`.
-- `20-openapi-change-query-surface.md`.
+- None. Retired in favor of `23-deletes-endpoint.md`.
 
 ## Out of Scope
 
-- Implementing `/deletes` query semantics.
-- Implementing `/keyChanges` query semantics.
-- Applying `ReadChanges` authorization.
+- Any new implementation scope.
