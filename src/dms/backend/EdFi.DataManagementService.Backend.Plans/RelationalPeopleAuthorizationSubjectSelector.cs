@@ -17,7 +17,8 @@ public enum RelationalPeopleAuthorizationSubjectSelectionOutcome
 public sealed record RelationalPeopleAuthorizationStrategySubjectSelection(
     ConfiguredAuthorizationStrategy ConfiguredStrategy,
     int RelationshipLocalOrder,
-    IReadOnlyList<RelationshipAuthorizationSubject> Subjects
+    IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
+    IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors
 );
 
 public sealed record RelationalPeopleAuthorizationSubjectSelection(
@@ -42,11 +43,14 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             concreteResourceModel,
             mappingSet.Model.ConcreteResourcesInNameOrder
         );
-        var securityConfigurationFailures = CreateUnresolvedPersonFailures(
-            resource,
-            supportedStrategies,
-            personCandidates.UnresolvedPaths
-        );
+        List<RelationshipAuthorizationFailureMetadata> securityConfigurationFailures =
+        [
+            .. CreateUnresolvedPersonFailures(
+                resource,
+                supportedStrategies,
+                personCandidates.UnresolvedPaths
+            ),
+        ];
 
         if (securityConfigurationFailures.Count > 0)
         {
@@ -63,10 +67,26 @@ public static class RelationalPeopleAuthorizationSubjectSelector
 
         foreach (var supportedStrategy in supportedStrategies)
         {
-            var subjects = SelectStrategySubjects(supportedStrategy, resource, personCandidates.Candidates);
+            var selectedSubjects = SelectStrategySubjects(
+                supportedStrategy,
+                resource,
+                personCandidates.Candidates,
+                personCandidates.SkippedPaths
+            );
 
-            if (subjects.Count == 0)
+            if (selectedSubjects.Subjects.Count == 0)
             {
+                if (selectedSubjects.SkippedContributors.Count > 0)
+                {
+                    securityConfigurationFailures.AddRange(
+                        CreateNoApplicablePersonSubjectFailures(
+                            resource,
+                            supportedStrategy,
+                            selectedSubjects.SkippedContributors
+                        )
+                    );
+                }
+
                 continue;
             }
 
@@ -74,8 +94,18 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                 new RelationalPeopleAuthorizationStrategySubjectSelection(
                     supportedStrategy.ConfiguredStrategy,
                     supportedStrategy.RelationshipLocalOrder,
-                    subjects
+                    selectedSubjects.Subjects,
+                    selectedSubjects.SkippedContributors
                 )
+            );
+        }
+
+        if (securityConfigurationFailures.Count > 0)
+        {
+            return new RelationalPeopleAuthorizationSubjectSelection(
+                RelationalPeopleAuthorizationSubjectSelectionOutcome.SecurityConfigurationError,
+                [],
+                [.. OrderFailures(securityConfigurationFailures)]
             );
         }
 
@@ -98,6 +128,7 @@ public static class RelationalPeopleAuthorizationSubjectSelector
 
         List<ResolvedPeopleCandidate> candidates = [];
         List<UnresolvedPersonPath> unresolvedPaths = [];
+        List<SkippedPersonPath> skippedPaths = [];
 
         ResolvePersonCandidates(
             concreteResourceModel,
@@ -109,7 +140,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             rootDocumentIdColumn,
             resourceLookup,
             candidates,
-            unresolvedPaths
+            unresolvedPaths,
+            skippedPaths
         );
         ResolvePersonCandidates(
             concreteResourceModel,
@@ -121,7 +153,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             rootDocumentIdColumn,
             resourceLookup,
             candidates,
-            unresolvedPaths
+            unresolvedPaths,
+            skippedPaths
         );
         ResolvePersonCandidates(
             concreteResourceModel,
@@ -133,10 +166,11 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             rootDocumentIdColumn,
             resourceLookup,
             candidates,
-            unresolvedPaths
+            unresolvedPaths,
+            skippedPaths
         );
 
-        return new ResolvedPeopleCandidates(candidates, unresolvedPaths);
+        return new ResolvedPeopleCandidates(candidates, unresolvedPaths, skippedPaths);
     }
 
     private static void ResolvePersonCandidates(
@@ -149,7 +183,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         DbColumnName rootDocumentIdColumn,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         List<ResolvedPeopleCandidate> candidates,
-        List<UnresolvedPersonPath> unresolvedPaths
+        List<UnresolvedPersonPath> unresolvedPaths,
+        List<SkippedPersonPath> skippedPaths
     )
     {
         for (var contributionOrder = 0; contributionOrder < personPaths.Count; contributionOrder++)
@@ -160,7 +195,7 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                 PersonJoinPathResolver.IsPersonResource(
                     concreteResourceModel.RelationalModel.Resource,
                     personResourceName
-                )
+                ) && !IsArrayNestedPath(personPath)
             )
             {
                 candidates.Add(
@@ -187,8 +222,41 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                 out var unresolvedRootLevelPaths
             );
 
+            if (skippedArrayNestedPaths.Count > 0)
+            {
+                skippedPaths.AddRange(
+                    skippedArrayNestedPaths.Select(skippedArrayNestedPath =>
+                        CreateSkippedPersonPath(
+                            concreteResourceModel,
+                            securableElementKind,
+                            personKind,
+                            skippedArrayNestedPath,
+                            contributionOrder
+                        )
+                    )
+                );
+
+                continue;
+            }
+
             if (chain is not null)
             {
+                if (!chain[0].SourceTable.Equals(rootTable))
+                {
+                    skippedPaths.Add(
+                        CreateSkippedPersonPath(
+                            securableElementKind,
+                            personKind,
+                            personPath,
+                            contributionOrder,
+                            chain[0].SourceTable,
+                            chain[0].SourceColumnName
+                        )
+                    );
+
+                    continue;
+                }
+
                 candidates.Add(
                     CreateResolvedPersonCandidate(
                         securableElementKind,
@@ -269,13 +337,15 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         );
     }
 
-    private static IReadOnlyList<RelationshipAuthorizationSubject> SelectStrategySubjects(
+    private static SelectedPeopleStrategySubjects SelectStrategySubjects(
         SupportedRelationshipAuthorizationStrategy supportedStrategy,
         QualifiedResourceName resource,
-        IReadOnlyList<ResolvedPeopleCandidate> candidates
+        IReadOnlyList<ResolvedPeopleCandidate> candidates,
+        IReadOnlyList<SkippedPersonPath> skippedPaths
     )
     {
         var subjectsByPredicateKey = new Dictionary<PersonPredicateKey, RelationshipAuthorizationSubject>();
+        List<RelationshipAuthorizationSkippedSubjectContributor> skippedContributors = [];
 
         foreach (var eligibleSubject in supportedStrategy.EligibleSubjects)
         {
@@ -285,6 +355,22 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             }
 
             var authObject = RelationshipAuthorizationAuthObject.CreatePerson(authViewKind);
+
+            skippedContributors.AddRange(
+                skippedPaths
+                    .Where(skippedPath => skippedPath.Kind == eligibleSubject.Kind)
+                    .Select(skippedPath => new RelationshipAuthorizationSkippedSubjectContributor(
+                        skippedPath.Kind,
+                        skippedPath.JsonPath,
+                        skippedPath.ReadableName,
+                        skippedPath.ContributionOrder,
+                        skippedPath.Reason,
+                        skippedPath.PersonKind,
+                        authObject,
+                        skippedPath.Table,
+                        skippedPath.Column
+                    ))
+            );
 
             foreach (var candidate in candidates.Where(candidate => candidate.Kind == eligibleSubject.Kind))
             {
@@ -325,15 +411,22 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             }
         }
 
-        return
-        [
-            .. subjectsByPredicateKey
-                .Values.OrderBy(static subject =>
-                    subject.Contributors.Min(static contributor => contributor.ContributionOrder)
-                )
-                .ThenBy(static subject => subject.Table.ToString(), StringComparer.Ordinal)
-                .ThenBy(static subject => subject.Column.Value, StringComparer.Ordinal),
-        ];
+        return new SelectedPeopleStrategySubjects(
+            [
+                .. subjectsByPredicateKey
+                    .Values.OrderBy(static subject =>
+                        subject.Contributors.Min(static contributor => contributor.ContributionOrder)
+                    )
+                    .ThenBy(static subject => subject.Table.ToString(), StringComparer.Ordinal)
+                    .ThenBy(static subject => subject.Column.Value, StringComparer.Ordinal),
+            ],
+            [
+                .. skippedContributors
+                    .OrderBy(static contributor => contributor.ContributionOrder)
+                    .ThenBy(static contributor => contributor.JsonPath, StringComparer.Ordinal)
+                    .ThenBy(static contributor => contributor.ReadableName, StringComparer.Ordinal),
+            ]
+        );
     }
 
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateUnresolvedPersonFailures(
@@ -374,6 +467,31 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         ];
     }
 
+    private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoApplicablePersonSubjectFailures(
+        QualifiedResourceName resource,
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
+        IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> skippedContributors
+    ) =>
+        skippedContributors.Select(skippedContributor => new RelationshipAuthorizationFailureMetadata(
+            RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
+            resource,
+            supportedStrategy.ConfiguredStrategy,
+            supportedStrategy.RelationshipLocalOrder,
+            AuthObject: skippedContributor.AuthObject,
+            Location: new RelationshipAuthorizationFailureLocation(
+                Kind: skippedContributor.Kind,
+                JsonPath: skippedContributor.JsonPath,
+                ReadableName: skippedContributor.ReadableName,
+                Table: skippedContributor.Table,
+                Column: skippedContributor.Column,
+                AuthorizationObjectName: skippedContributor.AuthObject?.Name.ToString()
+            ),
+            Hint: $"Person securable element skipped by subject-scope filtering: {skippedContributor.Reason}."
+        )
+        {
+            SkippedContributors = [skippedContributor],
+        });
+
     private static PersonPredicateKey CreatePredicateKey(
         ResolvedPeopleCandidate candidate,
         RelationshipAuthorizationAuthObject authObject
@@ -385,6 +503,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
             candidate.TerminalTable,
             candidate.TerminalColumn,
             candidate.Path.Kind,
+            candidate.StoredAnchor.RootTable,
+            candidate.StoredAnchor.RootDocumentIdColumn,
             CreateStepKey(candidate.Path.Steps)
         );
 
@@ -414,6 +534,92 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         return string.IsNullOrEmpty(leaf) ? jsonPath : leaf[..1].ToUpperInvariant() + leaf[1..];
     }
 
+    private static SkippedPersonPath CreateSkippedPersonPath(
+        ConcreteResourceModel concreteResourceModel,
+        SecurableElementKind securableElementKind,
+        RelationshipAuthorizationPersonKind personKind,
+        string personPath,
+        int contributionOrder
+    )
+    {
+        var location = ResolveSkippedPersonLocation(concreteResourceModel, personPath);
+
+        return CreateSkippedPersonPath(
+            securableElementKind,
+            personKind,
+            personPath,
+            contributionOrder,
+            location?.Table,
+            location?.Column
+        );
+    }
+
+    private static SkippedPersonPath CreateSkippedPersonPath(
+        SecurableElementKind securableElementKind,
+        RelationshipAuthorizationPersonKind personKind,
+        string personPath,
+        int contributionOrder,
+        DbTableName? table,
+        DbColumnName? column
+    ) =>
+        new(
+            securableElementKind,
+            personKind,
+            personPath,
+            ToReadableName(personPath),
+            contributionOrder,
+            RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope,
+            table,
+            column
+        );
+
+    private static SkippedPersonLocation? ResolveSkippedPersonLocation(
+        ConcreteResourceModel concreteResourceModel,
+        string personPath
+    )
+    {
+        foreach (var binding in concreteResourceModel.RelationalModel.DocumentReferenceBindings)
+        {
+            if (
+                !binding.IdentityBindings.Any(identityBinding =>
+                    string.Equals(
+                        identityBinding.ReferenceJsonPath.Canonical,
+                        personPath,
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            {
+                continue;
+            }
+
+            var tableModel = FindTable(concreteResourceModel, binding.Table);
+            var column = tableModel is null
+                ? binding.FkColumn
+                : PersonJoinPathResolver.ResolveToCanonicalColumn(tableModel, binding.FkColumn);
+
+            return new SkippedPersonLocation(binding.Table, column);
+        }
+
+        return null;
+    }
+
+    private static DbTableModel? FindTable(ConcreteResourceModel concreteResourceModel, DbTableName table)
+    {
+        foreach (var tableModel in concreteResourceModel.RelationalModel.TablesInDependencyOrder)
+        {
+            if (tableModel.Table == table)
+            {
+                return tableModel;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsArrayNestedPath(string jsonPath) =>
+        jsonPath.Contains("[*]", StringComparison.Ordinal);
+
     private static DbColumnName GetRootDocumentIdColumn(DbTableModel rootTableModel)
     {
         var rootScopeLocatorColumns = rootTableModel.IdentityMetadata.RootScopeLocatorColumns;
@@ -432,7 +638,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
 
     private sealed record ResolvedPeopleCandidates(
         IReadOnlyList<ResolvedPeopleCandidate> Candidates,
-        IReadOnlyList<UnresolvedPersonPath> UnresolvedPaths
+        IReadOnlyList<UnresolvedPersonPath> UnresolvedPaths,
+        IReadOnlyList<SkippedPersonPath> SkippedPaths
     );
 
     private sealed record ResolvedPeopleCandidate(
@@ -453,6 +660,24 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         string ReadableName
     );
 
+    private sealed record SkippedPersonPath(
+        SecurableElementKind Kind,
+        RelationshipAuthorizationPersonKind PersonKind,
+        string JsonPath,
+        string ReadableName,
+        int ContributionOrder,
+        RelationshipAuthorizationSkippedSubjectReason Reason,
+        DbTableName? Table,
+        DbColumnName? Column
+    );
+
+    private sealed record SkippedPersonLocation(DbTableName Table, DbColumnName Column);
+
+    private sealed record SelectedPeopleStrategySubjects(
+        IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
+        IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors
+    );
+
     private sealed record PersonPredicateKey(
         RelationshipAuthorizationPersonKind PersonKind,
         DbTableName AuthObjectName,
@@ -460,6 +685,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         DbTableName TerminalTable,
         DbColumnName TerminalColumn,
         RelationshipAuthorizationPersonSubjectPathKind PathKind,
+        DbTableName StoredAnchorTable,
+        DbColumnName StoredAnchorColumn,
         string StepKey
     );
 }

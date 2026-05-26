@@ -89,7 +89,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationalPeopleAuthorizationSubjectSelector",
       "Add unit tests for child-collection exclusion, same-path dedupe with merged contributors, duplicate strategy preservation, and no-applicable-subject failures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Planner Integration",

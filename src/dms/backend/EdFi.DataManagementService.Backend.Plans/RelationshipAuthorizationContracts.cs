@@ -208,6 +208,23 @@ public sealed record RelationshipAuthorizationSubjectContributor(
     int ContributionOrder = 0
 );
 
+public enum RelationshipAuthorizationSkippedSubjectReason
+{
+    ChildCollectionPersonPathOutsideSubjectScope,
+}
+
+public sealed record RelationshipAuthorizationSkippedSubjectContributor(
+    SecurableElementKind Kind,
+    string JsonPath,
+    string ReadableName,
+    int ContributionOrder,
+    RelationshipAuthorizationSkippedSubjectReason Reason,
+    RelationshipAuthorizationPersonKind? PersonKind = null,
+    RelationshipAuthorizationAuthObject? AuthObject = null,
+    DbTableName? Table = null,
+    DbColumnName? Column = null
+);
+
 public enum RelationshipAuthorizationPersonSubjectPathKind
 {
     DirectRootColumn,
@@ -350,7 +367,11 @@ public sealed record RelationshipAuthorizationFailureMetadata(
     RelationshipAuthorizationAuthObject? AuthObject = null,
     RelationshipAuthorizationFailureLocation? Location = null,
     string? Hint = null
-);
+)
+{
+    public IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors { get; init; } =
+    [];
+}
 
 public abstract record RelationshipAuthorizationResult
 {
