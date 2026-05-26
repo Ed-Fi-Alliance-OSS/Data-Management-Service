@@ -49,6 +49,10 @@
       "isSystemReserved": true
     },
     {
+      "claimSetName": "SeedLoader",
+      "isSystemReserved": true
+    },
+    {
       "claimSetName": "DistrictHostedSISVendor",
       "isSystemReserved": true
     },
@@ -190,6 +194,19 @@
           "claimSets": [
             {
               "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "SeedLoader",
               "actions": [
                 {
                   "name": "Create",
@@ -388,6 +405,14 @@
                   "name": "NoFurtherAuthorizationRequired"
                 }
               ]
+            }
+          ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
             }
           ]
         },
@@ -3039,6 +3064,14 @@
           ]
         },
         {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
+        },
+        {
           "name": "DistrictHostedSISVendor",
           "actions": [
             {
@@ -3357,6 +3390,14 @@
                   "name": "NoFurtherAuthorizationRequired"
                 }
               ]
+            }
+          ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
             }
           ]
         },
@@ -3894,6 +3935,14 @@
               ]
             },
             {
+              "name": "SeedLoader",
+              "actions": [
+                {
+                  "name": "Create"
+                }
+              ]
+            },
+            {
               "name": "DistrictHostedSISVendor",
               "actions": [
                 {
@@ -4195,6 +4244,14 @@
               "name": "Delete"
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ],
       "claims": [
@@ -4347,6 +4404,14 @@
                 },
                 {
                   "name": "Delete"
+                }
+              ]
+            },
+            {
+              "name": "SeedLoader",
+              "actions": [
+                {
+                  "name": "Create"
                 }
               ]
             },
@@ -4601,6 +4666,14 @@
               "name": "Delete"
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ],
       "claims": [
@@ -4722,6 +4795,14 @@
                 },
                 {
                   "name": "Delete"
+                }
+              ]
+            },
+            {
+              "name": "SeedLoader",
+              "actions": [
+                {
+                  "name": "Create"
                 }
               ]
             }
@@ -5483,6 +5564,14 @@
                   ]
                 }
               ]
+            },
+            {
+              "name": "SeedLoader",
+              "actions": [
+                {
+                  "name": "Create"
+                }
+              ]
             }
           ]
         },
@@ -5522,6 +5611,14 @@
                       "name": "NoFurtherAuthorizationRequired"
                     }
                   ]
+                }
+              ]
+            },
+            {
+              "name": "SeedLoader",
+              "actions": [
+                {
+                  "name": "Create"
                 }
               ]
             },
@@ -6936,6 +7033,14 @@
               ]
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ],
       "claims": [
@@ -7177,6 +7282,14 @@
               "name": "Update"
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ]
     },
@@ -7343,6 +7456,14 @@
                   "name": "NoFurtherAuthorizationRequired"
                 }
               ]
+            }
+          ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
             }
           ]
         }
@@ -7687,6 +7808,14 @@
               "name": "Delete"
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ],
       "claims": [
@@ -7825,6 +7954,14 @@
                 },
                 {
                   "name": "Delete"
+                }
+              ]
+            },
+            {
+              "name": "SeedLoader",
+              "actions": [
+                {
+                  "name": "Create"
                 }
               ]
             },
@@ -8070,6 +8207,14 @@
               ]
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ]
     },
@@ -8121,6 +8266,14 @@
             },
             {
               "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
             }
           ]
         }
@@ -8425,6 +8578,14 @@
               "name": "Delete"
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ]
     },
@@ -8567,6 +8728,14 @@
               ]
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
         }
       ]
     },
@@ -8618,6 +8787,14 @@
             },
             {
               "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
             }
           ]
         }

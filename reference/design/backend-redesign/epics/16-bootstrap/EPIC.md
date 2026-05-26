@@ -44,11 +44,16 @@ packaging, and package-backed standard schema selection.
   `SeedLoader` claim set definition and required core permissions to
   `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json` (Story 02 Task 3).
   The exact permission table is in `bootstrap-design.md` Section 7.2.2. This internal task has no external
-  dependency and should be delivered first. Story 02 end-to-end delivery then depends on DMS-owned XML
-  BulkLoadClient readiness: repo-local XML seed assets, pinned BulkLoadClient XML-mode invocation, compatible
-  discovery/dependency metadata, OAuth, data, and XSD metadata or staged-XSD behavior. The built-in `Minimal`
-  and `Populated` seed templates are DMS-owned repo-local developer assets, so DMS-1119 package distribution
-  work does not block this story.
+  dependency and unblocks all DMS-side seed delivery testing once done.
+  **Story 02 delivers Phase 1 (XML interchange) end-to-end** against the repo-pinned
+  `EdFi.BulkLoadClient` v7.3.x XML-mode CLI surface and the pinned Ed-Fi-Data-Standard repository
+  tag. Phase 2 (JSONL interchange) is the design's long-term target and remains externally blocked
+  by ODS-6738 (BulkLoadClient JSONL support); the Phase 2 migration reuses the same
+  `-SeedTemplate`/`-SeedDataPath` developer-facing surface delivered by Phase 1. See
+  `bootstrap-design.md` §6 "Phased delivery" for the phase contract.
+  The built-in `Minimal` and `Populated` seed templates are DMS-owned developer assets, so
+  DMS-1119 package distribution work does not block this story. The `SeedLoader` claim set addition
+  can and should be done independently of the Phase 2 JSONL blocker.
 - Story 03 reuses the parameter surfaces and mechanisms delivered by the other slices where applicable, but
   it is not a blanket prerequisite chain for every Story 03 task. Treat the main design and each companion
   story as the authority for the specific dependency of a given implementation task.

@@ -179,7 +179,7 @@ The ODS initdev is organized into eight abstract phases. The table below maps ea
 | Phase 4: Build | Compile the .NET solution | **Obsolete for Docker path** — Docker images are built from `Dockerfile`s via `docker compose build`; local `dotnet build` is used only for IDE/unit-test workflows |
 | Phase 5: Tool Installation | Install `EdFi.Db.Deploy`, `EdFi.BulkLoadClient` as .NET global tools | Partially covered - no explicit tool-install step; tools are baked into Docker images. DMS should reuse the existing repo-pinned NuGet resolution path for BulkLoadClient rather than introducing a new global-tool requirement |
 | Phase 6: Database Provisioning | Drop/create/migrate Admin, Security, ODS databases per engine and install type | Covered by the DMS-916 design for Docker-managed PostgreSQL: `postgresql.yml` starts the engine, `Add-DmsInstance` / `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` identify the target instances, and the explicit `provision-dms-schema.ps1` SchemaTools/runtime-owned provisioning and validation path performs the authoritative pre-start schema work for those targets. See [Backend Redesign Impact and DDL Provisioning](#11-backend-redesign-impact-and-ddl-provisioning). |
-| Phase 7: Data Seeding | Load bootstrap/sample data through an API host | Partially covered - the legacy `-LoadSeedData` path currently lives on `start-local-dms.ps1` and calls `setup-database-template.psm1`, which executes SQL directly. DMS-916 replaces that with the phase-owned `load-dms-seed-data.ps1` API-based XML path |
+| Phase 7: Data Seeding | Load bootstrap/sample data through an API host | Partially covered - the legacy `-LoadSeedData` path currently lives on `start-local-dms.ps1` and calls `setup-database-template.psm1`, which executes SQL directly. DMS-916 replaces that with the phase-owned `load-dms-seed-data.ps1` API-based path (XML interchange in Phase 1; see §6 "Phased delivery" for the Phase 2 JSONL target) |
 | Phase 8: Verification | Run unit, integration, smoke tests | Partially covered — `Invoke-NonDestructiveApiTests.ps1` exists as a separate smoke test script; no integrated `-RunSmokeTest` flag on `start-local-dms.ps1` |
 
 ---
@@ -487,7 +487,7 @@ Docker mounts by hand, Mode 3 introduces two expert-only companion parameters al
 - `-ApiSchemaPath` - supplies the custom schema directory (normalized into the staged schema workspace)
 - `-ClaimsDirectoryPath` - supplies a directory of `*-claimset.json` files used for additive CMS
   hybrid-mode loading on top of the automatic base claimset set.
-- `-SeedDataPath` - supplies custom ODS XML interchange seed files; without this, no seed data is loaded
+- `-SeedDataPath` - supplies custom seed files (XML interchange in Phase 1, JSONL in Phase 2 per §6); without this, no seed data is loaded
 
 ### 3.4 How Selection Flows Through the System
 
@@ -864,18 +864,35 @@ machine tool. All API-based seed loading in the bootstrap depends on it through 
 `load-dms-seed-data.ps1` phase defined in
 [`command-boundaries.md` Section 3.6](command-boundaries.md#36-load-dms-seed-dataps1--seed-delivery).
 
-**Dependency direction:** DMS-916 uses the existing BulkLoadClient XML interchange mode because the planned
-new seed-file format will not land in time. The bootstrap-side consumption contract for that XML mode is defined in
-[Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract) below.
+**Phased delivery:**
 
-**Pre-flight check:** When `load-dms-seed-data.ps1` runs, it resolves the pinned
-BulkLoadClient package and fails immediately if the package cannot be downloaded/resolved or if the required
-XML invocation surface is not available (see [Pinned BulkLoadClient Resolution](#633-pinned-bulkloadclient-resolution)).
+- *Phase 1 — XML interchange (DMS-1152, current):* DMS-1152 delivers seed loading against the
+  repo-pinned `EdFi.BulkLoadClient` package's XML-mode CLI surface. `load-dms-seed-data.ps1` resolves
+  the pinned package, validates the short-flag XML surface (`-b`, `-d`, `-w`, `-k`, `-s`, `-o`, `-x`)
+  via `Assert-BulkLoadClientXmlInterface`, and stages XML interchange files from the pinned
+  Ed-Fi-Data-Standard repository tag into a per-tier workspace.
+  See [`02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) for the
+  Phase 1 acceptance criteria, built-in `Minimal`/`Populated` inventory, and per-tier staging shape
+  actually shipped under DMS-1152.
+- *Phase 2 — JSONL interchange (post-ODS-6738):* The long-term BulkLoadClient input format is JSONL.
+  ODS-6738 tracks the cross-team extension that adds JSONL input support to BulkLoadClient. Once
+  that surface is delivered and verified against DMS, the bootstrap-side seed phase migrates from
+  XML staging to JSONL staging. The `-SeedTemplate`, `-SeedDataPath`, and
+  `-AdditionalNamespacePrefix` bootstrap-developer-facing parameters are stable across both phases.
+  [Section 14.3](#143-blocking-cross-team-dependencies) tracks the cross-team blocker; the sections
+  below document the Phase 2 JSONL consumption contract as the design's long-term target.
 
-**Operational gate:** API-based seeding is gated on DMS-owned compatibility with the pinned BulkLoadClient XML
-mode: discovery, dependency metadata, OAuth, data endpoints, and either BulkLoadClient-compatible XSD
-metadata endpoints or a staged XSD directory. Any temporary retention of the current SQL seeding path during
-implementation sequencing is an operational bridge, not part of the DMS-916 design contract.
+**Pre-flight check:** When `load-dms-seed-data.ps1` runs, it resolves the pinned BulkLoadClient
+package and fails immediately if the package cannot be downloaded/resolved or if the CLI surface
+required by the active phase is not available — the XML short-flag surface in Phase 1, the JSONL
+surface defined in [Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract) in Phase 2.
+See [Pinned BulkLoadClient Resolution](#633-pinned-bulkloadclient-resolution).
+
+**Operational gate:** Phase 2 migration is gated on BulkLoadClient JSONL support being delivered
+and verified against DMS. Phase 1 is the current shipped seed path under DMS-1152, not a temporary
+bridge. The legacy direct-SQL seeding path (`setup-database-template.psm1`) retention during
+implementation sequencing is a separate operational bridge governed by Section 6.4 and is not
+part of the DMS-916 design contract.
 
 ---
 
@@ -883,39 +900,38 @@ implementation sequencing is an operational bridge, not part of the DMS-916 desi
 
 > **Note:** This section defines only the external contract the developer bootstrap consumes.
 
-The Ed-Fi BulkLoadClient is an external ODS/API ecosystem tool. This section records only the minimum
-callable surface and result semantics that the DMS bootstrap depends on. It is a consumer-boundary document
-for DMS-916, not a product-design specification for BulkLoadClient, and it does not prescribe internal
-BulkLoadClient implementation details.
+The Ed-Fi BulkLoadClient is an external ODS/API ecosystem tool (see ODS-6738 for context). This section
+records only the minimum callable surface and result semantics that the DMS bootstrap depends on. It is a
+consumer-boundary document for DMS-916, not a product-design specification for BulkLoadClient, and it does
+not prescribe internal BulkLoadClient implementation details.
 
 Only the CLI surface consumed by bootstrap is in scope here. Packaging, installer UX, and broader
 BulkLoadClient product behavior remain outside DMS-916.
 
 #### 6.1.1 Minimum Invocation Surface Assumed by Bootstrap
 
+> **Phase reminder:** The JSONL CLI surface in the table below is the Phase 2 (post-ODS-6738) target
+> contract. DMS-1152 Phase 1 invokes the same tool's XML-mode short-flag surface
+> (`-b`, `-d`, `-w`, `-k`, `-s`, `-o`, `-x`), validated by `Assert-BulkLoadClientXmlInterface` in
+> `load-dms-seed-data.ps1`. The two surfaces are not active at once; the live surface is the one
+> belonging to the phase the bootstrap implementation targets.
+
 | Flag | Expected by bootstrap | Description |
 |------|-----------------------|-------------|
-| `-b` / `--baseUrl <dms-url>` | Yes | DMS API host root for the current flow (for example, `http://localhost:8080`). In the school-year workflow, bootstrap passes the route-qualified base URL for the current year. |
-| `-d` / `--data <directory>` | Yes | Directory containing the XML interchange files prepared by bootstrap. |
-| `-w` / `--working <directory>` | Yes | Writable BulkLoadClient working/cache directory. |
-| `-k` / `--key <key>` | Yes | OAuth client key for credential grant. |
-| `-s` / `--secret <secret>` | Yes | OAuth client secret. |
-| `-o` / `--oauthurl <oauth-url>` | Yes | OAuth endpoint for the selected identity provider. In self-contained CMS mode this is `http://localhost:8081/connect/token` when no route qualifier is active, or `http://localhost:8081/connect/token/{schoolYear}` in the school-year-qualified workflow. In Keycloak mode it remains the provider-native realm token URL. |
-| `-x` / `--xsd <directory>` | Yes, unless `-z` is used | Directory containing the Ed-Fi XSD files staged from the selected ApiSchema workspace. |
-| `-z` / `--xsdmetadataurl <url>` | Yes, unless `-x` is used | DMS XSD metadata endpoint when the file-based XSD endpoint behavior is verified as BulkLoadClient-compatible. |
-| `-n` / `--novalidation` | Optional | Skips client-side XML/XSD validation. API validation still runs. |
-| `-y` / `--year <school-year>` | No | Do not make v1 depend on this flag. Prefer per-year route-qualified base URL and OAuth URL unless the pinned BulkLoadClient version is explicitly verified to support the needed behavior. |
-
-Bootstrap implementation should invoke the pinned client with the short flags shown in this section's
-examples (`-b`, `-d`, `-w`, `-k`, `-s`, `-o`, `-x`, `-n`) unless a specific pinned BulkLoadClient version is
-verified to support the matching long aliases.
+| `--input-format jsonl` | Yes | Activates JSONL mode; each line in an input file is one JSON resource body |
+| `--data <directory>` | Yes | Directory containing the JSONL seed workspace prepared by bootstrap. |
+| `--base-url <dms-url>` | Yes | DMS API host root for the current flow (for example, `http://localhost:8080`). |
+| `--key <key>` | Yes | OAuth client key for credential grant |
+| `--secret <secret>` | Yes | OAuth client secret |
+| `--token-url <oauth-url>` | Yes | Token endpoint for the selected identity provider. In self-contained CMS mode this is `http://localhost:8081/connect/token` when no route qualifier is active, or `http://localhost:8081/connect/token/{schoolYear}` in the school-year-qualified workflow. In Keycloak mode it remains the provider-native realm token URL. |
+| `--year <school-year>` | No | Used only for the existing school-year developer workflow. When present, the DMS-local route qualification remains `/{schoolYear}/data/...` rather than an ODS-style `/data/v3/{year}/...` convention. |
 
 The single-segment `/{schoolYear}/data/...` examples in this section are intentionally scoped to the
 local DMS-916 bootstrap profile when route qualifiers are configured as `schoolYear` only. Broader DMS
 route-context shapes remain valid repo behavior outside this narrowed local workflow and are not redefined
 here.
 
-Bootstrap treats `-k`, `-s`, `-o`, `-b`, `-d`, `-w`, and the XSD input as one atomic invocation set. If the
+Bootstrap treats `--key`, `--secret`, `--token-url`, and `--base-url` as one atomic invocation set. If the
 resolved tool surface cannot accept the full set for a run, bootstrap treats the seed-delivery path as
 unsupported and fails fast rather than defining an alternate DMS-owned invocation mode.
 
@@ -923,16 +939,15 @@ unsupported and fails fast rather than defining an alternate DMS-owned invocatio
 
 Bootstrap depends on the following runtime behaviors and does not constrain more than this:
 
-- The tool consumes the bootstrap-prepared XML interchange workspace from `-d`.
-- The tool uses its XML/interchange and API dependency metadata behavior to determine load order. Bootstrap
-  does not define filename-prefix ordering.
-- In the school-year developer workflow, bootstrap invokes the tool once per year with a route-qualified base
-  URL and the matching `/connect/token/{schoolYear}` OAuth URL for the existing local DMS route-qualified shape.
-- Client-side XSD behavior must be deterministic: bootstrap either passes a staged XSD directory with `-x` or
-  uses a DMS `-z` XSD metadata URL verified by Story 04.
-- Rerun tolerance is not a separate continue-on-error CLI contract in v1. It depends on BulkLoadClient's
-  existing hash-cache behavior, deterministic workspace handling, API duplicate responses, and normal
-  teardown discipline.
+- The tool consumes the bootstrap-prepared JSONL workspace from `--data`.
+- In the school-year developer workflow, bootstrap supplies `--year` together with the matching
+  `/connect/token/{schoolYear}` token URL for the existing local DMS route-qualified shape.
+- Ordering of files within the `--data` directory, if the JSONL interface defines one, remains owned by
+  BulkLoadClient and the seed-source manifest rather than by DMS bootstrap.
+- When bootstrap passes `--continue-on-error`, BulkLoadClient must classify duplicate-resource
+  `409 Conflict` responses as non-fatal and return `0` when every failure is within that tolerated conflict
+  set; broader conflict classification, retry behavior, batching, and request shaping remain
+  BulkLoadClient-owned behavior.
 - Exit code `0` means the run completed within the accepted bootstrap success boundary; any fatal failure
   returns non-zero.
 - The tool emits terminal diagnostics for the run, and bootstrap surfaces those diagnostics directly rather
@@ -944,28 +959,26 @@ Bootstrap depends on the following runtime behaviors and does not constrain more
 
 #### 6.2.1 Bootstrap Consumption Boundary
 
-DMS-916 defines only the **developer bootstrap consumption contract** for seed data. The built-in core
-developer templates selected by `-SeedTemplate` are repo-local XML interchange assets owned by the DMS bootstrap
-implementation, not published deployment packages. Broader artifact distribution concerns - package naming,
+DMS-916 defines only the **developer bootstrap consumption contract** for seed data. The built-in
+core developer templates selected by `-SeedTemplate` are bootstrap-owned developer assets — Phase 1
+fetches XML interchange files from the pinned Ed-Fi-Data-Standard repository tag (see
+[`02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md)); Phase 2 will source
+JSONL assets via the same `-SeedTemplate` selectors. Neither form is a published deployment package. Broader artifact distribution concerns - package naming,
 publishing workflow, versioning policy, and long-term seed-data distribution outside this repo - remain out
 of scope for this spike and stay with DMS-1119, but they do not block the DMS-916 developer bootstrap path.
 
-For DMS-916, bootstrap materializes a local BulkLoadClient data directory of XML interchange files for the
-selected developer seed source.
+For DMS-916, bootstrap materializes a local directory of JSONL files for the selected developer seed source.
 The seed source for a run can come from:
 
 - the repo-local `eng/docker-compose/seed-data/minimal/` directory selected by `-SeedTemplate Minimal`,
 - the repo-local `eng/docker-compose/seed-data/populated/` directory selected by `-SeedTemplate Populated`,
 - catalog-advertised built-in extension seed artifacts resolved from selected extensions when the seed catalog defines a
   built-in seed source, or
-- a developer-supplied XML interchange directory selected by `-SeedDataPath`.
+- a developer-supplied directory selected by `-SeedDataPath`.
 
-Once materialized, every source is treated the same way: bootstrap stages XML interchange files into one
-flat repo-local BulkLoadClient data directory and hands that directory to BulkLoadClient. ODS-style
-`Manifest*.xml` files may exist in source packages as package metadata, but bootstrap must not rely on
-BulkLoadClient reading them and must not pass them as data files unless the pinned client is explicitly
-verified to support that shape. The exact external package shape for distributing those same seed files
-outside the repo is intentionally not part of this design.
+Once materialized, every source is treated the same way: bootstrap merges the JSONL files into one repo-local
+workspace and hands that directory to BulkLoadClient. The exact external package shape for distributing those
+same seed files outside the repo is intentionally not part of this design.
 
 #### 6.2.2 Core Seed Templates
 
@@ -985,9 +998,9 @@ or removes built-in resources, the manifest table above, the core `SeedLoader` p
 
 #### 6.2.3 Developer Sample Data Selection
 
-Developers may use Ed-Fi provided seed sources or supply their own XML interchange files. The `-SeedTemplate` and
+Developers may use Ed-Fi provided seed sources or supply their own JSONL files. The `-SeedTemplate` and
 `-SeedDataPath` parameters on `load-dms-seed-data.ps1` control this selection. The seed phase also accepts
-`-IdentityProvider` so direct phase invocation can resolve the same OAuth endpoint as the running DMS
+`-IdentityProvider` so direct phase invocation can resolve the same OAuth token endpoint as the running DMS
 environment without depending on a previous `start-local-dms.ps1` process, and
 `-AdditionalNamespacePrefix` so custom seed payloads can declare agency or custom namespace prefixes for
 the SeedLoader vendor application. The full seed-parameter contract is defined normatively in
@@ -999,16 +1012,16 @@ the SeedLoader vendor application. The full seed-parameter contract is defined n
 |------|-----------|----------|
 | Ed-Fi Minimal (default in standard modes only) | `load-dms-seed-data.ps1` with no seed-source flag, or wrapper `-LoadSeedData` with no seed-source flag | In Modes 1 and 2 only, resolves the repo-managed `Minimal` seed source and loads all core descriptor resources plus `schoolYearTypes`. Fast bootstrap for CI and automated testing. This default does not apply when `-ApiSchemaPath` is used. |
 | Ed-Fi Populated | `-SeedTemplate Populated` | In Modes 1 and 2 only, resolves the repo-managed `Populated` seed source and loads `Minimal` plus `localEducationAgencies`, `schools`, `courses`, `students`, and `studentSchoolAssociations`. For manual testing and demos. Not valid with `-ApiSchemaPath`. |
-| Custom seed data | `-SeedDataPath <directory>` | Uses XML interchange files from the specified directory as the source input and materializes them into the repo-local seed workspace before invocation. Bypasses bootstrap-managed artifact resolution entirely. Compatibility comes from the run's root bootstrap manifest and staged schema/security inputs: embedded claims, selected extension fragments, any additive `-ClaimsDirectoryPath` fragments, and any explicitly supplied `-AdditionalNamespacePrefix` values needed by SeedLoader vendor authorization. Bootstrap does not inspect arbitrary XML files to certify that every record is authorized or schema-valid ahead of time. In expert `-ApiSchemaPath` mode, this is the only supported seed-source input when seed delivery is requested. |
+| Custom seed data | `-SeedDataPath <directory>` | Uses JSONL files from the specified directory as the source input and copies them into the repo-local seed workspace before invocation. Bypasses bootstrap-managed artifact resolution entirely. Compatibility comes from the run's root bootstrap manifest and staged schema/security inputs: embedded claims, selected extension fragments, any additive `-ClaimsDirectoryPath` fragments, and any explicitly supplied `-AdditionalNamespacePrefix` values needed by SeedLoader vendor authorization. Bootstrap does not inspect arbitrary JSONL files to certify that every record is authorized or schema-valid ahead of time. In expert `-ApiSchemaPath` mode, this is the only supported seed-source input when seed delivery is requested. |
 
 **Parameter interaction:**
 
 - `-SeedTemplate` and `-SeedDataPath` are mutually exclusive. Providing both is a script error.
 - `-ApiSchemaPath` disables bootstrap-managed seed-source selection. In that mode, seed delivery requires
   `-SeedDataPath`, and `-SeedTemplate` is invalid.
-- `-SeedDataPath` skips bootstrap-managed artifact resolution, but bootstrap still materializes the supplied
-  XML interchange files into the repo-local seed workspace so every seed flow invokes the pinned
-  BulkLoadClient against one data directory.
+- `-SeedDataPath` skips bootstrap-managed artifact resolution, but bootstrap still copies the supplied JSONL
+  files into the repo-local seed workspace so every seed flow invokes the pinned BulkLoadClient against one
+  materialized directory.
 - The `-Extensions` parameter applies alongside `-SeedTemplate`. When a selected extension defines a
   built-in seed source, that source is merged into the same bootstrap workspace. When `-SeedDataPath` is specified,
   `-Extensions` seed-source resolution is skipped - the developer manages the contents of their own
@@ -1060,12 +1073,13 @@ not prescribe:
 - internal archive layouts, or
 - reserved numeric ranges for custom or third-party extension publishers.
 
-The bootstrap-side contract is simpler: every resolved source must be materializable into a flat
-BulkLoadClient data directory of XML interchange files. The staging step must use deterministic
-collision-safe file naming or fail with a clear error before invoking BulkLoadClient. Automatic merging of
-more than one built-in source is supported only when those artifacts can be materialized into that data
-directory and loaded through BulkLoadClient's XML dependency/interchange ordering behavior. Bootstrap does
-not define or reinterpret a filename-ordering contract.
+The bootstrap-side contract is simpler: every resolved source must be materializable into a flat directory of
+JSONL files, and the merged workspace must not contain filename collisions. If two materialized sources
+would stage the same relative filename into that workspace, the bootstrap script must detect the collision
+and exit with a clear error before invoking BulkLoadClient. Automatic merging of more than one built-in
+source is supported only when those published artifacts already conform to the external JSONL ordering
+contract consumed by BulkLoadClient. Bootstrap materializes the files into one directory; it does not define
+or reinterpret that ordering contract.
 
 #### 6.2.5 Bootstrap Manifest Seed Handoff
 
@@ -1140,37 +1154,38 @@ directory is the only seed source even though the bootstrap manifest's prepared 
 govern compatibility for the run.
 
 **Step 3. Materialize seed files.** For the core `Minimal` and `Populated` seed sources, copy the selected
-repo-local XML interchange files into the bootstrap seed workspace. For catalog-advertised built-in extension
-seed sources, use the seed catalog's seed-source resolution path. For `-SeedDataPath`, materialize the
-supplied XML interchange files into that same workspace so the BulkLoadClient invocation shape stays uniform.
-Use deterministic collision-safe names, or detect and abort if a valid data directory cannot be produced
-before proceeding. The external artifact naming and publishing model for distributing seed files outside the
-repo remains in DMS-1119; XML dependency/interchange ordering remains owned by BulkLoadClient.
+repo-local JSONL directory into the bootstrap seed workspace. For catalog-advertised built-in extension seed sources, use
+the seed catalog's seed-source resolution path. For `-SeedDataPath`, copy the supplied JSONL files into
+that same workspace so the BulkLoadClient invocation shape stays uniform. Detect and abort on filename
+collisions between all materialized sources before proceeding. The external artifact naming and publishing
+model for distributing seed files outside the repo remains in DMS-1119; any required JSONL ordering contract
+remains owned by BulkLoadClient.
 
-**Step 4. Invoke BulkLoadClient.** Call the pinned BulkLoadClient DLL with the materialized seed workspace, the
+**Step 4. Invoke BulkLoadClient.** Call the pinned BulkLoadClient DLL with the merged seed workspace, the
 DMS base URL supplied to `load-dms-seed-data.ps1 -DmsBaseUrl` or, when omitted for Docker-hosted seed
-loading, the Docker-local DMS URL resolved from `-EnvironmentFile`. Resolve the OAuth URL from
+loading, the Docker-local DMS URL resolved from `-EnvironmentFile`. Resolve the OAuth token URL from
 `load-dms-seed-data.ps1 -IdentityProvider` for the current iteration, falling back to the provider selected
 by the same env-file settings when the parameter is omitted. Invoke the client with the bootstrap credentials
-and either a staged XSD directory or XSD metadata URL using the contracted surface defined in
+using the contracted surface defined in
 [Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract). In the existing `-SchoolYearRange`
-workflow, bootstrap loops per year and passes the route-qualified DMS base URL where the school-year segment
-appears before `/data`; when self-contained CMS identity is selected, `-o` carries the same context path
-after `/connect/token/{schoolYear}`:
+workflow, `--year` maps to a route-qualified DMS path where the school-year segment appears before `/data`;
+when self-contained CMS identity is selected, `--token-url` carries the same context path after
+`/connect/token/{schoolYear}`:
 
 > **Non-normative illustration:** The code block below shows the expected invocation shape derived from the
-> Section 6.1 XML consumption contract.
+> Section 6.1 consumption contract. Exact flag names are subject to BulkLoadClient implementation
+> verification before Story 02.
 
 ```powershell
 dotnet $bulkLoadClientDll `
-    -b $dmsBaseUrl `
-    -d $seedWorkDir `
-    -w $bulkLoadWorkingDir `
-    -k $seedKey `
-    -s $seedSecret `
-    -o $oauthTokenUrl `
-    -x $xsdDirectory `
-    -n
+    --input-format jsonl `
+    --data $seedWorkDir `
+    --base-url $dmsBaseUrl `
+    --token-url $tokenUrl `
+    --key $seedKey `
+    --secret $seedSecret `
+    --year $schoolYear   # only if school-year-partitioned instance
+    --continue-on-error  # requested rerun tolerance; exact behavior is BulkLoadClient-owned
 ```
 
 **Step 5. Check exit code.** If the BulkLoadClient exits non-zero, the bootstrap script throws and halts.
@@ -1178,10 +1193,11 @@ dotnet $bulkLoadClientDll `
 **Step 6. Clean up.** Remove the seed workspace on success (leave it on failure to aid debugging).
 
 > **Seed rerun tolerance.** When `load-dms-seed-data.ps1` is invoked against a database that already contains seed
-> data (e.g., re-running bootstrap without `-v` teardown), duplicate resources can produce `409 Conflict`
-> responses from the DMS API. V1 does not require a separate continue-on-error BulkLoadClient contract.
-> Rerun tolerance is limited to the pinned client's existing hash-cache behavior, deterministic seed workspace
-> handling, and normal teardown discipline.
+> data (e.g., re-running bootstrap without `-v` teardown), duplicate resources are expected to produce
+> `409 Conflict` responses from the DMS API. Bootstrap may pass `--continue-on-error`, but rerun tolerance is
+> a required BulkLoadClient contract for Story 02 delivery, not a guaranteed DMS-916 behavior until ODS-6738
+> delivers and verifies it. Under that contract, BulkLoadClient classifies duplicate-resource `409 Conflict`
+> responses as non-fatal and returns success only when all failures are within the tolerated conflict set.
 
 > **Operator diagnostics requirement.** The seed-loading step must surface the tool's terminal summary or
 > terminal error diagnostics to the operator. In v1 bootstrap passes those diagnostics through rather than
@@ -1189,7 +1205,7 @@ dotnet $bulkLoadClientDll `
 
 #### 6.3.2 Credential Handoff
 
-The `-k` and `-s` values come from the SeedLoader credential bootstrap step in
+The `--key` and `--secret` values come from the SeedLoader credential bootstrap step in
 [Credential Bootstrapping](#7-credential-bootstrapping). The bootstrap credentials must have sufficient DMS
 authorization scope to POST all resource types present in the seed files. The script passes them directly -
 no intermediate storage in files or environment variables beyond what the bootstrap step already provides.
@@ -1213,14 +1229,14 @@ If the package cannot be resolved, bootstrap fails before attempting any seed lo
 
 `setup-database-template.psm1` is deprecated by this design. The intended implementation switch is a hard
 cut-over of `-LoadSeedData` to the API-based path in the same API-based seed-delivery slice once
-the pinned BulkLoadClient XML path is verified against DMS. DMS-916 does not introduce a second long-lived
-flag or parallel user-facing seed mode.
+BulkLoadClient JSONL support is delivered and verified. DMS-916 does not introduce a second long-lived flag
+or parallel user-facing seed mode.
 
 Rationale: the direct-SQL path bypasses DMS API validation and serialization, which has caused discriminator column corruption and referential integrity violations in production ODS deployments. The risk of keeping both paths is higher than the cost of a hard cut-over.
 
 > **Implementation gate:** The removal of `setup-database-template.psm1` in the API-based seed-delivery slice
-> is gated on verifying the repo-pinned BulkLoadClient XML mode against DMS discovery, dependencies, OAuth,
-> data, and XSD metadata or staged-XSD behavior. If verification is delayed, that blocks operational
+> is blocked on BulkLoadClient JSONL support (`--input-format jsonl`), which is a cross-team dependency (see
+> [Section 14.3](#143-blocking-cross-team-dependencies)). If delivery is delayed, that blocks operational
 > completion of the intended API-based path; it does not change the design contract.
 
 **Removal checklist (for implementation slice):**
@@ -1234,7 +1250,7 @@ Rationale: the direct-SQL path bypasses DMS API validation and serialization, wh
 ### 6.5 Performance Considerations
 
 The API-based path replaces a single ~30-second direct SQL template load with per-resource HTTP POSTs
-through BulkLoadClient. Exact end-to-end timings for the XML path are not yet benchmark-backed in this
+through BulkLoadClient. Exact end-to-end timings for the JSONL path are not yet benchmark-backed in this
 design; any duration ranges discussed here are provisional placeholders rather than operational commitments.
 
 For the common single-instance bootstrap shape, API-based seed delivery is expected to be materially slower
@@ -1338,11 +1354,11 @@ For DMS-916:
 - `-SeedDataPath` is compatible with the run's root bootstrap manifest and staged schema/security
   inputs, including embedded claims, selected extension fragments, additive `-ClaimsDirectoryPath`
   fragments, and any explicit `-AdditionalNamespacePrefix` values needed for vendor namespace
-  authorization. Bootstrap does not inspect arbitrary XML files to certify authorization completeness,
+  authorization. Bootstrap does not inspect arbitrary JSONL files to certify authorization completeness,
   and payload-level authorization or schema mismatches remain BulkLoadClient or DMS runtime failures.
 
 DMS-916 does not introduce a second dedicated "seed loader fragment" type and it does not synthesize
-missing grants from arbitrary XML content.
+missing grants from arbitrary JSONL content.
 
 **Credential Handoff to BulkLoadClient**
 
@@ -1351,6 +1367,7 @@ arguments when invoking BulkLoadClient using the contracted surface in
 [Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract):
 
 > **Non-normative illustration:** The code block below shows the expected credential-handoff invocation shape.
+> Exact flag names are subject to BulkLoadClient implementation verification before Story 02.
 
 ```powershell
 $seedCreds  = Add-Application -ApplicationName "Seed Loader" -ClaimSetName "SeedLoader" ...
@@ -1359,17 +1376,16 @@ $seedSecret = $seedCreds.Secret
 
 # Invoked once against the seed data directory:
 dotnet $bulkLoadClientDll `
-    -b $dmsBaseUrl `
-    -d $seedWorkDir `
-    -w $bulkLoadWorkingDir `
-    -k $seedKey `
-    -s $seedSecret `
-    -o $oauthTokenUrl `
-    -x $xsdDirectory
+    --input-format jsonl `
+    --data        $seedWorkDir `
+    --base-url    $dmsBaseUrl `
+    --token-url   $oauthTokenUrl `
+    --key         $seedKey `
+    --secret      $seedSecret
 ```
 
 The variables remain in scope only for the lifetime of `load-dms-seed-data.ps1`. Credentials are held in
-memory for that command invocation and are not written to disk. The `-o` OAuth URL value is resolved from
+memory for that command invocation and are not written to disk. The `--token-url` value is resolved from
 the seed phase's `-IdentityProvider` parameter using the same `OAUTH_TOKEN_ENDPOINT` logic the current
 script already applies for DMS startup, so Keycloak and self-contained auth continue to work consistently.
 The seed phase does not read transient process environment variables from an earlier `start-local-dms.ps1`
@@ -1444,8 +1460,25 @@ already present there and must not invent a synthetic
 | *(extension resource claims per selected built-in extension seed source)* | `NoFurtherAuthorizationRequired` | Create |
 
 > **Note:** Read (GET) access is not required by the bootstrap seed-loading contract. BulkLoadClient uses
-> POST for seed records; duplicate detection and conflict handling remain BulkLoadClient/runtime behavior
-> outside a separate DMS-owned rerun-tolerance contract.
+> POST for seed records; duplicate detection and `--continue-on-error` handling for `409 Conflict` responses
+> remain part of the required BulkLoadClient rerun-tolerance contract in Section 6.1.2.
+
+**schoolYearType override exception:** SeedLoader grants on every other resource claim above resolve their
+runtime authorization strategy by inheriting from the claim hierarchy (`NamespaceBased`,
+`RelationshipsWithEdOrgsAndPeople`, etc.); the SeedLoader Application's namespace prefixes and EdOrg IDs
+then continue to gate writes at runtime. `schoolYearType` is the one exception: its parent
+`http://ed-fi.org/identity/claims/domains/edFiTypes` defines a `defaultAuthorization` with only the `Read`
+action, so a SeedLoader `Create` grant on `schoolYearType` would otherwise inherit zero strategies and
+403 the Story-02 REST precondition POST. The original bootstrap design did not contemplate
+`schoolYearType` as a write endpoint because v5.x models it as a closed XSD enumeration that cannot be
+loaded through any bulk interchange XSD; Story 02 introduced the REST precondition to materialize
+`SchoolYearType` rows for the configured year range
+(see [`02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) acceptance criteria for
+`Minimal`/`Populated`). The SeedLoader `Create` grant on `schoolYearType` therefore declares an explicit
+`authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` — and this is the only
+SeedLoader grant in the embedded `Claims.json` that may carry an override. The
+`Given_Embedded_Claims_Json` unit fixture enforces both halves of this rule (no overrides on any other
+SeedLoader grant; an explicit override on `schoolYearType`).
 
 ---
 
@@ -1570,23 +1603,34 @@ already-provisioned database unless the live fingerprint still matches the exact
 
 ### 8.3 Extension Seed Data
 
-The seed-workspace design reserves room for extension-provided XML interchange files that load alongside
-core seed data. Built-in extension seed package availability is determined only by the seed catalog.
+The seed-workspace design reserves room for extension-provided JSONL files that load after core seed data.
+For Ed-Fi-managed built-in seed sources, the intended file-ordering convention is to keep core-owned files in
+the lower range and extension-owned files in the higher range:
 
-The bootstrap contract is materialization-based: any merged workspace is valid only when bootstrap can produce
-one BulkLoadClient data directory of XML interchange files with deterministic collision-safe names. Ordering
-semantics remain external to DMS bootstrap and are handled by BulkLoadClient's XML dependency/interchange
-behavior, not numeric filename prefixes.
+| Range | Scope |
+|-------|-------|
+| `01`-`49` | Core Ed-Fi standard seed data (descriptors, base education organizations, etc.) |
+| `50`-`99` | Extension seed data for Ed-Fi-managed built-in extension packages when one is available |
+
+Built-in extension seed package availability is determined only by the seed catalog.
+
+This table is source-author guidance for Ed-Fi-managed built-in artifacts, not a bootstrap validation rule
+for third-party publishers or for developer-supplied `-SeedDataPath` directories. The bootstrap contract
+remains collision-based: any merged workspace is valid only when it can be flattened into one directory
+without filename collisions. Any stronger ordering semantics remain external to DMS bootstrap, and future
+built-in multi-source merging depends on those external artifacts already honoring the published JSONL
+contract consumed by BulkLoadClient.
 
 **Bootstrap implications:**
 
 1. When seed delivery runs and no selected extension has a built-in seed package, bootstrap stages only the
    selected repo-local core seed source.
 2. The seed catalog may add an optional built-in seed-package entry so an extension can merge
-   its XML interchange files into the same workspace without changing the bootstrap shape.
+   its JSONL files into the same workspace without changing the bootstrap shape, but only when that published
+   package already follows the external JSONL ordering contract required by BulkLoadClient.
 3. Until an extension defines that package in the seed catalog, developers supply extension
    payloads through `-SeedDataPath` when needed.
-4. If more than one built-in source is ever merged into the workspace, materialization failures remain a
+4. If more than one built-in source is ever merged into the workspace, filename collisions remain a
    bootstrap-time error and must abort before BulkLoadClient runs.
 
 This keeps the BulkLoadClient invocation uniform (one call, one directory) while keeping seed package
@@ -1610,8 +1654,9 @@ The `-Extensions` parameter is the single developer-facing control for enabling 
 3. **Extension seed data handling (Section 8.3)** - When seed delivery runs, bootstrap checks
    whether any selected extension has a built-in seed package in the seed catalog. If no selected extension
    has one, the seed workspace remains core-only unless the developer supplies `-SeedDataPath`. If an
-   extension has a built-in seed package, its XML interchange files are materialized into the same bootstrap
-   workspace used for core artifacts.
+   extension has a built-in seed package, its JSONL files are merged
+   into the same bootstrap workspace only when that package participates in the same external JSONL contract
+   used for core artifacts.
 
 **Example - sample-enabled bootstrap run:**
 
@@ -1768,7 +1813,7 @@ Each validation rule below is owned by the phase command responsible for the aff
 | `-ClaimsDirectoryPath` path does not exist or contains no `*-claimset.json` files | "Error: -ClaimsDirectoryPath must point to a directory containing one or more *-claimset.json files." |
 | `-ClaimsDirectoryPath` fragments collide with staged extension fragments by filename | "Error: Claimset fragment filename collision detected for '<file>'. Each staged *-claimset.json filename must be unique before bootstrapping." |
 | `-ClaimsDirectoryPath` fragment references a claim set name that does not exist in the embedded `Claims.json` | "Error: Claimset fragment '<file>' references unknown claim set '<name>'. DMS-916 additive fragments may only attach to claim sets declared in the embedded Claims.json." |
-| Seed delivery runs but the pinned BulkLoadClient package cannot be resolved or does not expose the required XML interface | "Error: BulkLoadClient package resolution failed or the required XML interface is unavailable." |
+| Seed delivery runs but the pinned BulkLoadClient package cannot be resolved or does not expose the CLI surface required by the active phase | "Error: BulkLoadClient package resolution failed or the CLI surface required by the active phase (XML in Phase 1, JSONL in Phase 2) is unavailable." |
 | Seed delivery runs but the embedded claims metadata does not define the top-level `SeedLoader` claim set | "Error: Seed delivery requires the embedded CMS claims metadata to define the top-level SeedLoader claim set. Bootstrap cannot continue to BulkLoadClient until that claim set exists." |
 | Extension artifact for `-Extensions` cannot be resolved | "Error: Extension artifact resolution failed for '<name>'. Check the extension name, configured feed, package metadata, or supply a direct schema directory with -ApiSchemaPath." |
 | Seed delivery with `-Extensions` where an extension is in the seed catalog but its NuGet seed package fails to resolve | "Error: Seed package for extension '<name>' could not be resolved. Check network/feed access or supply the package manually." |
@@ -1831,7 +1876,7 @@ Within a single wrapper invocation, the wrapper reads selected instance IDs from
 recover IDs or credentials. In an IDE continuation run, the wrapper also forwards the same external
 `-DmsBaseUrl` value to `load-dms-seed-data.ps1` when `-LoadSeedData` is selected. When the wrapper exposes
 `-IdentityProvider`, it forwards the same value to both `start-local-dms.ps1` and
-`load-dms-seed-data.ps1` so OAuth endpoint resolution remains explicit in each phase. When the wrapper
+`load-dms-seed-data.ps1` so token endpoint resolution remains explicit in each phase. When the wrapper
 exposes seed authorization inputs such as `-AdditionalNamespacePrefix`, it forwards them only to
 `load-dms-seed-data.ps1` when `-LoadSeedData` is selected. When the wrapper exposes `-EnvironmentFile`, it
 forwards that value to every phase that needs local CMS, identity, tenant, DMS, or database settings. No
@@ -1990,7 +2035,7 @@ The workspace is scratch-only bootstrap state; it must be excluded from source c
 - `eng/docker-compose/.bootstrap/ApiSchema/` - staged `ApiSchema*.json` files used for hashing and for both Docker-hosted and IDE-hosted DMS runs
 - `eng/docker-compose/.bootstrap/ApiSchema/bootstrap-api-schema-manifest.json` - runtime asset index for staged schema/content paths only
 - `eng/docker-compose/.bootstrap/bootstrap-manifest.json` - the only persisted bootstrap compatibility and handoff manifest for schema, claims, and seed phases
-- `eng/docker-compose/.bootstrap/seed/` - materialized XML interchange files for the current seed-loading run
+- `eng/docker-compose/.bootstrap/seed/` - staged seed workspace for the current seed-loading run (XML interchange in Phase 1; JSONL in Phase 2)
 
 **Lifecycle**
 
@@ -2048,10 +2093,11 @@ to bind the `schoolYear` context key to the new instance.
 ### 10.2 Per-Instance Seed Data Loading
 
 When `-SchoolYearRange` is used, seed data must be loaded into each instance independently. A single
-BulkLoadClient invocation targets one school-year instance. In this design, that workflow stays scoped to the existing
+BulkLoadClient invocation targets one school-year instance via the `--year` flag (see
+[Minimum Invocation Surface Assumed by Bootstrap](#611-minimum-invocation-surface-assumed-by-bootstrap)). In this design, that workflow stays scoped to the existing
 school-year developer path: the selected year appears as the route qualifier before `/data`, so the per-run
 resource URL shape is `{base-url}/{year}/data/{namespace}/{resource}`. When self-contained CMS identity is
-used for the same iteration, the OAuth URL carries the matching context path at
+used for the same iteration, the token URL carries the matching context path at
 `/connect/token/{schoolYear}`. The bootstrap script loops over the school year range and invokes
 BulkLoadClient once per year:
 
@@ -2061,12 +2107,12 @@ profiles such as `/{districtId}/{schoolYear}/data/...` remain valid DMS behavior
 local bootstrap workflow and are not redefined here.
 
 > **Non-normative illustration:** The code block below shows the expected per-year invocation loop shape
-> derived from the Section 6.1 XML consumption contract.
+> derived from the Section 6.1 consumption contract. Exact flag names are subject to BulkLoadClient
+> implementation verification before Story 02.
 
 ```powershell
 $startYear, $endYear = $SchoolYearRange -split '-'
 foreach ($year in [int]$startYear..[int]$endYear) {
-    $yearBaseUrl = "$dmsBaseUrl/$year"
     $tokenUrl =
         if ($IdentityProvider -eq 'Keycloak') {
             'http://localhost:8045/realms/edfi/protocol/openid-connect/token'
@@ -2075,30 +2121,32 @@ foreach ($year in [int]$startYear..[int]$endYear) {
         }
 
     dotnet $bulkLoadClientDll `
-        -b $yearBaseUrl `
-        -d $seedWorkDir `
-        -w $bulkLoadWorkingDir `
-        -k $seedKey `
-        -s $seedSecret `
-        -o $tokenUrl `
-        -x $xsdDirectory
+        --input-format jsonl `
+        --data        $seedWorkDir `
+        --base-url    $dmsBaseUrl `
+        --token-url   $tokenUrl `
+        --key         $seedKey `
+        --secret      $seedSecret `
+        --continue-on-error `
+        --year        $year
 }
 ```
 
 Key points:
 
-- The same `$seedWorkDir` (materialized core + extension XML interchange files) is reused for every year; only the target
+- The same `$seedWorkDir` (merged core + extension JSONL files) is reused for every year; only the target
   instance differs. Seed packages are downloaded and extracted once outside the loop.
-- The self-contained identity path constructs the OAuth URL per iteration at
+- The self-contained identity path constructs the token URL per iteration at
   `http://localhost:8081/connect/token/{schoolYear}`. Keycloak keeps its provider-native static token URL.
 - If any BulkLoadClient invocation exits non-zero, the bootstrap script throws and halts before proceeding
   to subsequent years.
-- When `-SchoolYearRange` is not specified, BulkLoadClient is invoked once against the single default
-  instance's base URL.
+- When `-SchoolYearRange` is not specified, BulkLoadClient is invoked once without `--year`, targeting the
+  single default instance.
 - The same `$seedKey` / `$seedSecret` pair is reused across the loop. Developer bootstrap uses one
   `SeedLoader` application record per run whose instance associations cover every instance created or
   explicitly selected for that bootstrap.
-- Duplicate-resource conflict handling remains BulkLoadClient/runtime behavior per Section 6.1.2.
+- `--continue-on-error` remains in the per-year invocation shape as requested rerun tolerance;
+  duplicate-resource `409 Conflict` handling remains BulkLoadClient-owned per Section 6.1.2.
 
 **`-InfraOnly` + `-SchoolYearRange` combination**: This combination is fully supported. Infrastructure
 startup, instance creation, and schema provisioning proceed as usual before any DMS health wait. When
@@ -2243,7 +2291,7 @@ The proposed split of the current `setup-database-template.psm1` responsibilitie
 | Concern | Current location | Proposed location |
 |---------|-----------------|-------------------|
 | Schema DDL (CREATE TABLE, indexes, schema) | Bundled in NuGet SQL template | Direct SchemaTools provisioning (`dms-schema ddl provision` or an equivalent helper over the same APIs) against the selected staged schema set and its exact physical footprint |
-| Seed data (descriptors, ed-org types, bootstrap records) | Bundled in NuGet SQL template | API-based XML interchange loading via BulkLoadClient ([API-Based Seed Data Loading](#6-api-based-seed-data-loading)) |
+| Seed data (descriptors, ed-org types, bootstrap records) | Bundled in NuGet SQL template | API-based JSONL loading via BulkLoadClient ([API-Based Seed Data Loading](#6-api-based-seed-data-loading)) |
 
 `setup-database-template.psm1` is deprecated as part of this design. Its removal is tracked in the
 API-based seed-delivery slice (see [Companion Implementation Stories](#13-companion-implementation-stories)).
@@ -2568,7 +2616,7 @@ When `-DmsBaseUrl` is provided alongside wrapper `-InfraOnly`, the same pre-DMS 
    the run.
 6. If the run also requested seed loading, wrapper orchestration or the developer then invokes
    `load-dms-seed-data.ps1 -DmsBaseUrl $DmsBaseUrl -IdentityProvider $IdentityProvider`, which owns
-   SeedLoader credential bootstrap and seed loading targeting the same healthy endpoint, OAuth endpoint,
+   SeedLoader credential bootstrap and seed loading targeting the same healthy endpoint, token endpoint,
    and target instance set selected by the surrounding phase flow.
 
 `start-local-dms.ps1` does not call `Get-DmsInstances` again and does not own the post-health handoff
@@ -2675,7 +2723,7 @@ these rows, it is outside the intended scope of this design spike.
 | ApiSchema.json selection - how developers choose core, extensions, or custom path | Sections 3.3, 8.2, 8.4, 9.3; [`apischema-container.md`](apischema-container.md) | Designed. The selected schema set is staged as a normalized file-based ApiSchema asset container: schema JSON drives hash/DDL/API surface, while the ApiSchema asset manifest indexes optional static content for runtime metadata/XSD endpoints. Direct filesystem ApiSchema loading is the stable core contract; package-backed selection is the Story 06 input-materialization path. | Designed, implementation pending. Story 00 owns direct filesystem workspace staging through `-ApiSchemaPath`; Story 04 owns runtime file-based content loading; Story 05 owns producing asset-only MetaEd packages; Story 06 owns package-backed no-argument core-only mode and named `-Extensions` delivery. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
 | Security database configuration from ApiSchema.json | Sections 4.3-4.5, 9.3 (`-ClaimsDirectoryPath`) | Designed. DMS-916 derives base claims inputs from the staged schema and available claims artifacts in every schema-selection mode. Expert `-ApiSchemaPath` mode uses `-ClaimsDirectoryPath` for additional non-core security fragments, with structural validation only. | Designed, implementation pending. Story 00 owns claims staging and direct-filesystem inputs; Story 06 feeds the same root bootstrap manifest schema contract for package-backed standard mode. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md) |
 | Database schema provisioning - DDL hook separated from seed data loading, driven by selected ApiSchema.json | Sections 3.2, 11.3-11.5; [`command-boundaries.md` Section 3.5](command-boundaries.md#35-provision-dms-schemaps1--authoritative-schema-provisioning) | Designed under the strong interpretation above. Selected schema drives the DDL target/version/`EffectiveSchemaHash` validation path and the exact physical schema provisioned for that run. DMS startup provisioning is explicitly disabled, including both `AppSettings__DeployDatabaseOnStartup` and the legacy `NEED_DATABASE_SETUP` / `Backend.Installer` pre-launch path. | Designed, implementation pending. Bootstrap delegates to the SchemaTools / runtime-owned provisioning path; readiness is gated on that surface remaining stable. | [`../../epics/16-bootstrap/01-schema-deployment-safety.md`](../../epics/16-bootstrap/01-schema-deployment-safety.md); SchemaTools dependency in Section 14.3 |
-| Sample data loading - API-based XML interchange loading replacing direct SQL, with repo-local Ed-Fi seed templates or developer-supplied XML directories paired with compatible schema/security inputs | Section 6 | Designed. All DMS-side design decisions are complete: BulkLoadClient XML consumption contract (Section 6.1), seed-source selection (`-SeedTemplate` / `-SeedDataPath`, Section 6.2), bootstrap manifest handoff (Section 6.2.5), combined XML seed workspace materialization (Section 6.3.1), per-year invocation for school-year paths (Section 10), and the bootstrap manifest compatibility boundary for `-SeedDataPath`, including explicit `-AdditionalNamespacePrefix` values for SeedLoader vendor authorization. The design target — API-based XML replacement of the deprecated direct-SQL path — is fully specified. | Designed, implementation pending. End-to-end delivery is gated by DMS-owned XML seed assets, SeedLoader, XML BulkLoadClient wiring, and DMS-compatible discovery/dependency/OAuth/data/XSD behavior. | Story 02 implementation of repo-local XML seed assets and loader wiring; Story 04 XSD metadata compatibility for the file-based workspace |
+| Sample data loading - API-based JSON/JSONL loading replacing direct SQL, with repo-local Ed-Fi seed templates or developer-supplied JSONL directories paired with compatible schema/security inputs | Section 6 | Designed. All DMS-side design decisions are complete: BulkLoadClient consumption contract (Section 6.1), seed-source selection (`-SeedTemplate` / `-SeedDataPath`, Section 6.2), bootstrap manifest handoff (Section 6.2.5), combined seed workspace with collision detection (Section 6.3.1), per-year invocation for school-year paths (Section 10), and the bootstrap manifest compatibility boundary for `-SeedDataPath`, including explicit `-AdditionalNamespacePrefix` values for SeedLoader vendor authorization. The design target — API-based JSONL replacement of the deprecated direct-SQL path — is fully specified. | Designed, implementation pending. End-to-end delivery is blocked externally only by BulkLoadClient JSONL support; repo-local `Minimal` and `Populated` assets are DMS-owned implementation work. | ODS-6738 (BulkLoadClient JSONL); Story 02 implementation of repo-local seed assets and loader wiring |
 | Extension selection - parameterized `-Extensions` flag driving schema and security automatically, and driving built-in seed data automatically only where the seed catalog defines a built-in seed package | Sections 3.3, 8.2-8.4 | Designed | Designed, implementation pending. Direct filesystem schema input belongs to Story 00; package-backed `-Extensions` materialization belongs to Story 06 after Story 05. Story 02 owns built-in extension seed lookup and loading from the bootstrap manifest. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md); [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md); [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md); [`../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md`](../../epics/16-bootstrap/06-package-backed-standard-schema-selection.md); see Section 14.2 |
 | Credential bootstrapping - enhancements for seed data loading support | Section 7 | Designed. Both credential flows are fully specified: CMS-only `EdFiSandbox` smoke-test credentials (Section 7.2.1) and the separate DMS-dependent `SeedLoader` credential flow (Section 7.2.2), including the complete `SeedLoader` permission table (resource claim URI patterns, authorization strategies, operations). Adding the `SeedLoader` top-level claim set to the embedded CMS `Claims.json` is the very first implementation task in Story 02 Task 3 — the design specifies exactly what to add. | Designed, implementation pending. Story 02 Task 3 owns adding the `SeedLoader` claim set to `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`; this is the first deliverable from that story and unblocks all DMS-side seed delivery. | [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) Task 3; see Section 14.2 |
 | Bootstrap entry point and safe skip behavior - composable phase commands with optional same-invocation continuation | Sections 1, 9, 9.2-9.5 | Designed. The normative contract is the composable phase commands in `command-boundaries.md`; any thin wrapper is convenience only, may expose happy-path flags, and only sequences phases and forwards values owned by those phases. "Skip/resume" means safe skip behavior across phase commands plus optional same-invocation continuation via `-InfraOnly -DmsBaseUrl` after instance configuration and schema provisioning, not a persisted resume model. | Designed, implementation pending across the phase commands and the optional thin wrapper. | [`../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md`](../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md) and the phase-command implementation tickets |
@@ -2693,11 +2741,19 @@ is required. The first deliverable from each owning story unblocks all downstrea
 | Capability | What remains | Owning story task |
 |---|---|---|
 | `SeedLoader` claim set | Add the top-level `SeedLoader` definition and required core permissions to `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Claims.json`. The exact permission table is in Section 7.2.2. This is the first deliverable from Story 02 and is prerequisite to all seed-delivery testing. | [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) Task 3 |
-| Repo-local built-in seed assets | Add deterministic XML interchange files for `eng/docker-compose/seed-data/minimal/` and `eng/docker-compose/seed-data/populated/` matching the Section 6.2.2 manifests. These are DMS-owned developer bootstrap assets, not published deployment packages. | [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) Task 2 |
-| BulkLoadClient XML compatibility | Verify and wire the repo-pinned BulkLoadClient XML mode against DMS discovery, dependency metadata, OAuth, data endpoints, and staged XSD directory or XSD metadata endpoint behavior. | [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) Tasks 1, 4, and 6; [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) |
+| Repo-local built-in seed assets | Add deterministic JSONL files for `eng/docker-compose/seed-data/minimal/` and `eng/docker-compose/seed-data/populated/` matching the Section 6.2.2 manifests. These are DMS-owned developer bootstrap assets, not published deployment packages. | [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) Task 2 |
 | Direct filesystem schema + explicit-claims staging | Implement `-ApiSchemaPath` schema staging plus `-ClaimsDirectoryPath` staging per the command-boundary contracts in `command-boundaries.md` Sections 3.1–3.2. | [`../../epics/16-bootstrap/00-schema-and-security-selection.md`](../../epics/16-bootstrap/00-schema-and-security-selection.md) Tasks 1-5 |
 | `-InfraOnly` flag for IDE debugging | Implement the `-InfraOnly` switch and post-provision `-DmsBaseUrl` continuation behavior on `start-local-dms.ps1` per Story 03. | [`../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md`](../../epics/16-bootstrap/03-entry-point-and-ide-workflow.md) Task 1 |
 | Replace DMS ApiSchema DLL resource loading | Update DMS runtime so `ContentProvider` reads metadata/specification JSON and XSD assets from the normalized ApiSchema workspace and ApiSchema asset manifest instead of requiring `*.ApiSchema.dll` assemblies for the bootstrap path. DMS runtime does not read `.nupkg` files or NuGet cache layout directly. | [`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) |
+
+#### External Cross-Team Blockers (design complete; blocked on other teams)
+
+The following items are design-complete on the DMS side. Delivery is blocked on cross-team dependencies.
+See Section 14.3 for unblocking actions.
+
+| Capability | Blocking condition | External dependency |
+|---|---|---|
+| API-based seed data loading (`load-dms-seed-data.ps1` via BulkLoadClient) | BulkLoadClient does not yet support `--input-format jsonl` or `--data <directory>` | ODS-6738 (ODS team) |
 
 Asset-only ApiSchema package production is tracked as parallel package-transition work, not as a blocker for
 the filesystem ApiSchema contract. It gates only Story 06 package-backed standard mode against
@@ -2706,18 +2762,19 @@ independently.
 
 Published seed package distribution for deployment or agency provisioning remains with DMS-1119, but it is
 not a blocker for the DMS-916 developer bootstrap path because `Minimal` and `Populated` resolve from
-repo-local XML assets.
+repo-local JSONL assets.
 
 ### 14.3 Blocking Cross-Team Dependencies
 
 | Item | External owner | Unblocking action |
 |---|---|---|
+| `--input-format jsonl` support in BulkLoadClient | ODS team | ODS-6738: extend `EdFi.BulkLoadClient` with JSONL mode. The bootstrap consumption contract is in [Section 6.1](#61-bulkloadclient-bootstrap-consumption-contract). This dependency must land before DMS-916 can deliver the intended direct-SQL replacement described in [`../../epics/16-bootstrap/02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md). |
 | SchemaTools provisioning contract for the relational backend | DMS backend redesign team | The v1 bootstrap design assumes `dms-schema ddl provision` (or an equivalent runtime-owned provisioning surface) remains the authoritative pre-start provisioning and validation path over the staged schema set. If the backend team changes that surface, its inputs, or where final serviceability validation lives, `provision-dms-schema.ps1` must be re-pointed to the new authoritative path rather than preserving bootstrap-owned safety rules. |
 | SchemaTools CLI version stability | DMS backend redesign team | Bootstrap depends on a stable SchemaTools CLI invocation shape (command name, argument surface, exit code `0`/non-zero contract). A major version break in the SchemaTools CLI could cause bootstrap to invoke with an incorrect argument surface rather than receiving a clean non-zero exit code. Before Story 01 implementation begins, the SchemaTools team should confirm that the CLI surface used by bootstrap (`dms-schema hash`, `dms-schema ddl provision`, documented arguments) is stable or publish a migration note alongside any breaking CLI change. Bootstrap does not require a minimum-version enforcement mechanism, but the team should verify the CLI surface against the README before Story 01 implementation. |
 
 Until the relevant blockers are resolved, the affected bootstrap capabilities cannot be delivered end to end.
 The seed-loading design target remains replacement of the deprecated direct-SQL path
-(`setup-database-template.psm1`); the DMS-owned XML readiness gates do not change that scope contract.
+(`setup-database-template.psm1`); the seed blockers do not change that scope contract.
 
 Parallel package-transition work remains required before Story 06 package-backed standard mode can be
 implemented. MetaEd must
@@ -2756,6 +2813,6 @@ or contributors.
 |---|------|--------------|----------------------|------------------|
 | 1 | Default schema profile when `-Extensions` is omitted | `SCHEMA_PACKAGES` staged Data Standard 5.2 plus extensions by default in the existing `eng/docker-compose` flow | Bootstrap resolves and stages **core only** (`EdFi.DataStandard52.ApiSchema`) when `-Extensions` is omitted | Omit `-Extensions` for core-only runs; pass the needed extension identifiers through `-Extensions` for scripts that rely on extension schemas |
 | 2 | `-NoDmsInstance` semantics | Generic "skip instance creation" switch used on fresh stacks as a convenient no-op | **Narrow rerun escape hatch only:** valid only when exactly one existing instance is present in the current tenant scope, and invalid with `-SchoolYearRange`; zero or multiple instances fail fast requiring teardown or manual preparation | Drop the flag on fresh-stack runs, or pre-create exactly one target instance before rerunning with `-NoDmsInstance` |
-| 3 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | `-LoadSeedData` is a wrapper-level opt-in only; direct `load-dms-seed-data.ps1` invocation always loads seed data and owns `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix`, `-BootstrapManifestPath`, the seed-phase BulkLoadClient target `-DmsBaseUrl`, and the seed-phase OAuth endpoint selector `-IdentityProvider`; `start-local-dms.ps1` no longer accepts seed-source or seed-authorization parameters | Call `load-dms-seed-data.ps1` directly for seed loading after `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1`, passing `-DmsBaseUrl` for an IDE-hosted endpoint, `-IdentityProvider` when the running environment uses a non-default provider, and `-AdditionalNamespacePrefix` when custom seed data needs additional vendor namespace authorization, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
+| 3 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | `-LoadSeedData` is a wrapper-level opt-in only; direct `load-dms-seed-data.ps1` invocation always loads seed data and owns `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix`, `-BootstrapManifestPath`, the seed-phase BulkLoadClient target `-DmsBaseUrl`, and the seed-phase token endpoint selector `-IdentityProvider`; `start-local-dms.ps1` no longer accepts seed-source or seed-authorization parameters | Call `load-dms-seed-data.ps1` directly for seed loading after `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1`, passing `-DmsBaseUrl` for an IDE-hosted endpoint, `-IdentityProvider` when the running environment uses a non-default provider, and `-AdditionalNamespacePrefix` when custom seed data needs additional vendor namespace authorization, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
 | 4 | Persisted instance-ID hand-off via `.bootstrap/run-context.json` | `configure-local-dms-instance.ps1` wrote selected instance IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | Instance IDs are emitted in a structured `configure-local-dms-instance.ps1` result and **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-InstanceId <long[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-InstanceId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |
 | 5 | Wrapper explicit instance targeting | `bootstrap-local-dms.ps1 -InstanceId` could target downstream provision/seed phases while the configure phase still created or selected a different target set | The wrapper no longer exposes `-InstanceId`; it always provisions and optionally seeds the instance set from the structured `configure-local-dms-instance.ps1` result in the same invocation. Explicit `-InstanceId` targeting is **phase-command-only**. | Use `provision-dms-schema.ps1 -InstanceId ...` or `load-dms-seed-data.ps1 -InstanceId ...` directly for explicit ID targeting; use the wrapper only when its configure phase owns target selection for the run |
