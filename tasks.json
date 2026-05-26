@@ -369,7 +369,7 @@
       "Add or update SQL compiler tests proving normal and inverted EdOrg SQL, direct-claim-match predicates, and AUTH1 failure payload SQL remain unchanged.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SingleRecordRelationshipAuthorizationSqlCompiler"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Execution Boundaries",

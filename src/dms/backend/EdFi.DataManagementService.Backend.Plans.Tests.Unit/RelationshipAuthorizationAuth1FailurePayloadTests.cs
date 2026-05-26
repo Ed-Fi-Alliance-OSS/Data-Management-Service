@@ -1393,6 +1393,63 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
     }
 
     [Test]
+    public void It_should_reject_mixed_subject_auth_objects_at_the_single_record_execution_boundary()
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            SqlDialect.Pgsql,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect.Pgsql);
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var checkSpec = CreateStoredCheckSpec(
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            0,
+            0,
+            CreateSubject("SchoolId", "$.schoolReference.schoolId"),
+            CreateSubject("Student_DocumentId", "$.studentReference.studentUniqueId")
+        );
+
+        var compile = () =>
+            compiler.Compile(
+                new SingleRecordRelationshipAuthorizationSqlSpec(
+                    [
+                        checkSpec with
+                        {
+                            Subjects =
+                            [
+                                checkSpec.Subjects[0],
+                                checkSpec.Subjects[1] with
+                                {
+                                    AuthObject = studentAuthObject,
+                                    Contributors =
+                                    [
+                                        new RelationshipAuthorizationSubjectContributor(
+                                            SecurableElementKind.Student,
+                                            "$.studentReference.studentUniqueId",
+                                            "StudentUniqueId"
+                                        ),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                    parameterization,
+                    13
+                )
+            );
+
+        compile
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "*Single-record relationship authorization SQL only supports the EdOrg hierarchy auth object*auth.EducationOrganizationIdToStudentDocumentId*"
+            );
+    }
+
+    [Test]
     public void It_should_not_emit_direct_claim_match_when_the_auth_object_disallows_it()
     {
         var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(

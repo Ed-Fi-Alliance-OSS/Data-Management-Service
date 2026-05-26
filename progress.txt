@@ -97,3 +97,8 @@ Task completed: Planner Integration for reference/design/backend-redesign/epics/
 Key decisions: no-claims planner metadata now groups by distinct subject AuthObject; mixed EdOrg+People emits separate auth-object failures; duplicate homogeneous People subjects merge contributors; proposed-anchor transform keeps subject AuthObject unchanged.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted planner/test; RelationshipAuthorizationPlanner filter passed. Next task should update single-record SQL compiler subject AuthObject reads.
+
+Task completed: Execution Boundaries - single-record SQL compiler subject AuthObject for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: compiler already emitted subject.AuthObject through auth success/existence helpers; added mixed-auth-object boundary coverage so unsupported People auth object remains staged before SQL execution.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationAuth1FailurePayloadTests.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted touched test; SingleRecordRelationshipAuthorizationSqlCompiler filter passed. Next task should update PageDocumentId adapter/execution-boundary coverage.
