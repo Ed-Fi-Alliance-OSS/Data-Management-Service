@@ -647,18 +647,6 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalDeleteRequest.AuthorizationStrategyEvaluators
         );
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                configuredAuthorizationStrategies,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new DeleteResult.DeleteFailureNotImplemented(
-                BuildKnownButNotEnabledDeleteAuthorizationMessage(resource, peopleStagingFailures)
-            );
-        }
 
         var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
@@ -666,6 +654,26 @@ public sealed class RelationalDocumentStoreRepository(
             configuredAuthorizationStrategies,
             relationalDeleteRequest.AuthorizationContext
         );
+
+        if (
+            relationshipAuthorizationResult is not RelationshipAuthorizationResult.SecurityConfigurationError
+            && TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new DeleteResult.DeleteFailureNotImplemented(
+                BuildKnownButNotEnabledDeleteAuthorizationMessage(
+                    resource,
+                    CombinePeopleEndpointStagingFailures(
+                        peopleStagingFailures,
+                        relationshipAuthorizationResult
+                    )
+                )
+            );
+        }
 
         switch (relationshipAuthorizationResult)
         {
@@ -856,18 +864,6 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalQueryRequest.AuthorizationStrategyEvaluators
         );
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                configuredAuthorizationStrategies,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new QueryResult.QueryFailureNotImplemented(
-                BuildKnownButNotEnabledQueryAuthorizationMessage(resource, peopleStagingFailures)
-            );
-        }
 
         var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
@@ -875,6 +871,26 @@ public sealed class RelationalDocumentStoreRepository(
             configuredAuthorizationStrategies,
             relationalQueryRequest.AuthorizationContext
         );
+
+        if (
+            relationshipAuthorizationResult is not RelationshipAuthorizationResult.SecurityConfigurationError
+            && TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new QueryResult.QueryFailureNotImplemented(
+                BuildKnownButNotEnabledQueryAuthorizationMessage(
+                    resource,
+                    CombinePeopleEndpointStagingFailures(
+                        peopleStagingFailures,
+                        relationshipAuthorizationResult
+                    )
+                )
+            );
+        }
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization = null;
 
         switch (relationshipAuthorizationResult)
@@ -1013,6 +1029,24 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
         );
+
+        var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            authorizationContext,
+            writePlan
+        );
+
+        var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
+
+        if (securityConfigurationFailures.Count > 0)
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
+            );
+        }
+
         if (
             TryCreatePeopleEndpointStagingFailures(
                 resource,
@@ -1023,19 +1057,17 @@ public sealed class RelationalDocumentStoreRepository(
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
                 new UpsertResult.UpsertFailureNotImplemented(
-                    BuildKnownButNotEnabledPostAuthorizationMessage(resource, peopleStagingFailures),
+                    BuildKnownButNotEnabledPostAuthorizationMessage(
+                        resource,
+                        CombinePeopleEndpointStagingFailures(
+                            peopleStagingFailures,
+                            relationshipAuthorizationPlan
+                        )
+                    ),
                     UpsertFailureNotImplementedReason.StrategyNotEnabled
                 )
             );
         }
-
-        var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
-            mappingSet,
-            resource,
-            configuredAuthorizationStrategies,
-            authorizationContext,
-            writePlan
-        );
 
         return relationshipAuthorizationPlan.ProposedValues switch
         {
@@ -1090,21 +1122,6 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
         );
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                configuredAuthorizationStrategies,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                new UpdateResult.UpdateFailureNotImplemented(
-                    BuildKnownButNotEnabledPutAuthorizationMessage(resource, peopleStagingFailures),
-                    UpdateFailureNotImplementedReason.StrategyNotEnabled
-                )
-            );
-        }
 
         var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
@@ -1120,6 +1137,28 @@ public sealed class RelationalDocumentStoreRepository(
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
                 BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
+            );
+        }
+
+        if (
+            TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                new UpdateResult.UpdateFailureNotImplemented(
+                    BuildKnownButNotEnabledPutAuthorizationMessage(
+                        resource,
+                        CombinePeopleEndpointStagingFailures(
+                            peopleStagingFailures,
+                            relationshipAuthorizationPlan
+                        )
+                    ),
+                    UpdateFailureNotImplementedReason.StrategyNotEnabled
+                )
             );
         }
 
@@ -1651,8 +1690,17 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalGetRequest.AuthorizationStrategyEvaluators
         );
+
+        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            relationalGetRequest.AuthorizationContext
+        );
+
         if (
-            TryCreatePeopleEndpointStagingFailures(
+            relationshipAuthorizationResult is not RelationshipAuthorizationResult.SecurityConfigurationError
+            && TryCreatePeopleEndpointStagingFailures(
                 resource,
                 configuredAuthorizationStrategies,
                 out var peopleStagingFailures
@@ -1661,19 +1709,18 @@ public sealed class RelationalDocumentStoreRepository(
         {
             return new GetAuthorizationOutcome(
                 new GetResult.GetFailureNotImplemented(
-                    BuildKnownButNotEnabledGetAuthorizationMessage(resource, peopleStagingFailures)
+                    BuildKnownButNotEnabledGetAuthorizationMessage(
+                        resource,
+                        CombinePeopleEndpointStagingFailures(
+                            peopleStagingFailures,
+                            relationshipAuthorizationResult
+                        )
+                    )
                 ),
                 null,
                 false
             );
         }
-
-        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
-            mappingSet,
-            resource,
-            configuredAuthorizationStrategies,
-            relationalGetRequest.AuthorizationContext
-        );
 
         switch (relationshipAuthorizationResult)
         {
@@ -1913,6 +1960,23 @@ public sealed class RelationalDocumentStoreRepository(
 
         return failures.Count > 0;
     }
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
+        RelationshipAuthorizationResult relationshipAuthorizationResult
+    ) =>
+        relationshipAuthorizationResult
+            is RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled
+            ? [.. peopleEndpointStagingFailures, .. knownButNotEnabled.Failures]
+            : peopleEndpointStagingFailures;
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
+        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
+    ) =>
+        relationshipAuthorizationPlan.KnownButNotEnabledFailures.Count > 0
+            ? [.. peopleEndpointStagingFailures, .. relationshipAuthorizationPlan.KnownButNotEnabledFailures]
+            : peopleEndpointStagingFailures;
 
     private static bool IsPeopleRelationshipStrategy(string strategyName) =>
         strategyName switch

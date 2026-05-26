@@ -201,7 +201,7 @@
       "Add focused repository unit coverage for a People relationship strategy without security-configuration failures and verify the staged not-implemented result remains.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepository"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Simplification",
