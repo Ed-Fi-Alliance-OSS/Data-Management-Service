@@ -1800,6 +1800,70 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_preserve_unresolved_people_contribution_order_after_planner_failure_aggregation()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedStudentCarrier");
+        const string firstConfiguredPath = "$.zStudentReference.studentUniqueId";
+        const string secondConfiguredPath = "$.aStudentReference.studentUniqueId";
+        var mappingSet = CreateUnresolvedStudentPathOrderingMappingSet(
+            resource,
+            firstConfiguredPath,
+            secondConfiguredPath
+        );
+        var configuredStrategies = CreateConfiguredAuthorizationStrategies(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        );
+        var authorizationContext = new RelationalAuthorizationContext([42L], []);
+        var writePlan = CreateMinimalWritePlan(mappingSet, resource);
+        var planner = CreatePlanner();
+
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(
+                planner.PlanStoredValues(mappingSet, resource, configuredStrategies, authorizationContext)
+            ),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(
+                planner.PlanProposedValues(
+                    mappingSet,
+                    resource,
+                    configuredStrategies,
+                    authorizationContext,
+                    writePlan
+                )
+            ),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+
+        var updatePlan = planner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            configuredStrategies,
+            authorizationContext,
+            writePlan
+        );
+
+        AssertUnresolvedPeopleFailureOrder(
+            updatePlan.SecurityConfigurationFailures,
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(updatePlan.StoredValues),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(updatePlan.ProposedValues),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+    }
+
+    [Test]
     public void It_should_preserve_duplicate_people_strategies_as_separate_or_entries()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
@@ -2926,6 +2990,23 @@ public class Given_RelationshipAuthorizationPlannerTests
         return CreateMappingSet([concreteResource, CreatePersonResource(SecurableElementKind.Student)]);
     }
 
+    private static MappingSet CreateUnresolvedStudentPathOrderingMappingSet(
+        QualifiedResourceName resource,
+        string firstConfiguredPath,
+        string secondConfiguredPath
+    ) =>
+        CreateMappingSet(
+            CreateConcrete(
+                resource.ResourceName,
+                CreateModelWithTables(
+                    resource.ResourceName,
+                    CreateRootTable(Table(resource.ResourceName)),
+                    []
+                ),
+                new ResourceSecurableElements([], [], [firstConfiguredPath, secondConfiguredPath], [], [])
+            )
+        );
+
     private static MappingSet CreateMultipleStudentSubjectMappingSet(
         QualifiedResourceName resource,
         bool includeRequiredPeopleAuthAssociationResources = true
@@ -3060,6 +3141,25 @@ public class Given_RelationshipAuthorizationPlannerTests
             ]
         );
     }
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> GetSecurityConfigurationFailures(
+        RelationshipAuthorizationResult result
+    ) =>
+        result
+            .Should()
+            .BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+            .Subject.Failures;
+
+    private static void AssertUnresolvedPeopleFailureOrder(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures,
+        params (string JsonPath, int ContributionOrder)[] expectedOrder
+    ) =>
+        failures
+            .Select(static failure =>
+                (failure.Location!.JsonPath!, failure.Contributors.Single().ContributionOrder)
+            )
+            .Should()
+            .Equal(expectedOrder);
 
     private static ResourceWritePlan CreateWritePlan(
         MappingSet mappingSet,

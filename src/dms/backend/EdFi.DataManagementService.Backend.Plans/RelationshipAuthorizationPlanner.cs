@@ -1772,12 +1772,19 @@ public sealed class RelationshipAuthorizationPlanner
         failures
             .OrderBy(static failure => failure.ConfiguredStrategy?.RawConfiguredIndex ?? int.MaxValue)
             .ThenBy(static failure => failure.RelationshipLocalOrder ?? int.MaxValue)
+            .ThenBy(GetUnresolvedContributionOrder)
             .ThenBy(static failure => failure.Location?.JsonPath, StringComparer.Ordinal)
             .ThenBy(static failure => failure.Location?.ReadableName, StringComparer.Ordinal)
             .ThenBy(static failure => failure.Location?.Table?.ToString(), StringComparer.Ordinal)
             .ThenBy(static failure => failure.Location?.Column?.Value, StringComparer.Ordinal)
             .ThenBy(static failure => failure.Location?.AuthorizationObjectName, StringComparer.Ordinal)
             .ThenBy(static failure => failure.Hint, StringComparer.Ordinal);
+
+    private static int GetUnresolvedContributionOrder(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+        && failure.Contributors.Count > 0
+            ? failure.Contributors.Min(static contributor => contributor.ContributionOrder)
+            : int.MaxValue;
 
     private static DbColumnName GetRootDocumentIdColumn(DbTableModel rootTableModel)
     {

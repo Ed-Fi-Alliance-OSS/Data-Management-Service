@@ -237,3 +237,8 @@ Task completed: Subject Resolution - People subject ordinal eligibility order fo
 Key decisions: People selector orders subjects by configured strategy eligibility before per-kind contribution/table/column tie-breakers; planner no-claims failures now preserve check-spec subject order so mixed EdOrg+People metadata follows emitted ordinals.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; selector/planner unit tests; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted touched files; RelationalPeopleAuthorizationSubjectSelector|RelationshipAuthorizationPlanner|RelationshipAuthorizationAuth1FailurePayload filter passed. One incomplete task remains: unresolved People path contribution order.
+
+Task completed: Failure Metadata - unresolved People path contribution order after planner aggregation for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: planner OrderFailures now uses unresolved contributor ContributionOrder before lexical fallback, matching selector ordering while retaining raw strategy and relationship-local ordering first.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted touched files; RelationshipAuthorizationPlanner filter passed. All tasks now complete.
