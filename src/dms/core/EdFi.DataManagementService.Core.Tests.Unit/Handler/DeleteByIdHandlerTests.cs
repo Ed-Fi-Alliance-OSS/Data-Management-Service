@@ -58,6 +58,11 @@ public class DeleteByIdHandlerTests
                                 TableName: "edfi.School",
                                 ColumnName: "SchoolId"
                             ),
+                            AuthObject: new RelationshipAuthorizationAuthObjectInfo(
+                                Name: "auth.EdOrgIdToEdOrgId",
+                                SubjectValueColumn: "TargetEdOrgId",
+                                ClaimEducationOrganizationIdColumn: "SourceEdOrgId"
+                            ),
                             SecurableElements:
                             [
                                 new RelationshipAuthorizationSecurableElement(

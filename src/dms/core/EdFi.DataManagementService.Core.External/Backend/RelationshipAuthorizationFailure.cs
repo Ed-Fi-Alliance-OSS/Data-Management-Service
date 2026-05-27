@@ -57,9 +57,13 @@ public sealed record RelationshipAuthorizationFailedSubject(
     int SubjectIndex,
     RelationshipAuthorizationSubjectFailureKind FailureKind,
     RelationshipAuthorizationRootBinding RootBinding,
+    RelationshipAuthorizationAuthObjectInfo AuthObject,
     RelationshipAuthorizationSecurableElement[] SecurableElements,
     string? Hint = null
-);
+)
+{
+    public RelationshipAuthorizationPersonSubjectInfo? PersonSubject { get; init; }
+}
 
 /// <summary>
 /// User-readable and schema-position metadata for a contributing securable element.
@@ -71,7 +75,7 @@ public sealed record RelationshipAuthorizationSecurableElement(
 );
 
 /// <summary>
-/// Relational root-table binding used by a stored-value relationship authorization subject.
+/// Relational root/proposed anchor binding used by a relationship authorization subject.
 /// </summary>
 public sealed record RelationshipAuthorizationRootBinding(
     string ResourceName,
@@ -86,4 +90,53 @@ public sealed record RelationshipAuthorizationAuthObjectInfo(
     string Name,
     string SubjectValueColumn,
     string ClaimEducationOrganizationIdColumn
+);
+
+/// <summary>
+/// Person-specific authorization metadata for a failed relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonSubjectInfo(
+    string PersonKind,
+    string PathKind,
+    RelationshipAuthorizationPersonDocumentIdPathStepInfo[] DocumentIdPath,
+    RelationshipAuthorizationPersonStoredAnchorInfo StoredAnchor,
+    RelationshipAuthorizationPersonProposedAnchorInfo? ProposedAnchor,
+    string? Hint = null
+);
+
+/// <summary>
+/// One ordered hop in the DocumentId path used to resolve a person relationship authorization value.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonDocumentIdPathStepInfo(
+    string SourceTableName,
+    string SourceColumnName,
+    string? TargetTableName,
+    string? TargetColumnName
+);
+
+/// <summary>
+/// Stored-value root row anchor for a person relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonStoredAnchorInfo(
+    string RootTableName,
+    string RootDocumentIdColumnName
+);
+
+/// <summary>
+/// Proposed-value anchor for a person relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonProposedAnchorInfo(
+    string Kind,
+    RelationshipAuthorizationPersonProposedValueBindingInfo Binding
+);
+
+/// <summary>
+/// Proposed root-row binding used as the anchor for a person relationship authorization subject.
+/// </summary>
+public sealed record RelationshipAuthorizationPersonProposedValueBindingInfo(
+    string TableName,
+    string ColumnName,
+    int BindingIndex,
+    string LogicalKey,
+    string ParameterSeed
 );

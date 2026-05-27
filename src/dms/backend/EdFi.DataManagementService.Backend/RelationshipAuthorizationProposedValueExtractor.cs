@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
@@ -24,8 +25,22 @@ internal sealed record ProposedRelationshipAuthorizationRuntimeSubject(
     int SubjectOrdinal,
     RelationshipAuthorizationSubject Subject,
     RelationshipAuthorizationProposedValueBinding Binding,
-    object? Value
+    ProposedRelationshipAuthorizationRuntimeValue RuntimeValue
 );
+
+internal abstract record ProposedRelationshipAuthorizationRuntimeValue
+{
+    private ProposedRelationshipAuthorizationRuntimeValue() { }
+
+    public sealed record SubjectValue(object? Value) : ProposedRelationshipAuthorizationRuntimeValue;
+
+    // This is an anchor into a People path, not the terminal person DocumentId consumed by auth views.
+    public sealed record TransitivePeopleFirstHopAnchorValue(
+        object? Value,
+        RelationshipAuthorizationPersonSubjectPath Path,
+        RelationshipAuthorizationProposedValueBinding Binding
+    ) : ProposedRelationshipAuthorizationRuntimeValue;
+}
 
 internal abstract record ProposedRelationshipAuthorizationExtractionResult
 {
@@ -44,6 +59,13 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         RelationshipAuthorizationResult.Authorized authorized,
         RootWriteRowBuffer rootRow,
         int emittedAuth1Index
+    ) => Extract(authorized, rootRow, emittedAuth1Index, targetContext: null);
+
+    public static ProposedRelationshipAuthorizationExtractionResult Extract(
+        RelationshipAuthorizationResult.Authorized authorized,
+        RootWriteRowBuffer rootRow,
+        int emittedAuth1Index,
+        RelationalWriteTargetContext? targetContext
     )
     {
         ArgumentNullException.ThrowIfNull(authorized);
@@ -105,6 +127,14 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             {
                 var subject = checkSpec.Subjects[subjectOrdinal];
                 var binding = proposedTarget.SubjectBindingsInOrder[subjectOrdinal];
+                var bindingTarget = GetExpectedBindingTarget(subject, strategyOrdinal, subjectOrdinal);
+
+                if (bindingTarget is ProposedBindingTarget.Invalid invalidBindingTarget)
+                {
+                    return Invalid(invalidBindingTarget.FailureMessage);
+                }
+
+                var expectedBindingTarget = (ProposedBindingTarget.Ready)bindingTarget;
 
                 if (!binding.Table.Equals(rootTable))
                 {
@@ -113,10 +143,17 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                     );
                 }
 
-                if (!binding.Column.Equals(subject.Column))
+                if (!binding.Table.Equals(expectedBindingTarget.Table))
                 {
                     return Invalid(
-                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets column '{binding.Column.Value}', but the subject targets column '{subject.Column.Value}'."
+                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets table '{binding.Table}', but the {expectedBindingTarget.Description} targets table '{expectedBindingTarget.Table}'."
+                    );
+                }
+
+                if (!binding.Column.Equals(expectedBindingTarget.Column))
+                {
+                    return Invalid(
+                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets column '{binding.Column.Value}', but the {expectedBindingTarget.Description} targets column '{expectedBindingTarget.Column.Value}'."
                     );
                 }
 
@@ -127,14 +164,27 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                     );
                 }
 
-                var value = GetBoundSqlValue(rootRow.Values[binding.BindingIndex]);
+                var valueResult = GetRuntimeValue(
+                    rootRow.Values[binding.BindingIndex],
+                    subject,
+                    targetContext,
+                    strategyOrdinal,
+                    subjectOrdinal
+                );
+
+                if (valueResult is ProposedRuntimeValue.Invalid invalidValue)
+                {
+                    return Invalid(invalidValue.FailureMessage);
+                }
+
+                var runtimeValue = ((ProposedRuntimeValue.Ready)valueResult).RuntimeValue;
 
                 runtimeSubjects.Add(
                     new ProposedRelationshipAuthorizationRuntimeSubject(
                         subjectOrdinal,
                         subject,
                         binding,
-                        value
+                        runtimeValue
                     )
                 );
             }
@@ -158,6 +208,65 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         );
     }
 
+    private static ProposedRuntimeValue GetRuntimeValue(
+        FlattenedWriteValue boundValue,
+        RelationshipAuthorizationSubject subject,
+        RelationalWriteTargetContext? targetContext,
+        int strategyOrdinal,
+        int subjectOrdinal
+    )
+    {
+        var personMetadata = subject.PersonMetadata;
+
+        if (
+            personMetadata?.ProposedAnchor?.Kind
+            is RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId
+        )
+        {
+            return targetContext switch
+            {
+                RelationalWriteTargetContext.ExistingDocument existingDocument =>
+                    new ProposedRuntimeValue.Ready(
+                        new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(
+                            existingDocument.DocumentId
+                        )
+                    ),
+                RelationalWriteTargetContext.CreateNew => new ProposedRuntimeValue.Invalid(
+                    $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires an existing target DocumentId, but the write targets a new document."
+                ),
+                null => new ProposedRuntimeValue.Invalid(
+                    $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires an existing target DocumentId, but no target context was provided."
+                ),
+                _ => new ProposedRuntimeValue.Invalid(
+                    $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires an existing target DocumentId, but target context '{targetContext.GetType().Name}' is unsupported."
+                ),
+            };
+        }
+
+        var value = GetBoundSqlValue(boundValue);
+
+        if (
+            personMetadata is
+            {
+                Path.Kind: RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+                ProposedAnchor.Kind: RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
+            } transitivePersonMetadata
+        )
+        {
+            return new ProposedRuntimeValue.Ready(
+                new ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue(
+                    value,
+                    transitivePersonMetadata.Path,
+                    transitivePersonMetadata.ProposedAnchor.Binding
+                )
+            );
+        }
+
+        return new ProposedRuntimeValue.Ready(
+            new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(value)
+        );
+    }
+
     private static object? GetBoundSqlValue(FlattenedWriteValue value)
     {
         if (value is FlattenedWriteValue.Literal { Value: { } literalValue } && literalValue is not DBNull)
@@ -168,7 +277,75 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         return null;
     }
 
+    private static ProposedBindingTarget GetExpectedBindingTarget(
+        RelationshipAuthorizationSubject subject,
+        int strategyOrdinal,
+        int subjectOrdinal
+    )
+    {
+        var personMetadata = subject.PersonMetadata;
+
+        if (
+            personMetadata?.Path.Kind is not RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath
+        )
+        {
+            if (
+                personMetadata?.ProposedAnchor?.Kind
+                is RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId
+            )
+            {
+                return new ProposedBindingTarget.Ready(
+                    personMetadata.ProposedAnchor.Binding.Table,
+                    personMetadata.ProposedAnchor.Binding.Column,
+                    "existing-resource self People proposed anchor"
+                );
+            }
+
+            return new ProposedBindingTarget.Ready(subject.Table, subject.Column, "subject");
+        }
+
+        if (personMetadata.ProposedAnchor is not { } proposedAnchor)
+        {
+            return new ProposedBindingTarget.Invalid(
+                $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires proposed anchor metadata for transitive People subject column '{subject.Column.Value}'."
+            );
+        }
+
+        if (proposedAnchor.Kind is not RelationshipAuthorizationPersonProposedAnchorKind.FirstHop)
+        {
+            return new ProposedBindingTarget.Invalid(
+                $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires a first-hop proposed anchor for transitive People subject column '{subject.Column.Value}', but found '{proposedAnchor.Kind}'."
+            );
+        }
+
+        return new ProposedBindingTarget.Ready(
+            proposedAnchor.Binding.Table,
+            proposedAnchor.Binding.Column,
+            "transitive People proposed anchor"
+        );
+    }
+
     private static ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan Invalid(
         string message
     ) => new(message);
+
+    private abstract record ProposedBindingTarget
+    {
+        private ProposedBindingTarget() { }
+
+        public sealed record Ready(DbTableName Table, DbColumnName Column, string Description)
+            : ProposedBindingTarget;
+
+        public sealed record Invalid(string FailureMessage) : ProposedBindingTarget;
+    }
+
+    private abstract record ProposedRuntimeValue
+    {
+        private ProposedRuntimeValue() { }
+
+        public sealed record Ready(ProposedRelationshipAuthorizationRuntimeValue RuntimeValue)
+            : ProposedRuntimeValue;
+
+        public sealed record Invalid(string FailureMessage) : ProposedRuntimeValue;
+    }
 }

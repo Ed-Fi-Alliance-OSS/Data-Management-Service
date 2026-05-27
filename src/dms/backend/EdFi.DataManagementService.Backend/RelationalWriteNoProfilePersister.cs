@@ -574,15 +574,17 @@ internal sealed class RelationalWriteNoProfilePersister(
         ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck
     )
     {
-        Dictionary<(int StrategyOrdinal, int SubjectOrdinal), object?> valuesByOrdinal =
-            relationshipAuthorizationRuntimeCheck
-                .Strategies.SelectMany(strategy =>
-                    strategy.Subjects.Select(subject => new KeyValuePair<(int, int), object?>(
-                        (strategy.StrategyOrdinal, subject.SubjectOrdinal),
-                        subject.Value
-                    ))
-                )
-                .ToDictionary(static entry => entry.Key, static entry => entry.Value);
+        Dictionary<
+            (int StrategyOrdinal, int SubjectOrdinal),
+            ProposedRelationshipAuthorizationRuntimeValue
+        > valuesByOrdinal = relationshipAuthorizationRuntimeCheck
+            .Strategies.SelectMany(strategy =>
+                strategy.Subjects.Select(subject => new KeyValuePair<
+                    (int, int),
+                    ProposedRelationshipAuthorizationRuntimeValue
+                >((strategy.StrategyOrdinal, subject.SubjectOrdinal), subject.RuntimeValue))
+            )
+            .ToDictionary(static entry => entry.Key, static entry => entry.Value);
 
         foreach (var proposedValueParameter in sqlPlan.ProposedValueParametersInOrder)
         {
@@ -600,7 +602,20 @@ internal sealed class RelationalWriteNoProfilePersister(
                 );
             }
 
-            valuesByParameterName[proposedValueParameter.ParameterName] = value;
+            valuesByParameterName[proposedValueParameter.ParameterName] = value switch
+            {
+                ProposedRelationshipAuthorizationRuntimeValue.SubjectValue subjectValue => subjectValue.Value,
+                ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue =>
+                    throw new InvalidOperationException(
+                        "Generic proposed relationship authorization SQL cannot bind transitive People "
+                            + $"first-hop anchor for strategy '{proposedValueParameter.StrategyOrdinal}' "
+                            + $"subject '{proposedValueParameter.SubjectOrdinal}' as an auth-view subject value. "
+                            + "A People-aware compiler must resolve the terminal person DocumentId through the path."
+                    ),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported proposed relationship authorization runtime value '{value.GetType().Name}'."
+                ),
+            };
         }
     }
 

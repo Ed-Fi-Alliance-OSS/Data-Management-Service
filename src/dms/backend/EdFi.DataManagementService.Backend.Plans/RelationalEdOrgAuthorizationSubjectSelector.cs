@@ -34,20 +34,23 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
     internal RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies
-    ) =>
-        Select(
+        SupportedRelationshipAuthorizationStrategy supportedStrategy
+    )
+    {
+        ArgumentNullException.ThrowIfNull(supportedStrategy);
+
+        return Select(
             mappingSet,
             resource,
             [
-                .. supportedStrategies.Select(
-                    static strategy => new SupportedRelationshipAuthorizationStrategySelection(
-                        strategy.ConfiguredStrategy,
-                        strategy.RelationshipLocalOrder
-                    )
+                new SupportedRelationshipAuthorizationStrategySelection(
+                    supportedStrategy.ConfiguredStrategy,
+                    supportedStrategy.RelationshipLocalOrder,
+                    RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction)
                 ),
             ]
         );
+    }
 
     private RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
@@ -125,7 +128,7 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
 
         return new RelationalEdOrgAuthorizationSubjectSelection(
             RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success,
-            [.. GroupRootSubjects(resource, selectedRootSubjectCandidates)],
+            [.. GroupRootSubjects(resource, supportedStrategies, selectedRootSubjectCandidates)],
             []
         );
     }
@@ -207,20 +210,25 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
 
     private static IEnumerable<RelationshipAuthorizationSubject> GroupRootSubjects(
         QualifiedResourceName resource,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies,
         IReadOnlyList<SelectedRootSubjectCandidate> selectedRootSubjectCandidates
     )
     {
-        return selectedRootSubjectCandidates
+        var groupedCandidates = selectedRootSubjectCandidates
             .GroupBy(static candidate =>
                 (candidate.Candidate.Step.SourceTable, candidate.Candidate.Step.SourceColumnName)
             )
             .OrderBy(static group => group.Min(candidate => candidate.ConfiguredElementIndex))
             .ThenBy(static group => group.Key.SourceTable.ToString(), StringComparer.Ordinal)
             .ThenBy(static group => group.Key.SourceColumnName.Value, StringComparer.Ordinal)
-            .Select(group => new RelationshipAuthorizationSubject(
+            .ToArray();
+
+        return supportedStrategies.SelectMany(supportedStrategy =>
+            groupedCandidates.Select(group => new RelationshipAuthorizationSubject(
                 resource,
                 group.Key.SourceTable,
                 group.Key.SourceColumnName,
+                supportedStrategy.AuthObject,
                 [
                     .. group
                         .OrderBy(static candidate => candidate.ConfiguredElementIndex)
@@ -232,7 +240,8 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
                             candidate.Candidate.ReadableName
                         )),
                 ]
-            ));
+            ))
+        );
     }
 
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> OrderFailures(
@@ -268,7 +277,8 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
 
     private sealed record SupportedRelationshipAuthorizationStrategySelection(
         ConfiguredAuthorizationStrategy ConfiguredStrategy,
-        int RelationshipLocalOrder
+        int RelationshipLocalOrder,
+        RelationshipAuthorizationAuthObject AuthObject
     );
 
     private sealed record NonRootResolvedCandidate(

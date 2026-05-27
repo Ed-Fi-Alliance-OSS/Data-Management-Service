@@ -647,12 +647,33 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalDeleteRequest.AuthorizationStrategyEvaluators
         );
+
         var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
             resource,
             configuredAuthorizationStrategies,
             relationalDeleteRequest.AuthorizationContext
         );
+
+        if (
+            TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                relationshipAuthorizationResult,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new DeleteResult.DeleteFailureNotImplemented(
+                BuildKnownButNotEnabledDeleteAuthorizationMessage(
+                    resource,
+                    CombinePeopleEndpointStagingFailures(
+                        peopleStagingFailures,
+                        relationshipAuthorizationResult
+                    )
+                )
+            );
+        }
 
         switch (relationshipAuthorizationResult)
         {
@@ -751,7 +772,8 @@ public sealed class RelationalDocumentStoreRepository(
         };
     }
 
-    // TODO Slice 6 (DMS-1165): aggregate FailedStrategies/FailedSubjects.Hint into Hints.
+    // TODO: Aggregate failed strategy and subject hints into Hints when relationship
+    // authorization ProblemDetails owns hint rendering.
     private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
     ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
@@ -843,12 +865,33 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalQueryRequest.AuthorizationStrategyEvaluators
         );
+
         var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
             resource,
             configuredAuthorizationStrategies,
             relationalQueryRequest.AuthorizationContext
         );
+
+        if (
+            TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                relationshipAuthorizationResult,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new QueryResult.QueryFailureNotImplemented(
+                BuildKnownButNotEnabledQueryAuthorizationMessage(
+                    resource,
+                    CombinePeopleEndpointStagingFailures(
+                        peopleStagingFailures,
+                        relationshipAuthorizationResult
+                    )
+                )
+            );
+        }
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization = null;
 
         switch (relationshipAuthorizationResult)
@@ -987,6 +1030,7 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
         );
+
         var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
@@ -994,6 +1038,40 @@ public sealed class RelationalDocumentStoreRepository(
             authorizationContext,
             writePlan
         );
+
+        var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
+
+        if (
+            securityConfigurationFailures.Count > 0
+            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
+            );
+        }
+
+        if (
+            TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                new UpsertResult.UpsertFailureNotImplemented(
+                    BuildKnownButNotEnabledPostAuthorizationMessage(
+                        resource,
+                        CombinePeopleEndpointStagingFailures(
+                            peopleStagingFailures,
+                            relationshipAuthorizationPlan
+                        )
+                    ),
+                    UpsertFailureNotImplementedReason.StrategyNotEnabled
+                )
+            );
+        }
 
         return relationshipAuthorizationPlan.ProposedValues switch
         {
@@ -1048,6 +1126,7 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
         );
+
         var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
@@ -1058,10 +1137,35 @@ public sealed class RelationalDocumentStoreRepository(
 
         var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
 
-        if (securityConfigurationFailures.Count > 0)
+        if (
+            securityConfigurationFailures.Count > 0
+            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
+        )
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
                 BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
+            );
+        }
+
+        if (
+            TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                new UpdateResult.UpdateFailureNotImplemented(
+                    BuildKnownButNotEnabledPutAuthorizationMessage(
+                        resource,
+                        CombinePeopleEndpointStagingFailures(
+                            peopleStagingFailures,
+                            relationshipAuthorizationPlan
+                        )
+                    ),
+                    UpdateFailureNotImplementedReason.StrategyNotEnabled
+                )
             );
         }
 
@@ -1593,12 +1697,37 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalGetRequest.AuthorizationStrategyEvaluators
         );
+
         var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
             resource,
             configuredAuthorizationStrategies,
             relationalGetRequest.AuthorizationContext
         );
+
+        if (
+            TryCreatePeopleEndpointStagingFailures(
+                resource,
+                configuredAuthorizationStrategies,
+                relationshipAuthorizationResult,
+                out var peopleStagingFailures
+            )
+        )
+        {
+            return new GetAuthorizationOutcome(
+                new GetResult.GetFailureNotImplemented(
+                    BuildKnownButNotEnabledGetAuthorizationMessage(
+                        resource,
+                        CombinePeopleEndpointStagingFailures(
+                            peopleStagingFailures,
+                            relationshipAuthorizationResult
+                        )
+                    )
+                ),
+                null,
+                false
+            );
+        }
 
         switch (relationshipAuthorizationResult)
         {
@@ -1744,7 +1873,8 @@ public sealed class RelationalDocumentStoreRepository(
             out relationshipFailure
         );
 
-    // TODO Slice 6 (DMS-1165): aggregate FailedStrategies/FailedSubjects.Hint into Hints.
+    // TODO: Aggregate failed strategy and subject hints into Hints when relationship
+    // authorization ProblemDetails owns hint rendering.
     private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
     ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
@@ -1775,7 +1905,8 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "GET-by-id",
             effectiveAuthorizationLabel: "GET",
-            scopeTag: "DMS-1056"
+            executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
+            supportedStrategySetName: "single-record EdOrg-only relationship"
         );
 
     private static string BuildKnownButNotEnabledDeleteAuthorizationMessage(
@@ -1787,7 +1918,8 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "DELETE",
             effectiveAuthorizationLabel: "DELETE",
-            scopeTag: "DMS-1056"
+            executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
+            supportedStrategySetName: "single-record EdOrg-only relationship"
         );
 
     private static string BuildKnownButNotEnabledPostAuthorizationMessage(
@@ -1799,7 +1931,8 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "POST",
             effectiveAuthorizationLabel: "POST",
-            scopeTag: "DMS-1162"
+            executionBoundaryName: "POST create-new EdOrg-only relationship execution boundary",
+            supportedStrategySetName: "POST create-new EdOrg-only relationship"
         );
 
     private static string BuildKnownButNotEnabledPutAuthorizationMessage(
@@ -1811,8 +1944,129 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "PUT",
             effectiveAuthorizationLabel: "PUT",
-            scopeTag: "DMS-1163"
+            executionBoundaryName: "PUT EdOrg-only relationship execution boundary",
+            supportedStrategySetName: "PUT EdOrg-only relationship"
         );
+
+    private static bool TryCreatePeopleEndpointStagingFailures(
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationshipAuthorizationResult relationshipAuthorizationResult,
+        out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        if (
+            relationshipAuthorizationResult
+                is RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError
+            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationError.Failures)
+        )
+        {
+            failures = [];
+            return false;
+        }
+
+        return TryCreatePeopleEndpointStagingFailures(
+            resource,
+            configuredAuthorizationStrategies,
+            out failures
+        );
+    }
+
+    internal static bool TryCreatePeopleEndpointStagingFailures(
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
+
+        failures =
+        [
+            .. RelationshipAuthorizationStrategyClassifier
+                .SelectPeopleRelationshipStrategies(configuredAuthorizationStrategies)
+                .Select(strategy => new RelationshipAuthorizationFailureMetadata(
+                    RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy,
+                    resource,
+                    strategy.ConfiguredStrategy,
+                    strategy.RelationshipLocalOrder,
+                    Hint: "People relationship endpoint execution is staged until GET-many and CRUD People relationship authorization execution are enabled."
+                )),
+        ];
+
+        return failures.Count > 0;
+    }
+
+    private static bool HasOnlyPeopleEndpointStagingCompatibleFailures(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    ) =>
+        failures.Count > 0
+        && failures.All(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+            || IsPeopleCorePlanningFailure(failure)
+        );
+
+    private static bool IsPeopleCorePlanningFailure(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind
+            is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+                or RelationshipAuthorizationFailureKind.NoExecutableSubjects
+                or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+                or RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+                or RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+        && (
+            failure.PersonMetadata is not null
+            || failure.Location?.Kind
+                is SecurableElementKind.Student
+                    or SecurableElementKind.Contact
+                    or SecurableElementKind.Staff
+            || failure.Contributors.Any(static contributor =>
+                contributor.Kind
+                    is SecurableElementKind.Student
+                        or SecurableElementKind.Contact
+                        or SecurableElementKind.Staff
+            )
+            || failure.IneligibleSubjects.Any(static ineligibleSubject =>
+                ineligibleSubject.Subject.PersonMetadata is not null
+            )
+        );
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
+        RelationshipAuthorizationResult relationshipAuthorizationResult
+    ) =>
+        relationshipAuthorizationResult switch
+        {
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+            [
+                .. peopleEndpointStagingFailures,
+                .. knownButNotEnabled.Failures,
+            ],
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+            [
+                .. peopleEndpointStagingFailures,
+                .. securityConfigurationError.Failures.Where(static failure =>
+                    failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+                ),
+            ],
+            _ => peopleEndpointStagingFailures,
+        };
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
+        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
+    )
+    {
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures =
+        [
+            .. relationshipAuthorizationPlan.KnownButNotEnabledFailures,
+            .. relationshipAuthorizationPlan.SecurityConfigurationFailures.Where(static failure =>
+                failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+            ),
+        ];
+
+        return knownButNotEnabledFailures.Count > 0
+            ? [.. peopleEndpointStagingFailures, .. knownButNotEnabledFailures]
+            : peopleEndpointStagingFailures;
+    }
 
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
         MappingSet mappingSet,
@@ -1843,7 +2097,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "GET-by-id",
                     effectiveAuthorizationLabel: "GET",
-                    scopeTag: "DMS-1056"
+                    executionBoundaryName: "single-record EdOrg-only relationship execution boundary"
                 )
             ),
         ]);
@@ -1878,7 +2132,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "DELETE",
                     effectiveAuthorizationLabel: "DELETE",
-                    scopeTag: "DMS-1056"
+                    executionBoundaryName: "single-record EdOrg-only relationship execution boundary"
                 )
             ),
         ]);
@@ -1899,7 +2153,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "POST",
                     effectiveAuthorizationLabel: "POST",
-                    scopeTag: "DMS-1162"
+                    executionBoundaryName: "POST create-new EdOrg-only relationship execution boundary"
                 )
             ),
         ]);
@@ -1920,7 +2174,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "PUT",
                     effectiveAuthorizationLabel: "PUT",
-                    scopeTag: "DMS-1163"
+                    executionBoundaryName: "PUT EdOrg-only relationship execution boundary"
                 )
             ),
         ]);
@@ -1935,7 +2189,8 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "query",
             effectiveAuthorizationLabel: "GET-many",
-            scopeTag: "DMS-1055"
+            executionBoundaryName: "GET-many EdOrg-only relationship query execution boundary",
+            supportedStrategySetName: "GET-many EdOrg-only relationship"
         );
 
     private static string BuildKnownButNotEnabledAuthorizationMessage(
@@ -1943,7 +2198,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures,
         string operationLabel,
         string effectiveAuthorizationLabel,
-        string scopeTag
+        string executionBoundaryName,
+        string supportedStrategySetName
     )
     {
         var unsupportedStrategyNames = knownButNotEnabledFailures
@@ -1955,8 +2211,8 @@ public sealed class RelationalDocumentStoreRepository(
             .Select(static strategyName => $"'{strategyName}'");
 
         return $"Relational {operationLabel} authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
-            + $"when effective {effectiveAuthorizationLabel} authorization includes strategies outside the current {scopeTag} EdOrg-only scope. Unsupported strategies: "
-            + $"[{string.Join(", ", unsupportedStrategyNames)}]. Supported {scopeTag} strategies are "
+            + $"when effective {effectiveAuthorizationLabel} authorization includes strategies outside the current {executionBoundaryName}. Unsupported strategies: "
+            + $"[{string.Join(", ", unsupportedStrategyNames)}]. Supported {supportedStrategySetName} strategies are "
             + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}', "
             + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}', and "
             + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
@@ -2095,7 +2351,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "query",
                     effectiveAuthorizationLabel: "GET-many",
-                    scopeTag: "DMS-1055"
+                    executionBoundaryName: "GET-many EdOrg-only relationship query execution boundary"
                 )
             ),
         ]);
@@ -2104,10 +2360,22 @@ public sealed class RelationalDocumentStoreRepository(
     private static bool HasOnlyEdOrgSubjectSelectionFailures(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
     ) =>
-        failures.All(static failure =>
+        failures.Count > 0
+        && failures.All(static failure =>
             failure.FailureKind
                 is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
                     or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
+            && failure.PersonMetadata is null
+            && failure.Location?.Kind is null or SecurableElementKind.EducationOrganization
+            && failure.Contributors.All(static contributor =>
+                contributor.Kind is SecurableElementKind.EducationOrganization
+            )
+            && failure.SkippedContributors.All(static contributor =>
+                contributor.Kind is SecurableElementKind.EducationOrganization
+            )
+            && failure.IneligibleSubjects.All(static ineligibleSubject =>
+                ineligibleSubject.Subject.PersonMetadata is null
+            )
         );
 
     private static string BuildSecurityConfigurationFailureMessage(
@@ -2115,14 +2383,27 @@ public sealed class RelationalDocumentStoreRepository(
         RelationshipAuthorizationFailureMetadata failure,
         string operationLabel,
         string effectiveAuthorizationLabel,
-        string scopeTag
-    ) =>
-        failure.FailureKind switch
+        string executionBoundaryName
+    )
+    {
+        if (
+            TryBuildPeopleSecurityConfigurationFailureMessage(
+                mappingSet,
+                failure,
+                operationLabel,
+                out var peopleFailureMessage
+            )
+        )
+        {
+            return peopleFailureMessage;
+        }
+
+        return failure.FailureKind switch
         {
             RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy =>
                 $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
                     + $"Effective {effectiveAuthorizationLabel} authorization also includes known-but-not-enabled strategy '{failure.ConfiguredStrategy?.StrategyName}', "
-                    + $"which is outside the current {scopeTag} EdOrg-only scope.",
+                    + $"which is outside the current {executionBoundaryName}.",
             RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource =>
                 $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' matches the {{BasisResource}}With... custom-view convention, "
@@ -2145,17 +2426,270 @@ public sealed class RelationalDocumentStoreRepository(
                             ? $"resolved to '{failure.Location.Table}.{failure.Location.Column.Value}' instead of a '{DbTableKind.Root}' table."
                             : failure.Hint ?? "did not produce a concrete root-table binding."
                     ),
+            RelationshipAuthorizationFailureKind.NoExecutableSubjects =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' has no executable relationship authorization subjects for this operation. "
+                    + failure.Hint,
             RelationshipAuthorizationFailureKind.MissingProposedRootBinding =>
                 $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires proposed-value EducationOrganization subject "
                     + $"{FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from relationship authorization metadata"}, "
                     + $"but root column '{failure.Location?.Table}.{failure.Location?.Column?.Value}' does not have a matching root write binding.",
+            RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' selects People relationship subject '{failure.Location?.Kind}' "
+                    + $"through auth view '{failure.Location?.AuthorizationObjectName}', but the people auth views were not emitted in mapping set "
+                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. {failure.Hint}",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failure),
                 failure.FailureKind,
                 $"Unsupported {operationLabel} authorization security-configuration failure kind."
             ),
         };
+    }
+
+    private static bool TryBuildPeopleSecurityConfigurationFailureMessage(
+        MappingSet mappingSet,
+        RelationshipAuthorizationFailureMetadata failure,
+        string operationLabel,
+        out string message
+    )
+    {
+        message = string.Empty;
+
+        if (!TryGetPeopleSubjectKindName(failure, out var subjectKindName))
+        {
+            return false;
+        }
+
+        var resourceName = RelationalWriteSupport.FormatResource(failure.Resource);
+        var strategyName = failure.ConfiguredStrategy?.StrategyName;
+        var authViewPhrase = FormatPeopleAuthViewPhrase(failure);
+        var authViewSentence = FormatPeopleAuthViewSentence(failure);
+        var locationSentence = FormatPeopleLocationSentence(failure);
+        var contributorSentence = FormatPeopleContributorSentence(failure);
+        var skippedContributorSentence = FormatSkippedPeopleContributorSentence(failure);
+        var ineligibleSubjectSentence = FormatIneligiblePeopleSubjectSentence(failure);
+        var hintSentence = FormatHintSentence(failure.Hint);
+
+        message = failure.FailureKind switch
+        {
+            RelationshipAuthorizationFailureKind.UnresolvedSecurableElement =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' requires resolvable {subjectKindName} securable elements{authViewPhrase}, "
+                    + $"but element {FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from People relationship authorization metadata"} "
+                    + "could not be resolved to a DocumentId-based relational path."
+                    + contributorSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.NoApplicableRootSubject =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' has no applicable {subjectKindName} relationship authorization subject{authViewPhrase}. "
+                    + locationSentence
+                    + authViewSentence
+                    + contributorSentence
+                    + skippedContributorSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.NoExecutableSubjects =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' has no executable {subjectKindName} relationship authorization subjects for this operation. "
+                    + authViewSentence
+                    + contributorSentence
+                    + ineligibleSubjectSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.MissingProposedRootBinding =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' requires proposed-value {subjectKindName} relationship authorization subject "
+                    + $"{FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from People relationship authorization metadata"}{authViewPhrase}, "
+                    + $"but anchor column '{failure.Location?.Table}.{failure.Location?.Column?.Value}' does not have a matching root write binding."
+                    + contributorSentence
+                    + hintSentence,
+            RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{resourceName}'. "
+                    + $"Strategy '{strategyName}' selects People relationship subject '{subjectKindName}' "
+                    + $"through auth view '{failure.Location?.AuthorizationObjectName}', but the people auth views were not emitted in mapping set "
+                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. {failure.Hint}",
+            _ => string.Empty,
+        };
+
+        return message.Length > 0;
+    }
+
+    private static bool TryGetPeopleSubjectKindName(
+        RelationshipAuthorizationFailureMetadata failure,
+        out string subjectKindName
+    )
+    {
+        if (failure.Location?.Kind is { } locationKind && IsPeopleSecurableElementKind(locationKind))
+        {
+            subjectKindName = locationKind.ToString();
+            return true;
+        }
+
+        var contributorKind = failure
+            .Contributors.Select(static contributor => contributor.Kind)
+            .FirstOrDefault(IsPeopleSecurableElementKind);
+
+        if (IsPeopleSecurableElementKind(contributorKind))
+        {
+            subjectKindName = contributorKind.ToString();
+            return true;
+        }
+
+        var skippedContributorKind = failure
+            .SkippedContributors.Select(static contributor => contributor.Kind)
+            .FirstOrDefault(IsPeopleSecurableElementKind);
+
+        if (IsPeopleSecurableElementKind(skippedContributorKind))
+        {
+            subjectKindName = skippedContributorKind.ToString();
+            return true;
+        }
+
+        var ineligibleSubjectKind = failure
+            .IneligibleSubjects.SelectMany(static ineligibleSubject =>
+                ineligibleSubject.Subject.Contributors.Select(static contributor => contributor.Kind)
+            )
+            .FirstOrDefault(IsPeopleSecurableElementKind);
+
+        if (IsPeopleSecurableElementKind(ineligibleSubjectKind))
+        {
+            subjectKindName = ineligibleSubjectKind.ToString();
+            return true;
+        }
+
+        if (failure.PersonMetadata is not null)
+        {
+            subjectKindName = failure.PersonMetadata.PersonKind.ToString();
+            return true;
+        }
+
+        subjectKindName = string.Empty;
+        return false;
+    }
+
+    private static bool IsPeopleSecurableElementKind(SecurableElementKind kind) =>
+        kind is SecurableElementKind.Student or SecurableElementKind.Contact or SecurableElementKind.Staff;
+
+    private static string FormatPeopleAuthViewPhrase(RelationshipAuthorizationFailureMetadata failure)
+    {
+        var authViewName = GetPeopleAuthViewName(failure);
+
+        return authViewName is null ? string.Empty : $" through auth view '{authViewName}'";
+    }
+
+    private static string FormatPeopleAuthViewSentence(RelationshipAuthorizationFailureMetadata failure)
+    {
+        var authViewName = GetPeopleAuthViewName(failure);
+
+        return authViewName is null ? string.Empty : $"Auth view: '{authViewName}'. ";
+    }
+
+    private static string? GetPeopleAuthViewName(RelationshipAuthorizationFailureMetadata failure)
+    {
+        var subjectAuthViewNames = failure
+            .IneligibleSubjects.Where(static ineligibleSubject =>
+                ineligibleSubject.Subject.PersonMetadata is not null
+            )
+            .Select(static ineligibleSubject => ineligibleSubject.Subject.AuthObject.Name.ToString())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (subjectAuthViewNames.Length == 1)
+        {
+            return subjectAuthViewNames[0];
+        }
+
+        return failure.AuthObject?.Name.ToString() ?? failure.Location?.AuthorizationObjectName;
+    }
+
+    private static string FormatPeopleLocationSentence(RelationshipAuthorizationFailureMetadata failure)
+    {
+        var elementDetail = FormatSecurableElementDetail(
+            failure.Location?.ReadableName,
+            failure.Location?.JsonPath
+        );
+
+        if (elementDetail is null)
+        {
+            return string.Empty;
+        }
+
+        if (failure.Location?.Table is not null && failure.Location.Column is not null)
+        {
+            return $"Element {elementDetail} resolved to '{failure.Location.Table}.{failure.Location.Column.Value}'. ";
+        }
+
+        return $"Element {elementDetail} did not produce an executable People subject. ";
+    }
+
+    private static string FormatPeopleContributorSentence(RelationshipAuthorizationFailureMetadata failure) =>
+        FormatContributorSentence(
+            "Contributors",
+            failure.Contributors.Select(static contributor =>
+                FormatSecurableElementDetail(contributor.ReadableName, contributor.JsonPath)
+            )
+        );
+
+    private static string FormatSkippedPeopleContributorSentence(
+        RelationshipAuthorizationFailureMetadata failure
+    ) =>
+        FormatContributorSentence(
+            "Skipped People securable elements",
+            failure.SkippedContributors.Select(static contributor =>
+            {
+                var elementDetail =
+                    FormatSecurableElementDetail(contributor.ReadableName, contributor.JsonPath)
+                    ?? $"'{contributor.Kind}'";
+                var columnDetail =
+                    contributor.Table is not null && contributor.Column is not null
+                        ? $"; column: '{contributor.Table}.{contributor.Column.Value}'"
+                        : string.Empty;
+                var authViewDetail = contributor.AuthObject is not null
+                    ? $"; auth view: '{contributor.AuthObject.Name}'"
+                    : string.Empty;
+
+                return $"{elementDetail} (reason: {contributor.Reason}{columnDetail}{authViewDetail})";
+            })
+        );
+
+    private static string FormatIneligiblePeopleSubjectSentence(
+        RelationshipAuthorizationFailureMetadata failure
+    ) =>
+        FormatContributorSentence(
+            "Ineligible People subjects",
+            failure.IneligibleSubjects.Select(ineligibleSubject =>
+            {
+                var contributorDetail =
+                    ineligibleSubject
+                        .Subject.Contributors.Select(static contributor =>
+                            FormatSecurableElementDetail(contributor.ReadableName, contributor.JsonPath)
+                        )
+                        .FirstOrDefault(static detail => detail is not null)
+                    ?? $"'{ineligibleSubject.Subject.Table}.{ineligibleSubject.Subject.Column.Value}'";
+                var authViewDetail = ineligibleSubject.Subject.PersonMetadata is not null
+                    ? $"; auth view: '{ineligibleSubject.Subject.AuthObject.Name}'"
+                    : string.Empty;
+
+                return $"{contributorDetail} (reason: {ineligibleSubject.Reason}{authViewDetail})";
+            })
+        );
+
+    private static string FormatContributorSentence(string label, IEnumerable<string?> details)
+    {
+        var distinctDetails = details
+            .Where(static detail => detail is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static detail => detail, StringComparer.Ordinal)
+            .ToArray();
+
+        return distinctDetails.Length == 0
+            ? string.Empty
+            : $"{label}: [{string.Join(", ", distinctDetails)}]. ";
+    }
+
+    private static string FormatHintSentence(string? hint) =>
+        string.IsNullOrWhiteSpace(hint) ? string.Empty : $" {hint}";
 
     private static string FormatStrategyNames(
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies

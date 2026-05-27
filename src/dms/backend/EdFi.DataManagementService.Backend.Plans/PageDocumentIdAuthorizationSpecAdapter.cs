@@ -47,13 +47,35 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
             );
         }
 
+        RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForPageDocumentId(checkSpec);
+        var authObject = SelectPageDocumentIdAuthObject(checkSpec);
+
         return new PageDocumentIdAuthorizationStrategy(
             MapKind(checkSpec.Direction),
             [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
             checkSpec.ConfiguredStrategy.RawConfiguredIndex,
             checkSpec.RelationshipLocalOrder,
-            checkSpec.AuthObject.AllowsDirectClaimMatch
+            authObject.AllowsDirectClaimMatch
         );
+    }
+
+    private static RelationshipAuthorizationAuthObject SelectPageDocumentIdAuthObject(
+        RelationshipAuthorizationCheckSpec checkSpec
+    )
+    {
+        var authObjects = checkSpec
+            .Subjects.Select(static subject => subject.AuthObject)
+            .Distinct()
+            .ToArray();
+
+        if (authObjects.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "PageDocumentId authorization requires exactly one EdOrg auth object."
+            );
+        }
+
+        return authObjects[0];
     }
 
     private static PageDocumentIdAuthorizationSubject AdaptSubject(

@@ -2079,18 +2079,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<ConcreteResourceModel> concreteResources
     )
     {
-        // Guard: skip when the model does not include all five association resources that
-        // the people auth views join against. This is intentional for synthetic/partial test
-        // models that omit association resources. Emitting views that reference
-        // nonexistent tables would cause SQL deployment failures in those tests.
-        // In any full DS 5.2 deployment these associations are always present, so the guard
-        // is never triggered in production.
-        if (authHierarchy is not { EntitiesInNameOrder.Count: > 0 })
-        {
-            return;
-        }
-
-        if (!AuthObjectDefinitions.HasAllPeopleAuthViewAssociations(concreteResources))
+        // Guard: skip when there is no auth hierarchy table or the model does not include all
+        // association resources the people auth views join against. This is intentional for
+        // synthetic/partial test models. Emitting views that reference nonexistent auth objects or
+        // tables would cause SQL deployment failures.
+        if (
+            !AuthObjectDefinitions.GetPeopleAuthViewAvailability(authHierarchy, concreteResources).IsAvailable
+        )
         {
             return;
         }

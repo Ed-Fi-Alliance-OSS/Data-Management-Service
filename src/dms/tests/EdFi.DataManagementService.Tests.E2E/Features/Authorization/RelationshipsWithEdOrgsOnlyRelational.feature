@@ -176,7 +176,7 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "error": "Relational query authorization is not implemented for resource 'Ed-Fi.AcademicWeek' when effective GET-many authorization includes strategies outside the current DMS-1055 EdOrg-only scope. Unsupported strategies: ['NamespaceBased']. Supported DMS-1055 strategies are 'RelationshipsWithEdOrgsOnly', 'RelationshipsWithEdOrgsOnlyInverted', and 'NoFurtherAuthorizationRequired' as a no-op."
+                      "error": "Relational query authorization is not implemented for resource 'Ed-Fi.AcademicWeek' when effective GET-many authorization includes strategies outside the current GET-many EdOrg-only relationship query execution boundary. Unsupported strategies: ['NamespaceBased']. Supported GET-many EdOrg-only relationship strategies are 'RelationshipsWithEdOrgsOnly', 'RelationshipsWithEdOrgsOnlyInverted', and 'NoFurtherAuthorizationRequired' as a no-op."
                   }
                   """
 

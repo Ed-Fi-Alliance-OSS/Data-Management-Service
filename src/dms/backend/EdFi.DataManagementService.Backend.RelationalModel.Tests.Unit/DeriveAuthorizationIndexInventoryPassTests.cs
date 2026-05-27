@@ -10,6 +10,45 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
 /// <summary>
+/// Test fixture asserting person resource matching follows the shared core project-name
+/// comparison while still rejecting extension homographs.
+/// </summary>
+[TestFixture]
+public class Given_PersonJoinPathResolver_Core_Project_Matching
+{
+    [Test]
+    public void It_should_match_core_person_resource_when_project_name_casing_differs()
+    {
+        PersonJoinPathResolver
+            .IsPersonResource(new QualifiedResourceName("ed-fi", "Student"), "Student")
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_should_match_self_person_identity_path_when_project_name_casing_differs()
+    {
+        PersonJoinPathResolver
+            .IsSelfPersonIdentityPath(
+                new QualifiedResourceName("ed-fi", "Student"),
+                SecurableElementKind.Student,
+                "$.studentUniqueId"
+            )
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_should_not_match_extension_person_resource_with_the_same_resource_name()
+    {
+        PersonJoinPathResolver
+            .IsPersonResource(new QualifiedResourceName("Sample", "Student"), "Student")
+            .Should()
+            .BeFalse();
+    }
+}
+
+/// <summary>
 /// Test fixture asserting all five PrimaryAssociation authorization indexes are emitted
 /// when their resources are present in the model set.
 /// </summary>
@@ -117,6 +156,39 @@ public class Given_All_Five_PrimaryAssociations_Are_Present
 
     private DbIndexInfo SingleByTable(string tableName) =>
         _authIndexes.Single(i => i.Table.Name == tableName);
+}
+
+/// <summary>
+/// Test fixture asserting PrimaryAssociation lookup treats Ed-Fi core project-name casing the
+/// same way as the rest of model-set auth object detection.
+/// </summary>
+[TestFixture]
+public class Given_PrimaryAssociation_Core_Project_Name_Casing_Differs
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildStudentSchoolAssociation(projectName: "ed-fi")
+                )
+            )
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_the_primary_association_authorization_index()
+    {
+        var index = _authIndexes.Should().ContainSingle().Subject;
+
+        index.Table.Name.Should().Be("StudentSchoolAssociation");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("SchoolId_Unified");
+        index.IncludeColumns!.Select(c => c.Value).Should().Equal("Student_DocumentId");
+    }
 }
 
 /// <summary>
@@ -479,6 +551,86 @@ public class Given_Resource_With_Direct_Student_Reference
 }
 
 /// <summary>
+/// Test fixture asserting person-join authorization index derivation follows the shared
+/// case-insensitive core project-name matcher when identifying the target person resource.
+/// </summary>
+[TestFixture]
+public class Given_Resource_With_Direct_Student_Reference_To_Cased_Core_Project
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithDirectStudentReference(
+                        targetProjectName: "ed-fi"
+                    )
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildPlainResource("Student", projectName: "ed-fi")
+                );
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_one_person_join_auth_index_on_the_subject_FK()
+    {
+        var index = _authIndexes.Should().ContainSingle().Subject;
+
+        index.Table.Name.Should().Be("DirectStudentRefCarrier");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("Student_DocumentId");
+        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting person-join authorization index derivation does not treat extension
+/// resources named <c>Student</c> as the core Ed-Fi person resource.
+/// </summary>
+[TestFixture]
+public class Given_Resource_With_Direct_Extension_Student_Reference
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            AuthorizationIndexTestRunner.Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithDirectStudentReference(
+                        targetProjectName: "Sample"
+                    )
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildPlainResource("Student", projectName: "Sample")
+                );
+            })
+        );
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_should_name_the_unresolved_student_path()
+    {
+        _exception!.Message.Should().Contain("DirectStudentRefCarrier");
+        _exception.Message.Should().Contain("$.studentReference.studentUniqueId");
+    }
+}
+
+/// <summary>
 /// Test fixture asserting a transitive (2-hop) Student securable — modeled after
 /// <c>CourseTranscript → StudentAcademicRecord → Student</c> — emits an auth index per hop on
 /// the source table at each hop, each with <c>INCLUDE (DocumentId)</c>.
@@ -620,10 +772,9 @@ public class Given_Person_Resource_With_Self_Securable
 }
 
 /// <summary>
-/// Pins the shortest-wins contract (DMS-1053, auth.md L879): when a subject declares two
-/// Student securable paths that resolve to distinct join chains (3-hop short vs. 4-hop long,
-/// each via its own intermediate resources), the pass emits auth indexes for the hops of the
-/// shorter chain only. The longer chain's hops are not indexed.
+/// Pins the independent-path contract: when a subject declares two Student securable paths that
+/// resolve to distinct join chains (3-hop short vs. 4-hop long, each via its own intermediate
+/// resources), the pass emits auth indexes for every hop in both chains.
 /// </summary>
 [TestFixture]
 public class Given_Resource_Chain_Of_Three_Hops
@@ -646,7 +797,7 @@ public class Given_Resource_Chain_Of_Three_Hops
     }
 
     [Test]
-    public void It_should_emit_the_subject_hop_on_the_short_chain_only()
+    public void It_should_emit_the_subject_hop_on_each_independent_chain()
     {
         _authIndexes
             .Should()
@@ -655,13 +806,13 @@ public class Given_Resource_Chain_Of_Three_Hops
             );
         _authIndexes
             .Should()
-            .NotContain(i =>
+            .Contain(i =>
                 i.Table.Name == "ThreeHopChainSubject" && i.KeyColumns[0].Value == "LongHop1_DocumentId"
             );
     }
 
     [Test]
-    public void It_should_emit_every_intermediate_hop_on_the_short_chain()
+    public void It_should_emit_every_intermediate_hop_on_each_independent_chain()
     {
         _authIndexes
             .Should()
@@ -669,6 +820,15 @@ public class Given_Resource_Chain_Of_Three_Hops
         _authIndexes
             .Should()
             .Contain(i => i.Table.Name == "ShortHop2" && i.KeyColumns[0].Value == "Student_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop1" && i.KeyColumns[0].Value == "LongHop2_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop2" && i.KeyColumns[0].Value == "LongHop3_DocumentId");
+        _authIndexes
+            .Should()
+            .Contain(i => i.Table.Name == "LongHop3" && i.KeyColumns[0].Value == "Student_DocumentId");
     }
 }
 
@@ -1029,9 +1189,8 @@ public class Given_Person_Chain_Hitting_Pa_Covered_Column
 }
 
 /// <summary>
-/// Test fixture asserting the mixed array-nested + resolvable case: when at least one person
-/// securable path resolves, array-nested paths are silently skipped (no throw) and an auth
-/// index is emitted only for the resolvable path's hop.
+/// Test fixture asserting the mixed array-nested + resolvable case: array-nested paths are
+/// silently skipped (no throw) and an auth index is emitted only for the resolvable path's hop.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Mixed_Array_Nested_And_Resolvable_Person_Path
@@ -1074,53 +1233,36 @@ public class Given_Resource_With_Mixed_Array_Nested_And_Resolvable_Person_Path
 
 /// <summary>
 /// Test fixture asserting that when a resource's only person securable path is array-nested
-/// (and no other securable element resolved), the pass throws with the runtime resolver's
-/// "unsupported child-table traversal" message shape, naming both the resource and the path.
+/// (and no other securable element resolved), the pass succeeds without emitting auth indexes.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Array_Nested_Person_Path_Only
 {
-    private Exception? _exception;
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
 
     [SetUp]
     public void Setup()
     {
-        _exception = TestExceptions.CaptureException(() =>
-            AuthorizationIndexTestRunner.Build(ctx =>
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
                 ctx.ConcreteResourcesInNameOrder.Add(
                     AuthIndexFixtureResources.BuildResourceWithArrayNestedPersonPathOnly()
                 )
             )
-        );
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
     }
 
     [Test]
-    public void It_should_throw_InvalidOperationException()
+    public void It_should_not_emit_any_auth_indexes()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-    }
-
-    [Test]
-    public void It_should_use_the_runtime_unsupported_child_table_traversal_message()
-    {
-        _exception!.Message.Should().Contain("unsupported child-table traversal");
-    }
-
-    [Test]
-    public void It_should_name_the_resource_and_offending_path()
-    {
-        _exception!.Message.Should().Contain("ArrayNestedPersonCarrier");
-        _exception.Message.Should().Contain("$.items[*].studentReference.studentUniqueId");
+        _authIndexes.Should().BeEmpty();
     }
 }
 
 /// <summary>
-/// Test fixture asserting the cross-pass <c>anyResolved</c> carryover: when a resource has a
-/// resolvable Namespace securable AND an array-nested-only Student path, the Namespace
-/// resolution marks the resource as "any resolved," so the array-nested Student path is
-/// silently skipped instead of throwing. Guards the seeding of
-/// <c>resourcesWithResolvedSecurable</c> from <c>EmitSecurableElementIndexes</c> into
-/// <c>EmitPersonJoinIndexes</c>.
+/// Test fixture asserting that a resource with a resolvable Namespace securable and an
+/// array-nested-only Student path emits only the Namespace auth index.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Resolved_Namespace_And_Array_Nested_Student_Path
@@ -1159,11 +1301,8 @@ public class Given_Resource_With_Resolved_Namespace_And_Array_Nested_Student_Pat
 }
 
 /// <summary>
-/// Test fixture asserting the cross-kind <c>anyResolved</c> carryover within
-/// <c>EmitPersonJoinIndexes</c>: when a resource resolves a Student path AND has an
-/// array-nested-only Contact path, the Student resolution marks the resource as "any resolved,"
-/// so the array-nested Contact path is silently skipped instead of throwing. Guards the
-/// shared <c>anyResolved</c> across Student / Contact / Staff iterations in the pass.
+/// Test fixture asserting that a resource with a resolvable Student path and an
+/// array-nested-only Contact path emits only the Student auth index.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Resolved_Student_And_Array_Nested_Contact_Path
@@ -1200,6 +1339,28 @@ public class Given_Resource_With_Resolved_Student_And_Array_Nested_Contact_Path
     public void It_should_not_emit_any_contact_auth_index()
     {
         _authIndexes.Should().NotContain(i => i.KeyColumns[0].Value == "Contact_DocumentId");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting that a zero-hop self person path and child-collection person paths
+/// emit no person-join index because neither requires a root-table join hop.
+/// </summary>
+[TestFixture]
+public class Given_Person_Resource_With_Self_And_Array_Nested_Person_Securables
+{
+    [TestCase(SecurableElementKind.Student)]
+    [TestCase(SecurableElementKind.Contact)]
+    [TestCase(SecurableElementKind.Staff)]
+    public void It_should_not_throw_and_should_emit_no_person_join_auth_indexes(SecurableElementKind kind)
+    {
+        var modelSet = AuthorizationIndexTestRunner.Build(ctx =>
+            ctx.ConcreteResourcesInNameOrder.Add(
+                AuthIndexFixtureResources.BuildPersonResourceWithSelfAndArrayNestedPersonPath(kind)
+            )
+        );
+
+        modelSet.IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization).Should().BeEmpty();
     }
 }
 
@@ -1722,11 +1883,11 @@ public class Given_SecurableElementLocationResolver_with_multi_candidate_path
 }
 
 /// <summary>
-/// Pins the surface-unresolved-sibling contract (Fix #7, DMS-1094 Round 6): when a Student
-/// path resolves alongside a sibling path that does not bind to any
-/// <see cref="DocumentReferenceBinding"/>, the pass throws on the unresolved sibling rather
-/// than silently dropping it. Matches the runtime resolver. Previously this fixture pinned
-/// the silent-skip contract — that hid schema drift until every path broke.
+/// Pins the mixed root-level People path contract: when a Student path resolves alongside a
+/// sibling path that does not bind to any <see cref="DocumentReferenceBinding"/>, the pass
+/// throws on the unresolved sibling rather than silently dropping it. Matches the runtime
+/// resolver. Previously this fixture pinned the silent-skip contract — that hid schema drift
+/// until every path broke.
 /// </summary>
 [TestFixture]
 public class Given_Subject_With_Mixed_Resolvable_And_Unresolvable_Root_Person_Paths
@@ -1880,44 +2041,37 @@ public class Given_Person_Chain_With_Reference_Cycle_Among_Intermediates
 }
 
 /// <summary>
-/// Pins the subject-is-person suppression contract: when the subject IS the person resource
-/// (e.g. <c>Ed-Fi.Student</c>), all root-level Student paths bypass the unresolved-paths
-/// reporting in <c>ProcessPersonKind</c> — even paths that would otherwise be schema bugs.
-/// The person resource's own <c>DocumentId</c> is the auth anchor, so the pass does NOT
-/// need a join chain; matching today's runtime behavior, broken sibling paths on a self-
-/// securable resource are silently dropped.
+/// Pins the exact self-path suppression contract: when the subject IS the person resource
+/// (e.g. <c>Ed-Fi.Student</c>), only its exact self identity path bypasses unresolved-path
+/// reporting. Broken same-kind sibling paths still fail instead of being silently dropped.
 /// </summary>
 [TestFixture]
 public class Given_Person_Resource_With_Self_And_Broken_Securable_Path
 {
-    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
     private Exception? _exception;
 
     [SetUp]
     public void Setup()
     {
         _exception = TestExceptions.CaptureException(() =>
-            _authIndexes = AuthorizationIndexTestRunner
-                .Build(ctx =>
-                    ctx.ConcreteResourcesInNameOrder.Add(
-                        AuthIndexFixtureResources.BuildPersonResourceWithSelfAndBrokenSecurablePath()
-                    )
+            AuthorizationIndexTestRunner.Build(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildPersonResourceWithSelfAndBrokenSecurablePath()
                 )
-                .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
-                .ToArray()
+            )
         );
     }
 
     [Test]
-    public void It_should_not_throw_on_the_broken_sibling_path()
+    public void It_should_throw_on_the_broken_sibling_path()
     {
-        _exception.Should().BeNull();
-    }
-
-    [Test]
-    public void It_should_not_emit_any_person_join_auth_index()
-    {
-        _authIndexes.Should().BeEmpty();
+        _exception
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("Ed-Fi.Student")
+            .And.Contain("$.nonexistentReference.studentUniqueId")
+            .And.NotContain("$.studentUniqueId,");
     }
 }
 
@@ -1980,15 +2134,12 @@ public class Given_Intermediate_With_Multiple_Root_Bindings_Only_Securable_Is_Fo
 }
 
 /// <summary>
-/// Pins the walker's try-alternates-and-pick-shortest contract (DMS-1094 Round 8 Fix #2):
-/// when an intermediate declares multiple Student securables — one going through a detour
-/// resource, one going directly to <c>Ed-Fi.Student</c> — the walker enumerates both
-/// candidates at the hop and selects the shorter continuation. A greedy first-match walker
-/// (Round 7 behavior) would emit indexes for whichever declaration came first in the list,
-/// possibly the longer detour.
+/// Pins per-path index emission when an intermediate declares multiple Student securables —
+/// one going through a detour resource and one going directly to <c>Ed-Fi.Student</c>. The
+/// intermediate's independent executable paths are both indexed.
 /// </summary>
 [TestFixture]
-public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Shortest
+public class Given_Intermediate_With_Multiple_Securable_Paths_Emits_Each_Independent_Path
 {
     private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
 
@@ -1998,9 +2149,7 @@ public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Short
         _authIndexes = AuthorizationIndexTestRunner
             .Build(ctx =>
             {
-                foreach (
-                    var r in AuthIndexFixtureResources.BuildIntermediateWithMultipleSecurablePathsWalkerPicksShortest()
-                )
+                foreach (var r in AuthIndexFixtureResources.BuildIntermediateWithMultipleSecurablePaths())
                 {
                     ctx.ConcreteResourcesInNameOrder.Add(r);
                 }
@@ -2010,12 +2159,8 @@ public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Short
     }
 
     [Test]
-    public void It_should_emit_the_hop_on_the_shorter_alternate()
+    public void It_should_emit_the_direct_hop()
     {
-        // The intermediate's SECOND declared Student securable is the direct hop to
-        // Ed-Fi.Student via DirectStudentHop_DocumentId. With try-alternates + shortest-wins,
-        // the walker picks this branch over the longer detour. A greedy first-match walker
-        // would have picked the detour (listed FIRST) and indexed DetourHop_DocumentId instead.
         _authIndexes
             .Should()
             .Contain(i =>
@@ -2025,14 +2170,11 @@ public class Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Short
     }
 
     [Test]
-    public void It_should_not_emit_the_hop_on_the_longer_alternate_when_routing_from_the_subject()
+    public void It_should_emit_the_detour_hop_as_an_independent_person_path()
     {
-        // The detour hop only appears in the auth-index inventory if some subject's resolved
-        // chain routes through it. Under shortest-wins, neither WalkerShortestSubject nor the
-        // intermediate-as-subject picks the detour, so the detour FK is not indexed.
         _authIndexes
             .Should()
-            .NotContain(i =>
+            .Contain(i =>
                 i.Table.Name == "WalkerShortestIntermediate"
                 && i.KeyColumns.Any(c => c.Value == "DetourHop_DocumentId")
             );
@@ -2111,11 +2253,12 @@ internal static class AuthIndexFixtureResources
     private const string EdFi = "Ed-Fi";
     private static readonly DbSchemaName _edfiSchema = new("edfi");
 
-    public static ConcreteResourceModel BuildStudentSchoolAssociation() =>
+    public static ConcreteResourceModel BuildStudentSchoolAssociation(string projectName = EdFi) =>
         BuildPaResource(
             "StudentSchoolAssociation",
             new DbColumnName("SchoolId_Unified"),
-            new DbColumnName("Student_DocumentId")
+            new DbColumnName("Student_DocumentId"),
+            projectName
         );
 
     public static ConcreteResourceModel BuildStudentContactAssociation() =>
@@ -2210,8 +2353,12 @@ internal static class AuthIndexFixtureResources
         );
     }
 
-    public static ConcreteResourceModel BuildPlainResource(string resourceName) =>
-        BuildResourceFromColumns(resourceName, [BuildScalarColumn(new DbColumnName("DocumentId"))]);
+    public static ConcreteResourceModel BuildPlainResource(string resourceName, string projectName = EdFi) =>
+        BuildResourceFromColumns(
+            resourceName,
+            [BuildScalarColumn(new DbColumnName("DocumentId"))],
+            projectName
+        );
 
     public static ConcreteResourceModel BuildCourseWithEdOrgSecurable()
     {
@@ -2477,7 +2624,9 @@ internal static class AuthIndexFixtureResources
     /// must also add <see cref="BuildPlainResource"/>(<c>"Student"</c>) to the context so the
     /// BFS resource lookup can resolve the target person resource.
     /// </summary>
-    public static ConcreteResourceModel BuildResourceWithDirectStudentReference()
+    public static ConcreteResourceModel BuildResourceWithDirectStudentReference(
+        string targetProjectName = EdFi
+    )
     {
         const string resourceName = "DirectStudentRefCarrier";
         var rootTable = new DbTableName(_edfiSchema, resourceName);
@@ -2488,7 +2637,7 @@ internal static class AuthIndexFixtureResources
             ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
             Table: rootTable,
             FkColumn: fkColumn,
-            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            TargetResource: new QualifiedResourceName(targetProjectName, "Student"),
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
@@ -2793,9 +2942,9 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource declaring two Student securable paths: one array-nested (skipped by the
-    /// pass) and one resolvable to a direct reference. Drives the silent-skip branch: no throw,
-    /// and exactly one auth index emitted (for the resolvable path's hop). Tests using this
-    /// builder must also add <see cref="BuildPlainResource"/>(<c>"Student"</c>).
+    /// pass) and one resolvable to a direct reference. Exactly one auth index is emitted (for
+    /// the resolvable path's hop). Tests using this builder must also add
+    /// <see cref="BuildPlainResource"/>(<c>"Student"</c>).
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithMixedArrayNestedAndResolvablePersonPath()
     {
@@ -2839,9 +2988,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource declaring a resolvable Namespace securable element AND an array-nested
-    /// Student securable path. Drives the cross-pass <c>anyResolved</c> carryover from
-    /// <c>EmitSecurableElementIndexes</c> into <c>EmitPersonJoinIndexes</c> — the Namespace
-    /// resolution must mark the resource so the array-nested Student path is silently skipped.
+    /// Student securable path. The Namespace auth index is emitted while the array-nested
+    /// Student path is skipped.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithResolvedNamespaceAndArrayNestedStudentPath() =>
         BuildResource(
@@ -2862,9 +3010,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource declaring a resolvable Student securable element AND an array-nested
-    /// Contact securable path. Drives the cross-kind <c>anyResolved</c> carryover within
-    /// <c>EmitPersonJoinIndexes</c> — the Student resolution must mark the resource so the
-    /// array-nested Contact path is silently skipped.
+    /// Contact securable path. The Student auth index is emitted while the array-nested Contact
+    /// path is skipped.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithResolvedStudentAndArrayNestedContactPath()
     {
@@ -2904,10 +3051,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource whose only Student securable path is array-nested (contains <c>[*]</c>),
-    /// and which has no other resolvable securable elements. Person-join BFS currently follows
-    /// only root-table bindings, so array-nested paths are unsupported. Drives the throw branch
-    /// in <c>EmitPersonJoinIndexes</c> mirroring the runtime resolver's
-    /// "unsupported child-table traversal" message.
+    /// and which has no other resolvable securable elements. The DDL pass skips it because
+    /// array-nested People paths are outside executable subject scope.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithArrayNestedPersonPathOnly() =>
         BuildResource(
@@ -3071,11 +3216,32 @@ internal static class AuthIndexFixtureResources
             )
         );
 
+    public static ConcreteResourceModel BuildPersonResourceWithSelfAndArrayNestedPersonPath(
+        SecurableElementKind kind
+    )
+    {
+        var resourceName = GetPersonResourceName(kind);
+        var selfPath = GetSelfPersonPath(kind);
+        var arrayNestedPath = kind switch
+        {
+            SecurableElementKind.Student => "$.items[*].studentReference.studentUniqueId",
+            SecurableElementKind.Contact => "$.items[*].contactReference.contactUniqueId",
+            SecurableElementKind.Staff => "$.items[*].staffReference.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+
+        return BuildResource(
+            resourceName,
+            [BuildScalarColumn(new DbColumnName("DocumentId"))],
+            [],
+            CreatePersonSecurableElements(kind, [selfPath, arrayNestedPath])
+        );
+    }
+
     /// <summary>
-    /// Builds the full set of resources for the three-hop BFS shortest-path scenario: a subject
-    /// resource with two Student securable paths driving two independent BFS searches — one
-    /// short (3-hop) chain to <c>Ed-Fi.Student</c> and one longer (4-hop) chain. The pass must
-    /// pick the shortest. Emitted indexes are expected to cover the short chain only.
+    /// Builds the full set of resources for a subject resource with two Student securable paths
+    /// driving two independent searches — one short (3-hop) chain to <c>Ed-Fi.Student</c> and
+    /// one longer (4-hop) chain. Emitted indexes are expected to cover both chains.
     /// </summary>
     public static IReadOnlyList<ConcreteResourceModel> BuildResourceChainOfThreeHops()
     {
@@ -3179,26 +3345,29 @@ internal static class AuthIndexFixtureResources
     private static ConcreteResourceModel BuildPaResource(
         string resourceName,
         DbColumnName keyColumn,
-        DbColumnName includeColumn
+        DbColumnName includeColumn,
+        string projectName = EdFi
     )
     {
         var columns = new[] { BuildScalarColumn(keyColumn), BuildScalarColumn(includeColumn) };
-        return BuildResourceFromColumns(resourceName, columns);
+        return BuildResourceFromColumns(resourceName, columns, projectName);
     }
 
     private static ConcreteResourceModel BuildResourceFromColumns(
         string resourceName,
-        IReadOnlyList<DbColumnModel> columns
-    ) => BuildResource(resourceName, columns, [], ResourceSecurableElements.Empty);
+        IReadOnlyList<DbColumnModel> columns,
+        string projectName = EdFi
+    ) => BuildResource(resourceName, columns, [], ResourceSecurableElements.Empty, projectName);
 
     private static ConcreteResourceModel BuildResource(
         string resourceName,
         IReadOnlyList<DbColumnModel> columns,
         IReadOnlyList<DocumentReferenceBinding> bindings,
-        ResourceSecurableElements securableElements
+        ResourceSecurableElements securableElements,
+        string projectName = EdFi
     )
     {
-        var qualifiedName = new QualifiedResourceName(EdFi, resourceName);
+        var qualifiedName = new QualifiedResourceName(projectName, resourceName);
         var resourceKey = new ResourceKeyEntry(1, qualifiedName, "1.0.0", false);
         var rootTableName = new DbTableName(_edfiSchema, resourceName);
 
@@ -3374,8 +3543,8 @@ internal static class AuthIndexFixtureResources
     /// <summary>
     /// Subject resource declaring two root-level Student securable paths: one matches a real
     /// <see cref="DocumentReferenceBinding"/>, the other targets a non-existent reference. The
-    /// resolved path produces an auth index; the unresolved sibling is silently dropped (no
-    /// throw), matching the runtime resolver's "only throw when all paths unresolved" rule.
+    /// resolved path would produce an auth index, but the unresolved sibling fails fast to match
+    /// the runtime resolver's schema-drift surface.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithMixedResolvableAndUnresolvableStudentPaths()
     {
@@ -3687,14 +3856,12 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Builds the resources for the
-    /// <c>Given_Intermediate_With_Multiple_Securable_Paths_Walker_Picks_Shortest</c> test. The
-    /// intermediate <c>WalkerShortestIntermediate</c> declares TWO Student securables, listed
-    /// in order: the FIRST (<c>$.detourRef.studentUniqueId</c>) goes through a detour
-    /// resource that itself reaches Student in one more hop (2-step continuation); the SECOND
-    /// (<c>$.studentRef.studentUniqueId</c>) targets <c>Ed-Fi.Student</c> directly (1-step
-    /// continuation). The walker must enumerate both candidates and pick the shorter one.
+    /// <c>Given_Intermediate_With_Multiple_Securable_Paths_Emits_Each_Independent_Path</c> test. The
+    /// intermediate <c>WalkerShortestIntermediate</c> declares TWO Student securables: one goes
+    /// through a detour resource that itself reaches Student in one more hop, and one targets
+    /// <c>Ed-Fi.Student</c> directly. The index pass must emit both independent paths.
     /// </summary>
-    public static IReadOnlyList<ConcreteResourceModel> BuildIntermediateWithMultipleSecurablePathsWalkerPicksShortest()
+    public static IReadOnlyList<ConcreteResourceModel> BuildIntermediateWithMultipleSecurablePaths()
     {
         const string subjectName = "WalkerShortestSubject";
         var subjectRoot = new DbTableName(_edfiSchema, subjectName);
@@ -3772,8 +3939,7 @@ internal static class AuthIndexFixtureResources
                 BuildScalarColumn(detourFk),
                 BuildScalarColumn(directStudentFk),
             ],
-            // Detour binding listed FIRST so a greedy first-match walker would pick it. The
-            // try-alternates walker must enumerate both and pick the shorter (direct) branch.
+            // Detour binding listed first to keep fixture ordering deterministic.
             [detourBinding, directStudentBinding],
             new ResourceSecurableElements(
                 EducationOrganization: [],
@@ -3784,9 +3950,7 @@ internal static class AuthIndexFixtureResources
             )
         );
 
-        // WalkerShortestDetour reaches Student in one hop via its own declared securable. With
-        // it in place, intermediate-as-subject's $.detourRef path resolves to a 2-step chain
-        // (I -> Detour -> Student); the direct path's 1-step chain wins shortest.
+        // WalkerShortestDetour reaches Student in one hop via its own declared securable.
         var detourFkOnDetour = new DbColumnName("Student_DocumentId");
         var detourToStudentBinding = new DocumentReferenceBinding(
             IsIdentityComponent: true,
@@ -3822,10 +3986,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Builds <c>Ed-Fi.Student</c> with both its self-anchor securable (<c>$.studentUniqueId</c>)
-    /// and a sibling path that doesn't match any binding. The subject-is-person guard in
-    /// <c>ProcessPersonKind</c> suppresses unresolved-path reporting for all root-level paths
-    /// on the person resource, so the broken sibling is silently dropped — pinning today's
-    /// behavior so a future contract change is forced to update this test.
+    /// and a sibling path that doesn't match any binding. The exact self path is suppressed,
+    /// but the broken sibling must be surfaced as an unresolved person securable path.
     /// </summary>
     public static ConcreteResourceModel BuildPersonResourceWithSelfAndBrokenSecurablePath() =>
         BuildResource(
@@ -3840,4 +4002,34 @@ internal static class AuthIndexFixtureResources
                 Staff: []
             )
         );
+
+    private static ResourceSecurableElements CreatePersonSecurableElements(
+        SecurableElementKind kind,
+        IReadOnlyList<string> paths
+    ) =>
+        kind switch
+        {
+            SecurableElementKind.Student => new([], [], paths, [], []),
+            SecurableElementKind.Contact => new([], [], [], paths, []),
+            SecurableElementKind.Staff => new([], [], [], [], paths),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+
+    private static string GetPersonResourceName(SecurableElementKind kind) =>
+        kind switch
+        {
+            SecurableElementKind.Student => "Student",
+            SecurableElementKind.Contact => "Contact",
+            SecurableElementKind.Staff => "Staff",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+
+    private static string GetSelfPersonPath(SecurableElementKind kind) =>
+        kind switch
+        {
+            SecurableElementKind.Student => "$.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
 }

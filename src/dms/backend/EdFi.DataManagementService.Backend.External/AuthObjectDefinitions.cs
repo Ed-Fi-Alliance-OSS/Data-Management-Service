@@ -85,6 +85,39 @@ public sealed record AuthViewDefinition(
     IReadOnlyList<AuthViewArm> Arms
 );
 
+public enum AuthPeopleViewKind
+{
+    Student,
+    Contact,
+    Staff,
+    StudentThroughResponsibility,
+}
+
+/// <summary>
+/// Metadata for a people auth view that is needed outside DDL emission.
+/// </summary>
+public sealed record AuthPeopleAuthViewDefinition(
+    AuthPeopleViewKind Kind,
+    AuthViewDefinition ViewDefinition,
+    DbColumnName PersonDocumentIdOutputColumn,
+    DbColumnName ClaimEducationOrganizationIdColumn,
+    string FailureHint
+)
+{
+    public DbTableName View => ViewDefinition.View;
+}
+
+/// <summary>
+/// The prerequisites that determine whether people auth views are emitted for a model set.
+/// </summary>
+public sealed record PeopleAuthViewAvailability(
+    bool HasAuthEdOrgHierarchy,
+    IReadOnlyList<string> MissingAssociationResourceNames
+)
+{
+    public bool IsAvailable => HasAuthEdOrgHierarchy && MissingAssociationResourceNames.Count == 0;
+}
+
 /// <summary>
 /// Single source of truth for the structural shape of the emitted <c>auth.*</c> database objects:
 /// the <c>auth.EducationOrganizationIdToEducationOrganizationId</c> table and the four people
@@ -134,27 +167,65 @@ public static class AuthObjectDefinitions
     /// The four people auth views in alphabetical name order: Contact, Staff, Student,
     /// StudentThroughResponsibility.
     /// </summary>
-    public static readonly IReadOnlyList<AuthViewDefinition> PeopleAuthViews = BuildPeopleAuthViews();
+    public static readonly IReadOnlyList<AuthPeopleAuthViewDefinition> PeopleAuthViewDefinitions =
+        BuildPeopleAuthViewDefinitions();
 
     /// <summary>
-    /// Returns whether the supplied concrete resources contain all five core associations required
-    /// by the people auth views. Mirrors the guard in
-    /// <c>RelationalModelDdlEmitter.EmitPeopleAuthViews</c> and the manifest emitter so the
-    /// emission decision is single-sourced.
+    /// The emitted structural definitions for the four people auth views.
     /// </summary>
-    public static bool HasAllPeopleAuthViewAssociations(
+    public static readonly IReadOnlyList<AuthViewDefinition> PeopleAuthViews =
+    [
+        .. PeopleAuthViewDefinitions.Select(static definition => definition.ViewDefinition),
+    ];
+
+    public static AuthPeopleAuthViewDefinition GetPeopleAuthViewDefinition(AuthPeopleViewKind kind)
+    {
+        foreach (var definition in PeopleAuthViewDefinitions)
+        {
+            if (definition.Kind == kind)
+            {
+                return definition;
+            }
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported people auth view kind.");
+    }
+
+    /// <summary>
+    /// Returns whether the supplied model set inputs satisfy the same prerequisites used by DDL,
+    /// manifest, and relationship authorization planning for the people auth views.
+    /// </summary>
+    public static PeopleAuthViewAvailability GetPeopleAuthViewAvailability(
+        AuthEdOrgHierarchy? authHierarchy,
+        IReadOnlyList<ConcreteResourceModel> concreteResources
+    ) =>
+        new(
+            authHierarchy is { EntitiesInNameOrder.Count: > 0 },
+            GetMissingPeopleAuthAssociationResourceNames(concreteResources)
+        );
+
+    /// <summary>
+    /// Returns the concrete core association resource names missing from the supplied model set that
+    /// caused the people auth views to be suppressed.
+    /// </summary>
+    public static IReadOnlyList<string> GetMissingPeopleAuthAssociationResourceNames(
         IReadOnlyList<ConcreteResourceModel> concreteResources
     )
     {
-        return RequiredPeopleAuthAssociationResourceNames.All(requiredResourceName =>
-            concreteResources.Any(r =>
-                DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
-                && r.ResourceKey.Resource.ResourceName == requiredResourceName
-            )
-        );
+        ArgumentNullException.ThrowIfNull(concreteResources);
+
+        return
+        [
+            .. RequiredPeopleAuthAssociationResourceNames.Where(requiredResourceName =>
+                !concreteResources.Any(r =>
+                    DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
+                    && r.ResourceKey.Resource.ResourceName == requiredResourceName
+                )
+            ),
+        ];
     }
 
-    private static IReadOnlyList<AuthViewDefinition> BuildPeopleAuthViews()
+    private static IReadOnlyList<AuthPeopleAuthViewDefinition> BuildPeopleAuthViewDefinitions()
     {
         var edfi = new DbSchemaName("edfi");
         var authEdOrgTable = AuthNames.EdOrgIdToEdOrgId;
@@ -168,139 +239,166 @@ public static class AuthObjectDefinitions
         const string edOrgAlias = "edOrg";
 
         // 1. EducationOrganizationIdToContactDocumentId — DISTINCT, single arm
-        var contactView = new AuthViewDefinition(
-            View: new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToContactDocumentId"),
-            ArmsSetOperator: AuthViewSetOperator.None,
-            Arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: true,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("sca", contactDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "ssa",
-                            new DbTableName(edfi, "StudentSchoolAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "ssa", schoolIdUnified)]
-                        ),
-                        new AuthViewJoin(
-                            "sca",
-                            new DbTableName(edfi, "StudentContactAssociation"),
-                            [new AuthViewJoinPredicate("ssa", studentDocId, "sca", studentDocId)]
-                        ),
-                    ]
-                ),
-            ]
+        var contactView = new AuthPeopleAuthViewDefinition(
+            Kind: AuthPeopleViewKind.Contact,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToContactDocumentId"),
+                ArmsSetOperator: AuthViewSetOperator.None,
+                Arms:
+                [
+                    new AuthViewArm(
+                        SelectDistinct: true,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("sca", contactDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "ssa",
+                                new DbTableName(edfi, "StudentSchoolAssociation"),
+                                [new AuthViewJoinPredicate(edOrgAlias, targetCol, "ssa", schoolIdUnified)]
+                            ),
+                            new AuthViewJoin(
+                                "sca",
+                                new DbTableName(edfi, "StudentContactAssociation"),
+                                [new AuthViewJoinPredicate("ssa", studentDocId, "sca", studentDocId)]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: contactDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol,
+            FailureHint: "You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
         );
 
         // 2. EducationOrganizationIdToStaffDocumentId — UNION of two arms (assignment + employment).
         // UNION (not UNION ALL) is deliberate: the deduplicating set-operator is what makes per-arm
         // DISTINCT unnecessary.
-        var staffView = new AuthViewDefinition(
-            View: new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStaffDocumentId"),
-            ArmsSetOperator: AuthViewSetOperator.Union,
-            Arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: false,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("seoaa", staffDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "seoaa",
-                            new DbTableName(edfi, "StaffEducationOrganizationAssignmentAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seoaa", edOrgEdOrgId)]
-                        ),
-                    ]
-                ),
-                new AuthViewArm(
-                    SelectDistinct: false,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("seoea", staffDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "seoea",
-                            new DbTableName(edfi, "StaffEducationOrganizationEmploymentAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seoea", edOrgEdOrgId)]
-                        ),
-                    ]
-                ),
-            ]
+        var staffView = new AuthPeopleAuthViewDefinition(
+            Kind: AuthPeopleViewKind.Staff,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStaffDocumentId"),
+                ArmsSetOperator: AuthViewSetOperator.Union,
+                Arms:
+                [
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("seoaa", staffDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "seoaa",
+                                new DbTableName(edfi, "StaffEducationOrganizationAssignmentAssociation"),
+                                [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seoaa", edOrgEdOrgId)]
+                            ),
+                        ]
+                    ),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("seoea", staffDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "seoea",
+                                new DbTableName(edfi, "StaffEducationOrganizationEmploymentAssociation"),
+                                [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seoea", edOrgEdOrgId)]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: staffDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol,
+            FailureHint: "You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
         );
 
         // 3. EducationOrganizationIdToStudentDocumentId — DISTINCT, single arm
-        var studentView = new AuthViewDefinition(
-            View: new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStudentDocumentId"),
-            ArmsSetOperator: AuthViewSetOperator.None,
-            Arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: true,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("ssa", studentDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "ssa",
-                            new DbTableName(edfi, "StudentSchoolAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "ssa", schoolIdUnified)]
-                        ),
-                    ]
-                ),
-            ]
+        var studentView = new AuthPeopleAuthViewDefinition(
+            Kind: AuthPeopleViewKind.Student,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStudentDocumentId"),
+                ArmsSetOperator: AuthViewSetOperator.None,
+                Arms:
+                [
+                    new AuthViewArm(
+                        SelectDistinct: true,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("ssa", studentDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "ssa",
+                                new DbTableName(edfi, "StudentSchoolAssociation"),
+                                [new AuthViewJoinPredicate(edOrgAlias, targetCol, "ssa", schoolIdUnified)]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: studentDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol,
+            FailureHint: "You may need to create a corresponding 'StudentSchoolAssociation' item."
         );
 
         // 4. EducationOrganizationIdToStudentDocumentIdThroughResponsibility — DISTINCT, single arm
-        var studentThroughResponsibilityView = new AuthViewDefinition(
-            View: new DbTableName(
-                AuthNames.AuthSchema,
-                "EducationOrganizationIdToStudentDocumentIdThroughResponsibility"
-            ),
-            ArmsSetOperator: AuthViewSetOperator.None,
-            Arms:
-            [
-                new AuthViewArm(
-                    SelectDistinct: true,
-                    SourceAlias: edOrgAlias,
-                    SourceTable: authEdOrgTable,
-                    OutputColumns:
-                    [
-                        new AuthViewOutputColumn(edOrgAlias, sourceCol),
-                        new AuthViewOutputColumn("seora", studentDocId),
-                    ],
-                    Joins:
-                    [
-                        new AuthViewJoin(
-                            "seora",
-                            new DbTableName(edfi, "StudentEducationOrganizationResponsibilityAssociation"),
-                            [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seora", edOrgEdOrgId)]
-                        ),
-                    ]
+        var studentThroughResponsibilityView = new AuthPeopleAuthViewDefinition(
+            Kind: AuthPeopleViewKind.StudentThroughResponsibility,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(
+                    AuthNames.AuthSchema,
+                    "EducationOrganizationIdToStudentDocumentIdThroughResponsibility"
                 ),
-            ]
+                ArmsSetOperator: AuthViewSetOperator.None,
+                Arms:
+                [
+                    new AuthViewArm(
+                        SelectDistinct: true,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("seora", studentDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "seora",
+                                new DbTableName(
+                                    edfi,
+                                    "StudentEducationOrganizationResponsibilityAssociation"
+                                ),
+                                [new AuthViewJoinPredicate(edOrgAlias, targetCol, "seora", edOrgEdOrgId)]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: studentDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol,
+            FailureHint: "You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item."
         );
 
         return [contactView, staffView, studentView, studentThroughResponsibilityView];

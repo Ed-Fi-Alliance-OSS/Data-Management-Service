@@ -31,7 +31,8 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
             var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
                 request.ProposedRelationshipAuthorization,
                 finalizedRootRow,
-                RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(request.OperationKind)
+                RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(request.OperationKind),
+                request.TargetContext
             );
 
             switch (extractionResult)

@@ -92,6 +92,9 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             );
         }
 
+        RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForSingleRecordSql(
+            spec.CheckSpecs
+        );
         var rootTarget = NormalizeCheckTargets(spec);
 
         var mismatchedSubject = spec
@@ -111,7 +114,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             rootTarget is RelationshipAuthorizationCheckTarget.Proposed
                 ? BuildProposedValueParametersInOrder(spec)
                 : [];
-        ValidatePgsqlProposedSubjectValueCasts(spec, rootTarget);
         ValidateParameterNameCollisions(spec, proposedValueParametersInOrder);
 
         return new NormalizedSqlSpec(spec, rootTarget, proposedValueParametersInOrder);
@@ -234,35 +236,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         return rootTarget;
     }
 
-    private void ValidatePgsqlProposedSubjectValueCasts(
-        SingleRecordRelationshipAuthorizationSqlSpec spec,
-        RelationshipAuthorizationCheckTarget target
-    )
-    {
-        if (_dialect is not SqlDialect.Pgsql || target is not RelationshipAuthorizationCheckTarget.Proposed)
-        {
-            return;
-        }
-
-        var unsupportedAuthObjects = spec
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
-            .Where(static authObject => !UsesEdOrgHierarchyAuthObject(authObject))
-            .Take(1)
-            .ToArray();
-
-        if (unsupportedAuthObjects.Length == 0)
-        {
-            return;
-        }
-
-        var unsupportedAuthObject = unsupportedAuthObjects[0];
-
-        throw new ArgumentException(
-            $"PostgreSQL proposed relationship authorization currently casts subject values as {_pgsqlEdOrgSubjectValueSqlType} and only supports the EdOrg hierarchy auth object. Auth object '{unsupportedAuthObject.Name}' is not supported for proposed-value checks.",
-            nameof(spec)
-        );
-    }
-
     private static string ResolvePgsqlEdOrgSubjectValueSqlType()
     {
         var sourceColumn = ResolveAuthEdOrgTableColumn(AuthNames.SourceEdOrgId);
@@ -294,19 +267,6 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
         return columns[0];
     }
-
-    private static bool UsesEdOrgHierarchyAuthObject(RelationshipAuthorizationAuthObject authObject) =>
-        authObject.Name.Equals(AuthNames.EdOrgIdToEdOrgId)
-        && (
-            (
-                authObject.SubjectValueColumn.Equals(AuthNames.TargetEdOrgId)
-                && authObject.ClaimEducationOrganizationIdColumn.Equals(AuthNames.SourceEdOrgId)
-            )
-            || (
-                authObject.SubjectValueColumn.Equals(AuthNames.SourceEdOrgId)
-                && authObject.ClaimEducationOrganizationIdColumn.Equals(AuthNames.TargetEdOrgId)
-            )
-        );
 
     private static DbTableName GetRootTable(RelationshipAuthorizationCheckTarget target) =>
         target switch
@@ -636,7 +596,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append(" IS NULL OR NOT ");
             AppendAuthorizationSuccessSql(
                 writer,
-                checkSpec,
+                subject.AuthObject,
                 subjectValueWriter => AppendTargetColumn(subjectValueWriter, subject.Column),
                 authorizationClaimParameterization,
                 authAlias
@@ -709,6 +669,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
     )
     {
+        var subject = checkSpec.Subjects[subjectOrdinal];
         var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
 
         writer.AppendLine("SELECT");
@@ -726,7 +687,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append(" IS NULL OR NOT ");
             AppendAuthorizationSuccessSql(
                 writer,
-                checkSpec,
+                subject.AuthObject,
                 subjectValueWriter =>
                     AppendProposedSubjectValueSql(subjectValueWriter, proposedValueParameterName),
                 authorizationClaimParameterization,
@@ -755,13 +716,13 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
     private static void AppendAuthorizationSuccessSql(
         SqlWriter writer,
-        RelationshipAuthorizationCheckSpec checkSpec,
+        RelationshipAuthorizationAuthObject authObject,
         Action<SqlWriter> appendSubjectValue,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
     {
-        if (checkSpec.AuthObject.AllowsDirectClaimMatch)
+        if (authObject.AllowsDirectClaimMatch)
         {
             writer.Append("(");
             appendSubjectValue(writer);
@@ -772,7 +733,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.Append(" OR EXISTS (");
             AppendAuthorizationExistsSelectSql(
                 writer,
-                checkSpec,
+                authObject,
                 appendSubjectValue,
                 authorizationClaimParameterization,
                 authAlias
@@ -784,7 +745,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         writer.Append("EXISTS (");
         AppendAuthorizationExistsSelectSql(
             writer,
-            checkSpec,
+            authObject,
             appendSubjectValue,
             authorizationClaimParameterization,
             authAlias
@@ -794,20 +755,20 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
     private static void AppendAuthorizationExistsSelectSql(
         SqlWriter writer,
-        RelationshipAuthorizationCheckSpec checkSpec,
+        RelationshipAuthorizationAuthObject authObject,
         Action<SqlWriter> appendSubjectValue,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
     {
         writer.Append("SELECT 1 FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(checkSpec.AuthObject.Name));
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(authObject.Name));
         writer.Append($" {authAlias} WHERE {authAlias}.");
-        writer.AppendQuoted(checkSpec.AuthObject.SubjectValueColumn.Value);
+        writer.AppendQuoted(authObject.SubjectValueColumn.Value);
         writer.Append(" = ");
         appendSubjectValue(writer);
         writer.Append($" AND {authAlias}.");
-        writer.AppendQuoted(checkSpec.AuthObject.ClaimEducationOrganizationIdColumn.Value);
+        writer.AppendQuoted(authObject.ClaimEducationOrganizationIdColumn.Value);
         AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
             writer,
             authorizationClaimParameterization

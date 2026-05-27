@@ -98,7 +98,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Should()
             .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Stored);
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject)
             .Should()
             .Equal(
                 RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
@@ -109,7 +109,7 @@ public class Given_RelationshipAuthorizationPlannerTests
                 )
             );
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject.AllowsDirectClaimMatch)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject.AllowsDirectClaimMatch)
             .Should()
             .OnlyContain(static allowsDirectClaimMatch => allowsDirectClaimMatch);
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(2, 2);
@@ -172,7 +172,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Should()
             .OnlyContain(static valueSource => valueSource == RelationshipAuthorizationValueSource.Proposed);
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject)
             .Should()
             .OnlyContain(static authObject =>
                 authObject.Equals(
@@ -182,7 +182,7 @@ public class Given_RelationshipAuthorizationPlannerTests
                 )
             );
         authorizedResult
-            .CheckSpecs.Select(static checkSpec => checkSpec.AuthObject.AllowsDirectClaimMatch)
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].AuthObject.AllowsDirectClaimMatch)
             .Should()
             .OnlyContain(static allowsDirectClaimMatch => allowsDirectClaimMatch);
         authorizedResult.CheckSpecs.Select(static checkSpec => checkSpec.Subjects.Count).Should().Equal(1, 1);
@@ -379,7 +379,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
         );
         var selectedSubject = CreateSelector()
-            .Select(mappingSet, resource, CreateSupportedStrategies(configuredAuthorizationStrategies))
+            .Select(mappingSet, resource, CreateSupportedStrategy(configuredAuthorizationStrategies[0]))
             .Subjects.Single();
         var writePlan = mappingSet.GetWritePlanOrThrow(resource);
         var rootTablePlan = GetRootTableWritePlan(writePlan);
@@ -446,6 +446,164 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_report_missing_people_auth_view_associations_when_proposed_check_spec_planning_fails()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(resource, SecurableElementKind.Student);
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            CreateWritePlan(mappingSet, resource)
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures.Should().HaveCount(2);
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations,
+                RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+            );
+
+        var missingAuthViewFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+        );
+        missingAuthViewFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        missingAuthViewFailure.AuthObject.Should().Be(expectedAuthObject);
+        missingAuthViewFailure.PersonMetadata.Should().NotBeNull();
+        missingAuthViewFailure
+            .PersonMetadata!.PersonKind.Should()
+            .Be(RelationshipAuthorizationPersonKind.Student);
+        missingAuthViewFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        missingAuthViewFailure
+            .Location?.AuthorizationObjectName.Should()
+            .Be(expectedAuthObject.Name.ToString());
+
+        var missingBindingFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+        );
+        missingBindingFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        missingBindingFailure.AuthObject.Should().Be(expectedAuthObject);
+        missingBindingFailure.PersonMetadata.Should().NotBeNull();
+        missingBindingFailure
+            .PersonMetadata!.PersonKind.Should()
+            .Be(RelationshipAuthorizationPersonKind.Student);
+        missingBindingFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        missingBindingFailure.Location?.Table.Should().Be(Table(resource.ResourceName));
+        missingBindingFailure.Location?.Column.Should().Be(AuthNames.StudentDocumentId);
+    }
+
+    [Test]
+    public void It_should_report_proposed_missing_bindings_when_independent_subject_selection_failures_exist()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedEdOrgStudentAuthorizationResource");
+        var mappingSet = CreateMixedUnresolvedEdOrgAndRootStudentSubjectMappingSet(resource);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            CreateWritePlan(mappingSet, resource)
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
+                RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+            );
+
+        var unresolvedFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+        );
+        unresolvedFailure.Location?.Kind.Should().Be(SecurableElementKind.EducationOrganization);
+        unresolvedFailure.Location?.JsonPath.Should().Be("$.missingSchoolReference.schoolId");
+
+        var missingBindingFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingProposedRootBinding
+        );
+        missingBindingFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        missingBindingFailure
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        missingBindingFailure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        missingBindingFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+    }
+
+    [Test]
+    public void It_should_report_proposed_missing_people_auth_view_associations_when_other_people_paths_are_unresolved()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "PartiallyResolvedStudentAuthorizationResource");
+        var mappingSet = CreatePartiallyResolvedStudentSubjectMappingSet(resource);
+        var expectedStudentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            CreateWritePlan(mappingSet, resource, AuthNames.StudentDocumentId)
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
+                RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+            );
+
+        var unresolvedFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+        );
+        unresolvedFailure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        unresolvedFailure.Location?.JsonPath.Should().Be("$.missingStudentReference.studentUniqueId");
+
+        var missingAuthViewFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+        );
+        missingAuthViewFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        missingAuthViewFailure.AuthObject.Should().Be(expectedStudentAuthObject);
+        missingAuthViewFailure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        missingAuthViewFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+    }
+
+    [Test]
     public void It_should_return_explicit_no_claims_results_before_parameterization()
     {
         (_, var mappingSet) = Ds52FixtureHelper.BuildAndCompile();
@@ -482,6 +640,1312 @@ public class Given_RelationshipAuthorizationPlannerTests
             );
         noClaimsResult.Failures[0].ConfiguredStrategy?.RawConfiguredIndex.Should().Be(0);
         noClaimsResult.Failures[0].RelationshipLocalOrder.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_return_people_no_claims_metadata_with_selected_auth_view_and_contributors()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(
+            resource,
+            SecurableElementKind.Student,
+            includeRequiredPeopleAuthAssociationResources: true
+        );
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        noClaimsResult.CheckSpecs.Should().ContainSingle();
+        noClaimsResult.Failures.Should().ContainSingle();
+
+        var failure = noClaimsResult.Failures[0];
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
+        failure.PersonMetadata.Path.Should().NotBeNull();
+        failure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        failure.Location?.ReadableName.Should().Be("StudentUniqueId");
+        failure.Location?.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
+        failure.Contributors.Should().ContainSingle();
+        failure.Contributors[0].Kind.Should().Be(SecurableElementKind.Student);
+        failure.Hint.Should().Contain(expectedAuthObject.Name.ToString());
+        failure.Hint.Should().Contain(expectedAuthObject.FailureHint);
+    }
+
+    [Test]
+    public void It_should_return_mixed_auth_object_no_claims_metadata_from_subject_auth_objects()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MixedAuthorizationResource");
+        var expectedEdOrgAuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Normal
+        );
+        var expectedStudentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        noClaimsResult.CheckSpecs.Should().ContainSingle();
+        noClaimsResult.CheckSpecs[0].Subjects.Should().HaveCount(2);
+        noClaimsResult
+            .Failures.Select(static failure => failure.AuthObject)
+            .Should()
+            .Equal(expectedEdOrgAuthObject, expectedStudentAuthObject);
+
+        var peopleFailure = noClaimsResult.Failures.Single(static failure =>
+            failure.PersonMetadata is not null
+        );
+
+        peopleFailure.PersonMetadata.Should().NotBeNull();
+        peopleFailure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        peopleFailure.PersonMetadata.AuthObject.Should().Be(expectedStudentAuthObject);
+        peopleFailure.PersonMetadata.Path.Should().NotBeNull();
+        peopleFailure
+            .Location?.AuthorizationObjectName.Should()
+            .Be(expectedStudentAuthObject.Name.ToString());
+        peopleFailure.Contributors.Should().ContainSingle();
+        peopleFailure.Hint.Should().Contain(expectedStudentAuthObject.FailureHint);
+    }
+
+    [Test]
+    public void It_should_keep_mixed_subject_ordinals_edorg_first_then_people_eligibility_order()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MixedPeopleOrdinalResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndPeopleSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        var subjects = noClaimsResult.CheckSpecs.Should().ContainSingle().Which.Subjects;
+
+        subjects
+            .Select(static subject => subject.Contributors.Single().Kind)
+            .Should()
+            .Equal(
+                SecurableElementKind.EducationOrganization,
+                SecurableElementKind.Student,
+                SecurableElementKind.Contact,
+                SecurableElementKind.Staff
+            );
+        subjects
+            .Select(static subject => subject.Column.Value)
+            .Should()
+            .Equal(
+                "SchoolReference_SchoolId",
+                "ZStudent_DocumentId",
+                "AContact_DocumentId",
+                "BStaff_DocumentId"
+            );
+        noClaimsResult
+            .Failures.Select(static failure => failure.AuthObject!.Name.Name)
+            .Should()
+            .Equal(
+                "EducationOrganizationIdToEducationOrganizationId",
+                "EducationOrganizationIdToStudentDocumentId",
+                "EducationOrganizationIdToContactDocumentId",
+                "EducationOrganizationIdToStaffDocumentId"
+            );
+    }
+
+    [Test]
+    public void It_should_collapse_homogeneous_people_no_claims_metadata_by_subject_auth_object()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MultipleStudentAuthorizationResource");
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMultipleStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        noClaimsResult.CheckSpecs.Should().ContainSingle();
+        noClaimsResult.CheckSpecs[0].Subjects.Should().HaveCount(2);
+        noClaimsResult.Failures.Should().ContainSingle();
+
+        var failure = noClaimsResult.Failures[0];
+
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
+        failure.PersonMetadata.Path.Should().NotBeNull();
+        failure
+            .Contributors.Select(static contributor => contributor.JsonPath)
+            .Should()
+            .Equal("$.studentReference.studentUniqueId", "$.alternateStudentReference.studentUniqueId");
+    }
+
+    [TestCaseSource(nameof(PeopleAuthViewSelectionCases))]
+    public void It_should_report_missing_people_auth_view_associations_for_selected_people_subjects(
+        SecurableElementKind securableElementKind,
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        string strategyName
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", $"{personKind}AuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(resource, securableElementKind);
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(authViewKind);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(strategyName),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var securityConfigurationError = (RelationshipAuthorizationResult.SecurityConfigurationError)result;
+
+        securityConfigurationError.Failures.Should().ContainSingle();
+
+        var failure = securityConfigurationError.Failures[0];
+        failure
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+        failure.ConfiguredStrategy?.StrategyName.Should().Be(strategyName);
+        failure.RelationshipLocalOrder.Should().Be(0);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure.AuthObject?.SubjectValueColumn.Should().Be(expectedAuthObject.SubjectValueColumn);
+        failure.AuthObject?.FailureHint.Should().Be(expectedAuthObject.FailureHint);
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(personKind);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
+        failure.Location?.Kind.Should().Be(securableElementKind);
+        failure.Location?.JsonPath.Should().Be(GetPersonReferenceJsonPath(securableElementKind));
+        failure.Location?.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
+        failure.Contributors.Should().ContainSingle();
+        failure.Contributors[0].Kind.Should().Be(securableElementKind);
+        failure.Hint.Should().Contain(resource.ResourceName);
+        failure.Hint.Should().Contain(strategyName);
+        failure.Hint.Should().Contain(personKind.ToString());
+        failure.Hint.Should().Contain(expectedAuthObject.Name.ToString());
+
+        foreach (var requiredResourceName in AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames)
+        {
+            failure.Hint.Should().Contain(requiredResourceName);
+        }
+    }
+
+    [Test]
+    public void It_should_report_missing_people_auth_views_when_auth_hierarchy_is_absent()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSetWithHierarchy = CreatePeopleSubjectMappingSet(
+            resource,
+            SecurableElementKind.Student,
+            includeRequiredPeopleAuthAssociationResources: true
+        );
+        var mappingSet = mappingSetWithHierarchy with
+        {
+            Model = mappingSetWithHierarchy.Model with { AuthEdOrgHierarchy = null },
+        };
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+        failure.Hint.Should().Contain("auth EducationOrganization hierarchy");
+        failure.Hint.Should().NotContain("missing required association resources");
+
+        foreach (var requiredResourceName in AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames)
+        {
+            failure.Hint.Should().NotContain(requiredResourceName);
+        }
+    }
+
+    [Test]
+    public void It_should_plan_people_auth_views_when_auth_hierarchy_and_required_associations_are_present()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreatePeopleSubjectMappingSet(
+                resource,
+                SecurableElementKind.Student,
+                includeRequiredPeopleAuthAssociationResources: true
+            ),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        var authorizedResult = result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>().Subject;
+
+        authorizedResult
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Which.Subjects.Should()
+            .ContainSingle()
+            .Which.AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_report_missing_people_auth_view_associations_with_independent_subject_selection_failures()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedEdOrgStudentAuthorizationResource");
+        var expectedStudentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedUnresolvedEdOrgAndRootStudentSubjectMappingSet(
+                resource,
+                includeRequiredPeopleAuthAssociationResources: false
+            ),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
+                RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+            );
+
+        var unresolvedFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+        );
+        unresolvedFailure.Location?.Kind.Should().Be(SecurableElementKind.EducationOrganization);
+        unresolvedFailure.Location?.JsonPath.Should().Be("$.missingSchoolReference.schoolId");
+
+        var missingAuthViewFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+        );
+        missingAuthViewFailure
+            .ConfiguredStrategy?.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople);
+        missingAuthViewFailure.RelationshipLocalOrder.Should().Be(0);
+        missingAuthViewFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        missingAuthViewFailure.AuthObject.Should().Be(expectedStudentAuthObject);
+        missingAuthViewFailure.PersonMetadata.Should().NotBeNull();
+        missingAuthViewFailure
+            .PersonMetadata!.PersonKind.Should()
+            .Be(RelationshipAuthorizationPersonKind.Student);
+        missingAuthViewFailure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        missingAuthViewFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        missingAuthViewFailure.Contributors.Should().ContainSingle();
+    }
+
+    [Test]
+    public void It_should_report_missing_people_auth_view_associations_when_other_people_paths_are_unresolved()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "PartiallyResolvedStudentAuthorizationResource");
+        var expectedStudentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreatePartiallyResolvedStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
+                RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+            );
+
+        var unresolvedFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+        );
+        unresolvedFailure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        unresolvedFailure.Location?.JsonPath.Should().Be("$.missingStudentReference.studentUniqueId");
+
+        var missingAuthViewFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+        );
+        missingAuthViewFailure
+            .ConfiguredStrategy?.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        missingAuthViewFailure.RelationshipLocalOrder.Should().Be(0);
+        missingAuthViewFailure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        missingAuthViewFailure.AuthObject.Should().Be(expectedStudentAuthObject);
+        missingAuthViewFailure.PersonMetadata.Should().NotBeNull();
+        missingAuthViewFailure
+            .PersonMetadata!.PersonKind.Should()
+            .Be(RelationshipAuthorizationPersonKind.Student);
+        missingAuthViewFailure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        missingAuthViewFailure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        missingAuthViewFailure
+            .Contributors.Should()
+            .ContainSingle()
+            .Which.JsonPath.Should()
+            .Be("$.studentReference.studentUniqueId");
+    }
+
+    [Test]
+    public void It_should_merge_missing_people_auth_view_association_contributors_for_the_same_auth_view()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MultipleStudentAuthorizationResource");
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMultipleStudentSubjectMappingSet(
+                resource,
+                includeRequiredPeopleAuthAssociationResources: false
+            ),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.Location?.JsonPath.Should().Be("$.studentReference.studentUniqueId");
+        failure
+            .Contributors.Select(static contributor => contributor.JsonPath)
+            .Should()
+            .Equal("$.studentReference.studentUniqueId", "$.alternateStudentReference.studentUniqueId");
+        failure
+            .Contributors.Select(static contributor => contributor.ReadableName)
+            .Should()
+            .Equal("StudentUniqueId", "StudentUniqueId");
+    }
+
+    [Test]
+    public void It_should_report_missing_people_auth_view_associations_once_per_people_strategy()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var studentAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var responsibilityAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreatePeopleSubjectMappingSet(resource, SecurableElementKind.Student),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures.Should().HaveCount(2);
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .OnlyContain(static failureKind =>
+                failureKind == RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
+            );
+        failures
+            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Equal(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
+            );
+        failures.Select(static failure => failure.RelationshipLocalOrder).Should().Equal(0, 1);
+        failures
+            .Select(static failure => failure.AuthObject)
+            .Should()
+            .Equal(studentAuthObject, responsibilityAuthObject);
+        failures
+            .SelectMany(static failure => failure.Contributors)
+            .Select(static contributor => contributor.JsonPath)
+            .Should()
+            .Equal("$.studentReference.studentUniqueId", "$.studentReference.studentUniqueId");
+    }
+
+    [Test]
+    public void It_should_continue_with_edorg_subjects_for_mixed_strategies_when_people_views_are_suppressed_but_no_people_subject_is_selected()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMultipleRootSubjectMappingSet(),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var authorized = (RelationshipAuthorizationResult.Authorized)result;
+
+        authorized.CheckSpecs.Should().ContainSingle();
+        authorized
+            .CheckSpecs[0]
+            .Subjects[0]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                )
+            );
+        authorized.CheckSpecs[0].Subjects.Should().HaveCount(2);
+        authorized.CheckSpecs[0].Subjects.Should().OnlyContain(static subject => !subject.IsPersonSubject);
+    }
+
+    [Test]
+    public void It_should_combine_edorg_and_people_subjects_inside_mixed_strategies()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MixedAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var authorized = (RelationshipAuthorizationResult.Authorized)result;
+
+        authorized.CheckSpecs.Should().ContainSingle();
+
+        var checkSpec = authorized.CheckSpecs[0];
+
+        checkSpec.ConfiguredStrategy.RawConfiguredIndex.Should().Be(0);
+        checkSpec.RelationshipLocalOrder.Should().Be(0);
+        checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                )
+            );
+        checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
+            .AuthObject.AllowsDirectClaimMatch.Should()
+            .BeTrue();
+        checkSpec.Subjects.Should().HaveCount(2);
+        checkSpec.Subjects.Count(static subject => !subject.IsPersonSubject).Should().Be(1);
+        checkSpec.Subjects.Count(static subject => subject.IsPersonSubject).Should().Be(1);
+
+        var personSubject = checkSpec.Subjects.Single(static subject => subject.IsPersonSubject);
+
+        personSubject.Column.Should().Be(AuthNames.StudentDocumentId);
+        personSubject
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_keep_person_auth_view_semantics_the_same_for_inverted_mixed_strategies()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MixedAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+
+        checkSpec.Direction.Should().Be(RelationshipAuthorizationHierarchyDirection.Inverted);
+        checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Inverted
+                )
+            );
+        checkSpec
+            .Subjects.Single(static subject => !subject.IsPersonSubject)
+            .AuthObject.AllowsDirectClaimMatch.Should()
+            .BeTrue();
+        checkSpec
+            .Subjects.Single(static subject => subject.IsPersonSubject)
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_plan_people_only_strategies_with_people_subjects()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreatePeopleSubjectMappingSet(
+                resource,
+                SecurableElementKind.Student,
+                includeRequiredPeopleAuthAssociationResources: true
+            ),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+
+        checkSpec
+            .Subjects[0]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        checkSpec.Subjects.Should().ContainSingle();
+        checkSpec.Subjects[0].IsPersonSubject.Should().BeTrue();
+        checkSpec
+            .Subjects[0]
+            .PersonMetadata!.PersonKind.Should()
+            .Be(RelationshipAuthorizationPersonKind.Student);
+    }
+
+    [Test]
+    public void It_should_plan_create_new_people_proposed_specs_with_root_row_anchors()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(
+            resource,
+            SecurableElementKind.Student,
+            includeRequiredPeopleAuthAssociationResources: true
+        );
+        var writePlan = CreateWritePlan(mappingSet, resource, AuthNames.StudentDocumentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+        var subject = checkSpec.Subjects.Should().ContainSingle().Subject;
+        var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)checkSpec.CheckTarget;
+
+        subject
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        subject.PersonMetadata!.ProposedAnchor.Should().NotBeNull();
+        subject
+            .PersonMetadata.ProposedAnchor!.Kind.Should()
+            .Be(RelationshipAuthorizationPersonProposedAnchorKind.RootRow);
+        subject.PersonMetadata.ProposedAnchor.Binding.Table.Should().Be(Table(resource.ResourceName));
+        subject.PersonMetadata.ProposedAnchor.Binding.Column.Should().Be(AuthNames.StudentDocumentId);
+        subject.PersonMetadata.ProposedAnchor.Binding.BindingIndex.Should().Be(0);
+        proposedTarget
+            .SubjectBindingsInOrder.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(subject.PersonMetadata.ProposedAnchor.Binding);
+    }
+
+    [Test]
+    public void It_should_plan_create_new_people_proposed_specs_with_first_hop_anchors_for_transitive_paths()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "CourseTranscript");
+        var mappingSet = CreateTransitiveCourseTranscriptStudentMappingSet(resource);
+        var writePlan = CreateWritePlan(mappingSet, resource, Col("StudentAcademicRecord_DocumentId"));
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+        var subject = checkSpec.Subjects.Should().ContainSingle().Subject;
+        var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)checkSpec.CheckTarget;
+
+        subject.Table.Should().Be(Table("StudentAcademicRecord"));
+        subject.Column.Should().Be(AuthNames.StudentDocumentId);
+        subject
+            .PersonMetadata!.Path.Kind.Should()
+            .Be(RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath);
+        subject
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        subject
+            .PersonMetadata.ProposedAnchor!.Kind.Should()
+            .Be(RelationshipAuthorizationPersonProposedAnchorKind.FirstHop);
+        subject.PersonMetadata.ProposedAnchor.Binding.Table.Should().Be(Table("CourseTranscript"));
+        subject
+            .PersonMetadata.ProposedAnchor.Binding.Column.Should()
+            .Be(Col("StudentAcademicRecord_DocumentId"));
+        subject.PersonMetadata.ProposedAnchor.Binding.BindingIndex.Should().Be(0);
+        proposedTarget
+            .SubjectBindingsInOrder.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(subject.PersonMetadata.ProposedAnchor.Binding);
+    }
+
+    [TestCaseSource(nameof(SelfPersonExistingResourceCases))]
+    public void It_should_plan_existing_resource_self_person_proposed_specs_with_target_document_id_anchors(
+        SecurableElementKind securableElementKind,
+        string strategyName
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind));
+        var mappingSet = CreateSelfPersonMappingSet(securableElementKind);
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(strategyName),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.ProposedValues.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result.ProposedValues)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+        var subject = checkSpec.Subjects.Should().ContainSingle().Subject;
+        var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)checkSpec.CheckTarget;
+
+        subject
+            .PersonMetadata!.Path.Kind.Should()
+            .Be(RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId);
+        subject
+            .PersonMetadata.ProposedAnchor!.Kind.Should()
+            .Be(RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId);
+        subject.PersonMetadata.ProposedAnchor.Binding.Table.Should().Be(Table(resource.ResourceName));
+        subject.PersonMetadata.ProposedAnchor.Binding.Column.Should().Be(_documentId);
+        subject.PersonMetadata.ProposedAnchor.Binding.BindingIndex.Should().Be(0);
+        proposedTarget
+            .SubjectBindingsInOrder.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(subject.PersonMetadata.ProposedAnchor.Binding);
+    }
+
+    [Test]
+    public void It_should_mark_self_person_create_new_subjects_ineligible_when_no_subject_can_execute()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = CreateSelfPersonMappingSet(SecurableElementKind.Student);
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoExecutableSubjects);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        failure
+            .IneligibleSubjects.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(
+                RelationshipAuthorizationSubjectIneligibilityReason.SelfPersonDocumentIdUnavailableForCreateNew
+            );
+        failure.Hint.Should().Contain("SelfPersonDocumentIdUnavailableForCreateNew");
+    }
+
+    [Test]
+    public void It_should_preserve_skipped_child_collection_people_metadata_when_no_subject_can_execute()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = CreateStudentSelfPersonAndChildStudentMappingSet();
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoExecutableSubjects);
+        failure
+            .IneligibleSubjects.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(
+                RelationshipAuthorizationSubjectIneligibilityReason.SelfPersonDocumentIdUnavailableForCreateNew
+            );
+
+        var skippedContributor = failure.SkippedContributors.Should().ContainSingle().Subject;
+
+        skippedContributor.JsonPath.Should().Be("$.studentReferences[*].studentReference.studentUniqueId");
+        skippedContributor.ReadableName.Should().Be("StudentUniqueId");
+        skippedContributor
+            .Reason.Should()
+            .Be(RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope);
+        skippedContributor.Table.Should().Be(Table("StudentStudentReference"));
+        skippedContributor.Column.Should().Be(Col("StudentReference_DocumentId"));
+    }
+
+    [Test]
+    public void It_should_not_report_missing_people_auth_view_associations_for_ineligible_self_person_create_new_subjects()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = CreateSelfPersonMappingSet(
+            SecurableElementKind.Student,
+            includeRequiredPeopleAuthAssociationResources: false
+        );
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures.Should().ContainSingle();
+        failures[0].FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoExecutableSubjects);
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .NotContain(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+    }
+
+    [Test]
+    public void It_should_not_report_missing_people_auth_view_associations_for_ineligible_self_person_create_new_subjects_when_subject_selection_fails()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = CreateSelfPersonAndUnresolvedStudentMappingSet(
+            includeRequiredPeopleAuthAssociationResources: false
+        );
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failures = ((RelationshipAuthorizationResult.SecurityConfigurationError)result).Failures;
+
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
+                RelationshipAuthorizationFailureKind.NoExecutableSubjects
+            );
+        failures
+            .Select(static failure => failure.FailureKind)
+            .Should()
+            .NotContain(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+
+        var unresolvedFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
+        );
+        unresolvedFailure.Location?.Kind.Should().Be(SecurableElementKind.Student);
+        unresolvedFailure.Location?.JsonPath.Should().Be("$.missingStudentReference.studentUniqueId");
+
+        var noExecutableSubjectsFailure = failures.Single(static failure =>
+            failure.FailureKind is RelationshipAuthorizationFailureKind.NoExecutableSubjects
+        );
+        noExecutableSubjectsFailure
+            .IneligibleSubjects.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(
+                RelationshipAuthorizationSubjectIneligibilityReason.SelfPersonDocumentIdUnavailableForCreateNew
+            );
+    }
+
+    [Test]
+    public void It_should_omit_self_person_create_new_subjects_when_another_strategy_subject_can_execute()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = CreateStudentSelfPersonAndEdOrgMappingSet();
+        var writePlan = CreateWritePlan(mappingSet, resource, Col("SchoolId"));
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+        var proposedTarget = (RelationshipAuthorizationCheckTarget.Proposed)checkSpec.CheckTarget;
+
+        checkSpec.Subjects.Should().ContainSingle().Which.IsPersonSubject.Should().BeFalse();
+        proposedTarget.SubjectBindingsInOrder.Should().ContainSingle();
+        checkSpec
+            .IneligibleSubjects.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(
+                RelationshipAuthorizationSubjectIneligibilityReason.SelfPersonDocumentIdUnavailableForCreateNew
+            );
+    }
+
+    [Test]
+    public void It_should_continue_with_people_subjects_for_mixed_strategies_when_edorg_paths_are_non_root()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "ChildEdOrgStudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedChildEdOrgAndRootStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+
+        checkSpec.Subjects.Should().ContainSingle();
+        checkSpec.Subjects[0].IsPersonSubject.Should().BeTrue();
+        checkSpec
+            .Subjects[0]
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_preserve_skipped_child_collection_people_metadata_when_mixed_strategy_remains_executable()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "RootEdOrgChildStudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndChildStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+
+        checkSpec.Subjects.Should().ContainSingle().Which.IsPersonSubject.Should().BeFalse();
+
+        var skippedContributor = checkSpec.SkippedContributors.Should().ContainSingle().Subject;
+
+        skippedContributor.Kind.Should().Be(SecurableElementKind.Student);
+        skippedContributor.JsonPath.Should().Be("$.studentReferences[*].studentReference.studentUniqueId");
+        skippedContributor.ReadableName.Should().Be("StudentUniqueId");
+        skippedContributor.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        skippedContributor
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        skippedContributor
+            .Reason.Should()
+            .Be(RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope);
+        skippedContributor.Table.Should().Be(Table($"{resource.ResourceName}StudentReference"));
+        skippedContributor.Column.Should().Be(Col("StudentReference_DocumentId"));
+    }
+
+    [Test]
+    public void It_should_keep_people_only_child_collection_paths_as_no_applicable_subject_failures()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "ChildStudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateChildStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoApplicableRootSubject);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location.JsonPath.Should().Be("$.studentReferences[*].studentReference.studentUniqueId");
+        failure
+            .SkippedContributors.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope);
+    }
+
+    [Test]
+    public void It_should_keep_unresolved_securable_elements_as_security_configuration_failures()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedEdOrgStudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedUnresolvedEdOrgAndRootStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.UnresolvedSecurableElement);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.EducationOrganization);
+        failure.Location.JsonPath.Should().Be("$.missingSchoolReference.schoolId");
+        failure
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_preserve_unresolved_people_contribution_order_after_planner_failure_aggregation()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedStudentCarrier");
+        const string firstConfiguredPath = "$.zStudentReference.studentUniqueId";
+        const string secondConfiguredPath = "$.aStudentReference.studentUniqueId";
+        var mappingSet = CreateUnresolvedStudentPathOrderingMappingSet(
+            resource,
+            firstConfiguredPath,
+            secondConfiguredPath
+        );
+        var configuredStrategies = CreateConfiguredAuthorizationStrategies(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        );
+        var authorizationContext = new RelationalAuthorizationContext([42L], []);
+        var writePlan = CreateMinimalWritePlan(mappingSet, resource);
+        var planner = CreatePlanner();
+
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(
+                planner.PlanStoredValues(mappingSet, resource, configuredStrategies, authorizationContext)
+            ),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(
+                planner.PlanProposedValues(
+                    mappingSet,
+                    resource,
+                    configuredStrategies,
+                    authorizationContext,
+                    writePlan
+                )
+            ),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+
+        var updatePlan = planner.PlanUpdateValues(
+            mappingSet,
+            resource,
+            configuredStrategies,
+            authorizationContext,
+            writePlan
+        );
+
+        AssertUnresolvedPeopleFailureOrder(
+            updatePlan.SecurityConfigurationFailures,
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(updatePlan.StoredValues),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+        AssertUnresolvedPeopleFailureOrder(
+            GetSecurityConfigurationFailures(updatePlan.ProposedValues),
+            (firstConfiguredPath, 0),
+            (secondConfiguredPath, 1)
+        );
+    }
+
+    [Test]
+    public void It_should_preserve_duplicate_people_strategies_as_separate_or_entries()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreatePeopleSubjectMappingSet(
+                resource,
+                SecurableElementKind.Student,
+                includeRequiredPeopleAuthAssociationResources: true
+            ),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var authorized = (RelationshipAuthorizationResult.Authorized)result;
+
+        authorized.CheckSpecs.Should().HaveCount(2);
+        authorized
+            .CheckSpecs.Select(static checkSpec => checkSpec.ConfiguredStrategy.RawConfiguredIndex)
+            .Should()
+            .Equal(0, 1);
+        authorized
+            .CheckSpecs.Select(static checkSpec => checkSpec.RelationshipLocalOrder)
+            .Should()
+            .Equal(0, 1);
+        authorized.CheckSpecs.Should().OnlyContain(static checkSpec => checkSpec.Subjects.Count == 1);
+        authorized
+            .CheckSpecs.Select(static checkSpec => checkSpec.Subjects[0].Column)
+            .Should()
+            .Equal(AuthNames.StudentDocumentId, AuthNames.StudentDocumentId);
     }
 
     [Test]
@@ -656,6 +2120,44 @@ public class Given_RelationshipAuthorizationPlannerTests
             .SecurityConfigurationFailures.Select(static failure => failure.ValueSource)
             .Should()
             .Equal((RelationshipAuthorizationValueSource?)null, null);
+    }
+
+    [Test]
+    public void It_should_not_duplicate_no_applicable_people_failures_from_selector()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentlessAuthorizationResource");
+        var expectedAuthObject = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoApplicableRootSubject);
+        failure
+            .ConfiguredStrategy?.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        failure.RelationshipLocalOrder.Should().Be(0);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        failure.AuthObject.Should().Be(expectedAuthObject);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location.AuthorizationObjectName.Should().Be(expectedAuthObject.Name.ToString());
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.PersonMetadata.AuthObject.Should().Be(expectedAuthObject);
     }
 
     [Test]
@@ -880,6 +2382,542 @@ public class Given_RelationshipAuthorizationPlannerTests
         );
     }
 
+    private static MappingSet CreateMixedRootEdOrgAndStudentSubjectMappingSet(QualifiedResourceName resource)
+    {
+        const string schoolIdPath = "$.schoolReference.schoolId";
+        const string studentPath = "$.studentReference.studentUniqueId";
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    Col("SchoolReference_SchoolId"),
+                    ColumnKind.Scalar,
+                    null,
+                    false,
+                    Path(schoolIdPath),
+                    null
+                ),
+                new DbColumnModel(
+                    AuthNames.StudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(studentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+
+        return CreateMixedEdOrgAndStudentMappingSet(
+            resource,
+            rootTable,
+            [],
+            schoolIdPath,
+            "SchoolId",
+            studentPath
+        );
+    }
+
+    private static MappingSet CreateMixedRootEdOrgAndPeopleSubjectMappingSet(QualifiedResourceName resource)
+    {
+        const string schoolIdPath = "$.schoolReference.schoolId";
+        const string studentPath = "$.zStudentReference.studentUniqueId";
+        const string contactPath = "$.aContactReference.contactUniqueId";
+        const string staffPath = "$.bStaffReference.staffUniqueId";
+        var studentDocumentIdColumn = Col("ZStudent_DocumentId");
+        var contactDocumentIdColumn = Col("AContact_DocumentId");
+        var staffDocumentIdColumn = Col("BStaff_DocumentId");
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    Col("SchoolReference_SchoolId"),
+                    ColumnKind.Scalar,
+                    null,
+                    false,
+                    Path(schoolIdPath),
+                    null
+                ),
+                CreatePersonDocumentIdColumn(
+                    studentDocumentIdColumn,
+                    studentPath,
+                    SecurableElementKind.Student
+                ),
+                CreatePersonDocumentIdColumn(
+                    contactDocumentIdColumn,
+                    contactPath,
+                    SecurableElementKind.Contact
+                ),
+                CreatePersonDocumentIdColumn(staffDocumentIdColumn, staffPath, SecurableElementKind.Staff),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [
+                    CreatePersonReferenceBinding(
+                        rootTable,
+                        studentDocumentIdColumn,
+                        studentPath,
+                        SecurableElementKind.Student
+                    ),
+                    CreatePersonReferenceBinding(
+                        rootTable,
+                        contactDocumentIdColumn,
+                        contactPath,
+                        SecurableElementKind.Contact
+                    ),
+                    CreatePersonReferenceBinding(
+                        rootTable,
+                        staffDocumentIdColumn,
+                        staffPath,
+                        SecurableElementKind.Staff
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements(
+                [new EdOrgSecurableElement(schoolIdPath, "SchoolId")],
+                [],
+                [studentPath],
+                [contactPath],
+                [staffPath]
+            )
+        );
+
+        return CreateMappingSet([
+            concreteResource,
+            CreatePersonResource(SecurableElementKind.Student),
+            CreatePersonResource(SecurableElementKind.Contact),
+            CreatePersonResource(SecurableElementKind.Staff),
+            .. CreateRequiredPeopleAuthAssociationResources(),
+        ]);
+    }
+
+    private static MappingSet CreateMixedChildEdOrgAndRootStudentSubjectMappingSet(
+        QualifiedResourceName resource
+    )
+    {
+        const string schoolIdPath = "$.schools[*].schoolReference.schoolId";
+        const string studentPath = "$.studentReference.studentUniqueId";
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    AuthNames.StudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(studentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var childTable = CreateChildTable(
+            Table($"{resource.ResourceName}School"),
+            "$.schools[*]",
+            [
+                new DbColumnModel(
+                    Col("SchoolReference_SchoolId"),
+                    ColumnKind.Scalar,
+                    null,
+                    false,
+                    Path(schoolIdPath),
+                    null
+                ),
+            ]
+        );
+
+        return CreateMixedEdOrgAndStudentMappingSet(
+            resource,
+            rootTable,
+            [childTable],
+            schoolIdPath,
+            "SchoolId",
+            studentPath
+        );
+    }
+
+    private static MappingSet CreateMixedRootEdOrgAndChildStudentSubjectMappingSet(
+        QualifiedResourceName resource
+    ) => CreateChildStudentSubjectMappingSet(resource, includeRootEdOrgSubject: true);
+
+    private static MappingSet CreateChildStudentSubjectMappingSet(
+        QualifiedResourceName resource,
+        bool includeRootEdOrgSubject = false
+    )
+    {
+        const string schoolIdPath = "$.schoolReference.schoolId";
+        const string childStudentPath = "$.studentReferences[*].studentReference.studentUniqueId";
+        var childTableName = Table($"{resource.ResourceName}StudentReference");
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            includeRootEdOrgSubject
+                ?
+                [
+                    new DbColumnModel(
+                        Col("SchoolReference_SchoolId"),
+                        ColumnKind.Scalar,
+                        null,
+                        false,
+                        Path(schoolIdPath),
+                        null
+                    ),
+                ]
+                : []
+        );
+        var childTable = CreateChildTable(
+            childTableName,
+            "$.studentReferences[*]",
+            [
+                new DbColumnModel(
+                    Col("StudentReference_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(childStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [childTable],
+                [
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(childStudentPath)),
+                        childTableName,
+                        Col("StudentReference_DocumentId"),
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(childStudentPath),
+                                Path(childStudentPath),
+                                Col("StudentUniqueId")
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements(
+                includeRootEdOrgSubject ? [new EdOrgSecurableElement(schoolIdPath, "SchoolId")] : [],
+                [],
+                [childStudentPath],
+                [],
+                []
+            )
+        );
+
+        return CreateMappingSet([
+            concreteResource,
+            CreatePersonResource(SecurableElementKind.Student),
+            .. CreateRequiredPeopleAuthAssociationResources(),
+        ]);
+    }
+
+    private static MappingSet CreateMixedUnresolvedEdOrgAndRootStudentSubjectMappingSet(
+        QualifiedResourceName resource,
+        bool includeRequiredPeopleAuthAssociationResources = true
+    )
+    {
+        const string schoolIdPath = "$.missingSchoolReference.schoolId";
+        const string studentPath = "$.studentReference.studentUniqueId";
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    AuthNames.StudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(studentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+
+        return CreateMixedEdOrgAndStudentMappingSet(
+            resource,
+            rootTable,
+            [],
+            schoolIdPath,
+            "MissingSchoolId",
+            studentPath,
+            includeRequiredPeopleAuthAssociationResources
+        );
+    }
+
+    private static MappingSet CreateTransitiveCourseTranscriptStudentMappingSet(
+        QualifiedResourceName courseTranscript
+    )
+    {
+        const string courseTranscriptStudentPath = "$.studentAcademicRecordReference.studentUniqueId";
+        const string studentAcademicRecordStudentPath = "$.studentReference.studentUniqueId";
+
+        var courseTranscriptRoot = CreateRootTable(
+            Table(courseTranscript.ResourceName),
+            [
+                new DbColumnModel(
+                    Col("StudentAcademicRecord_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(courseTranscriptStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "StudentAcademicRecord")
+                ),
+            ]
+        );
+        var courseTranscriptModel = CreateModelWithTables(
+            courseTranscript.ResourceName,
+            courseTranscriptRoot,
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    Path("$.studentAcademicRecordReference"),
+                    courseTranscriptRoot.Table,
+                    Col("StudentAcademicRecord_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "StudentAcademicRecord"),
+                    [
+                        new ReferenceIdentityBinding(
+                            Path(courseTranscriptStudentPath),
+                            Path(courseTranscriptStudentPath),
+                            Col("StudentAcademicRecord_StudentUniqueId")
+                        ),
+                    ]
+                ),
+            ]
+        );
+        var studentAcademicRecordRoot = CreateRootTable(
+            Table("StudentAcademicRecord"),
+            [
+                new DbColumnModel(
+                    AuthNames.StudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(studentAcademicRecordStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var studentAcademicRecordModel = CreateModelWithTables(
+            "StudentAcademicRecord",
+            studentAcademicRecordRoot,
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    Path("$.studentReference"),
+                    studentAcademicRecordRoot.Table,
+                    AuthNames.StudentDocumentId,
+                    new QualifiedResourceName("Ed-Fi", "Student"),
+                    [
+                        new ReferenceIdentityBinding(
+                            Path(studentAcademicRecordStudentPath),
+                            Path(studentAcademicRecordStudentPath),
+                            Col("Student_StudentUniqueId")
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        return CreateMappingSet([
+            CreateConcrete(
+                courseTranscript.ResourceName,
+                courseTranscriptModel,
+                new ResourceSecurableElements([], [], [courseTranscriptStudentPath], [], [])
+            ),
+            CreateConcrete(
+                "StudentAcademicRecord",
+                studentAcademicRecordModel,
+                new ResourceSecurableElements([], [], [studentAcademicRecordStudentPath], [], [])
+            ),
+            CreatePersonResource(SecurableElementKind.Student),
+            .. CreateRequiredPeopleAuthAssociationResources(),
+        ]);
+    }
+
+    private static MappingSet CreateSelfPersonMappingSet(
+        SecurableElementKind securableElementKind,
+        bool includeRequiredPeopleAuthAssociationResources = true
+    )
+    {
+        List<ConcreteResourceModel> concreteResources = [CreatePersonResource(securableElementKind)];
+
+        if (includeRequiredPeopleAuthAssociationResources)
+        {
+            concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources());
+        }
+
+        return CreateMappingSet(concreteResources);
+    }
+
+    private static MappingSet CreateSelfPersonAndUnresolvedStudentMappingSet(
+        bool includeRequiredPeopleAuthAssociationResources = true
+    )
+    {
+        const string missingStudentPath = "$.missingStudentReference.studentUniqueId";
+        List<ConcreteResourceModel> concreteResources =
+        [
+            CreateConcrete(
+                "Student",
+                CreateModelWithTables("Student", CreateRootTable(Table("Student")), []),
+                new ResourceSecurableElements(
+                    [],
+                    [],
+                    [GetPersonSelfJsonPath(SecurableElementKind.Student), missingStudentPath],
+                    [],
+                    []
+                )
+            ),
+        ];
+
+        if (includeRequiredPeopleAuthAssociationResources)
+        {
+            concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources());
+        }
+
+        return CreateMappingSet(concreteResources);
+    }
+
+    private static MappingSet CreateStudentSelfPersonAndChildStudentMappingSet()
+    {
+        const string childStudentPath = "$.studentReferences[*].studentReference.studentUniqueId";
+        var childTableName = Table("StudentStudentReference");
+        var childTable = CreateChildTable(
+            childTableName,
+            "$.studentReferences[*]",
+            [
+                new DbColumnModel(
+                    Col("StudentReference_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(childStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+
+        return CreateMappingSet(
+            CreateConcrete(
+                "Student",
+                CreateModelWithTables(
+                    "Student",
+                    CreateRootTable(Table("Student")),
+                    [childTable],
+                    [
+                        new DocumentReferenceBinding(
+                            true,
+                            Path(GetReferenceObjectPath(childStudentPath)),
+                            childTableName,
+                            Col("StudentReference_DocumentId"),
+                            new QualifiedResourceName("Ed-Fi", "Student"),
+                            [
+                                new ReferenceIdentityBinding(
+                                    Path(childStudentPath),
+                                    Path(childStudentPath),
+                                    Col("StudentUniqueId")
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+                new ResourceSecurableElements(
+                    [],
+                    [],
+                    [GetPersonSelfJsonPath(SecurableElementKind.Student), childStudentPath],
+                    [],
+                    []
+                )
+            )
+        );
+    }
+
+    private static MappingSet CreateStudentSelfPersonAndEdOrgMappingSet()
+    {
+        const string schoolIdPath = "$.schoolReference.schoolId";
+        var rootTable = CreateRootTable(
+            Table("Student"),
+            [new DbColumnModel(Col("SchoolId"), ColumnKind.Scalar, null, false, Path(schoolIdPath), null)]
+        );
+
+        return CreateMappingSet(
+            CreateConcrete(
+                "Student",
+                CreateModelWithTables("Student", rootTable, []),
+                new ResourceSecurableElements(
+                    [new EdOrgSecurableElement(schoolIdPath, "SchoolId")],
+                    [],
+                    [GetPersonSelfJsonPath(SecurableElementKind.Student)],
+                    [],
+                    []
+                )
+            )
+        );
+    }
+
+    private static MappingSet CreateMixedEdOrgAndStudentMappingSet(
+        QualifiedResourceName resource,
+        DbTableModel rootTable,
+        IReadOnlyList<DbTableModel> childTables,
+        string schoolIdPath,
+        string schoolIdReadableName,
+        string studentPath,
+        bool includeRequiredPeopleAuthAssociationResources = true
+    )
+    {
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                childTables,
+                [
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(studentPath)),
+                        rootTable.Table,
+                        AuthNames.StudentDocumentId,
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(studentPath),
+                                Path(studentPath),
+                                Col("StudentUniqueId")
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements(
+                [new EdOrgSecurableElement(schoolIdPath, schoolIdReadableName)],
+                [],
+                [studentPath],
+                [],
+                []
+            )
+        );
+
+        List<ConcreteResourceModel> concreteResources =
+        [
+            concreteResource,
+            CreatePersonResource(SecurableElementKind.Student),
+        ];
+
+        if (includeRequiredPeopleAuthAssociationResources)
+        {
+            concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources());
+        }
+
+        return CreateMappingSet(concreteResources);
+    }
+
     private static MappingSet CreateMinimalMappingSet(QualifiedResourceName resource) =>
         CreateMappingSet(
             CreateConcrete(
@@ -892,6 +2930,293 @@ public class Given_RelationshipAuthorizationPlannerTests
                 new ResourceSecurableElements([], [], [], [], [])
             )
         );
+
+    private static DbColumnModel CreatePersonDocumentIdColumn(
+        DbColumnName documentIdColumn,
+        string jsonPath,
+        SecurableElementKind securableElementKind
+    ) =>
+        new(
+            documentIdColumn,
+            ColumnKind.DocumentFk,
+            null,
+            false,
+            Path(jsonPath),
+            new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind))
+        );
+
+    private static DocumentReferenceBinding CreatePersonReferenceBinding(
+        DbTableModel rootTable,
+        DbColumnName documentIdColumn,
+        string jsonPath,
+        SecurableElementKind securableElementKind
+    ) =>
+        new(
+            true,
+            Path(GetReferenceObjectPath(jsonPath)),
+            rootTable.Table,
+            documentIdColumn,
+            new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind)),
+            [
+                new ReferenceIdentityBinding(
+                    Path(jsonPath),
+                    Path(jsonPath),
+                    Col($"{GetPersonResourceName(securableElementKind)}UniqueId")
+                ),
+            ]
+        );
+
+    private static MappingSet CreatePeopleSubjectMappingSet(
+        QualifiedResourceName resource,
+        SecurableElementKind securableElementKind,
+        bool includeRequiredPeopleAuthAssociationResources = false
+    )
+    {
+        var personReferenceJsonPath = GetPersonReferenceJsonPath(securableElementKind);
+        var personDocumentIdColumn = GetPersonDocumentIdColumn(securableElementKind);
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    personDocumentIdColumn,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(personReferenceJsonPath),
+                    new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind))
+                ),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(personReferenceJsonPath)),
+                        rootTable.Table,
+                        personDocumentIdColumn,
+                        new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind)),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(personReferenceJsonPath),
+                                Path(personReferenceJsonPath),
+                                Col($"{GetPersonResourceName(securableElementKind)}UniqueId")
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            CreatePersonSecurableElements(securableElementKind)
+        );
+        List<ConcreteResourceModel> concreteResources =
+        [
+            concreteResource,
+            CreatePersonResource(securableElementKind),
+        ];
+
+        if (includeRequiredPeopleAuthAssociationResources)
+        {
+            concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources());
+        }
+
+        return CreateMappingSet(
+            concreteResources,
+            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>
+            {
+                [resource] =
+                [
+                    new ResolvedSecurableElementPath(
+                        securableElementKind,
+                        [
+                            new ColumnPathStep(
+                                rootTable.Table,
+                                personDocumentIdColumn,
+                                Table(GetPersonResourceName(securableElementKind)),
+                                _documentId
+                            ),
+                        ]
+                    ),
+                ],
+            }
+        );
+    }
+
+    private static MappingSet CreatePartiallyResolvedStudentSubjectMappingSet(QualifiedResourceName resource)
+    {
+        const string studentPath = "$.studentReference.studentUniqueId";
+        const string missingStudentPath = "$.missingStudentReference.studentUniqueId";
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    AuthNames.StudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(studentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(studentPath)),
+                        rootTable.Table,
+                        AuthNames.StudentDocumentId,
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(studentPath),
+                                Path(studentPath),
+                                Col("StudentUniqueId")
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements([], [], [studentPath, missingStudentPath], [], [])
+        );
+
+        return CreateMappingSet([concreteResource, CreatePersonResource(SecurableElementKind.Student)]);
+    }
+
+    private static MappingSet CreateUnresolvedStudentPathOrderingMappingSet(
+        QualifiedResourceName resource,
+        string firstConfiguredPath,
+        string secondConfiguredPath
+    ) =>
+        CreateMappingSet(
+            CreateConcrete(
+                resource.ResourceName,
+                CreateModelWithTables(
+                    resource.ResourceName,
+                    CreateRootTable(Table(resource.ResourceName)),
+                    []
+                ),
+                new ResourceSecurableElements([], [], [firstConfiguredPath, secondConfiguredPath], [], [])
+            )
+        );
+
+    private static MappingSet CreateMultipleStudentSubjectMappingSet(
+        QualifiedResourceName resource,
+        bool includeRequiredPeopleAuthAssociationResources = true
+    )
+    {
+        const string studentPath = "$.studentReference.studentUniqueId";
+        const string alternateStudentPath = "$.alternateStudentReference.studentUniqueId";
+        var alternateStudentDocumentId = Col("AlternateStudent_DocumentId");
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    AuthNames.StudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(studentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+                new DbColumnModel(
+                    alternateStudentDocumentId,
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(alternateStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(studentPath)),
+                        rootTable.Table,
+                        AuthNames.StudentDocumentId,
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(studentPath),
+                                Path(studentPath),
+                                Col("StudentUniqueId")
+                            ),
+                        ]
+                    ),
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(alternateStudentPath)),
+                        rootTable.Table,
+                        alternateStudentDocumentId,
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(alternateStudentPath),
+                                Path(alternateStudentPath),
+                                Col("AlternateStudentUniqueId")
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements([], [], [studentPath, alternateStudentPath], [], [])
+        );
+
+        List<ConcreteResourceModel> concreteResources =
+        [
+            concreteResource,
+            CreatePersonResource(SecurableElementKind.Student),
+        ];
+
+        if (includeRequiredPeopleAuthAssociationResources)
+        {
+            concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources());
+        }
+
+        return CreateMappingSet(
+            concreteResources,
+            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>
+            {
+                [resource] =
+                [
+                    new ResolvedSecurableElementPath(
+                        SecurableElementKind.Student,
+                        [
+                            new ColumnPathStep(
+                                rootTable.Table,
+                                AuthNames.StudentDocumentId,
+                                Table("Student"),
+                                _documentId
+                            ),
+                        ]
+                    ),
+                    new ResolvedSecurableElementPath(
+                        SecurableElementKind.Student,
+                        [
+                            new ColumnPathStep(
+                                rootTable.Table,
+                                alternateStudentDocumentId,
+                                Table("Student"),
+                                _documentId
+                            ),
+                        ]
+                    ),
+                ],
+            }
+        );
+    }
 
     private static ResourceWritePlan CreateMinimalWritePlan(
         MappingSet mappingSet,
@@ -916,6 +3241,67 @@ public class Given_RelationshipAuthorizationPlannerTests
         );
     }
 
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> GetSecurityConfigurationFailures(
+        RelationshipAuthorizationResult result
+    ) =>
+        result
+            .Should()
+            .BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+            .Subject.Failures;
+
+    private static void AssertUnresolvedPeopleFailureOrder(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures,
+        params (string JsonPath, int ContributionOrder)[] expectedOrder
+    ) =>
+        failures
+            .Select(static failure =>
+                (failure.Location!.JsonPath!, failure.Contributors.Single().ContributionOrder)
+            )
+            .Should()
+            .Equal(expectedOrder);
+
+    private static ResourceWritePlan CreateWritePlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        params DbColumnName[] rootColumns
+    )
+    {
+        var relationalModel = mappingSet.GetConcreteResourceModelOrThrow(resource).RelationalModel;
+        var rootColumnByName = relationalModel.Root.Columns.ToDictionary(
+            static column => column.ColumnName,
+            static column => column
+        );
+        var columnBindings = rootColumns
+            .Select(
+                (column, index) =>
+                    new WriteColumnBinding(
+                        rootColumnByName.TryGetValue(column, out var columnModel)
+                            ? columnModel
+                            : new DbColumnModel(column, ColumnKind.ParentKeyPart, null, false, null, null),
+                        column.Equals(_documentId)
+                            ? new WriteValueSource.DocumentId()
+                            : new WriteValueSource.DocumentReference(index),
+                        column.Value
+                    )
+            )
+            .ToArray();
+
+        return new ResourceWritePlan(
+            relationalModel,
+            [
+                new TableWritePlan(
+                    relationalModel.Root,
+                    "",
+                    null,
+                    null,
+                    new BulkInsertBatchingInfo(1, columnBindings.Length, columnBindings.Length),
+                    columnBindings,
+                    []
+                ),
+            ]
+        );
+    }
+
     private static TableWritePlan GetRootTableWritePlan(ResourceWritePlan writePlan) =>
         writePlan.TablePlansInDependencyOrder.Single(static plan =>
             plan.TableModel.IdentityMetadata.TableKind is DbTableKind.Root
@@ -930,20 +3316,16 @@ public class Given_RelationshipAuthorizationPlannerTests
             ),
         ];
 
-    private static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> CreateSupportedStrategies(
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    private static SupportedRelationshipAuthorizationStrategy CreateSupportedStrategy(
+        ConfiguredAuthorizationStrategy configuredStrategy
     ) =>
-        [
-            .. configuredAuthorizationStrategies.Select(
-                static (configuredStrategy, relationshipLocalOrder) =>
-                    new SupportedRelationshipAuthorizationStrategy(
-                        RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        RelationshipAuthorizationHierarchyDirection.Normal,
-                        configuredStrategy,
-                        relationshipLocalOrder
-                    )
-            ),
-        ];
+        new(
+            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            configuredStrategy,
+            0,
+            [new(SecurableElementKind.EducationOrganization)]
+        );
 
     private static DbTableName Table(string name) => new(_edfiSchema, name);
 
@@ -975,9 +3357,38 @@ public class Given_RelationshipAuthorizationPlannerTests
             ),
         };
 
+    private static DbTableModel CreateChildTable(
+        DbTableName table,
+        string jsonScope,
+        IReadOnlyList<DbColumnModel>? columns = null
+    ) =>
+        new(
+            table,
+            Path(jsonScope),
+            new TableKey($"PK_{table.Name}", [new DbKeyColumn(Col("CollectionItemId"), ColumnKind.Scalar)]),
+            columns ?? [],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [Col("CollectionItemId")],
+                [_documentId],
+                [],
+                []
+            ),
+        };
+
     private static RelationalResourceModel CreateModelWithTables(
         string resource,
         DbTableModel rootTable,
+        IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings
+    ) => CreateModelWithTables(resource, rootTable, [], documentReferenceBindings);
+
+    private static RelationalResourceModel CreateModelWithTables(
+        string resource,
+        DbTableModel rootTable,
+        IReadOnlyList<DbTableModel> childTables,
         IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings
     ) =>
         new(
@@ -985,7 +3396,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             _edfiSchema,
             ResourceStorageKind.RelationalTables,
             rootTable,
-            [rootTable],
+            [rootTable, .. childTables],
             documentReferenceBindings,
             []
         );
@@ -1001,9 +3412,81 @@ public class Given_RelationshipAuthorizationPlannerTests
             SecurableElements = securableElements,
         };
 
-    private static MappingSet CreateMappingSet(ConcreteResourceModel concreteResourceModel)
+    private static ConcreteResourceModel CreatePersonResource(SecurableElementKind securableElementKind)
     {
-        var resourceKeysInIdOrder = new[] { concreteResourceModel.ResourceKey };
+        var resourceName = GetPersonResourceName(securableElementKind);
+
+        return CreateConcrete(
+            resourceName,
+            CreateModelWithTables(resourceName, CreateRootTable(Table(resourceName)), []),
+            securableElementKind switch
+            {
+                SecurableElementKind.Student => new ResourceSecurableElements(
+                    [],
+                    [],
+                    [GetPersonSelfJsonPath(securableElementKind)],
+                    [],
+                    []
+                ),
+                SecurableElementKind.Contact => new ResourceSecurableElements(
+                    [],
+                    [],
+                    [],
+                    [GetPersonSelfJsonPath(securableElementKind)],
+                    []
+                ),
+                SecurableElementKind.Staff => new ResourceSecurableElements(
+                    [],
+                    [],
+                    [],
+                    [],
+                    [GetPersonSelfJsonPath(securableElementKind)]
+                ),
+                _ => ResourceSecurableElements.Empty,
+            }
+        );
+    }
+
+    private static IEnumerable<ConcreteResourceModel> CreateRequiredPeopleAuthAssociationResources() =>
+        AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames.Select(resourceName =>
+            CreateConcrete(
+                resourceName,
+                CreateModelWithTables(resourceName, CreateRootTable(Table(resourceName)), []),
+                ResourceSecurableElements.Empty
+            )
+        );
+
+    private static MappingSet CreateMappingSet(
+        ConcreteResourceModel concreteResourceModel,
+        IReadOnlyDictionary<
+            QualifiedResourceName,
+            IReadOnlyList<ResolvedSecurableElementPath>
+        >? securableElementColumnPathsByResource = null
+    ) => CreateMappingSet([concreteResourceModel], securableElementColumnPathsByResource);
+
+    private static MappingSet CreateMappingSet(
+        IReadOnlyList<ConcreteResourceModel> concreteResourceModels,
+        IReadOnlyDictionary<
+            QualifiedResourceName,
+            IReadOnlyList<ResolvedSecurableElementPath>
+        >? securableElementColumnPathsByResource = null
+    )
+    {
+        var concreteResources = concreteResourceModels
+            .Select(
+                static (concreteResourceModel, index) =>
+                    concreteResourceModel with
+                    {
+                        ResourceKey = concreteResourceModel.ResourceKey with
+                        {
+                            ResourceKeyId = checked((short)(index + 1)),
+                        },
+                    }
+            )
+            .ToArray();
+        var resourceKeysInIdOrder = concreteResources
+            .Select(static resource => resource.ResourceKey)
+            .ToArray();
 
         return new MappingSet(
             Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
@@ -1012,7 +3495,7 @@ public class Given_RelationshipAuthorizationPlannerTests
                     ApiSchemaFormatVersion: "1.0",
                     RelationalMappingVersion: "v1",
                     EffectiveSchemaHash: "schema-hash",
-                    ResourceKeyCount: 1,
+                    ResourceKeyCount: checked((short)concreteResources.Length),
                     ResourceKeySeedHash: [1, 2, 3],
                     SchemaComponentsInEndpointOrder:
                     [
@@ -1025,11 +3508,12 @@ public class Given_RelationshipAuthorizationPlannerTests
                 [
                     new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, _edfiSchema),
                 ],
-                ConcreteResourcesInNameOrder: [concreteResourceModel],
+                ConcreteResourcesInNameOrder: concreteResources,
                 AbstractIdentityTablesInNameOrder: [],
                 AbstractUnionViewsInNameOrder: [],
                 IndexesInCreateOrder: [],
-                TriggersInCreateOrder: []
+                TriggersInCreateOrder: [],
+                AuthEdOrgHierarchy: CreateAuthEdOrgHierarchy()
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
@@ -1040,15 +3524,160 @@ public class Given_RelationshipAuthorizationPlannerTests
             ResourceKeyById: resourceKeysInIdOrder.ToDictionary(static resourceKey =>
                 resourceKey.ResourceKeyId
             ),
-            SecurableElementColumnPathsByResource: new Dictionary<
-                QualifiedResourceName,
-                IReadOnlyList<ResolvedSecurableElementPath>
-            >()
+            SecurableElementColumnPathsByResource: securableElementColumnPathsByResource
+                ?? new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
         );
     }
+
+    private static AuthEdOrgHierarchy CreateAuthEdOrgHierarchy() =>
+        new([
+            new AuthEdOrgEntity(
+                "School",
+                new DbTableName(_edfiSchema, "School"),
+                new DbColumnName("SchoolId"),
+                []
+            ),
+        ]);
 
     private static RelationshipAuthorizationPlanner CreatePlanner() => new(CreateSelector());
 
     private static RelationalEdOrgAuthorizationSubjectSelector CreateSelector() =>
         new(new RelationalEdOrgAuthorizationElementResolutionCache());
+
+    private static IEnumerable<TestCaseData> PeopleAuthViewSelectionCases()
+    {
+        yield return new TestCaseData(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        ).SetName("Student");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Contact,
+            RelationshipAuthorizationPersonAuthViewKind.Contact,
+            RelationshipAuthorizationPersonKind.Contact,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Contact");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Staff,
+            RelationshipAuthorizationPersonAuthViewKind.Staff,
+            RelationshipAuthorizationPersonKind.Staff,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Staff");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility,
+            RelationshipAuthorizationPersonKind.Student,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility
+        ).SetName("StudentThroughResponsibility");
+    }
+
+    private static IEnumerable<TestCaseData> SelfPersonExistingResourceCases()
+    {
+        yield return new TestCaseData(
+            SecurableElementKind.Student,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+        ).SetName("Student");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Contact,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Contact");
+
+        yield return new TestCaseData(
+            SecurableElementKind.Staff,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        ).SetName("Staff");
+    }
+
+    private static ResourceSecurableElements CreatePersonSecurableElements(
+        SecurableElementKind securableElementKind
+    ) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => new ResourceSecurableElements(
+                [],
+                [],
+                [GetPersonReferenceJsonPath(securableElementKind)],
+                [],
+                []
+            ),
+            SecurableElementKind.Contact => new ResourceSecurableElements(
+                [],
+                [],
+                [],
+                [GetPersonReferenceJsonPath(securableElementKind)],
+                []
+            ),
+            SecurableElementKind.Staff => new ResourceSecurableElements(
+                [],
+                [],
+                [],
+                [],
+                [GetPersonReferenceJsonPath(securableElementKind)]
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
+
+    private static DbColumnName GetPersonDocumentIdColumn(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => AuthNames.StudentDocumentId,
+            SecurableElementKind.Contact => AuthNames.ContactDocumentId,
+            SecurableElementKind.Staff => AuthNames.StaffDocumentId,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
+
+    private static string GetPersonReferenceJsonPath(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "$.studentReference.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactReference.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffReference.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
+
+    private static string GetPersonSelfJsonPath(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "$.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
+
+    private static string GetReferenceObjectPath(string jsonPath) =>
+        jsonPath[..jsonPath.LastIndexOf(".", StringComparison.Ordinal)];
+
+    private static string GetPersonResourceName(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "Student",
+            SecurableElementKind.Contact => "Contact",
+            SecurableElementKind.Staff => "Staff",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported people relationship authorization securable element kind."
+            ),
+        };
 }

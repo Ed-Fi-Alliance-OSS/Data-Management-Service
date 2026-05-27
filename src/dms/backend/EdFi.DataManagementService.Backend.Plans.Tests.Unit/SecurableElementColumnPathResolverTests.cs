@@ -298,6 +298,143 @@ public class Given_SecurableElementColumnPathResolver
     public class Given_direct_person_reference
     {
         [Test]
+        public void It_should_skip_exact_self_person_identity_path_without_join_steps()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("Ed-Fi", "Student", rootTable);
+
+            var securableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []);
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "Student", model, securableElements);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_skip_self_person_identity_path_when_core_project_name_casing_differs()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("ed-fi", "Student", rootTable);
+
+            var securableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []);
+
+            var concrete = CreateConcrete(1, "ed-fi", "Student", model, securableElements);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_resolve_direct_person_reference_when_core_project_name_casing_differs()
+        {
+            var carrierRoot = CreateRootTable(
+                Table("StudentCarrier"),
+                [
+                    new DbColumnModel(
+                        Col("Student_DocumentId"),
+                        ColumnKind.DocumentFk,
+                        null,
+                        false,
+                        null,
+                        new QualifiedResourceName("ed-fi", "Student")
+                    ),
+                ]
+            );
+            var studentRoot = CreateRootTable(Table("Student"));
+            var studentReferencePath = "$.studentReference.studentUniqueId";
+            var binding = new DocumentReferenceBinding(
+                true,
+                Path("$.studentReference"),
+                carrierRoot.Table,
+                Col("Student_DocumentId"),
+                new QualifiedResourceName("ed-fi", "Student"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path(studentReferencePath),
+                        Path(studentReferencePath),
+                        Col("Student_StudentUniqueId")
+                    ),
+                ]
+            );
+
+            var carrierModel = CreateModel("ed-fi", "StudentCarrier", carrierRoot, [binding]);
+            var studentModel = CreateModel("ed-fi", "Student", studentRoot);
+            var securableElements = new ResourceSecurableElements([], [], [studentReferencePath], [], []);
+            var carrierConcrete = CreateConcrete(
+                1,
+                "ed-fi",
+                "StudentCarrier",
+                carrierModel,
+                securableElements
+            );
+            var studentConcrete = CreateConcrete(2, "ed-fi", "Student", studentModel);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(
+                carrierConcrete,
+                [carrierConcrete, studentConcrete]
+            );
+
+            results.Should().ContainSingle();
+            results[0].Kind.Should().Be(SecurableElementKind.Student);
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("Student"));
+        }
+
+        [Test]
+        public void It_should_not_skip_extension_student_self_identity_path_as_core_person_resource()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("Sample", "Student", rootTable);
+            var securableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []);
+            var concrete = CreateConcrete(1, "Sample", "Student", model, securableElements);
+
+            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Sample.Student*")
+                .WithMessage("*$.studentUniqueId*");
+        }
+
+        [TestCase(
+            SecurableElementKind.Student,
+            "Student",
+            "$.studentUniqueId",
+            "$.items[*].studentReference.studentUniqueId"
+        )]
+        [TestCase(
+            SecurableElementKind.Contact,
+            "Contact",
+            "$.contactUniqueId",
+            "$.items[*].contactReference.contactUniqueId"
+        )]
+        [TestCase(
+            SecurableElementKind.Staff,
+            "Staff",
+            "$.staffUniqueId",
+            "$.items[*].staffReference.staffUniqueId"
+        )]
+        public void It_should_count_exact_self_person_identity_path_as_applicable_when_skipping_child_paths(
+            SecurableElementKind kind,
+            string resourceName,
+            string selfPath,
+            string arrayNestedPath
+        )
+        {
+            var rootTable = CreateRootTable(Table(resourceName));
+            var model = CreateModel("Ed-Fi", resourceName, rootTable);
+            var securableElements = CreatePersonSecurableElements(kind, selfPath, arrayNestedPath);
+            var concrete = CreateConcrete(1, "Ed-Fi", resourceName, model, securableElements);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().BeEmpty();
+        }
+
+        [Test]
         public void It_should_resolve_student_direct_reference()
         {
             // StudentSchoolAssociation -> Student (direct)
@@ -430,6 +567,19 @@ public class Given_SecurableElementColumnPathResolver
             results[0].Steps[0].SourceColumnName.Should().Be(Col("Contact_DocumentId"));
             results[0].Steps[0].TargetTable.Should().Be(Table("Contact"));
         }
+
+        private static ResourceSecurableElements CreatePersonSecurableElements(
+            SecurableElementKind kind,
+            string selfPath,
+            string arrayNestedPath
+        ) =>
+            kind switch
+            {
+                SecurableElementKind.Student => new([], [], [selfPath, arrayNestedPath], [], []),
+                SecurableElementKind.Contact => new([], [], [], [selfPath, arrayNestedPath], []),
+                SecurableElementKind.Staff => new([], [], [], [], [selfPath, arrayNestedPath]),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+            };
     }
 
     [TestFixture]
@@ -553,12 +703,11 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_pick_the_shortest_chain_when_alternatives_exist()
+        public void It_should_resolve_each_independent_root_level_person_path()
         {
             // Resource declares two Student securable paths: one direct (1 hop) and one through
-            // an intermediate (2 hops). Per the DMS-1053 design contract (auth.md L879), the
-            // resolver follows each path and returns the shortest — only the direct chain
-            // becomes a ResolvedSecurableElementPath.
+            // an intermediate (2 hops). Each independent declared person path becomes compiled
+            // path metadata so People authorization planning and auth-index emission agree.
             var rootTable = CreateRootTable(
                 Table("TestResource"),
                 [
@@ -653,8 +802,6 @@ public class Given_SecurableElementColumnPathResolver
             );
             var studentModel = CreateModel("Ed-Fi", "Student", studentRoot);
 
-            // Two alternative paths to the same person kind: direct (1 hop) and indirect
-            // (2 hops). Shortest wins.
             var securableElements = new ResourceSecurableElements(
                 [],
                 [],
@@ -686,11 +833,21 @@ public class Given_SecurableElementColumnPathResolver
                 [testConcrete, intermediateConcrete, studentConcrete]
             );
 
-            results.Should().HaveCount(1);
-            results[0].Kind.Should().Be(SecurableElementKind.Student);
-            results[0].Steps.Should().HaveCount(1);
-            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
-            results[0].Steps[0].TargetTable.Should().Be(Table("Student"));
+            results.Should().HaveCount(2);
+            results.Should().AllSatisfy(result => result.Kind.Should().Be(SecurableElementKind.Student));
+
+            var directPath = results.Single(result => result.Steps.Count == 1);
+            directPath.Steps[0].SourceTable.Should().Be(Table("TestResource"));
+            directPath.Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            directPath.Steps[0].TargetTable.Should().Be(Table("Student"));
+
+            var transitivePath = results.Single(result => result.Steps.Count == 2);
+            transitivePath.Steps[0].SourceTable.Should().Be(Table("TestResource"));
+            transitivePath.Steps[0].SourceColumnName.Should().Be(Col("Intermediate_DocumentId"));
+            transitivePath.Steps[0].TargetTable.Should().Be(Table("Intermediate"));
+            transitivePath.Steps[1].SourceTable.Should().Be(Table("Intermediate"));
+            transitivePath.Steps[1].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            transitivePath.Steps[1].TargetTable.Should().Be(Table("Student"));
         }
     }
 
@@ -1185,9 +1342,11 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_throw_when_all_person_paths_are_array_nested()
+        public void It_should_skip_when_all_person_paths_are_array_nested()
         {
-            // Resource has only array-nested Student paths — should throw.
+            // Resource has only array-nested Student paths. These are retained by the People
+            // subject selector as skipped diagnostics, but this general resolver has no
+            // executable root-scope path to materialize.
             var rootTable = CreateRootTable(Table("TestResource"));
             var model = CreateModel("Ed-Fi", "TestResource", rootTable);
 
@@ -1201,13 +1360,9 @@ public class Given_SecurableElementColumnPathResolver
 
             var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
 
-            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
-            act.Should()
-                .Throw<InvalidOperationException>()
-                .WithMessage("*Ed-Fi.TestResource*")
-                .WithMessage("*unsupported child-table traversal*")
-                .WithMessage("*$.students[*].studentReference.studentUniqueId*");
+            results.Should().BeEmpty();
         }
     }
 
@@ -1342,6 +1497,29 @@ public class Given_SecurableElementColumnPathResolver
                 .Throw<InvalidOperationException>()
                 .WithMessage("*Ed-Fi.TestResource*")
                 .WithMessage("*$.studentReference.studentUniqueId*");
+        }
+
+        [Test]
+        public void It_should_throw_when_person_resource_has_self_path_and_broken_same_kind_sibling_path()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("Ed-Fi", "Student", rootTable);
+
+            var securableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.studentUniqueId", "$.nonexistentReference.studentUniqueId"],
+                [],
+                []
+            );
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "Student", model, securableElements);
+            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            var exception = act.Should().Throw<InvalidOperationException>().Which;
+            exception.Message.Should().Contain("Ed-Fi.Student");
+            exception.Message.Should().Contain("$.nonexistentReference.studentUniqueId");
+            exception.Message.Should().NotContain("$.studentUniqueId");
         }
 
         [Test]

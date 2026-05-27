@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics.CodeAnalysis;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
@@ -56,49 +57,57 @@ public static class RelationshipAuthorizationFailureMapper
         var checkSpecsByStrategyIdentity = checkSpecs.ToDictionary(static checkSpec =>
             (checkSpec.ConfiguredStrategy.RawConfiguredIndex, checkSpec.RelationshipLocalOrder)
         );
+        var noClaimsFailuresByStrategyIdentity = noClaimsFailures
+            .GroupBy(static failure =>
+                (failure.ConfiguredStrategy!.RawConfiguredIndex, failure.RelationshipLocalOrder!.Value)
+            )
+            .ToDictionary(static group => group.Key, static group => group.ToArray());
         List<RelationshipAuthorizationFailedStrategy> failedStrategies = [];
-        HashSet<(int ConfiguredStrategyIndex, int RelationshipLocalOrder)> seenStrategyIdentities = [];
 
         foreach (
-            var noClaimsFailure in noClaimsFailures
-                .OrderBy(static failure => failure.ConfiguredStrategy!.RawConfiguredIndex)
-                .ThenBy(static failure => failure.RelationshipLocalOrder!.Value)
+            var failureGroup in noClaimsFailuresByStrategyIdentity
+                .OrderBy(static group => group.Key.RawConfiguredIndex)
+                .ThenBy(static group => group.Key.Value)
         )
         {
-            var strategyIdentity = (
-                noClaimsFailure.ConfiguredStrategy!.RawConfiguredIndex,
-                noClaimsFailure.RelationshipLocalOrder!.Value
-            );
-
             if (
-                !seenStrategyIdentities.Add(strategyIdentity)
-                || !checkSpecsByStrategyIdentity.TryGetValue(strategyIdentity, out var checkSpec)
+                !checkSpecsByStrategyIdentity.TryGetValue(failureGroup.Key, out var checkSpec)
                 || checkSpec.Subjects.Count == 0
             )
             {
                 return false;
             }
 
+            var failedSubjects = checkSpec
+                .Subjects.Select(
+                    (subject, subjectIndex) =>
+                    {
+                        var subjectFailureMetadata = SelectNoClaimsSubjectFailureMetadata(
+                            subject,
+                            failureGroup.Value
+                        );
+
+                        return MapSubject(
+                            subjectIndex,
+                            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                            subject,
+                            checkSpec.ValueSource,
+                            subjectFailureMetadata?.Hint
+                                ?? "Relationship authorization requires at least one claim EducationOrganizationId."
+                        );
+                    }
+                )
+                .ToArray();
+
             failedStrategies.Add(
                 new RelationshipAuthorizationFailedStrategy(
                     checkSpec.ConfiguredStrategy.RawConfiguredIndex,
                     checkSpec.RelationshipLocalOrder,
                     checkSpec.ConfiguredStrategy.StrategyName,
-                    MapStrategyKind(checkSpec.Direction),
-                    MapAuthObject(noClaimsFailure.AuthObject ?? checkSpec.AuthObject),
-                    [
-                        .. checkSpec.Subjects.Select(
-                            (subject, subjectIndex) =>
-                                MapSubject(
-                                    subjectIndex,
-                                    RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
-                                    subject,
-                                    noClaimsFailure.Hint
-                                        ?? "Relationship authorization requires at least one claim EducationOrganizationId."
-                                )
-                        ),
-                    ],
-                    noClaimsFailure.Hint
+                    MapStrategyKind(checkSpec),
+                    SelectHomogeneousStrategyAuthObject(failedSubjects),
+                    failedSubjects,
+                    SelectStrategyHint(failureGroup.Value)
                 )
             );
         }
@@ -218,6 +227,7 @@ public static class RelationshipAuthorizationFailureMapper
                     subjectFailure.SubjectOrdinal,
                     MapSubjectFailureKind(subjectFailure.FailureKind),
                     checkSpec.Subjects[subjectFailure.SubjectOrdinal],
+                    checkSpec.ValueSource,
                     BuildSubjectHint(subjectFailure.FailureKind)
                 )
             );
@@ -227,8 +237,8 @@ public static class RelationshipAuthorizationFailureMapper
             checkSpec.ConfiguredStrategy.RawConfiguredIndex,
             checkSpec.RelationshipLocalOrder,
             checkSpec.ConfiguredStrategy.StrategyName,
-            MapStrategyKind(checkSpec.Direction),
-            MapAuthObject(checkSpec.AuthObject),
+            MapStrategyKind(checkSpec),
+            SelectHomogeneousStrategyAuthObject(failedSubjects),
             [.. failedSubjects]
         );
         return true;
@@ -238,16 +248,21 @@ public static class RelationshipAuthorizationFailureMapper
         int subjectIndex,
         RelationshipAuthorizationSubjectFailureKind failureKind,
         RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationValueSource valueSource,
         string hint
-    ) =>
-        new(
+    )
+    {
+        var rootBinding = MapRootBinding(subject, valueSource);
+
+        return new RelationshipAuthorizationFailedSubject(
             subjectIndex,
             failureKind,
             new RelationshipAuthorizationRootBinding(
                 $"{subject.Resource.ProjectName}.{subject.Resource.ResourceName}",
-                subject.Table.ToString(),
-                subject.Column.Value
+                rootBinding.Table.ToString(),
+                rootBinding.Column.Value
             ),
+            MapAuthObject(subject.AuthObject),
             [
                 .. subject.Contributors.Select(
                     static contributor => new RelationshipAuthorizationSecurableElement(
@@ -258,7 +273,196 @@ public static class RelationshipAuthorizationFailureMapper
                 ),
             ],
             hint
+        )
+        {
+            PersonSubject = MapPersonSubject(subject),
+        };
+    }
+
+    private static RelationshipAuthorizationSubjectRootBinding MapRootBinding(
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationValueSource valueSource
+    )
+    {
+        if (subject.PersonMetadata is not { } personMetadata)
+        {
+            return new RelationshipAuthorizationSubjectRootBinding(subject.Table, subject.Column);
+        }
+
+        return valueSource switch
+        {
+            RelationshipAuthorizationValueSource.Stored => new RelationshipAuthorizationSubjectRootBinding(
+                personMetadata.StoredAnchor.RootTable,
+                personMetadata.StoredAnchor.RootDocumentIdColumn
+            ),
+            RelationshipAuthorizationValueSource.Proposed
+                when personMetadata.ProposedAnchor is { } proposedAnchor =>
+                new RelationshipAuthorizationSubjectRootBinding(
+                    proposedAnchor.Binding.Table,
+                    proposedAnchor.Binding.Column
+                ),
+            RelationshipAuthorizationValueSource.Proposed => new RelationshipAuthorizationSubjectRootBinding(
+                personMetadata.StoredAnchor.RootTable,
+                personMetadata.StoredAnchor.RootDocumentIdColumn
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(valueSource),
+                valueSource,
+                "Unsupported relationship authorization value source."
+            ),
+        };
+    }
+
+    private static RelationshipAuthorizationFailureMetadata? SelectNoClaimsSubjectFailureMetadata(
+        RelationshipAuthorizationSubject subject,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
+    )
+    {
+        if (subject.PersonMetadata is { } personMetadata)
+        {
+            return failureGroup.FirstOrDefault(failure =>
+                    IsMatchingPersonFailureMetadata(
+                        failure,
+                        personMetadata,
+                        subject.AuthObject,
+                        requirePathMatch: true
+                    )
+                )
+                ?? failureGroup.FirstOrDefault(failure =>
+                    IsGenericPersonFailureMetadata(failure, personMetadata, subject.AuthObject)
+                )
+                ?? failureGroup.FirstOrDefault(failure =>
+                    IsMatchingPersonFailureMetadata(
+                        failure,
+                        personMetadata,
+                        subject.AuthObject,
+                        requirePathMatch: false
+                    )
+                )
+                ?? failureGroup.FirstOrDefault(failure => failure.AuthObject == subject.AuthObject);
+        }
+
+        return failureGroup.FirstOrDefault(failure =>
+                failure.PersonMetadata is null && failure.AuthObject == subject.AuthObject
+            ) ?? failureGroup.FirstOrDefault(failure => failure.PersonMetadata is null);
+    }
+
+    private static bool IsMatchingPersonFailureMetadata(
+        RelationshipAuthorizationFailureMetadata failure,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        RelationshipAuthorizationAuthObject authObject,
+        bool requirePathMatch
+    )
+    {
+        if (failure.PersonMetadata is not { } failurePersonMetadata)
+        {
+            return false;
+        }
+
+        if (
+            failurePersonMetadata.PersonKind != personMetadata.PersonKind
+            || failurePersonMetadata.AuthObject != authObject
+        )
+        {
+            return false;
+        }
+
+        return !requirePathMatch
+            || failurePersonMetadata.Path is not null
+                && PersonPathsMatch(failurePersonMetadata.Path, personMetadata.Path);
+    }
+
+    private static bool IsGenericPersonFailureMetadata(
+        RelationshipAuthorizationFailureMetadata failure,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        RelationshipAuthorizationAuthObject authObject
+    )
+    {
+        if (failure.PersonMetadata is not { } failurePersonMetadata)
+        {
+            return false;
+        }
+
+        return failurePersonMetadata.PersonKind == personMetadata.PersonKind
+            && failurePersonMetadata.AuthObject == authObject
+            && failurePersonMetadata.Path is null;
+    }
+
+    private static bool PersonPathsMatch(
+        RelationshipAuthorizationPersonSubjectPath first,
+        RelationshipAuthorizationPersonSubjectPath second
+    ) => first.Kind == second.Kind && first.Steps.SequenceEqual(second.Steps);
+
+    private static RelationshipAuthorizationAuthObjectInfo? SelectHomogeneousStrategyAuthObject(
+        IReadOnlyList<RelationshipAuthorizationFailedSubject> failedSubjects
+    )
+    {
+        var distinctAuthObjects = failedSubjects
+            .Select(static subject => subject.AuthObject)
+            .Distinct()
+            .ToArray();
+
+        return distinctAuthObjects.Length == 1 ? distinctAuthObjects[0] : null;
+    }
+
+    private static string? SelectStrategyHint(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failureGroup
+    ) => failureGroup.Select(static failure => failure.Hint).FirstOrDefault(static hint => hint is not null);
+
+    private static RelationshipAuthorizationPersonSubjectInfo? MapPersonSubject(
+        RelationshipAuthorizationSubject subject
+    )
+    {
+        if (subject.PersonMetadata is not { } personMetadata)
+        {
+            return null;
+        }
+
+        return new RelationshipAuthorizationPersonSubjectInfo(
+            personMetadata.PersonKind.ToString(),
+            personMetadata.Path.Kind.ToString(),
+            MapDocumentIdPath(personMetadata.Path),
+            new RelationshipAuthorizationPersonStoredAnchorInfo(
+                personMetadata.StoredAnchor.RootTable.ToString(),
+                personMetadata.StoredAnchor.RootDocumentIdColumn.Value
+            ),
+            MapProposedAnchor(personMetadata.ProposedAnchor),
+            subject.AuthObject.FailureHint
         );
+    }
+
+    private static RelationshipAuthorizationPersonDocumentIdPathStepInfo[] MapDocumentIdPath(
+        RelationshipAuthorizationPersonSubjectPath path
+    ) =>
+        [
+            .. path.Steps.Select(static step => new RelationshipAuthorizationPersonDocumentIdPathStepInfo(
+                step.SourceTable.ToString(),
+                step.SourceColumnName.Value,
+                step.TargetTable?.ToString(),
+                step.TargetColumnName?.Value
+            )),
+        ];
+
+    private static RelationshipAuthorizationPersonProposedAnchorInfo? MapProposedAnchor(
+        RelationshipAuthorizationPersonProposedAnchor? proposedAnchor
+    )
+    {
+        if (proposedAnchor is null)
+        {
+            return null;
+        }
+
+        return new RelationshipAuthorizationPersonProposedAnchorInfo(
+            proposedAnchor.Kind.ToString(),
+            new RelationshipAuthorizationPersonProposedValueBindingInfo(
+                proposedAnchor.Binding.Table.ToString(),
+                proposedAnchor.Binding.Column.Value,
+                proposedAnchor.Binding.BindingIndex,
+                proposedAnchor.Binding.LogicalKey,
+                proposedAnchor.Binding.ParameterSeed
+            )
+        );
+    }
 
     private static bool HasDuplicateSubjectFailureOrdinals(
         IReadOnlyList<RelationshipAuthorizationAuth1SubjectFailure> subjectFailures
@@ -322,7 +526,27 @@ public static class RelationshipAuthorizationFailureMapper
             ),
         };
 
-    private static string MapStrategyKind(RelationshipAuthorizationHierarchyDirection direction) =>
+    private static string MapStrategyKind(RelationshipAuthorizationCheckSpec checkSpec) =>
+        checkSpec.ConfiguredStrategy.StrategyName switch
+        {
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+            or AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted => MapEdOrgStrategyKind(
+                checkSpec.Direction
+            ),
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly =>
+                AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly =>
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility =>
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            _ => MapEdOrgStrategyKind(checkSpec.Direction),
+        };
+
+    private static string MapEdOrgStrategyKind(RelationshipAuthorizationHierarchyDirection direction) =>
         direction switch
         {
             RelationshipAuthorizationHierarchyDirection.Normal =>
@@ -360,4 +584,6 @@ public static class RelationshipAuthorizationFailureMapper
                 "Unsupported AUTH1 relationship failure kind."
             ),
         };
+
+    private sealed record RelationshipAuthorizationSubjectRootBinding(DbTableName Table, DbColumnName Column);
 }

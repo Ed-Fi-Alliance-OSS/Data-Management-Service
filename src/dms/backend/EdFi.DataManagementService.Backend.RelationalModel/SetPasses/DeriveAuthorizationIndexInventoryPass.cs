@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Backend.RelationalModel.Constraints;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
@@ -36,15 +37,12 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 ///   </item>
 ///   <item>
 ///     <description>One index per join hop required to reach a Student / Contact / Staff
-///     person resource from a subject resource that declares the corresponding securable
-///     element. Each index keys on the FK <c>_DocumentId</c> column at the hop and INCLUDEs
-///     the source table's <c>DocumentId</c> (covering index for the runtime auth filter join).
-///     Behavior-aligned with
-///     <c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver.ResolvePersonPaths</c>
-///     / <c>BfsToPersonResource</c>: BFS over root-table <see cref="DocumentReferenceBinding"/>s
-///     to the shortest chain reaching the person resource; array-nested paths (<c>[*]</c>) are
-///     silently skipped when any other securable path resolves, or throw with the runtime's
-///     "unsupported child-table traversal" message when no path resolves at all.</description>
+///     person resource from each independent declared root-scope securable element path. Each
+///     index keys on the FK <c>_DocumentId</c> column at the hop and INCLUDEs the source table's
+///     <c>DocumentId</c> (covering index for the runtime auth filter join). Behavior-aligned with
+///     <c>EdFi.DataManagementService.Backend.Plans.SecurableElementColumnPathResolver.ResolvePersonPaths</c>:
+///     every executable root-scope person path is indexed; array-nested paths (<c>[*]</c>) are
+///     silently skipped because they are outside the executable People subject scope.</description>
 ///   </item>
 /// </list>
 /// <para>Auth indexes are deduped globally by <c>(table, leading key column)</c>. Person-join
@@ -83,37 +81,20 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// </summary>
     private static readonly PrimaryAssociationIndex[] PrimaryAssociationIndexes =
     [
+        new("StudentSchoolAssociation", AuthNames.SchoolIdUnified, AuthNames.StudentDocumentId),
+        new("StudentContactAssociation", AuthNames.StudentDocumentId, AuthNames.ContactDocumentId),
         new(
-            new QualifiedResourceName(PersonJoinPathResolver.EdFiProjectName, "StudentSchoolAssociation"),
-            AuthNames.SchoolIdUnified,
-            AuthNames.StudentDocumentId
-        ),
-        new(
-            new QualifiedResourceName(PersonJoinPathResolver.EdFiProjectName, "StudentContactAssociation"),
-            AuthNames.StudentDocumentId,
-            AuthNames.ContactDocumentId
-        ),
-        new(
-            new QualifiedResourceName(
-                PersonJoinPathResolver.EdFiProjectName,
-                "StaffEducationOrganizationAssignmentAssociation"
-            ),
+            "StaffEducationOrganizationAssignmentAssociation",
             AuthNames.EdOrgEdOrgId,
             AuthNames.StaffDocumentId
         ),
         new(
-            new QualifiedResourceName(
-                PersonJoinPathResolver.EdFiProjectName,
-                "StaffEducationOrganizationEmploymentAssociation"
-            ),
+            "StaffEducationOrganizationEmploymentAssociation",
             AuthNames.EdOrgEdOrgId,
             AuthNames.StaffDocumentId
         ),
         new(
-            new QualifiedResourceName(
-                PersonJoinPathResolver.EdFiProjectName,
-                "StudentEducationOrganizationResponsibilityAssociation"
-            ),
+            "StudentEducationOrganizationResponsibilityAssociation",
             AuthNames.EdOrgEdOrgId,
             AuthNames.StudentDocumentId
         ),
@@ -134,23 +115,11 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         // Person-join emission may replace an entry in-place when widening IncludeColumns.
         var authIndexLookup = new Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo>();
 
-        EmitPrimaryAssociationIndexes(context, resourceLookup, authIndexLookup);
+        EmitPrimaryAssociationIndexes(context, authIndexLookup);
 
-        // Per-resource resolution outcomes (anything that resolved — EdOrg/Namespace/Person —
-        // regardless of whether an index was actually emitted by dedup). Threaded into the
-        // Person-join pass so the array-nested rule can mirror the runtime's behavior:
-        // silently skip array-nested person paths when some other securable path resolved,
-        // throw with "unsupported child-table traversal" when no path resolved at all.
-        var resourcesWithResolvedSecurable = new HashSet<QualifiedResourceName>();
+        EmitSecurableElementIndexes(context, authIndexLookup, pkUkLeadingColumns);
 
-        EmitSecurableElementIndexes(
-            context,
-            authIndexLookup,
-            pkUkLeadingColumns,
-            resourcesWithResolvedSecurable
-        );
-
-        EmitPersonJoinIndexes(context, authIndexLookup, resourceLookup, resourcesWithResolvedSecurable);
+        EmitPersonJoinIndexes(context, authIndexLookup, resourceLookup);
     }
 
     /// <summary>
@@ -183,17 +152,25 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
     private void EmitPrimaryAssociationIndexes(
         RelationalModelSetBuilderContext context,
-        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteByName,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup
     )
     {
         foreach (var entry in PrimaryAssociationIndexes)
         {
-            if (!concreteByName.TryGetValue(entry.Resource, out var concrete))
+            var concrete = context.ConcreteResourcesInNameOrder.Find(concrete =>
+                DataModelConstants.IsCoreProjectName(concrete.ResourceKey.Resource.ProjectName)
+                && string.Equals(
+                    concrete.ResourceKey.Resource.ResourceName,
+                    entry.ResourceName,
+                    StringComparison.Ordinal
+                )
+            );
+            if (concrete is null)
             {
                 continue;
             }
 
+            var resource = concrete.ResourceKey.Resource;
             var rootTable = concrete.RelationalModel.Root;
             var canonicalKey = ResolveCanonical(rootTable, entry.KeyColumn);
             var canonicalInclude = ResolveCanonical(rootTable, entry.IncludeColumn);
@@ -213,7 +190,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                     }
 
                     throw new InvalidOperationException(
-                        $"PrimaryAssociation '{entry.Resource.ProjectName}.{entry.Resource.ResourceName}' "
+                        $"PrimaryAssociation '{resource.ProjectName}.{resource.ResourceName}' "
                             + $"is present in the model set but root table "
                             + $"'{rootTable.Table.Schema.Value}.{rootTable.Table.Name}' is missing literal "
                             + $"column(s) '{string.Join(", ", missing)}'. "
@@ -264,13 +241,11 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     private static void EmitSecurableElementIndexes(
         RelationalModelSetBuilderContext context,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup,
-        HashSet<(DbTableName Table, DbColumnName Column)> pkUkLeadingColumns,
-        HashSet<QualifiedResourceName> resourcesWithResolvedSecurable
+        HashSet<(DbTableName Table, DbColumnName Column)> pkUkLeadingColumns
     )
     {
         foreach (var concrete in context.ConcreteResourcesInNameOrder)
         {
-            var anyResolved = false;
             var unresolvedPaths = new List<string>();
 
             // Aggregate unresolved EdOrg + Namespace paths per resource and throw once for this
@@ -286,7 +261,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                     unresolvedPaths.Add(jsonPath);
                     continue;
                 }
-                anyResolved = true;
                 AddSecurableElementIndex(
                     context,
                     step.SourceTable,
@@ -304,7 +278,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                     unresolvedPaths.Add(namespacePath);
                     continue;
                 }
-                anyResolved = true;
                 AddSecurableElementIndex(
                     context,
                     step.SourceTable,
@@ -322,11 +295,6 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                         + $"could not resolve securable element JSON path(s): "
                         + $"{string.Join(", ", unresolvedPaths.Distinct(StringComparer.Ordinal))}."
                 );
-            }
-
-            if (anyResolved)
-            {
-                resourcesWithResolvedSecurable.Add(concrete.ResourceKey.Resource);
             }
         }
     }
@@ -364,33 +332,29 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
     /// <summary>
     /// Emits per-hop authorization indexes for Student / Contact / Staff securable elements.
-    /// For each concrete resource declaring such an element, walks the shortest join chain from
-    /// the subject root table to the person resource via BFS over root-table
-    /// <see cref="DocumentReferenceBinding"/>s, and emits an auth index on each
-    /// <c>(sourceTable, FK column)</c> hop that INCLUDEs the source table's <c>DocumentId</c>.
-    /// Mirrors <c>SecurableElementColumnPathResolver.ResolvePersonPaths</c> /
-    /// <c>BfsToPersonResource</c> so the runtime auth filter and the emitted indexes agree on
-    /// which <c>(table, column)</c> carries each hop.
+    /// For each concrete resource declaring such an element, walks every independent declared
+    /// root-scope person path from the subject root table to the person resource, and emits an
+    /// auth index on each <c>(sourceTable, FK column)</c> hop that INCLUDEs the source table's
+    /// <c>DocumentId</c>.
+    /// Mirrors <c>SecurableElementColumnPathResolver.ResolvePersonPaths</c> so the runtime auth
+    /// filter and the emitted indexes agree on which <c>(table, column)</c> carries each hop.
     /// </summary>
     /// <remarks>
-    /// Subjects that ARE the person resource itself (e.g. Student with <c>$.studentUniqueId</c>)
+    /// Exact self identity paths on person resources (e.g. Student with <c>$.studentUniqueId</c>)
     /// emit no person-join index for that kind — their own <c>DocumentId</c> is the auth anchor.
-    /// Array-nested person paths (<c>[*]</c>) follow the runtime's resource-wide rule: silently
-    /// skipped when any other securable path on the resource resolved; thrown with
-    /// "unsupported child-table traversal" when no path resolved at all.
+    /// Other same-kind paths on person resources must still resolve through a DocumentId path.
+    /// Array-nested person paths (<c>[*]</c>) are silently skipped because People relationship
+    /// authorization is scoped to aggregate roots, not child collection rows.
     /// </remarks>
     private static void EmitPersonJoinIndexes(
         RelationalModelSetBuilderContext context,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup,
-        Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
-        HashSet<QualifiedResourceName> resourcesWithResolvedSecurable
+        Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
     )
     {
         foreach (var concrete in context.ConcreteResourcesInNameOrder)
         {
             var resource = concrete.ResourceKey.Resource;
-            var anyResolved = resourcesWithResolvedSecurable.Contains(resource);
-            var skippedArrayNestedPaths = new List<string>();
             var unresolvedPaths = new List<string>();
 
             ProcessPersonKind(
@@ -398,10 +362,9 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete,
                 concrete.SecurableElements.Student,
                 "Student",
+                SecurableElementKind.Student,
                 authIndexLookup,
                 resourceLookup,
-                ref anyResolved,
-                skippedArrayNestedPaths,
                 unresolvedPaths
             );
             ProcessPersonKind(
@@ -409,10 +372,9 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete,
                 concrete.SecurableElements.Contact,
                 "Contact",
+                SecurableElementKind.Contact,
                 authIndexLookup,
                 resourceLookup,
-                ref anyResolved,
-                skippedArrayNestedPaths,
                 unresolvedPaths
             );
             ProcessPersonKind(
@@ -420,16 +382,15 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                 concrete,
                 concrete.SecurableElements.Staff,
                 "Staff",
+                SecurableElementKind.Staff,
                 authIndexLookup,
                 resourceLookup,
-                ref anyResolved,
-                skippedArrayNestedPaths,
                 unresolvedPaths
             );
 
-            // Mirrors SecurableElementColumnPathResolver.ResolveAll lines 132-151 — unresolved
-            // person paths throw unconditionally; array-nested-only throws only when no other
-            // path resolved on this resource.
+            // Mirrors SecurableElementColumnPathResolver.ResolveAll: unresolved root-scope
+            // person paths throw; array-nested paths are skipped as non-executable People
+            // subjects.
             if (unresolvedPaths.Count > 0)
             {
                 throw new InvalidOperationException(
@@ -438,27 +399,14 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                         + $"{string.Join(", ", unresolvedPaths.Distinct(StringComparer.Ordinal))}."
                 );
             }
-
-            // When at least one person path resolved on this resource, array-nested siblings are
-            // silently skipped to mirror the runtime resolver. Only the no-path-resolved case
-            // surfaces array-nested paths as an error.
-            if (!anyResolved && skippedArrayNestedPaths.Count > 0)
-            {
-                throw new InvalidOperationException(
-                    $"Authorization index emission for '{resource.ProjectName}.{resource.ResourceName}' "
-                        + $"failed: all paths require unsupported child-table traversal (array-nested): "
-                        + $"{string.Join(", ", skippedArrayNestedPaths.Distinct(StringComparer.Ordinal))}."
-                );
-            }
         }
     }
 
     /// <summary>
     /// Processes one person kind (Student / Contact / Staff) for a single subject resource.
-    /// Delegates path resolution to <see cref="PersonJoinPathResolver.ResolveShortestPersonChain"/>
-    /// and emits an auth index per hop of the shortest resolved chain via
-    /// <see cref="AddPersonJoinIndex"/>. Only the source side of each
-    /// <see cref="ColumnPathStep"/> is consumed — the target side is the next resource's
+    /// Resolves each declared root-scope person path independently and emits an auth index per
+    /// hop of every resolved chain via <see cref="AddPersonJoinIndex"/>. Only the source side of
+    /// each <see cref="ColumnPathStep"/> is consumed — the target side is the next resource's
     /// <c>DocumentId</c>, which is the next iteration's source.
     /// </summary>
     private static void ProcessPersonKind(
@@ -466,10 +414,9 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         ConcreteResourceModel subjectResource,
         IReadOnlyList<string> personPaths,
         string personResourceName,
+        SecurableElementKind kind,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
-        ref bool anyResolved,
-        List<string> skippedArrayNestedPaths,
         List<string> unresolvedPaths
     )
     {
@@ -478,36 +425,43 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
             return;
         }
 
-        var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
-            subjectResource,
-            personPaths,
-            personResourceName,
-            resourceLookup,
-            skippedArrayNestedPaths,
-            out var unresolvedRootLevelPaths
-        );
-
-        if (chain is not null)
+        foreach (var personPath in personPaths)
         {
-            anyResolved = true;
-            foreach (var step in chain)
+            List<string> skippedPathsForElement = [];
+            var chain = PersonJoinPathResolver.ResolveShortestPersonChain(
+                subjectResource,
+                [personPath],
+                personResourceName,
+                resourceLookup,
+                skippedPathsForElement,
+                out var unresolvedRootLevelPaths
+            );
+
+            if (chain is not null)
             {
-                AddPersonJoinIndex(context, step.SourceTable, step.SourceColumnName, authIndexLookup);
+                foreach (var step in chain)
+                {
+                    AddPersonJoinIndex(context, step.SourceTable, step.SourceColumnName, authIndexLookup);
+                }
             }
-        }
 
-        // Surface any root-level path that did not bind (Fix #7) — unless the subject IS the
-        // person resource, in which case unresolved paths are self-references and silently
-        // skipped (e.g. Student declaring $.studentUniqueId).
-        if (
-            unresolvedRootLevelPaths.Count > 0
-            && !PersonJoinPathResolver.IsPersonResource(
-                subjectResource.RelationalModel.Resource,
-                personResourceName
-            )
-        )
-        {
-            unresolvedPaths.AddRange(unresolvedRootLevelPaths);
+            // Surface any root-level path that did not bind. Only the exact self identity
+            // path on Student/Contact/Staff is zero-hop and intentionally skipped.
+            foreach (var unresolvedPath in unresolvedRootLevelPaths)
+            {
+                if (
+                    PersonJoinPathResolver.IsSelfPersonIdentityPath(
+                        subjectResource.RelationalModel.Resource,
+                        kind,
+                        unresolvedPath
+                    )
+                )
+                {
+                    continue;
+                }
+
+                unresolvedPaths.Add(unresolvedPath);
+            }
         }
     }
 
@@ -603,7 +557,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     }
 
     private readonly record struct PrimaryAssociationIndex(
-        QualifiedResourceName Resource,
+        string ResourceName,
         DbColumnName KeyColumn,
         DbColumnName IncludeColumn
     );

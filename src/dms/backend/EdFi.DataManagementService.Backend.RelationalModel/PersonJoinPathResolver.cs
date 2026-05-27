@@ -4,11 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
-/// Resolves the shortest column-path chain from a subject resource to a named person resource
+/// Resolves column-path chains from a subject resource to a named person resource
 /// (<c>Student</c>, <c>Contact</c>, or <c>Staff</c>) via the subject's Student / Contact /
 /// Staff securable element JSON paths.
 /// </summary>
@@ -40,9 +41,8 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     <see cref="ReferenceIdentityBinding"/> whose <c>ReferenceJsonPath</c> equals the
 ///     securable path exactly. A reference-object prefix match alone is not enough — the
 ///     full identity path must be present in the binding's <c>IdentityBindings</c>.
-///     Paths that don't bind are accumulated into <c>unresolvedRootLevelPaths</c>; the caller
-///     decides whether to throw (subject is not the person resource) or skip (subject IS the
-///     person resource, the path is a self-reference).</description>
+///     Paths that don't bind are accumulated into <c>unresolvedRootLevelPaths</c>; callers
+///     suppress only paths accepted by <see cref="IsSelfPersonIdentityPath"/>.</description>
 ///   </item>
 ///   <item>
 ///     <description>If the binding's target is the person resource, the chain is a single
@@ -57,35 +57,30 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 ///     as the chain hop, emitting auth indexes that the runtime resolver does not use.</description>
 ///   </item>
 ///   <item>
-///     <description>Among all root-level paths that produced a chain, return the shortest.
-///     Ties break first-wins (input order). This matches the DMS-1053 design contract that
-///     multiple person paths are alternatives, not independent references.</description>
+///     <description>Among all supplied root-level paths that produced a chain, return the
+///     shortest. Ties break first-wins (input order). Callers that need executable metadata for
+///     every independent declared person path call this resolver once per path; the shortest
+///     choice then applies only to alternate continuation routes for that declared path.</description>
 ///   </item>
 /// </list>
 /// <para>Returns <see langword="null"/> when no non-array-nested path resolves. Callers decide
-/// whether that — combined with "subject is not the person resource itself" — means "unresolved"
-/// (throw) or "OK, subject is the person and its own DocumentId is the anchor" (skip). Use
-/// <see cref="IsPersonResource"/> for that check.</para>
+/// whether that — combined with <see cref="IsSelfPersonIdentityPath"/> — means "unresolved"
+/// (throw) or "OK, this exact self path uses the person resource's own DocumentId anchor"
+/// (skip).</para>
 /// </remarks>
 public static class PersonJoinPathResolver
 {
-    /// <summary>
-    /// Canonical project name of the Ed-Fi core data standard. Shared by callers that need to
-    /// match a <see cref="QualifiedResourceName.ProjectName"/> against the core person resources
-    /// (<c>Student</c>, <c>Contact</c>, <c>Staff</c>).
-    /// </summary>
-    public const string EdFiProjectName = "Ed-Fi";
-
     /// <summary>
     /// Resolves the shortest person-join chain from <paramref name="subjectResource"/> to the
     /// named person resource via the supplied securable element JSON paths.
     /// </summary>
     /// <remarks>
-    /// Per the DMS-1053 design contract (auth.md L879), multiple root-level person paths are
-    /// alternatives: the function follows each one and returns the shortest resolved chain.
-    /// Equal-length ties break first-wins in input order. Paths that fail to resolve (binding
-    /// not found, target missing from the resource lookup, all declared securables at some
-    /// intermediate cycle or dead-end) are accumulated into
+    /// If multiple root-level person paths are supplied, the function follows each one and
+    /// returns the shortest resolved chain. Equal-length ties break first-wins in input order.
+    /// Runtime People subject planning, compiled mapping metadata, and authorization index
+    /// derivation pass one declared person path at a time so independent paths are preserved.
+    /// Paths that fail to resolve (binding not found, target missing from the resource lookup,
+    /// all declared securables at some intermediate cycle or dead-end) are accumulated into
     /// <paramref name="unresolvedRootLevelPaths"/> for callers to surface.
     /// </remarks>
     /// <param name="subjectResource">Subject resource declaring the person securable element(s).</param>
@@ -213,8 +208,51 @@ public static class PersonJoinPathResolver
     /// must match to avoid homograph collisions).
     /// </summary>
     public static bool IsPersonResource(QualifiedResourceName resource, string personResourceName) =>
-        string.Equals(resource.ProjectName, EdFiProjectName, StringComparison.Ordinal)
+        DataModelConstants.IsCoreProjectName(resource.ProjectName)
         && string.Equals(resource.ResourceName, personResourceName, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Returns <see langword="true"/> only for the exact self identity path on a core Ed-Fi
+    /// person resource. Other same-kind paths on the person resource still require a resolvable
+    /// DocumentId reference path.
+    /// </summary>
+    public static bool IsSelfPersonIdentityPath(
+        QualifiedResourceName resource,
+        SecurableElementKind securableElementKind,
+        string personPath
+    ) =>
+        IsPersonResource(resource, GetPersonResourceName(securableElementKind))
+        && string.Equals(
+            personPath,
+            GetSelfPersonIdentityJsonPath(securableElementKind),
+            StringComparison.Ordinal
+        );
+
+    private static string GetSelfPersonIdentityJsonPath(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "$.studentUniqueId",
+            SecurableElementKind.Contact => "$.contactUniqueId",
+            SecurableElementKind.Staff => "$.staffUniqueId",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported relationship authorization person securable element kind."
+            ),
+        };
+
+    private static string GetPersonResourceName(SecurableElementKind securableElementKind) =>
+        securableElementKind switch
+        {
+            SecurableElementKind.Student => "Student",
+            SecurableElementKind.Contact => "Contact",
+            SecurableElementKind.Staff => "Staff",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(securableElementKind),
+                securableElementKind,
+                "Unsupported relationship authorization person securable element kind."
+            ),
+        };
 
     /// <summary>
     /// Builds a <see cref="QualifiedResourceName"/> → <see cref="ConcreteResourceModel"/> lookup
