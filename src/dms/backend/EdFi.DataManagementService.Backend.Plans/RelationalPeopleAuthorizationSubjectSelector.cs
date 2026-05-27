@@ -16,9 +16,16 @@ public sealed record RelationalPeopleAuthorizationStrategySubjectSelection(
     IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors
 );
 
+public sealed record RelationalPeopleAuthorizationStrategySkippedContributors(
+    ConfiguredAuthorizationStrategy ConfiguredStrategy,
+    int RelationshipLocalOrder,
+    IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors
+);
+
 public sealed record RelationalPeopleAuthorizationSubjectSelection(
     IReadOnlyList<RelationalPeopleAuthorizationStrategySubjectSelection> StrategySubjectSelections,
-    IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures
+    IReadOnlyList<RelationshipAuthorizationFailureMetadata> SecurityConfigurationFailures,
+    IReadOnlyList<RelationalPeopleAuthorizationStrategySkippedContributors> StrategySkippedContributors
 );
 
 public static class RelationalPeopleAuthorizationSubjectSelector
@@ -49,6 +56,7 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         var subjectsByStrategy = new List<RelationalPeopleAuthorizationStrategySubjectSelection>(
             supportedStrategies.Count
         );
+        List<RelationalPeopleAuthorizationStrategySkippedContributors> skippedContributorsByStrategy = [];
 
         foreach (var supportedStrategy in supportedStrategies)
         {
@@ -58,6 +66,17 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                 personCandidates.Candidates,
                 personCandidates.SkippedPaths
             );
+
+            if (selectedSubjects.SkippedContributors.Count > 0)
+            {
+                skippedContributorsByStrategy.Add(
+                    new RelationalPeopleAuthorizationStrategySkippedContributors(
+                        supportedStrategy.ConfiguredStrategy,
+                        supportedStrategy.RelationshipLocalOrder,
+                        selectedSubjects.SkippedContributors
+                    )
+                );
+            }
 
             if (selectedSubjects.Subjects.Count == 0)
             {
@@ -98,11 +117,16 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         {
             return new RelationalPeopleAuthorizationSubjectSelection(
                 subjectsByStrategy,
-                [.. OrderFailures(securityConfigurationFailures)]
+                [.. OrderFailures(securityConfigurationFailures)],
+                skippedContributorsByStrategy
             );
         }
 
-        return new RelationalPeopleAuthorizationSubjectSelection(subjectsByStrategy, []);
+        return new RelationalPeopleAuthorizationSubjectSelection(
+            subjectsByStrategy,
+            [],
+            skippedContributorsByStrategy
+        );
     }
 
     private static bool HasUnresolvedPersonPath(

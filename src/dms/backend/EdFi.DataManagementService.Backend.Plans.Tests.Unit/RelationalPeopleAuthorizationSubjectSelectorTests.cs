@@ -894,6 +894,13 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
         );
 
         result.StrategySubjectSelections.Should().BeEmpty();
+        result
+            .StrategySkippedContributors.Should()
+            .ContainSingle()
+            .Which.SkippedContributors.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope);
 
         var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Subject;
 

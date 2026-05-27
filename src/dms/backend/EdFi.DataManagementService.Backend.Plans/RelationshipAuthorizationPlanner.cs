@@ -612,25 +612,14 @@ public sealed class RelationshipAuthorizationPlanner
                         group.SelectMany(static strategySelection => strategySelection.Subjects).ToArray()
             );
         var skippedContributorsByStrategy = selection
-            .StrategySubjectSelections.Select(strategySelection => new
+            .StrategySkippedContributors.Select(strategySkippedContributors => new
             {
                 Identity = CreateStrategyIdentity(
-                    strategySelection.ConfiguredStrategy,
-                    strategySelection.RelationshipLocalOrder
+                    strategySkippedContributors.ConfiguredStrategy,
+                    strategySkippedContributors.RelationshipLocalOrder
                 ),
-                strategySelection.SkippedContributors,
+                strategySkippedContributors.SkippedContributors,
             })
-            .Concat(
-                selection
-                    .SecurityConfigurationFailures.Where(static failure =>
-                        failure.SkippedContributors.Count > 0
-                    )
-                    .Select(failure => new
-                    {
-                        Identity = CreateStrategyIdentity(failure),
-                        failure.SkippedContributors,
-                    })
-            )
             .GroupBy(static strategySelection => strategySelection.Identity)
             .ToDictionary(
                 static group => group.Key,
