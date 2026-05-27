@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Backend.RelationalModel.Constraints;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
@@ -81,37 +82,20 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     /// </summary>
     private static readonly PrimaryAssociationIndex[] PrimaryAssociationIndexes =
     [
+        new("StudentSchoolAssociation", AuthNames.SchoolIdUnified, AuthNames.StudentDocumentId),
+        new("StudentContactAssociation", AuthNames.StudentDocumentId, AuthNames.ContactDocumentId),
         new(
-            new QualifiedResourceName(PersonJoinPathResolver.EdFiProjectName, "StudentSchoolAssociation"),
-            AuthNames.SchoolIdUnified,
-            AuthNames.StudentDocumentId
-        ),
-        new(
-            new QualifiedResourceName(PersonJoinPathResolver.EdFiProjectName, "StudentContactAssociation"),
-            AuthNames.StudentDocumentId,
-            AuthNames.ContactDocumentId
-        ),
-        new(
-            new QualifiedResourceName(
-                PersonJoinPathResolver.EdFiProjectName,
-                "StaffEducationOrganizationAssignmentAssociation"
-            ),
+            "StaffEducationOrganizationAssignmentAssociation",
             AuthNames.EdOrgEdOrgId,
             AuthNames.StaffDocumentId
         ),
         new(
-            new QualifiedResourceName(
-                PersonJoinPathResolver.EdFiProjectName,
-                "StaffEducationOrganizationEmploymentAssociation"
-            ),
+            "StaffEducationOrganizationEmploymentAssociation",
             AuthNames.EdOrgEdOrgId,
             AuthNames.StaffDocumentId
         ),
         new(
-            new QualifiedResourceName(
-                PersonJoinPathResolver.EdFiProjectName,
-                "StudentEducationOrganizationResponsibilityAssociation"
-            ),
+            "StudentEducationOrganizationResponsibilityAssociation",
             AuthNames.EdOrgEdOrgId,
             AuthNames.StudentDocumentId
         ),
@@ -132,7 +116,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
         // Person-join emission may replace an entry in-place when widening IncludeColumns.
         var authIndexLookup = new Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo>();
 
-        EmitPrimaryAssociationIndexes(context, resourceLookup, authIndexLookup);
+        EmitPrimaryAssociationIndexes(context, authIndexLookup);
 
         // Per-resource resolution outcomes (anything that resolved — EdOrg/Namespace/Person —
         // regardless of whether an index was actually emitted by dedup). Threaded into the
@@ -181,17 +165,25 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
 
     private void EmitPrimaryAssociationIndexes(
         RelationalModelSetBuilderContext context,
-        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteByName,
         Dictionary<(DbTableName Table, DbColumnName Column), DbIndexInfo> authIndexLookup
     )
     {
         foreach (var entry in PrimaryAssociationIndexes)
         {
-            if (!concreteByName.TryGetValue(entry.Resource, out var concrete))
+            var concrete = context.ConcreteResourcesInNameOrder.Find(concrete =>
+                DataModelConstants.IsCoreProjectName(concrete.ResourceKey.Resource.ProjectName)
+                && string.Equals(
+                    concrete.ResourceKey.Resource.ResourceName,
+                    entry.ResourceName,
+                    StringComparison.Ordinal
+                )
+            );
+            if (concrete is null)
             {
                 continue;
             }
 
+            var resource = concrete.ResourceKey.Resource;
             var rootTable = concrete.RelationalModel.Root;
             var canonicalKey = ResolveCanonical(rootTable, entry.KeyColumn);
             var canonicalInclude = ResolveCanonical(rootTable, entry.IncludeColumn);
@@ -211,7 +203,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
                     }
 
                     throw new InvalidOperationException(
-                        $"PrimaryAssociation '{entry.Resource.ProjectName}.{entry.Resource.ResourceName}' "
+                        $"PrimaryAssociation '{resource.ProjectName}.{resource.ResourceName}' "
                             + $"is present in the model set but root table "
                             + $"'{rootTable.Table.Schema.Value}.{rootTable.Table.Name}' is missing literal "
                             + $"column(s) '{string.Join(", ", missing)}'. "
@@ -615,7 +607,7 @@ public sealed class DeriveAuthorizationIndexInventoryPass(bool throwOnMissingPaL
     }
 
     private readonly record struct PrimaryAssociationIndex(
-        QualifiedResourceName Resource,
+        string ResourceName,
         DbColumnName KeyColumn,
         DbColumnName IncludeColumn
     );

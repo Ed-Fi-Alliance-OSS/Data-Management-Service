@@ -910,5 +910,28 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
     ],
     "completed": true
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Low: Use the shared core-project-name matcher when identifying Ed-Fi person resources for People path resolution.",
+    "acceptance-criteria": [
+      "PersonJoinPathResolver.IsPersonResource uses the same core Ed-Fi project-name comparison as AuthObjectDefinitions and other model-set code instead of a separate exact-case string comparison.",
+      "DeriveAuthorizationIndexInventoryPass primary-association lookup does not depend on exact-case Ed-Fi project-name literals that can drift from DataModelConstants.IsCoreProjectName.",
+      "Zero-hop self-person detection for Student, Contact, and Staff remains restricted to core Ed-Fi person resources and exact self identity JSON paths.",
+      "Transitive People path resolution and person-join authorization index derivation continue to reject extension resources that only share Student, Contact, or Staff resource names.",
+      "Primary association authorization indexes for StudentSchoolAssociation, StudentContactAssociation, Staff assignment/employment associations, and StudentEducationOrganizationResponsibilityAssociation are still emitted for core Ed-Fi schemas whose project name casing differs from the canonical literal.",
+      "Existing selector, securable-path resolver, and authorization-index behavior is unchanged for normal Ed-Fi mapping sets."
+    ],
+    "steps-to-verify": [
+      "Review PersonJoinPathResolver.IsPersonResource and replace its project-name check with DataModelConstants.IsCoreProjectName or the equivalent shared helper.",
+      "Review DeriveAuthorizationIndexInventoryPass.PrimaryAssociationIndexes and its resource lookup so primary association index emission uses the same core project-name matching rule.",
+      "Add unit coverage for a core person resource whose project name casing differs from the canonical literal and assert self-person and direct target detection still work.",
+      "Add or update DeriveAuthorizationIndexInventoryPass coverage for a core schema with non-canonical project name casing and assert the hardcoded primary association authorization indexes are still emitted.",
+      "Add or update coverage for an extension resource named Student, Contact, or Staff and assert it is not treated as a core person resource.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter PersonJoinPathResolver",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationalPeopleAuthorizationSubjectSelector|SecurableElementColumnPathResolver\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/PersonJoinPathResolver.cs"
+    ],
+    "completed": true
   }
 ]

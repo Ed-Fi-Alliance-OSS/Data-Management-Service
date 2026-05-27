@@ -10,6 +10,45 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
 /// <summary>
+/// Test fixture asserting person resource matching follows the shared core project-name
+/// comparison while still rejecting extension homographs.
+/// </summary>
+[TestFixture]
+public class Given_PersonJoinPathResolver_Core_Project_Matching
+{
+    [Test]
+    public void It_should_match_core_person_resource_when_project_name_casing_differs()
+    {
+        PersonJoinPathResolver
+            .IsPersonResource(new QualifiedResourceName("ed-fi", "Student"), "Student")
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_should_match_self_person_identity_path_when_project_name_casing_differs()
+    {
+        PersonJoinPathResolver
+            .IsSelfPersonIdentityPath(
+                new QualifiedResourceName("ed-fi", "Student"),
+                SecurableElementKind.Student,
+                "$.studentUniqueId"
+            )
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_should_not_match_extension_person_resource_with_the_same_resource_name()
+    {
+        PersonJoinPathResolver
+            .IsPersonResource(new QualifiedResourceName("Sample", "Student"), "Student")
+            .Should()
+            .BeFalse();
+    }
+}
+
+/// <summary>
 /// Test fixture asserting all five PrimaryAssociation authorization indexes are emitted
 /// when their resources are present in the model set.
 /// </summary>
@@ -117,6 +156,39 @@ public class Given_All_Five_PrimaryAssociations_Are_Present
 
     private DbIndexInfo SingleByTable(string tableName) =>
         _authIndexes.Single(i => i.Table.Name == tableName);
+}
+
+/// <summary>
+/// Test fixture asserting PrimaryAssociation lookup treats Ed-Fi core project-name casing the
+/// same way as the rest of model-set auth object detection.
+/// </summary>
+[TestFixture]
+public class Given_PrimaryAssociation_Core_Project_Name_Casing_Differs
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildStudentSchoolAssociation(projectName: "ed-fi")
+                )
+            )
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_the_primary_association_authorization_index()
+    {
+        var index = _authIndexes.Should().ContainSingle().Subject;
+
+        index.Table.Name.Should().Be("StudentSchoolAssociation");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("SchoolId_Unified");
+        index.IncludeColumns!.Select(c => c.Value).Should().Equal("Student_DocumentId");
+    }
 }
 
 /// <summary>
@@ -475,6 +547,86 @@ public class Given_Resource_With_Direct_Student_Reference
         index.IncludeColumns.Should().NotBeNull();
         index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
         index.Name.Value.Should().Be("IX_DirectStudentRefCarrier_Student_DocumentId_Auth");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting person-join authorization index derivation follows the shared
+/// case-insensitive core project-name matcher when identifying the target person resource.
+/// </summary>
+[TestFixture]
+public class Given_Resource_With_Direct_Student_Reference_To_Cased_Core_Project
+{
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithDirectStudentReference(
+                        targetProjectName: "ed-fi"
+                    )
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildPlainResource("Student", projectName: "ed-fi")
+                );
+            })
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_emit_one_person_join_auth_index_on_the_subject_FK()
+    {
+        var index = _authIndexes.Should().ContainSingle().Subject;
+
+        index.Table.Name.Should().Be("DirectStudentRefCarrier");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("Student_DocumentId");
+        index.IncludeColumns!.Select(c => c.Value).Should().Equal("DocumentId");
+    }
+}
+
+/// <summary>
+/// Test fixture asserting person-join authorization index derivation does not treat extension
+/// resources named <c>Student</c> as the core Ed-Fi person resource.
+/// </summary>
+[TestFixture]
+public class Given_Resource_With_Direct_Extension_Student_Reference
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        _exception = TestExceptions.CaptureException(() =>
+            AuthorizationIndexTestRunner.Build(ctx =>
+            {
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildResourceWithDirectStudentReference(
+                        targetProjectName: "Sample"
+                    )
+                );
+                ctx.ConcreteResourcesInNameOrder.Add(
+                    AuthIndexFixtureResources.BuildPlainResource("Student", projectName: "Sample")
+                );
+            })
+        );
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_should_name_the_unresolved_student_path()
+    {
+        _exception!.Message.Should().Contain("DirectStudentRefCarrier");
+        _exception.Message.Should().Contain("$.studentReference.studentUniqueId");
     }
 }
 
@@ -2123,11 +2275,12 @@ internal static class AuthIndexFixtureResources
     private const string EdFi = "Ed-Fi";
     private static readonly DbSchemaName _edfiSchema = new("edfi");
 
-    public static ConcreteResourceModel BuildStudentSchoolAssociation() =>
+    public static ConcreteResourceModel BuildStudentSchoolAssociation(string projectName = EdFi) =>
         BuildPaResource(
             "StudentSchoolAssociation",
             new DbColumnName("SchoolId_Unified"),
-            new DbColumnName("Student_DocumentId")
+            new DbColumnName("Student_DocumentId"),
+            projectName
         );
 
     public static ConcreteResourceModel BuildStudentContactAssociation() =>
@@ -2222,8 +2375,12 @@ internal static class AuthIndexFixtureResources
         );
     }
 
-    public static ConcreteResourceModel BuildPlainResource(string resourceName) =>
-        BuildResourceFromColumns(resourceName, [BuildScalarColumn(new DbColumnName("DocumentId"))]);
+    public static ConcreteResourceModel BuildPlainResource(string resourceName, string projectName = EdFi) =>
+        BuildResourceFromColumns(
+            resourceName,
+            [BuildScalarColumn(new DbColumnName("DocumentId"))],
+            projectName
+        );
 
     public static ConcreteResourceModel BuildCourseWithEdOrgSecurable()
     {
@@ -2489,7 +2646,9 @@ internal static class AuthIndexFixtureResources
     /// must also add <see cref="BuildPlainResource"/>(<c>"Student"</c>) to the context so the
     /// BFS resource lookup can resolve the target person resource.
     /// </summary>
-    public static ConcreteResourceModel BuildResourceWithDirectStudentReference()
+    public static ConcreteResourceModel BuildResourceWithDirectStudentReference(
+        string targetProjectName = EdFi
+    )
     {
         const string resourceName = "DirectStudentRefCarrier";
         var rootTable = new DbTableName(_edfiSchema, resourceName);
@@ -2500,7 +2659,7 @@ internal static class AuthIndexFixtureResources
             ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
             Table: rootTable,
             FkColumn: fkColumn,
-            TargetResource: new QualifiedResourceName(EdFi, "Student"),
+            TargetResource: new QualifiedResourceName(targetProjectName, "Student"),
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
@@ -3212,26 +3371,29 @@ internal static class AuthIndexFixtureResources
     private static ConcreteResourceModel BuildPaResource(
         string resourceName,
         DbColumnName keyColumn,
-        DbColumnName includeColumn
+        DbColumnName includeColumn,
+        string projectName = EdFi
     )
     {
         var columns = new[] { BuildScalarColumn(keyColumn), BuildScalarColumn(includeColumn) };
-        return BuildResourceFromColumns(resourceName, columns);
+        return BuildResourceFromColumns(resourceName, columns, projectName);
     }
 
     private static ConcreteResourceModel BuildResourceFromColumns(
         string resourceName,
-        IReadOnlyList<DbColumnModel> columns
-    ) => BuildResource(resourceName, columns, [], ResourceSecurableElements.Empty);
+        IReadOnlyList<DbColumnModel> columns,
+        string projectName = EdFi
+    ) => BuildResource(resourceName, columns, [], ResourceSecurableElements.Empty, projectName);
 
     private static ConcreteResourceModel BuildResource(
         string resourceName,
         IReadOnlyList<DbColumnModel> columns,
         IReadOnlyList<DocumentReferenceBinding> bindings,
-        ResourceSecurableElements securableElements
+        ResourceSecurableElements securableElements,
+        string projectName = EdFi
     )
     {
-        var qualifiedName = new QualifiedResourceName(EdFi, resourceName);
+        var qualifiedName = new QualifiedResourceName(projectName, resourceName);
         var resourceKey = new ResourceKeyEntry(1, qualifiedName, "1.0.0", false);
         var rootTableName = new DbTableName(_edfiSchema, resourceName);
 

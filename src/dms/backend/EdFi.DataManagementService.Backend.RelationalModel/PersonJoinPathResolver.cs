@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
@@ -69,13 +70,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </remarks>
 public static class PersonJoinPathResolver
 {
-    /// <summary>
-    /// Canonical project name of the Ed-Fi core data standard. Shared by callers that need to
-    /// match a <see cref="QualifiedResourceName.ProjectName"/> against the core person resources
-    /// (<c>Student</c>, <c>Contact</c>, <c>Staff</c>).
-    /// </summary>
-    public const string EdFiProjectName = "Ed-Fi";
-
     /// <summary>
     /// Resolves the shortest person-join chain from <paramref name="subjectResource"/> to the
     /// named person resource via the supplied securable element JSON paths.
@@ -214,7 +208,7 @@ public static class PersonJoinPathResolver
     /// must match to avoid homograph collisions).
     /// </summary>
     public static bool IsPersonResource(QualifiedResourceName resource, string personResourceName) =>
-        string.Equals(resource.ProjectName, EdFiProjectName, StringComparison.Ordinal)
+        DataModelConstants.IsCoreProjectName(resource.ProjectName)
         && string.Equals(resource.ResourceName, personResourceName, StringComparison.Ordinal);
 
     /// <summary>

@@ -242,3 +242,8 @@ Task completed: Failure Metadata - unresolved People path contribution order aft
 Key decisions: planner OrderFailures now uses unresolved contributor ContributionOrder before lexical fallback, matching selector ordering while retaining raw strategy and relationship-local ordering first.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs; tasks.json; progress.txt.
 Blockers/notes: csharpier formatted touched files; RelationshipAuthorizationPlanner filter passed. All tasks now complete.
+
+Task completed: Subject Resolution - shared core project-name matcher for People path resolution for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/05-people-relationship-auth-core.md
+Key decisions: PersonJoinPathResolver now uses DataModelConstants.IsCoreProjectName; primary association index lookup matches core project casing through same helper while retaining exact resource-name matching; extension Student homographs still rejected.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/PersonJoinPathResolver.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs; resolver/index unit tests; tasks.json; progress.txt.
+Blockers/notes: csharpier formatted touched files; PersonJoinPathResolver, focused index regressions, and RelationalPeopleAuthorizationSubjectSelector|SecurableElementColumnPathResolver filters passed. All tasks now complete.

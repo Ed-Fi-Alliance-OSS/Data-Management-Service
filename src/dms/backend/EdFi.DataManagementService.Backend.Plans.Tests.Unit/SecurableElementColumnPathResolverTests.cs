@@ -312,6 +312,93 @@ public class Given_SecurableElementColumnPathResolver
             results.Should().BeEmpty();
         }
 
+        [Test]
+        public void It_should_skip_self_person_identity_path_when_core_project_name_casing_differs()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("ed-fi", "Student", rootTable);
+
+            var securableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []);
+
+            var concrete = CreateConcrete(1, "ed-fi", "Student", model, securableElements);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_resolve_direct_person_reference_when_core_project_name_casing_differs()
+        {
+            var carrierRoot = CreateRootTable(
+                Table("StudentCarrier"),
+                [
+                    new DbColumnModel(
+                        Col("Student_DocumentId"),
+                        ColumnKind.DocumentFk,
+                        null,
+                        false,
+                        null,
+                        new QualifiedResourceName("ed-fi", "Student")
+                    ),
+                ]
+            );
+            var studentRoot = CreateRootTable(Table("Student"));
+            var studentReferencePath = "$.studentReference.studentUniqueId";
+            var binding = new DocumentReferenceBinding(
+                true,
+                Path("$.studentReference"),
+                carrierRoot.Table,
+                Col("Student_DocumentId"),
+                new QualifiedResourceName("ed-fi", "Student"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path(studentReferencePath),
+                        Path(studentReferencePath),
+                        Col("Student_StudentUniqueId")
+                    ),
+                ]
+            );
+
+            var carrierModel = CreateModel("ed-fi", "StudentCarrier", carrierRoot, [binding]);
+            var studentModel = CreateModel("ed-fi", "Student", studentRoot);
+            var securableElements = new ResourceSecurableElements([], [], [studentReferencePath], [], []);
+            var carrierConcrete = CreateConcrete(
+                1,
+                "ed-fi",
+                "StudentCarrier",
+                carrierModel,
+                securableElements
+            );
+            var studentConcrete = CreateConcrete(2, "ed-fi", "Student", studentModel);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(
+                carrierConcrete,
+                [carrierConcrete, studentConcrete]
+            );
+
+            results.Should().ContainSingle();
+            results[0].Kind.Should().Be(SecurableElementKind.Student);
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("Student"));
+        }
+
+        [Test]
+        public void It_should_not_skip_extension_student_self_identity_path_as_core_person_resource()
+        {
+            var rootTable = CreateRootTable(Table("Student"));
+            var model = CreateModel("Sample", "Student", rootTable);
+            var securableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []);
+            var concrete = CreateConcrete(1, "Sample", "Student", model, securableElements);
+
+            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Sample.Student*")
+                .WithMessage("*$.studentUniqueId*");
+        }
+
         [TestCase(
             SecurableElementKind.Student,
             "Student",
