@@ -17,7 +17,255 @@ param(
 
 Set-StrictMode -Version Latest
 
-Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force -Global
+Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force -Global
+
+if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
+    function Format-LogSafeText {
+        param($Value)
+
+        if ($null -eq $Value) { return "" }
+        $text = [string]$Value
+        $builder = [System.Text.StringBuilder]::new()
+        foreach ($character in $text.ToCharArray()) {
+            if ([char]::IsLetterOrDigit($character) -or
+                $character -eq " " -or
+                $character -eq "_" -or
+                $character -eq "-" -or
+                $character -eq "." -or
+                $character -eq ":" -or
+                $character -eq "/") {
+                $null = $builder.Append($character)
+            }
+        }
+
+        return $builder.ToString()
+    }
+}
+
+if (-not (Get-Command Read-RequiredJsonBoolean -ErrorAction SilentlyContinue)) {
+    function Read-RequiredJsonBoolean {
+        param(
+            [Parameter(Mandatory)]
+            $Hashtable,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Key,
+
+            [Parameter(Mandatory)]
+            [string]
+            $ArtifactContext
+        )
+
+        if ($Hashtable -isnot [System.Collections.IDictionary] -or -not $Hashtable.Contains($Key)) {
+            throw "$(Format-LogSafeText $ArtifactContext) has malformed boolean for '$(Format-LogSafeText $Key)'."
+        }
+
+        $value = $Hashtable[$Key]
+        if ($value -is [bool]) {
+            return $value
+        }
+
+        throw "$(Format-LogSafeText $ArtifactContext) has malformed boolean for '$(Format-LogSafeText $Key)'."
+    }
+}
+
+if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
+    $script:PrepareBootstrapRoot = Join-Path $PSScriptRoot ".bootstrap"
+    $script:PrepareBootstrapManifestPath = Join-Path $script:PrepareBootstrapRoot "bootstrap-manifest.json"
+    $script:PrepareWorkspaceMismatchMessage = "Existing staged bootstrap workspace differs from requested inputs, manifest state is incomplete, or files were manually edited (partial prior state). Stop the local stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/start-local-dms.ps1 -d -v -RemoveBootstrap. E2E teardown wrappers also remove the bootstrap workspace."
+    $script:PrepareUtf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+    function Get-BootstrapRoot {
+        return $script:PrepareBootstrapRoot
+    }
+
+    function Get-BootstrapRelativePath {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Path,
+
+            [string]
+            $BasePath = $script:PrepareBootstrapRoot
+        )
+
+        $fullPath = [System.IO.Path]::GetFullPath($Path)
+        $fullBasePath = [System.IO.Path]::GetFullPath($BasePath)
+        return [System.IO.Path]::GetRelativePath($fullBasePath, $fullPath).Replace("\", "/")
+    }
+
+    function Get-BootstrapWorkspaceMismatchMessage {
+        param(
+            [string]
+            $Reason
+        )
+
+        if (-not [string]::IsNullOrWhiteSpace($Reason)) {
+            return $script:PrepareWorkspaceMismatchMessage.Replace(
+                "Stop the local stack",
+                "Diverging field: $(Format-LogSafeText $Reason). Stop the local stack"
+            )
+        }
+
+        return $script:PrepareWorkspaceMismatchMessage
+    }
+
+    function New-BootstrapManifest {
+        return @{
+            version = 1
+        }
+    }
+
+    function Read-BootstrapManifest {
+        param(
+            [string]
+            $Path = $script:PrepareBootstrapManifestPath
+        )
+
+        if (-not (Test-Path -LiteralPath $Path)) {
+            return $null
+        }
+
+        try {
+            $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
+        } catch {
+            throw "Bootstrap manifest '$(Format-LogSafeText $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+        }
+
+        if ($manifest -isnot [System.Collections.IDictionary]) {
+            throw "Bootstrap manifest '$(Format-LogSafeText $Path)' must contain a JSON object."
+        }
+
+        if (-not $manifest.ContainsKey("version") -or $null -eq $manifest["version"]) {
+            $manifest["version"] = 1
+            return $manifest
+        }
+
+        $manifest["version"] = [int]$manifest["version"]
+        return $manifest
+    }
+
+    function Write-BootstrapJson {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Path,
+
+            [Parameter(Mandatory)]
+            $Value
+        )
+
+        $directory = Split-Path -Parent $Path
+        if (-not [string]::IsNullOrWhiteSpace($directory)) {
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        }
+
+        $json = $Value | ConvertTo-Json -Depth 100
+        [System.IO.File]::WriteAllText($Path, "$json`n", $script:PrepareUtf8NoBom)
+    }
+
+    function Write-BootstrapManifest {
+        param(
+            [Parameter(Mandatory)]
+            $Manifest,
+
+            [string]
+            $Path = $script:PrepareBootstrapManifestPath
+        )
+
+        $orderedManifest = [ordered]@{
+            version = 1
+        }
+
+        foreach ($sectionName in @("schema", "claims", "seed")) {
+            if ($Manifest.ContainsKey($sectionName)) {
+                $orderedManifest[$sectionName] = $Manifest[$sectionName]
+            }
+        }
+
+        Write-BootstrapJson -Path $Path -Value $orderedManifest
+    }
+
+    function Set-BootstrapManifestSection {
+        param(
+            [Parameter(Mandatory)]
+            [ValidateSet("schema", "claims", "seed")]
+            [string]
+            $Name,
+
+            [Parameter(Mandatory)]
+            $Value,
+
+            [string]
+            $Path = $script:PrepareBootstrapManifestPath
+        )
+
+        $manifest = Read-BootstrapManifest -Path $Path
+        if ($null -eq $manifest) {
+            $manifest = New-BootstrapManifest
+        }
+
+        $manifest[$Name] = $Value
+        Write-BootstrapManifest -Manifest $manifest -Path $Path
+    }
+
+    function Get-BootstrapFingerprintByte {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Path
+        )
+
+        $extension = [System.IO.Path]::GetExtension($Path)
+        if ($extension.Equals(".json", [System.StringComparison]::OrdinalIgnoreCase) -or
+            $extension.Equals(".xsd", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $text = [System.IO.File]::ReadAllText($Path)
+            $normalizedText = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+            return [System.Text.Encoding]::UTF8.GetBytes($normalizedText)
+        }
+
+        return [System.IO.File]::ReadAllBytes($Path)
+    }
+
+    function Get-BootstrapWorkspaceFingerprint {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Path
+        )
+
+        if (-not (Test-Path -LiteralPath $Path)) {
+            throw "Workspace path does not exist: $(Format-LogSafeText $Path)"
+        }
+
+        $entries = @(
+            Get-ChildItem -LiteralPath $Path -File -Recurse | ForEach-Object {
+                [pscustomobject]@{
+                    RelativePath = Get-BootstrapRelativePath -Path $_.FullName -BasePath $Path
+                    FullName = $_.FullName
+                }
+            }
+        )
+
+        $sortedEntries = @($entries | Sort-Object -Property RelativePath)
+        $incrementalHash = [System.Security.Cryptography.IncrementalHash]::CreateHash(
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256
+        )
+        [byte[]] $separator = 0
+
+        foreach ($entry in $sortedEntries) {
+            $relativePathBytes = [System.Text.Encoding]::UTF8.GetBytes($entry.RelativePath)
+            $incrementalHash.AppendData($relativePathBytes)
+            $incrementalHash.AppendData($separator)
+            $incrementalHash.AppendData((Get-BootstrapFingerprintByte -Path $entry.FullName))
+            $incrementalHash.AppendData($separator)
+        }
+
+        return [System.Convert]::ToHexString($incrementalHash.GetHashAndReset()).ToLowerInvariant()
+    }
+}
 
 $story06Message = "Package-backed standard schema selection is deferred until Story 06. For Story 00, supply -ApiSchemaPath pointing to a filesystem ApiSchema directory."
 
@@ -27,134 +275,6 @@ if ($PSBoundParameters.ContainsKey("Extensions")) {
 
 if (-not $PSBoundParameters.ContainsKey("ApiSchemaPath") -or [string]::IsNullOrWhiteSpace($ApiSchemaPath)) {
     throw $story06Message
-}
-
-function Get-DotNetFrameworkVersion {
-    param(
-        [Parameter(Mandatory)]
-        [string]
-        $Name
-    )
-
-    if ($Name -match "^net(?<Major>\d+)(?:\.(?<Minor>\d+))?") {
-        $minor = if ([string]::IsNullOrWhiteSpace($matches["Minor"])) { 0 } else { [int]$matches["Minor"] }
-        return [version]::new([int]$matches["Major"], $minor)
-    }
-
-    return [version]::new(0, 0)
-}
-
-function Get-DmsSchemaToolCandidateDirectory {
-    $repoRoot = Get-BootstrapRepoRoot
-    $toolBinRoot = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin"
-    $frameworkDirectories = [System.Collections.ArrayList]::new()
-
-    foreach ($configuration in @("Debug", "Release")) {
-        $configurationRoot = Join-Path $toolBinRoot $configuration
-        if (-not (Test-Path -LiteralPath $configurationRoot -PathType Container)) {
-            continue
-        }
-
-        foreach ($frameworkDirectory in Get-ChildItem -LiteralPath $configurationRoot -Directory -Filter "net*") {
-            if ($frameworkDirectory.Name -notmatch "^net\d") {
-                continue
-            }
-
-            $null = $frameworkDirectories.Add(
-                [pscustomobject]@{
-                    Directory = $frameworkDirectory.FullName
-                    FrameworkVersion = Get-DotNetFrameworkVersion -Name $frameworkDirectory.Name
-                    ConfigurationPriority = if ($configuration -eq "Debug") { 0 } else { 1 }
-                }
-            )
-        }
-    }
-
-    return @(
-        $frameworkDirectories |
-            Sort-Object `
-                -Property @{ Expression = { $_.FrameworkVersion }; Descending = $true },
-                    @{ Expression = { $_.ConfigurationPriority }; Ascending = $true } |
-            ForEach-Object { $_.Directory }
-    )
-}
-
-function Resolve-DmsSchemaTool {
-    param(
-        [string]
-        $RequestedPath
-    )
-
-    if (-not [string]::IsNullOrWhiteSpace($RequestedPath)) {
-        $fullPath = [System.IO.Path]::GetFullPath($RequestedPath)
-        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
-            throw "The configured dms-schema executable was not found: $(Format-LogSafeText $fullPath)"
-        }
-
-        return $fullPath
-    }
-
-    $candidateNames = if ($IsWindows) {
-        @("dms-schema.exe", "dms-schema")
-    } else {
-        @("dms-schema")
-    }
-
-    foreach ($candidateDirectory in Get-DmsSchemaToolCandidateDirectory) {
-        foreach ($candidateName in $candidateNames) {
-            $candidate = Join-Path $candidateDirectory $candidateName
-            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-                return $candidate
-            }
-        }
-    }
-
-    $pathCommand = Get-Command "dms-schema" -ErrorAction SilentlyContinue
-    if ($null -ne $pathCommand) {
-        if ($env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -ne "true") {
-            throw "In-repo dms-schema tool not found. Build src/dms/clis/EdFi.DataManagementService.SchemaTools, set DMS_SCHEMA_TOOL_PATH, or set DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true to opt in to PATH fallback."
-        }
-
-        Write-Warning "Falling back to PATH-resolved dms-schema executable: $(Format-LogSafeText ($pathCommand.Source))"
-        return $pathCommand.Source
-    }
-
-    throw "Unable to resolve the dms-schema executable. Build src/dms/clis/EdFi.DataManagementService.SchemaTools or set DMS_SCHEMA_TOOL_PATH."
-}
-
-function Invoke-DmsSchemaHash {
-    param(
-        [Parameter(Mandatory)]
-        [string]
-        $ToolPath,
-
-        [Parameter(Mandatory)]
-        [string]
-        $CoreSchemaPath,
-
-        [string[]]
-        $ExtensionSchemaPath = @()
-    )
-
-    $arguments = @("hash", $CoreSchemaPath) + $ExtensionSchemaPath
-    $output = if ($ToolPath.EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
-        & pwsh -NoLogo -NoProfile -File $ToolPath @arguments 2>&1
-    } else {
-        & $ToolPath @arguments 2>&1
-    }
-
-    $exitCode = $LASTEXITCODE
-    $outputText = ($output | Out-String).Trim()
-
-    if ($exitCode -ne 0) {
-        throw "dms-schema hash failed with exit code $exitCode. $(Format-LogSafeText $outputText)"
-    }
-
-    if ($outputText -notmatch "(?m)^Effective schema hash:\s*([a-fA-F0-9]{64})\s*$") {
-        throw "dms-schema hash completed but did not report an Effective schema hash. $(Format-LogSafeText $outputText)"
-    }
-
-    return $matches[1].ToLowerInvariant()
 }
 
 function Get-ProjectDirectoryName {

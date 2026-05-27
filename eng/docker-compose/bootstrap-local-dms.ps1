@@ -105,6 +105,10 @@ param(
 
     [Switch]$AddExtensionSecurityMetadata,
 
+    [Switch]$NoDmsInstance,
+
+    [Switch]$AddSmokeTestCredentials,
+
     [string]$SchoolYearRange = ""
 )
 

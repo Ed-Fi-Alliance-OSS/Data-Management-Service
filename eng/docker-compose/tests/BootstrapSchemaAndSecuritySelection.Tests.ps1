@@ -34,7 +34,7 @@ Describe "Story 00 bootstrap" {
         $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
         New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
 
-        foreach ($fileName in @("bootstrap-manifest.psm1", "prepare-dms-schema.ps1", "prepare-dms-claims.ps1")) {
+        foreach ($fileName in @("bootstrap-manifest.psm1", "bootstrap-schema-tool.psm1", "prepare-dms-schema.ps1", "prepare-dms-claims.ps1")) {
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Destination $dockerComposeRoot
         }
 

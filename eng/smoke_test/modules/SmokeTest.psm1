@@ -131,9 +131,7 @@ function Get-SmokeTestCredentials {
         $key = $credentials.Key
         $secret = $credentials.Secret
 
-        Write-Host "Application created successfully!"
-        Write-Host "Key: $key"
-        Write-Host "Secret: $secret"
+        Write-Host "Application created successfully. Credentials were returned to the caller and were not written to logs."
 
         return @{
             Key = $key

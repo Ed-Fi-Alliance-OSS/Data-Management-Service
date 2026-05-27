@@ -52,6 +52,14 @@ param (
     [string]
     $SchoolYearRange = "",
 
+    # Start only infrastructure required before schema provisioning
+    [Switch]
+    $InfraOnly,
+
+    # Start only the DMS service after external schema provisioning
+    [Switch]
+    $DmsOnly,
+
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
     [Switch]
@@ -88,6 +96,7 @@ Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadat
 Import-Module ./env-utility.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
+$dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
 Write-Output "Identity Provider $IdentityProvider"
 if($IdentityProvider -eq "keycloak")
@@ -105,6 +114,18 @@ elseif ($IdentityProvider -eq "self-contained") {
 }
 
 if (-not $d) {
+    if ($InfraOnly -and $DmsOnly) {
+        throw "Parameters -InfraOnly and -DmsOnly are mutually exclusive."
+    }
+
+    if (($InfraOnly -or $DmsOnly) -and $LoadSeedData) {
+        throw "Parameter -LoadSeedData cannot be used with -InfraOnly or -DmsOnly."
+    }
+
+    if ($DmsOnly -and ($NoDmsInstance -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
+        throw "Parameters -NoDmsInstance, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
+    }
+
     if ($NoDmsInstance -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
         throw "Parameters -NoDmsInstance and -SchoolYearRange are mutually exclusive. Use -NoDmsInstance for manual instance creation, or use -SchoolYearRange to auto-create instances."
     }
@@ -132,7 +153,7 @@ if ($EnableKafkaUI) {
 }
 
 # Include configuration service if enabled or if using self-contained identity provider
-if ($EnableConfig -or $IdentityProvider -eq "self-contained") {
+if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained") {
     $files += @("-f", "published-config.yml")
 }
 
@@ -157,6 +178,71 @@ else {
     if (! $existingNetwork) {
         docker network create dms
     }
+
+    $upArgs = @(
+        "--detach"
+    )
+
+    function Wait-HttpEndpointHealthy {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Url,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Name,
+
+            [int]
+            $TimeoutSeconds = 60
+        )
+
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while ($true) {
+            try {
+                $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec 5 -ErrorAction Stop
+                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                    return
+                }
+            }
+            catch {
+                $null = $_
+            }
+
+            if ([datetime]::UtcNow -ge $deadline) {
+                throw "$Name health check timed out after $TimeoutSeconds seconds. Endpoint: $(Format-LogSafeText $Url)"
+            }
+
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    if ($DmsOnly) {
+        Write-Output "Starting published DMS service only with startup database provisioning disabled..."
+        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
+        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
+        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
+        try {
+            $env:NEED_DATABASE_SETUP = "false"
+            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+            $env:AppSettings__DeployDatabaseOnStartup = "false"
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs dms
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
+            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
+            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to start published DMS service, with exit code $LASTEXITCODE."
+        }
+
+        Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
+        Write-Output "DMS service is healthy."
+        return
+    }
+
     if($IdentityProvider -eq "keycloak")
     {
         Write-Output "Starting Keycloak first..."
@@ -177,10 +263,53 @@ else {
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
 
+    Write-Output "Starting Postgresql..."
+    docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs db
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
+    }
+
+    if ($InfraOnly) {
+        if($IdentityProvider -eq "self-contained")
+        {
+            Write-Output "Init db public and private keys for OpenIddict..."
+            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
+        }
+
+        Write-Output "Starting Configuration Service..."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs config
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Configuration Service. Exit code $LASTEXITCODE"
+        }
+
+        Wait-HttpEndpointHealthy -Url "$($cmsUrl.TrimEnd('/'))/health" -Name "Configuration Service"
+        Write-Output "Configuration Service is healthy."
+
+        if($IdentityProvider -eq "self-contained")
+        {
+            Write-Output "Starting self-contained initialization script..."
+            ./setup-openiddict.ps1 -InsertData -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+        }
+
+        Write-Output "Starting Kafka connector infrastructure..."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka-postgresql-source
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Kafka connector infrastructure. Exit code $LASTEXITCODE"
+        }
+
+        Write-Output "Running connector setup..."
+        ./setup-connectors.ps1 $EnvironmentFile
+
+        Write-Output "Infrastructure phase complete. DMS service was not started."
+        return
+    }
+
 
     Write-Output "Starting published DMS"
     $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
-    docker compose $files --env-file $EnvironmentFile -p dms-published up -d
+    docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
     $env:NEED_DATABASE_SETUP = $envValues["NEED_DATABASE_SETUP"]
 
     if ($LASTEXITCODE -ne 0) {
@@ -231,9 +360,7 @@ else {
 
 
         Write-Output "Smoke test credentials created successfully!"
-        Write-Output "Key: $($credentials.Key)"
-        Write-Output "Secret: $($credentials.Secret)"
-        Write-Output "These credentials can be used for smoke testing the DMS API."
+        Write-Output "Credential values were returned to the caller and were not written to logs."
     }
 
     if(-not $NoDmsInstance -or $SchoolYearRange)

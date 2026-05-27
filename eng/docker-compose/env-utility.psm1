@@ -335,7 +335,12 @@ function Resolve-BootstrapDerivedEnv {
     Write-DerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
         -TargetPath $DerivedTargetPath `
-        -KeyOverrides @{ FAILURE_RATIO = "0.95" } `
+        -KeyOverrides @{
+            FAILURE_RATIO = "0.95"
+            NEED_DATABASE_SETUP = "false"
+            DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+            AppSettings__DeployDatabaseOnStartup = "false"
+        } `
         -SchemaPackageExclusions $exclusions
 
     return $DerivedTargetPath
