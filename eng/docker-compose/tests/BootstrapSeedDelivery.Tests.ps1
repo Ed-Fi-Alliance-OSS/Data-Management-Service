@@ -1247,6 +1247,21 @@ SCHEMA_PACKAGES='[
                 -Because "the precondition call must be guarded by the gate variable"
         }
 
+        It "load-dms-seed-data.ps1 defaults EnvironmentFile before reading it" {
+            # Regression guard for direct seed invocation without -EnvironmentFile: the script must
+            # materialize the default .env/.env.example path before ReadValuesFromEnvFile calls Test-Path.
+            $script = Join-Path $script:sourceDockerComposeRoot "load-dms-seed-data.ps1"
+            $content = Get-Content -LiteralPath $script -Raw
+            $defaultIndex = $content.IndexOf('# Resolve environment file')
+            $readIndex = $content.IndexOf('$envValues = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile')
+
+            $defaultIndex | Should -BeGreaterOrEqual 0
+            $readIndex | Should -BeGreaterThan $defaultIndex
+            $content.Substring($defaultIndex, $readIndex - $defaultIndex) |
+                Should -Match 'if\s*\(\s*\[string\]::IsNullOrWhiteSpace\(\$EnvironmentFile\)\s*\)' `
+                -Because "direct invocation must assign an env file before calling ReadValuesFromEnvFile"
+        }
+
         It "resolves env file and derives CMS URL, DMS URL, identity provider from local settings" {
             $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
             @"
@@ -1500,20 +1515,23 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
         It "selects XSD directory from staged ApiSchema manifest or fails when unavailable" {
             $tmpRoot = New-TestDirectory
 
-            # Create a fake xsd source directory with .xsd files
-            $xsdSourceDir = Join-Path $tmpRoot "xsd-source"
-            New-Item -ItemType Directory -Path $xsdSourceDir -Force | Out-Null
-            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $xsdSourceDir "Ed-Fi-Core.xsd") -Encoding utf8
-
-            # Create an ApiSchema manifest under .bootstrap that references the xsd directory
+            # Create the same relative layout emitted by prepare-dms-schema.ps1:
+            # .bootstrap/ApiSchema/content/<project>/xsd
             $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
             $apiSchemaDir = Join-Path $bootstrapRoot "ApiSchema"
-            New-Item -ItemType Directory -Path $apiSchemaDir -Force | Out-Null
+            $xsdSourceDir = Join-Path $apiSchemaDir "content/Ed-Fi/xsd"
+            $nestedXsdDir = Join-Path $xsdSourceDir "nested"
+            New-Item -ItemType Directory -Path $xsdSourceDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $nestedXsdDir -Force | Out-Null
+            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $xsdSourceDir "Ed-Fi-Core.xsd") -Encoding utf8
+            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $nestedXsdDir "Nested-Support.xsd") -Encoding utf8
+
+            # Create an ApiSchema manifest under .bootstrap that references the xsd directory
             $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
             $manifestPath = Join-Path $bootstrapRoot $manifestRelPath
             @{
                 projects = @(
-                    @{ projectName = "Ed-Fi"; xsdDirectory = $xsdSourceDir }
+                    @{ projectName = "Ed-Fi"; xsdDirectory = "content/Ed-Fi/xsd" }
                 )
             } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 
@@ -1530,7 +1548,9 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
 
             $result | Should -Be (Join-Path $workspaceRoot "xsd")
             $copied = @(Get-ChildItem -LiteralPath $result -Filter "*.xsd" -ErrorAction SilentlyContinue)
-            $copied.Count | Should -Be 1
+            $copied.Count | Should -Be 2
+            $copied.Name | Should -Contain "Ed-Fi-Core.xsd"
+            $copied.Name | Should -Contain "Nested-Support.xsd"
 
             # Fail when no xsdDirectory in manifest
             $emptyManifestRelPath = "ApiSchema/empty-manifest.json"
@@ -1550,6 +1570,44 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             } | Should -Throw -ExpectedMessage "*No staged XSD files*"
 
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+        }
+
+        It "deduplicates shared XSD directories from staged ApiSchema manifests" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                $apiSchemaDir = Join-Path $bootstrapRoot "ApiSchema"
+                $xsdSourceDir = Join-Path $apiSchemaDir "content/Ed-Fi/xsd"
+                New-Item -ItemType Directory -Path $xsdSourceDir -Force | Out-Null
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $xsdSourceDir "Ed-Fi-Core.xsd") -Encoding utf8
+
+                $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                $manifestPath = Join-Path $bootstrapRoot $manifestRelPath
+                @{
+                    projects = @(
+                        @{ projectName = "Ed-Fi"; xsdDirectory = "content/Ed-Fi/xsd" },
+                        @{ projectName = "Sample"; xsdDirectory = "content/Ed-Fi/xsd" }
+                    )
+                } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+                $workspaceRoot = Join-Path $tmpRoot "seed-workspace"
+                New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+                $manifest = @{
+                    schema = @{ apiSchemaManifestPath = $manifestRelPath }
+                }
+
+                $result = Get-SeedXsdDirectory `
+                    -Manifest $manifest `
+                    -WorkspaceRoot $workspaceRoot `
+                    -BootstrapRoot $bootstrapRoot
+
+                $copied = @(Get-ChildItem -LiteralPath $result -Filter "*.xsd" -ErrorAction SilentlyContinue)
+                $copied.Count | Should -Be 1
+                $copied.Name | Should -Contain "Ed-Fi-Core.xsd"
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
         }
     }
 
@@ -2436,7 +2494,7 @@ EdFi.BulkLoadClient.Console fake
 
         It "SeedLoader default EdOrg envelope remains pinned to the v5.2.0 Sample XML top-level EdOrgs" {
             $mgmtContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "../Dms-Management.psm1") -Raw
-            $mgmtContent | Should -Match '\[long\[\]\]\$EducationOrganizationIds\s*=\s*@\(\[long\]255950,\s*\[long\]255901,\s*\[long\]255901001,\s*\[long\]255901044,\s*\[long\]255901107,\s*\[long\]19,\s*\[long\]6000203\)' -Because "EdOrg envelope changes must be reviewed against the pinned Sample XML inventory"
+            $mgmtContent | Should -Match '\[long\[\]\]\$EducationOrganizationIds\s*=\s*@\(\[long\]255950,\s*\[long\]255901,\s*\[long\]255901001,\s*\[long\]255901044,\s*\[long\]255901107,\s*\[long\]19,\s*\[long\]19255901,\s*\[long\]6000203\)' -Because "EdOrg envelope changes must be reviewed against the pinned Sample XML inventory"
         }
 
         It "Wait-CmsClientAvailable defaults to a 30-second cold-stack budget" {

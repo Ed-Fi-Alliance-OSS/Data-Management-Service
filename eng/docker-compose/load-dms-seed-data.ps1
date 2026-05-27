@@ -989,6 +989,8 @@ function Get-SeedXsdDirectory {
         throw "ApiSchema manifest contains malformed JSON: $(Format-LogSafeText ($_.Exception.Message))"
     }
 
+    $apiSchemaWorkspaceRoot = Split-Path -Parent $absApiSchemaManifestPath
+
     # Wipe and recreate the XSD destination on every entry so a re-prepared schema or branch
     # switch can't quietly reuse stale XSDs with the same filename from a previous run.
     $xsdDestDir = Join-Path $WorkspaceRoot "xsd"
@@ -1010,6 +1012,7 @@ function Get-SeedXsdDirectory {
     # name into the flattened directory would otherwise silently overwrite each other.
     $xsdPlan = [System.Collections.Generic.List[pscustomobject]]::new()
     $xsdTargetNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $xsdSourceDirectories = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $xsdCollisions = [System.Collections.Generic.List[string]]::new()
 
     if ($null -ne $projects) {
@@ -1029,9 +1032,13 @@ function Get-SeedXsdDirectory {
                 continue
             }
 
-            # Resolve relative to bootstrap root when not absolute
+            # xsdDirectory entries are relative to the staged ApiSchema workspace, not to
+            # the root .bootstrap manifest directory.
             if (-not [System.IO.Path]::IsPathRooted($xsdDir)) {
-                $xsdDir = [System.IO.Path]::GetFullPath((Join-Path $BootstrapRoot $xsdDir))
+                $xsdDir = [System.IO.Path]::GetFullPath((Join-Path $apiSchemaWorkspaceRoot $xsdDir))
+            }
+            else {
+                $xsdDir = [System.IO.Path]::GetFullPath($xsdDir)
             }
 
             $projectLabel = if ([string]::IsNullOrWhiteSpace($projectName)) { $xsdDir } else { $projectName }
@@ -1039,7 +1046,12 @@ function Get-SeedXsdDirectory {
             if (-not (Test-Path -LiteralPath $xsdDir -PathType Container)) {
                 throw "ApiSchema manifest project '$(Format-LogSafeText $projectLabel)' advertises xsdDirectory '$(Format-LogSafeText $xsdDir)' but that directory does not exist. Re-run prepare-dms-schema.ps1, or check for a stale .bootstrap workspace."
             }
-            $xsdFiles = @(Get-ChildItem -LiteralPath $xsdDir -Filter "*.xsd" -ErrorAction SilentlyContinue)
+
+            if (-not $xsdSourceDirectories.Add($xsdDir)) {
+                continue
+            }
+
+            $xsdFiles = @(Get-ChildItem -LiteralPath $xsdDir -Filter "*.xsd" -File -Recurse -ErrorAction SilentlyContinue)
             foreach ($xsdFile in $xsdFiles) {
                 if (-not $xsdTargetNames.Add($xsdFile.Name)) {
                     $xsdCollisions.Add("Target name collision: $(Format-LogSafeText $xsdFile.Name) from project $(Format-LogSafeText $projectLabel) ($(Format-LogSafeText $xsdFile.FullName))")
