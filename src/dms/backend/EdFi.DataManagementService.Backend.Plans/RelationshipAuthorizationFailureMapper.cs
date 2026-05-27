@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics.CodeAnalysis;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
@@ -90,6 +91,7 @@ public static class RelationshipAuthorizationFailureMapper
                             subjectIndex,
                             RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
                             subject,
+                            checkSpec.ValueSource,
                             subjectFailureMetadata?.Hint
                                 ?? "Relationship authorization requires at least one claim EducationOrganizationId."
                         );
@@ -225,6 +227,7 @@ public static class RelationshipAuthorizationFailureMapper
                     subjectFailure.SubjectOrdinal,
                     MapSubjectFailureKind(subjectFailure.FailureKind),
                     checkSpec.Subjects[subjectFailure.SubjectOrdinal],
+                    checkSpec.ValueSource,
                     BuildSubjectHint(subjectFailure.FailureKind)
                 )
             );
@@ -245,15 +248,19 @@ public static class RelationshipAuthorizationFailureMapper
         int subjectIndex,
         RelationshipAuthorizationSubjectFailureKind failureKind,
         RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationValueSource valueSource,
         string hint
-    ) =>
-        new(
+    )
+    {
+        var rootBinding = MapRootBinding(subject, valueSource);
+
+        return new RelationshipAuthorizationFailedSubject(
             subjectIndex,
             failureKind,
             new RelationshipAuthorizationRootBinding(
                 $"{subject.Resource.ProjectName}.{subject.Resource.ResourceName}",
-                subject.Table.ToString(),
-                subject.Column.Value
+                rootBinding.Table.ToString(),
+                rootBinding.Column.Value
             ),
             MapAuthObject(subject.AuthObject),
             [
@@ -270,6 +277,41 @@ public static class RelationshipAuthorizationFailureMapper
         {
             PersonSubject = MapPersonSubject(subject),
         };
+    }
+
+    private static RelationshipAuthorizationSubjectRootBinding MapRootBinding(
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationValueSource valueSource
+    )
+    {
+        if (subject.PersonMetadata is not { } personMetadata)
+        {
+            return new RelationshipAuthorizationSubjectRootBinding(subject.Table, subject.Column);
+        }
+
+        return valueSource switch
+        {
+            RelationshipAuthorizationValueSource.Stored => new RelationshipAuthorizationSubjectRootBinding(
+                personMetadata.StoredAnchor.RootTable,
+                personMetadata.StoredAnchor.RootDocumentIdColumn
+            ),
+            RelationshipAuthorizationValueSource.Proposed
+                when personMetadata.ProposedAnchor is { } proposedAnchor =>
+                new RelationshipAuthorizationSubjectRootBinding(
+                    proposedAnchor.Binding.Table,
+                    proposedAnchor.Binding.Column
+                ),
+            RelationshipAuthorizationValueSource.Proposed => new RelationshipAuthorizationSubjectRootBinding(
+                personMetadata.StoredAnchor.RootTable,
+                personMetadata.StoredAnchor.RootDocumentIdColumn
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(valueSource),
+                valueSource,
+                "Unsupported relationship authorization value source."
+            ),
+        };
+    }
 
     private static RelationshipAuthorizationFailureMetadata? SelectNoClaimsSubjectFailureMetadata(
         RelationshipAuthorizationSubject subject,
@@ -542,4 +584,6 @@ public static class RelationshipAuthorizationFailureMapper
                 "Unsupported AUTH1 relationship failure kind."
             ),
         };
+
+    private sealed record RelationshipAuthorizationSubjectRootBinding(DbTableName Table, DbColumnName Column);
 }

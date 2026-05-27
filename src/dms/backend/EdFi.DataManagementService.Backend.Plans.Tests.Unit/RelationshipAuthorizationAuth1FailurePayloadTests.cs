@@ -482,7 +482,8 @@ public class Given_RelationshipAuthorizationFailureMapper
 
         var failedSubject = failedStrategy.FailedSubjects[0];
         failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.StoredValueNull);
-        failedSubject.RootBinding.ColumnName.Should().Be("Student_DocumentId");
+        failedSubject.RootBinding.TableName.Should().Be("edfi.School");
+        failedSubject.RootBinding.ColumnName.Should().Be("DocumentId");
         failedSubject.SecurableElements.Should().ContainSingle();
         failedSubject.SecurableElements[0].Kind.Should().Be("Student");
         failedSubject.SecurableElements[0].JsonPath.Should().Be("$.studentReference.studentUniqueId");
@@ -506,6 +507,97 @@ public class Given_RelationshipAuthorizationFailureMapper
                     .CreatePerson(RelationshipAuthorizationPersonAuthViewKind.Student)
                     .FailureHint
             );
+    }
+
+    [Test]
+    public void It_should_map_stored_transitive_people_root_binding_from_stored_anchor()
+    {
+        var courseTranscriptTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var rootDocumentIdColumn = new DbColumnName("DocumentId");
+        var firstHopColumn = new DbColumnName("StudentAcademicRecord_DocumentId");
+        var subject = CreatePersonSubject(
+            SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            AuthNames.StudentDocumentId,
+            "$.studentAcademicRecordReference.studentUniqueId",
+            "StudentUniqueId",
+            pathKind: RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+            pathSteps:
+            [
+                new ColumnPathStep(
+                    courseTranscriptTable,
+                    firstHopColumn,
+                    studentAcademicRecordTable,
+                    rootDocumentIdColumn
+                ),
+                new ColumnPathStep(
+                    studentAcademicRecordTable,
+                    AuthNames.StudentDocumentId,
+                    studentTable,
+                    rootDocumentIdColumn
+                ),
+            ],
+            rootTable: courseTranscriptTable,
+            resourceName: "CourseTranscript"
+        );
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                31,
+                0,
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                ),
+                subject
+            ),
+        };
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                4,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedSubject = relationshipFailure!
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+
+        failedSubject.RootBinding.TableName.Should().Be("edfi.CourseTranscript");
+        failedSubject.RootBinding.ColumnName.Should().Be("DocumentId");
+        failedSubject.AuthObject.SubjectValueColumn.Should().Be("Student_DocumentId");
+        failedSubject.PersonSubject.Should().NotBeNull();
+        failedSubject.PersonSubject!.PathKind.Should().Be("TransitiveJoinPath");
+        failedSubject
+            .PersonSubject.DocumentIdPath.Select(static step => step.SourceTableName)
+            .Should()
+            .Equal("edfi.CourseTranscript", "edfi.StudentAcademicRecord");
+        failedSubject
+            .PersonSubject.DocumentIdPath.Select(static step => step.SourceColumnName)
+            .Should()
+            .Equal("StudentAcademicRecord_DocumentId", "Student_DocumentId");
+        failedSubject.PersonSubject.StoredAnchor.RootTableName.Should().Be("edfi.CourseTranscript");
+        failedSubject.PersonSubject.StoredAnchor.RootDocumentIdColumnName.Should().Be("DocumentId");
     }
 
     [Test]
@@ -1161,6 +1253,8 @@ public class Given_RelationshipAuthorizationFailureMapper
         relationshipFailure!.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Proposed);
 
         var directFailedSubject = relationshipFailure.FailedStrategies[0].FailedSubjects[0];
+        directFailedSubject.RootBinding.TableName.Should().Be("edfi.School");
+        directFailedSubject.RootBinding.ColumnName.Should().Be("Student_DocumentId");
         directFailedSubject.AuthObject.SubjectValueColumn.Should().Be("Student_DocumentId");
 
         var directPersonSubject = directFailedSubject.PersonSubject;
@@ -1184,8 +1278,8 @@ public class Given_RelationshipAuthorizationFailureMapper
         directPersonSubject.ProposedAnchor.Binding.ParameterSeed.Should().Be("student_DocumentId");
 
         var transitiveFailedSubject = relationshipFailure.FailedStrategies[1].FailedSubjects[0];
-        transitiveFailedSubject.RootBinding.TableName.Should().Be("edfi.StudentSchoolAssociation");
-        transitiveFailedSubject.RootBinding.ColumnName.Should().Be("Student_DocumentId");
+        transitiveFailedSubject.RootBinding.TableName.Should().Be("edfi.CourseTranscript");
+        transitiveFailedSubject.RootBinding.ColumnName.Should().Be("StudentSchoolAssociation_DocumentId");
 
         var transitivePersonSubject = transitiveFailedSubject.PersonSubject;
         transitivePersonSubject.Should().NotBeNull();
@@ -1222,6 +1316,8 @@ public class Given_RelationshipAuthorizationFailureMapper
             .Be("studentSchoolAssociation_DocumentId");
 
         var selfFailedSubject = relationshipFailure.FailedStrategies[2].FailedSubjects[0];
+        selfFailedSubject.RootBinding.TableName.Should().Be("edfi.Staff");
+        selfFailedSubject.RootBinding.ColumnName.Should().Be("DocumentId");
         selfFailedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStaffDocumentId");
         selfFailedSubject.AuthObject.SubjectValueColumn.Should().Be("Staff_DocumentId");
 

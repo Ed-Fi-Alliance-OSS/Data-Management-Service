@@ -75,7 +75,7 @@ public sealed record RelationshipAuthorizationSecurableElement(
 );
 
 /// <summary>
-/// Relational root-table binding used by a stored-value relationship authorization subject.
+/// Relational root/proposed anchor binding used by a relationship authorization subject.
 /// </summary>
 public sealed record RelationshipAuthorizationRootBinding(
     string ResourceName,
