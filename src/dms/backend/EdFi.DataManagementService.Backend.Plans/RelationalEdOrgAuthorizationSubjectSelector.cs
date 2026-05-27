@@ -52,25 +52,6 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
         );
     }
 
-    internal RelationalEdOrgAuthorizationSubjectSelection Select(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategy> supportedStrategies
-    ) =>
-        Select(
-            mappingSet,
-            resource,
-            [
-                .. supportedStrategies.Select(
-                    strategy => new SupportedRelationshipAuthorizationStrategySelection(
-                        strategy.ConfiguredStrategy,
-                        strategy.RelationshipLocalOrder,
-                        RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(strategy.Direction)
-                    )
-                ),
-            ]
-        );
-
     private RelationalEdOrgAuthorizationSubjectSelection Select(
         MappingSet mappingSet,
         QualifiedResourceName resource,

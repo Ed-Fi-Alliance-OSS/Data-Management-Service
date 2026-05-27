@@ -379,7 +379,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
         );
         var selectedSubject = CreateSelector()
-            .Select(mappingSet, resource, CreateSupportedStrategies(configuredAuthorizationStrategies))
+            .Select(mappingSet, resource, CreateSupportedStrategy(configuredAuthorizationStrategies[0]))
             .Subjects.Single();
         var writePlan = mappingSet.GetWritePlanOrThrow(resource);
         var rootTablePlan = GetRootTableWritePlan(writePlan);
@@ -2798,21 +2798,16 @@ public class Given_RelationshipAuthorizationPlannerTests
             ),
         ];
 
-    private static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> CreateSupportedStrategies(
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+    private static SupportedRelationshipAuthorizationStrategy CreateSupportedStrategy(
+        ConfiguredAuthorizationStrategy configuredStrategy
     ) =>
-        [
-            .. configuredAuthorizationStrategies.Select(
-                static (configuredStrategy, relationshipLocalOrder) =>
-                    new SupportedRelationshipAuthorizationStrategy(
-                        RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                        RelationshipAuthorizationHierarchyDirection.Normal,
-                        configuredStrategy,
-                        relationshipLocalOrder,
-                        [new(SecurableElementKind.EducationOrganization)]
-                    )
-            ),
-        ];
+        new(
+            RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            configuredStrategy,
+            0,
+            [new(SecurableElementKind.EducationOrganization)]
+        );
 
     private static DbTableName Table(string name) => new(_edfiSchema, name);
 

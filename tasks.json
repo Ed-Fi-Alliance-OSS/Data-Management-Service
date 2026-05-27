@@ -45,8 +45,8 @@
       "RelationshipsWithStudentsOnlyThroughResponsibility uses auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility with Student_DocumentId.",
       "Each selected People auth view carries the matching auth.md hint text.",
       "When a selected, operation-applicable person subject requires People auth views that were not emitted, the planning result is a security-configuration failure that names the resource, strategy, selected person kind, auth view, and all missing resources from AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames.",
-      "Mixed EdOrg-and-People strategies that select only applicable EducationOrganization subjects continue with those EdOrg subjects even when AuthObjectDefinitions.HasAllPeopleAuthViewAssociations is false.",
-      "The planner does not emit executable specs that reference conventional People auth view names when AuthObjectDefinitions.HasAllPeopleAuthViewAssociations is false."
+      "Mixed EdOrg-and-People strategies that select only applicable EducationOrganization subjects continue with those EdOrg subjects when GetPeopleAuthViewAvailability reports unavailable People auth views.",
+      "The planner does not emit executable specs that reference conventional People auth view names when GetPeopleAuthViewAvailability reports unavailable People auth views."
     ],
     "steps-to-verify": [
       "Review the People auth view mapping against src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs and AuthEdOrgHierarchyContracts.cs.",
@@ -747,7 +747,7 @@
       "Existing DDL and manifest emission behavior remains unchanged except for using the shared availability helper."
     ],
     "steps-to-verify": [
-      "Review RelationalModelDdlEmitter.EmitPeopleAuthViews, DerivedModelSetManifestEmitter.WriteAuthObjects, AuthObjectDefinitions.HasAllPeopleAuthViewAssociations, and RelationshipAuthorizationPlanner.CreateMissingPeopleAuthViewAssociationFailures for matching availability rules.",
+      "Review RelationalModelDdlEmitter.EmitPeopleAuthViews, DerivedModelSetManifestEmitter.WriteAuthObjects, AuthObjectDefinitions.GetPeopleAuthViewAvailability, and RelationshipAuthorizationPlanner.CreateMissingPeopleAuthViewAssociationFailures for matching availability rules.",
       "Add or update RelationshipAuthorizationPlanner tests for missing AuthEdOrgHierarchy with complete People association resources and for available People auth views with AuthEdOrgHierarchy present.",
       "Add or update AuthObjectDefinitions, DDL, or manifest unit coverage so the shared availability helper cannot drift from emitted auth objects.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
@@ -839,19 +839,19 @@
     "category": "Simplification",
     "description": "Low: Remove obsolete auth availability helpers and unused selector overloads that can drift from the active planning path.",
     "acceptance-criteria": [
-      "AuthObjectDefinitions.HasAllPeopleAuthViewAssociations is removed so new code cannot bypass the AuthEdOrgHierarchy-aware GetPeopleAuthViewAvailability contract.",
+      "The obsolete association-only People auth availability helper is removed so new code cannot bypass the AuthEdOrgHierarchy-aware GetPeopleAuthViewAvailability contract.",
       "RelationalEdOrgAuthorizationSubjectSelector does not expose a multi-strategy Select overload unless production planning has a real call site for it.",
-      "Documentation, task text, and test verification notes that still name HasAllPeopleAuthViewAssociations are updated to reference the active availability helper when they describe current code.",
+      "Documentation, task text, and test verification notes that still name the obsolete association-only helper are updated to reference the active availability helper when they describe current code.",
       "No behavior changes are made to DDL emission, manifest emission, or relationship authorization planning."
     ],
     "steps-to-verify": [
-      "Remove AuthObjectDefinitions.HasAllPeopleAuthViewAssociations and update any current task text or test verification notes that described active code through that obsolete helper.",
-      "Run rg \"HasAllPeopleAuthViewAssociations\" . and confirm only historical design text remains.",
+      "Remove the obsolete association-only People auth availability helper and update any current task text or test verification notes that described active code through that helper.",
+      "Run rg for the obsolete association-only helper name and confirm only historical design text remains.",
       "Run rg \"Select\\(.*IReadOnlyList<SupportedRelationshipAuthorizationStrategy>\" src/dms/backend/EdFi.DataManagementService.Backend.Plans and confirm RelationalEdOrgAuthorizationSubjectSelector has no multi-strategy overload without a production call site.",
       "Review RelationalModelDdlEmitter.EmitPeopleAuthViews, DerivedModelSetManifestEmitter.WriteAuthObjects, and RelationshipAuthorizationPlanner.CreateMissingPeopleAuthViewAssociationFailures to confirm they all use GetPeopleAuthViewAvailability.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalEdOrgAuthorizationSubjectSelector.cs"
     ],
-    "completed": false
+    "completed": true
   }
 ]

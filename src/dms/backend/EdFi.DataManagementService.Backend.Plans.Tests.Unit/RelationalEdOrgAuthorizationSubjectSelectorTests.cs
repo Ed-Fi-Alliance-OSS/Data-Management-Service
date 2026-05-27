@@ -335,39 +335,61 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
                 new ResourceSecurableElements([], [], [], [], [])
             )
         );
+        var resource = new QualifiedResourceName("Ed-Fi", "TestResource");
 
-        var result = SelectSubjects(
+        var normalResult = SelectSubjects(
             mappingSet,
-            new QualifiedResourceName("Ed-Fi", "TestResource"),
+            resource,
             CreateConfiguredAuthorizationStrategies(
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
             )
         );
+        var invertedResult = SelectSubjects(
+            mappingSet,
+            resource,
+            [
+                new ConfiguredAuthorizationStrategy(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                    1
+                ),
+            ]
+        );
+        var failures = normalResult
+            .SecurityConfigurationFailures.Concat(invertedResult.SecurityConfigurationFailures)
+            .ToArray();
 
-        result
+        normalResult
             .Outcome.Should()
             .Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
-        result.Subjects.Should().BeEmpty();
-        result.SecurityConfigurationFailures.Should().HaveCount(2);
-        result
-            .SecurityConfigurationFailures.Select(static failure =>
-                failure.ConfiguredStrategy?.RawConfiguredIndex
-            )
+        invertedResult
+            .Outcome.Should()
+            .Be(RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError);
+        normalResult.Subjects.Should().BeEmpty();
+        invertedResult.Subjects.Should().BeEmpty();
+        failures.Should().HaveCount(2);
+        failures
+            .Select(static failure => failure.ConfiguredStrategy?.RawConfiguredIndex)
             .Should()
             .Equal(0, 1);
-        result
-            .SecurityConfigurationFailures.Select(static failure => failure.FailureKind)
+        failures
+            .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+            .Should()
+            .Equal(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+            );
+        failures
+            .Select(static failure => failure.FailureKind)
             .Should()
             .OnlyContain(static failureKind =>
                 failureKind == RelationshipAuthorizationFailureKind.NoApplicableRootSubject
             );
-        result
-            .SecurityConfigurationFailures.Select(static failure => failure.Location?.Kind)
+        failures
+            .Select(static failure => failure.Location?.Kind)
             .Should()
             .OnlyContain(static kind => kind == SecurableElementKind.EducationOrganization);
-        result
-            .SecurityConfigurationFailures.Select(static failure => failure.Hint)
+        failures
+            .Select(static failure => failure.Hint)
             .Should()
             .OnlyContain(static hint =>
                 hint == "No EducationOrganization securable elements are configured for this resource."
@@ -777,20 +799,20 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         var firstResult = selector.Select(
             mappingSet,
             resource,
-            CreateSupportedStrategies(
+            CreateSupportedStrategy(
                 CreateConfiguredAuthorizationStrategies(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                )
+                )[0]
             )
         );
 
         var secondResult = selector.Select(
             mappingSet,
             resource,
-            CreateSupportedStrategies(
+            CreateSupportedStrategy(
                 CreateConfiguredAuthorizationStrategies(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
-                )
+                )[0]
             )
         );
 
@@ -944,42 +966,47 @@ public class Given_RelationalEdOrgAuthorizationSubjectSelector
         MappingSet mappingSet,
         QualifiedResourceName resource,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
-    ) =>
-        CreateSelector()
-            .Select(mappingSet, resource, CreateSupportedStrategies(configuredAuthorizationStrategies));
+    )
+    {
+        if (configuredAuthorizationStrategies.Count != 1)
+        {
+            throw new ArgumentException(
+                "Selector tests must call the production single-strategy selection path.",
+                nameof(configuredAuthorizationStrategies)
+            );
+        }
 
-    private static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> CreateSupportedStrategies(
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
+        return CreateSelector()
+            .Select(mappingSet, resource, CreateSupportedStrategy(configuredAuthorizationStrategies[0]));
+    }
+
+    private static SupportedRelationshipAuthorizationStrategy CreateSupportedStrategy(
+        ConfiguredAuthorizationStrategy configuredStrategy
     ) =>
-        [
-            .. configuredAuthorizationStrategies.Select(
-                static (configuredStrategy, relationshipLocalOrder) =>
-                    configuredStrategy.StrategyName switch
-                    {
-                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly =>
-                            new SupportedRelationshipAuthorizationStrategy(
-                                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                                RelationshipAuthorizationHierarchyDirection.Normal,
-                                configuredStrategy,
-                                relationshipLocalOrder,
-                                [new(SecurableElementKind.EducationOrganization)]
-                            ),
-                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted =>
-                            new SupportedRelationshipAuthorizationStrategy(
-                                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-                                RelationshipAuthorizationHierarchyDirection.Inverted,
-                                configuredStrategy,
-                                relationshipLocalOrder,
-                                [new(SecurableElementKind.EducationOrganization)]
-                            ),
-                        _ => throw new ArgumentOutOfRangeException(
-                            nameof(configuredStrategy),
-                            configuredStrategy.StrategyName,
-                            "Selector tests should pass only supported EdOrg relationship strategies."
-                        ),
-                    }
+        configuredStrategy.StrategyName switch
+        {
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly =>
+                new SupportedRelationshipAuthorizationStrategy(
+                    RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                    RelationshipAuthorizationHierarchyDirection.Normal,
+                    configuredStrategy,
+                    0,
+                    [new(SecurableElementKind.EducationOrganization)]
+                ),
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted =>
+                new SupportedRelationshipAuthorizationStrategy(
+                    RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                    RelationshipAuthorizationHierarchyDirection.Inverted,
+                    configuredStrategy,
+                    0,
+                    [new(SecurableElementKind.EducationOrganization)]
+                ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(configuredStrategy),
+                configuredStrategy.StrategyName,
+                "Selector tests should pass only supported EdOrg relationship strategies."
             ),
-        ];
+        };
 
     private static ResourceKeyEntry ResourceKey(short id, string resource) =>
         new(id, new QualifiedResourceName("Ed-Fi", resource), "1.0", false);

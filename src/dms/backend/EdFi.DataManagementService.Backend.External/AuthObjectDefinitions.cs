@@ -205,17 +205,6 @@ public static class AuthObjectDefinitions
         );
 
     /// <summary>
-    /// Returns whether the supplied concrete resources contain all five core associations required
-    /// by the people auth views.
-    /// </summary>
-    public static bool HasAllPeopleAuthViewAssociations(
-        IReadOnlyList<ConcreteResourceModel> concreteResources
-    )
-    {
-        return GetMissingPeopleAuthAssociationResourceNames(concreteResources).Count == 0;
-    }
-
-    /// <summary>
     /// Returns the concrete core association resource names missing from the supplied model set that
     /// caused the people auth views to be suppressed.
     /// </summary>
