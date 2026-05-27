@@ -286,20 +286,28 @@ public class ResourceClaimRepository(
         Dictionary<string, AuthorizationStrategy> KnownAuthStrategies
     );
 
-    private async Task<(
-        List<ResolvedClaimNode>? Nodes,
-        string? FailureMessage
-    )> LoadAndResolveClaimNodesWithActions()
+    private abstract record ResolveClaimNodesResult
+    {
+        public sealed record Success(List<ResolvedClaimNode> Nodes) : ResolveClaimNodesResult;
+
+        public sealed record FailureHierarchyNotFound() : ResolveClaimNodesResult;
+
+        public sealed record FailureProjectionIntegrity(string FailureMessage) : ResolveClaimNodesResult;
+
+        public sealed record FailureUnknown(string FailureMessage) : ResolveClaimNodesResult;
+    }
+
+    private async Task<ResolveClaimNodesResult> LoadAndResolveClaimNodesWithActions()
     {
         var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
         if (hierarchyResult is not ClaimsHierarchyGetResult.Success hierarchySuccess)
         {
-            var failureMessage = hierarchyResult switch
+            return hierarchyResult switch
             {
-                ClaimsHierarchyGetResult.FailureHierarchyNotFound => "Hierarchy not found",
-                _ => "Failed to load claims hierarchy.",
+                ClaimsHierarchyGetResult.FailureHierarchyNotFound =>
+                    new ResolveClaimNodesResult.FailureHierarchyNotFound(),
+                _ => new ResolveClaimNodesResult.FailureUnknown("Failed to load claims hierarchy."),
             };
-            return (null, failureMessage);
         }
 
         var metadata = await LoadResourceClaimMetadata();
@@ -313,7 +321,7 @@ public class ResourceClaimRepository(
         if (projection is null)
         {
             logger.LogError("Resource claim projection integrity failure: {Message}", projectionFailure);
-            return (null, projectionFailure);
+            return new ResolveClaimNodesResult.FailureProjectionIntegrity(projectionFailure!);
         }
 
         var knownActions = claimSetRepository
@@ -324,7 +332,9 @@ public class ResourceClaimRepository(
         if (authStrategiesResult is not AuthorizationStrategyGetResult.Success authStrategiesSuccess)
         {
             logger.LogError("Failed to load authorization strategies.");
-            return (null, "Failed to load authorization strategies.");
+            return new ResolveClaimNodesResult.FailureProjectionIntegrity(
+                "Failed to load authorization strategies."
+            );
         }
         var knownAuthStrategies = authStrategiesSuccess.AuthorizationStrategy.ToDictionary(
             s => s.AuthorizationStrategyName,
@@ -352,7 +362,7 @@ public class ResourceClaimRepository(
                         action.Name,
                         originalClaim.Name
                     );
-                    return (null, failureMessage);
+                    return new ResolveClaimNodesResult.FailureProjectionIntegrity(failureMessage);
                 }
 
                 var invalidStrategy = action.AuthorizationStrategies.Find(s =>
@@ -368,30 +378,41 @@ public class ResourceClaimRepository(
                         originalClaim.Name,
                         action.Name
                     );
-                    return (null, failureMessage);
+                    return new ResolveClaimNodesResult.FailureProjectionIntegrity(failureMessage);
                 }
             }
 
             resolvedNodes.Add(new ResolvedClaimNode(node, originalClaim, knownActions, knownAuthStrategies));
         }
 
-        return (resolvedNodes, null);
+        return new ResolveClaimNodesResult.Success(resolvedNodes);
     }
 
     public async Task<ResourceClaimActionListResult> GetResourceClaimActions(ResourceClaimActionQuery query)
     {
         try
         {
-            var (resolvedNodes, failureMessage) = await LoadAndResolveClaimNodesWithActions();
-            if (resolvedNodes is null)
+            var resolveResult = await LoadAndResolveClaimNodesWithActions();
+            if (resolveResult is not ResolveClaimNodesResult.Success resolveSuccess)
             {
-                return failureMessage?.Contains("Hierarchy not found") == true
-                    ? new ResourceClaimActionListResult.FailureHierarchyNotFound()
-                    : new ResourceClaimActionListResult.FailureProjectionIntegrity(failureMessage!);
+                return resolveResult switch
+                {
+                    ResolveClaimNodesResult.FailureHierarchyNotFound =>
+                        new ResourceClaimActionListResult.FailureHierarchyNotFound(),
+                    ResolveClaimNodesResult.FailureProjectionIntegrity projectionFailure =>
+                        new ResourceClaimActionListResult.FailureProjectionIntegrity(
+                            projectionFailure.FailureMessage
+                        ),
+                    ResolveClaimNodesResult.FailureUnknown unknownFailure =>
+                        new ResourceClaimActionListResult.FailureUnknown(unknownFailure.FailureMessage),
+                    _ => new ResourceClaimActionListResult.FailureProjectionIntegrity(
+                        "Failed to resolve resource claim actions."
+                    ),
+                };
             }
 
             var items = new List<ResourceClaimActionResponse>();
-            foreach (var resolved in resolvedNodes)
+            foreach (var resolved in resolveSuccess.Nodes)
             {
                 var actionNames = resolved
                     .OriginalClaim.DefaultAuthorization!.Actions.Select(action =>
@@ -435,18 +456,29 @@ public class ResourceClaimRepository(
     {
         try
         {
-            var (resolvedNodes, failureMessage) = await LoadAndResolveClaimNodesWithActions();
-            if (resolvedNodes is null)
+            var resolveResult = await LoadAndResolveClaimNodesWithActions();
+            if (resolveResult is not ResolveClaimNodesResult.Success resolveSuccess)
             {
-                return failureMessage?.Contains("Hierarchy not found") == true
-                    ? new ResourceClaimActionAuthStrategyListResult.FailureHierarchyNotFound()
-                    : new ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity(
-                        failureMessage!
-                    );
+                return resolveResult switch
+                {
+                    ResolveClaimNodesResult.FailureHierarchyNotFound =>
+                        new ResourceClaimActionAuthStrategyListResult.FailureHierarchyNotFound(),
+                    ResolveClaimNodesResult.FailureProjectionIntegrity projectionFailure =>
+                        new ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity(
+                            projectionFailure.FailureMessage
+                        ),
+                    ResolveClaimNodesResult.FailureUnknown unknownFailure =>
+                        new ResourceClaimActionAuthStrategyListResult.FailureUnknown(
+                            unknownFailure.FailureMessage
+                        ),
+                    _ => new ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity(
+                        "Failed to resolve resource claim action authorization strategies."
+                    ),
+                };
             }
 
             var items = new List<ResourceClaimActionAuthStrategyResponse>();
-            foreach (var resolved in resolvedNodes)
+            foreach (var resolved in resolveSuccess.Nodes)
             {
                 var actionsWithStrategies = resolved
                     .OriginalClaim.DefaultAuthorization!.Actions.Select(action =>
