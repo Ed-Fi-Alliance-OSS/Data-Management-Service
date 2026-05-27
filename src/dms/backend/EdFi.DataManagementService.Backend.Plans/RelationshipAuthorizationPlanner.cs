@@ -975,7 +975,14 @@ public sealed class RelationshipAuthorizationPlanner
             {
                 return new CheckSpecCreationResult(
                     null,
-                    [CreateNoExecutableSubjectsFailure(resource, supportedStrategy, ineligibleSubjects)],
+                    [
+                        CreateNoExecutableSubjectsFailure(
+                            resource,
+                            supportedStrategy,
+                            ineligibleSubjects,
+                            skippedContributors
+                        ),
+                    ],
                     peopleAuthViewCandidateSubjects
                 );
             }
@@ -1087,7 +1094,8 @@ public sealed class RelationshipAuthorizationPlanner
     private static RelationshipAuthorizationFailureMetadata CreateNoExecutableSubjectsFailure(
         QualifiedResourceName resource,
         SupportedRelationshipAuthorizationStrategy supportedStrategy,
-        IReadOnlyList<RelationshipAuthorizationIneligibleSubject> ineligibleSubjects
+        IReadOnlyList<RelationshipAuthorizationIneligibleSubject> ineligibleSubjects,
+        IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> skippedContributors
     )
     {
         var firstSubject = ineligibleSubjects[0].Subject;
@@ -1127,6 +1135,7 @@ public sealed class RelationshipAuthorizationPlanner
                 .. ineligibleSubjects.SelectMany(static ineligible => ineligible.Subject.Contributors),
             ],
             IneligibleSubjects = ineligibleSubjects,
+            SkippedContributors = skippedContributors,
         };
     }
 

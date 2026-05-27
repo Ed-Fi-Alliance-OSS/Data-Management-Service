@@ -1532,6 +1532,51 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_preserve_skipped_child_collection_people_metadata_when_no_subject_can_execute()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSet = CreateStudentSelfPersonAndChildStudentMappingSet();
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoExecutableSubjects);
+        failure
+            .IneligibleSubjects.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(
+                RelationshipAuthorizationSubjectIneligibilityReason.SelfPersonDocumentIdUnavailableForCreateNew
+            );
+
+        var skippedContributor = failure.SkippedContributors.Should().ContainSingle().Subject;
+
+        skippedContributor.JsonPath.Should().Be("$.studentReferences[*].studentReference.studentUniqueId");
+        skippedContributor.ReadableName.Should().Be("StudentUniqueId");
+        skippedContributor
+            .Reason.Should()
+            .Be(RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope);
+        skippedContributor.Table.Should().Be(Table("StudentStudentReference"));
+        skippedContributor.Column.Should().Be(Col("StudentReference_DocumentId"));
+    }
+
+    [Test]
     public void It_should_not_report_missing_people_auth_view_associations_for_ineligible_self_person_create_new_subjects()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "Student");
@@ -2738,6 +2783,60 @@ public class Given_RelationshipAuthorizationPlannerTests
         }
 
         return CreateMappingSet(concreteResources);
+    }
+
+    private static MappingSet CreateStudentSelfPersonAndChildStudentMappingSet()
+    {
+        const string childStudentPath = "$.studentReferences[*].studentReference.studentUniqueId";
+        var childTableName = Table("StudentStudentReference");
+        var childTable = CreateChildTable(
+            childTableName,
+            "$.studentReferences[*]",
+            [
+                new DbColumnModel(
+                    Col("StudentReference_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(childStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+
+        return CreateMappingSet(
+            CreateConcrete(
+                "Student",
+                CreateModelWithTables(
+                    "Student",
+                    CreateRootTable(Table("Student")),
+                    [childTable],
+                    [
+                        new DocumentReferenceBinding(
+                            true,
+                            Path(GetReferenceObjectPath(childStudentPath)),
+                            childTableName,
+                            Col("StudentReference_DocumentId"),
+                            new QualifiedResourceName("Ed-Fi", "Student"),
+                            [
+                                new ReferenceIdentityBinding(
+                                    Path(childStudentPath),
+                                    Path(childStudentPath),
+                                    Col("StudentUniqueId")
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+                new ResourceSecurableElements(
+                    [],
+                    [],
+                    [GetPersonSelfJsonPath(SecurableElementKind.Student), childStudentPath],
+                    [],
+                    []
+                )
+            )
+        );
     }
 
     private static MappingSet CreateStudentSelfPersonAndEdOrgMappingSet()

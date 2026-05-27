@@ -110,12 +110,7 @@ public static class RelationshipAuthorizationFailureMapper
             );
         }
 
-        if (
-            failedStrategies.Count == 0
-            || noClaimsFailuresByStrategyIdentity.Keys.Any(strategyIdentity =>
-                !checkSpecsByStrategyIdentity.ContainsKey(strategyIdentity)
-            )
-        )
+        if (failedStrategies.Count == 0)
         {
             return false;
         }
