@@ -1614,7 +1614,7 @@ public class Given_Relational_Write_No_Profile_Persister
                             0,
                             subject,
                             proposedValueBinding,
-                            schoolIdValue
+                            new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(schoolIdValue)
                         ),
                     ]
                 ),

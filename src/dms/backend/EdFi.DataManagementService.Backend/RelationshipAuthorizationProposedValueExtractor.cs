@@ -25,8 +25,22 @@ internal sealed record ProposedRelationshipAuthorizationRuntimeSubject(
     int SubjectOrdinal,
     RelationshipAuthorizationSubject Subject,
     RelationshipAuthorizationProposedValueBinding Binding,
-    object? Value
+    ProposedRelationshipAuthorizationRuntimeValue RuntimeValue
 );
+
+internal abstract record ProposedRelationshipAuthorizationRuntimeValue
+{
+    private ProposedRelationshipAuthorizationRuntimeValue() { }
+
+    public sealed record SubjectValue(object? Value) : ProposedRelationshipAuthorizationRuntimeValue;
+
+    // This is an anchor into a People path, not the terminal person DocumentId consumed by auth views.
+    public sealed record TransitivePeopleFirstHopAnchorValue(
+        object? Value,
+        RelationshipAuthorizationPersonSubjectPath Path,
+        RelationshipAuthorizationProposedValueBinding Binding
+    ) : ProposedRelationshipAuthorizationRuntimeValue;
+}
 
 internal abstract record ProposedRelationshipAuthorizationExtractionResult
 {
@@ -163,14 +177,14 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                     return Invalid(invalidValue.FailureMessage);
                 }
 
-                var value = ((ProposedRuntimeValue.Ready)valueResult).Value;
+                var runtimeValue = ((ProposedRuntimeValue.Ready)valueResult).RuntimeValue;
 
                 runtimeSubjects.Add(
                     new ProposedRelationshipAuthorizationRuntimeSubject(
                         subjectOrdinal,
                         subject,
                         binding,
-                        value
+                        runtimeValue
                     )
                 );
             }
@@ -202,15 +216,21 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         int subjectOrdinal
     )
     {
+        var personMetadata = subject.PersonMetadata;
+
         if (
-            subject.PersonMetadata?.ProposedAnchor?.Kind
+            personMetadata?.ProposedAnchor?.Kind
             is RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId
         )
         {
             return targetContext switch
             {
                 RelationalWriteTargetContext.ExistingDocument existingDocument =>
-                    new ProposedRuntimeValue.Ready(existingDocument.DocumentId),
+                    new ProposedRuntimeValue.Ready(
+                        new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(
+                            existingDocument.DocumentId
+                        )
+                    ),
                 RelationalWriteTargetContext.CreateNew => new ProposedRuntimeValue.Invalid(
                     $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' requires an existing target DocumentId, but the write targets a new document."
                 ),
@@ -223,7 +243,28 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             };
         }
 
-        return new ProposedRuntimeValue.Ready(GetBoundSqlValue(boundValue));
+        var value = GetBoundSqlValue(boundValue);
+
+        if (
+            personMetadata is
+            {
+                Path.Kind: RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+                ProposedAnchor.Kind: RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
+            } transitivePersonMetadata
+        )
+        {
+            return new ProposedRuntimeValue.Ready(
+                new ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue(
+                    value,
+                    transitivePersonMetadata.Path,
+                    transitivePersonMetadata.ProposedAnchor.Binding
+                )
+            );
+        }
+
+        return new ProposedRuntimeValue.Ready(
+            new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(value)
+        );
     }
 
     private static object? GetBoundSqlValue(FlattenedWriteValue value)
@@ -302,7 +343,8 @@ internal static class RelationshipAuthorizationProposedValueExtractor
     {
         private ProposedRuntimeValue() { }
 
-        public sealed record Ready(object? Value) : ProposedRuntimeValue;
+        public sealed record Ready(ProposedRelationshipAuthorizationRuntimeValue RuntimeValue)
+            : ProposedRuntimeValue;
 
         public sealed record Invalid(string FailureMessage) : ProposedRuntimeValue;
     }

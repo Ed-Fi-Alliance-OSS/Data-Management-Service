@@ -4046,7 +4046,7 @@ public class Given_Default_Relational_Write_Executor
         runtimeCheck.Strategies[0].StrategyOrdinal.Should().Be(0);
         runtimeCheck.Strategies[0].Subjects.Should().ContainSingle();
         runtimeCheck.Strategies[0].Subjects[0].SubjectOrdinal.Should().Be(0);
-        runtimeCheck.Strategies[0].Subjects[0].Value.Should().Be(222222);
+        GetSubjectRuntimeValue(runtimeCheck.Strategies[0].Subjects[0]).Should().Be(222222);
         runtimeCheck.Strategies[0].Subjects[0].Binding.BindingIndex.Should().Be(1);
         runtimeCheck
             .ClaimEducationOrganizationIdParameterization.ClaimEducationOrganizationIds.Should()
@@ -4116,7 +4116,7 @@ public class Given_Default_Relational_Write_Executor
             .CapturedMergeResult!
             .ProposedRelationshipAuthorizationRuntimeCheck;
         runtimeCheck.Should().NotBeNull();
-        runtimeCheck!.Strategies[0].Subjects[0].Value.Should().Be(444444);
+        GetSubjectRuntimeValue(runtimeCheck!.Strategies[0].Subjects[0]).Should().Be(444444);
     }
 
     [TestCase(RelationalWriteOperationKind.Put)]
@@ -4216,7 +4216,7 @@ public class Given_Default_Relational_Write_Executor
             .CapturedMergeResult!
             .ProposedRelationshipAuthorizationRuntimeCheck;
         runtimeCheck.Should().NotBeNull();
-        runtimeCheck!.Strategies[0].Subjects[0].Value.Should().Be(444444);
+        GetSubjectRuntimeValue(runtimeCheck!.Strategies[0].Subjects[0]).Should().Be(444444);
     }
 
     [Test]
@@ -4287,10 +4287,14 @@ public class Given_Default_Relational_Write_Executor
             .Be("SchoolId");
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.CapturedMergeResult.Should().NotBeNull();
-        _noProfilePersister
-            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies[0]
-            .Subjects[0]
-            .Value.Should()
+        GetSubjectRuntimeValue(
+                _noProfilePersister
+                    .CapturedMergeResult!
+                    .ProposedRelationshipAuthorizationRuntimeCheck!
+                    .Strategies[0]
+                    .Subjects[0]
+            )
+            .Should()
             .BeNull();
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
@@ -4367,7 +4371,7 @@ public class Given_Default_Relational_Write_Executor
             .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies.SelectMany(
                 static strategy => strategy.Subjects
             )
-            .Select(static subject => subject.Value)
+            .Select(GetSubjectRuntimeValue)
             .Should()
             .Equal(new object?[] { null, "Lincoln High" });
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -4537,10 +4541,14 @@ public class Given_Default_Relational_Write_Executor
         updateSuccess.ETag.Should().Be(ExpectedEtag(request));
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
-        _noProfilePersister
-            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies[0]
-            .Subjects[0]
-            .Value.Should()
+        GetSubjectRuntimeValue(
+                _noProfilePersister
+                    .CapturedMergeResult!
+                    .ProposedRelationshipAuthorizationRuntimeCheck!
+                    .Strategies[0]
+                    .Subjects[0]
+            )
+            .Should()
             .Be(255901);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
@@ -4581,10 +4589,14 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
-        _noProfilePersister
-            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies[0]
-            .Subjects[0]
-            .Value.Should()
+        GetSubjectRuntimeValue(
+                _noProfilePersister
+                    .CapturedMergeResult!
+                    .ProposedRelationshipAuthorizationRuntimeCheck!
+                    .Strategies[0]
+                    .Subjects[0]
+            )
+            .Should()
             .Be(255901);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
@@ -4951,15 +4963,12 @@ public class Given_Default_Relational_Write_Executor
             {
                 strategy.Subjects.Should().HaveCount(2);
                 strategy.Subjects.Select(static subject => subject.SubjectOrdinal).Should().Equal(0, 1);
-                strategy
-                    .Subjects.Select(static subject => subject.Value)
-                    .Should()
-                    .Equal(255901, "Lincoln High");
+                strategy.Subjects.Select(GetSubjectRuntimeValue).Should().Equal(255901, "Lincoln High");
             });
     }
 
     [Test]
-    public void It_allows_RelationshipAuthorizationProposedValueExtractor_to_bind_transitive_people_first_hop_values()
+    public void It_exposes_transitive_people_proposed_values_as_first_hop_anchors()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -4988,7 +4997,12 @@ public class Given_Default_Relational_Write_Executor
             .Subject.Subjects.Should()
             .ContainSingle()
             .Subject;
-        runtimeSubject.Value.Should().Be(255901);
+        var anchorValue = runtimeSubject
+            .RuntimeValue.Should()
+            .BeOfType<ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue>()
+            .Subject;
+        anchorValue.Value.Should().Be(255901);
+        anchorValue.Binding.Should().Be(runtimeSubject.Binding);
         runtimeSubject.Binding.Table.Should().Be(rootPlan.TableModel.Table);
         runtimeSubject.Binding.Column.Value.Should().Be("SchoolId");
         runtimeSubject.Subject.Table.ToString().Should().Be("edfi.StudentSchoolAssociation");
@@ -4996,6 +5010,7 @@ public class Given_Default_Relational_Write_Executor
 
         runtimeSubject.Subject.PersonMetadata.Should().NotBeNull();
         var personMetadata = runtimeSubject.Subject.PersonMetadata!;
+        anchorValue.Path.Should().Be(personMetadata.Path);
         personMetadata
             .Path.Kind.Should()
             .Be(RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath);
@@ -5047,7 +5062,7 @@ public class Given_Default_Relational_Write_Executor
             .Subject.Subjects.Should()
             .ContainSingle()
             .Subject;
-        runtimeSubject.Value.Should().Be(98765L);
+        GetSubjectRuntimeValue(runtimeSubject).Should().Be(98765L);
         runtimeSubject.Binding.Table.Should().Be(rootPlan.TableModel.Table);
         runtimeSubject.Binding.Column.Value.Should().Be("DocumentId");
         runtimeSubject.Subject.PersonMetadata.Should().NotBeNull();
@@ -5090,7 +5105,7 @@ public class Given_Default_Relational_Write_Executor
             .Equal(0, 1);
         ready
             .RuntimeCheck.Strategies.SelectMany(static strategy => strategy.Subjects)
-            .Select(static subject => subject.Value)
+            .Select(GetSubjectRuntimeValue)
             .Should()
             .Equal(new object?[] { null, "Lincoln High" });
     }
@@ -5122,7 +5137,7 @@ public class Given_Default_Relational_Write_Executor
         ready.RuntimeCheck.Strategies.Should().ContainSingle();
         ready
             .RuntimeCheck.Strategies[0]
-            .Subjects.Select(static subject => subject.Value)
+            .Subjects.Select(GetSubjectRuntimeValue)
             .Should()
             .Equal(new object?[] { null, "Lincoln High" });
     }
@@ -5157,7 +5172,7 @@ public class Given_Default_Relational_Write_Executor
             .Equal(0, 1);
         ready
             .RuntimeCheck.Strategies.SelectMany(static strategy => strategy.Subjects)
-            .Select(static subject => subject.Value)
+            .Select(GetSubjectRuntimeValue)
             .Should()
             .Equal(new object?[] { null, null });
     }
@@ -5186,7 +5201,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
             .Subject;
-        ready.RuntimeCheck.Strategies[0].Subjects[0].Value.Should().BeNull();
+        GetSubjectRuntimeValue(ready.RuntimeCheck.Strategies[0].Subjects[0]).Should().BeNull();
     }
 
     private static IEnumerable<TestCaseData> MissingProposedValueCases()
@@ -5199,6 +5214,17 @@ public class Given_Default_Relational_Write_Executor
             "unresolved root document id"
         );
     }
+
+    private static object? GetSubjectRuntimeValue(
+        ProposedRelationshipAuthorizationRuntimeSubject runtimeSubject
+    ) =>
+        runtimeSubject.RuntimeValue switch
+        {
+            ProposedRelationshipAuthorizationRuntimeValue.SubjectValue subjectValue => subjectValue.Value,
+            _ => throw new InvalidOperationException(
+                $"Expected an authorization subject runtime value, but found '{runtimeSubject.RuntimeValue.GetType().Name}'."
+            ),
+        };
 
     private static IEnumerable<TestCaseData> SelfPersonExistingTargetCases()
     {
