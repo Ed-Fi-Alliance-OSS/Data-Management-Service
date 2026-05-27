@@ -1177,7 +1177,7 @@ public sealed class RelationshipAuthorizationPlanner
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateNoClaimsFailures(
         QualifiedResourceName resource,
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs
-    ) => [.. OrderFailures(checkSpecs.SelectMany(checkSpec => CreateNoClaimsFailures(resource, checkSpec)))];
+    ) => [.. checkSpecs.SelectMany(checkSpec => CreateNoClaimsFailures(resource, checkSpec))];
 
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoClaimsFailures(
         QualifiedResourceName resource,

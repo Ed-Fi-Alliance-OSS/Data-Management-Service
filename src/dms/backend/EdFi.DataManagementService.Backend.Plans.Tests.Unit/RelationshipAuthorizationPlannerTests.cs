@@ -739,6 +739,56 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_keep_mixed_subject_ordinals_edorg_first_then_people_eligibility_order()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "MixedPeopleOrdinalResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndPeopleSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.NoClaims>();
+
+        var noClaimsResult = (RelationshipAuthorizationResult.NoClaims)result;
+
+        var subjects = noClaimsResult.CheckSpecs.Should().ContainSingle().Which.Subjects;
+
+        subjects
+            .Select(static subject => subject.Contributors.Single().Kind)
+            .Should()
+            .Equal(
+                SecurableElementKind.EducationOrganization,
+                SecurableElementKind.Student,
+                SecurableElementKind.Contact,
+                SecurableElementKind.Staff
+            );
+        subjects
+            .Select(static subject => subject.Column.Value)
+            .Should()
+            .Equal(
+                "SchoolReference_SchoolId",
+                "ZStudent_DocumentId",
+                "AContact_DocumentId",
+                "BStaff_DocumentId"
+            );
+        noClaimsResult
+            .Failures.Select(static failure => failure.AuthObject!.Name.Name)
+            .Should()
+            .Equal(
+                "EducationOrganizationIdToEducationOrganizationId",
+                "EducationOrganizationIdToStudentDocumentId",
+                "EducationOrganizationIdToContactDocumentId",
+                "EducationOrganizationIdToStaffDocumentId"
+            );
+    }
+
+    [Test]
     public void It_should_collapse_homogeneous_people_no_claims_metadata_by_subject_auth_object()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "MultipleStudentAuthorizationResource");
@@ -2259,6 +2309,83 @@ public class Given_RelationshipAuthorizationPlannerTests
         );
     }
 
+    private static MappingSet CreateMixedRootEdOrgAndPeopleSubjectMappingSet(QualifiedResourceName resource)
+    {
+        const string schoolIdPath = "$.schoolReference.schoolId";
+        const string studentPath = "$.zStudentReference.studentUniqueId";
+        const string contactPath = "$.aContactReference.contactUniqueId";
+        const string staffPath = "$.bStaffReference.staffUniqueId";
+        var studentDocumentIdColumn = Col("ZStudent_DocumentId");
+        var contactDocumentIdColumn = Col("AContact_DocumentId");
+        var staffDocumentIdColumn = Col("BStaff_DocumentId");
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            [
+                new DbColumnModel(
+                    Col("SchoolReference_SchoolId"),
+                    ColumnKind.Scalar,
+                    null,
+                    false,
+                    Path(schoolIdPath),
+                    null
+                ),
+                CreatePersonDocumentIdColumn(
+                    studentDocumentIdColumn,
+                    studentPath,
+                    SecurableElementKind.Student
+                ),
+                CreatePersonDocumentIdColumn(
+                    contactDocumentIdColumn,
+                    contactPath,
+                    SecurableElementKind.Contact
+                ),
+                CreatePersonDocumentIdColumn(staffDocumentIdColumn, staffPath, SecurableElementKind.Staff),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [
+                    CreatePersonReferenceBinding(
+                        rootTable,
+                        studentDocumentIdColumn,
+                        studentPath,
+                        SecurableElementKind.Student
+                    ),
+                    CreatePersonReferenceBinding(
+                        rootTable,
+                        contactDocumentIdColumn,
+                        contactPath,
+                        SecurableElementKind.Contact
+                    ),
+                    CreatePersonReferenceBinding(
+                        rootTable,
+                        staffDocumentIdColumn,
+                        staffPath,
+                        SecurableElementKind.Staff
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements(
+                [new EdOrgSecurableElement(schoolIdPath, "SchoolId")],
+                [],
+                [studentPath],
+                [contactPath],
+                [staffPath]
+            )
+        );
+
+        return CreateMappingSet([
+            concreteResource,
+            CreatePersonResource(SecurableElementKind.Student),
+            CreatePersonResource(SecurableElementKind.Contact),
+            CreatePersonResource(SecurableElementKind.Staff),
+            .. CreateRequiredPeopleAuthAssociationResources(),
+        ]);
+    }
+
     private static MappingSet CreateMixedChildEdOrgAndRootStudentSubjectMappingSet(
         QualifiedResourceName resource
     )
@@ -2639,6 +2766,41 @@ public class Given_RelationshipAuthorizationPlannerTests
                 ),
                 new ResourceSecurableElements([], [], [], [], [])
             )
+        );
+
+    private static DbColumnModel CreatePersonDocumentIdColumn(
+        DbColumnName documentIdColumn,
+        string jsonPath,
+        SecurableElementKind securableElementKind
+    ) =>
+        new(
+            documentIdColumn,
+            ColumnKind.DocumentFk,
+            null,
+            false,
+            Path(jsonPath),
+            new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind))
+        );
+
+    private static DocumentReferenceBinding CreatePersonReferenceBinding(
+        DbTableModel rootTable,
+        DbColumnName documentIdColumn,
+        string jsonPath,
+        SecurableElementKind securableElementKind
+    ) =>
+        new(
+            true,
+            Path(GetReferenceObjectPath(jsonPath)),
+            rootTable.Table,
+            documentIdColumn,
+            new QualifiedResourceName("Ed-Fi", GetPersonResourceName(securableElementKind)),
+            [
+                new ReferenceIdentityBinding(
+                    Path(jsonPath),
+                    Path(jsonPath),
+                    Col($"{GetPersonResourceName(securableElementKind)}UniqueId")
+                ),
+            ]
         );
 
     private static MappingSet CreatePeopleSubjectMappingSet(

@@ -186,6 +186,57 @@ public class Given_RelationalPeopleAuthorizationSubjectSelector
     }
 
     [Test]
+    public void It_should_order_people_only_subjects_by_strategy_eligibility_before_physical_columns()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "PeopleOrdinalCarrier");
+        var studentReferencePath = "$.zStudentReference.studentUniqueId";
+        var contactReferencePath = "$.aContactReference.contactUniqueId";
+        var staffReferencePath = "$.bStaffReference.staffUniqueId";
+        var mappingSet = CreateMappingSet(
+            CreateCarrierResource(
+                resource.ResourceName,
+                new PersonReferenceSpec(
+                    SecurableElementKind.Student,
+                    studentReferencePath,
+                    Col("ZStudent_DocumentId")
+                ),
+                new PersonReferenceSpec(
+                    SecurableElementKind.Contact,
+                    contactReferencePath,
+                    Col("AContact_DocumentId")
+                ),
+                new PersonReferenceSpec(
+                    SecurableElementKind.Staff,
+                    staffReferencePath,
+                    Col("BStaff_DocumentId")
+                )
+            ),
+            CreatePersonResource(SecurableElementKind.Student),
+            CreatePersonResource(SecurableElementKind.Contact),
+            CreatePersonResource(SecurableElementKind.Staff)
+        );
+
+        var result = SelectSubjects(
+            mappingSet,
+            resource,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly
+        );
+
+        result.SecurityConfigurationFailures.Should().BeEmpty();
+
+        var subjects = result.StrategySubjectSelections.Single().Subjects;
+
+        subjects
+            .Select(static subject => subject.Contributors.Single().Kind)
+            .Should()
+            .Equal(SecurableElementKind.Student, SecurableElementKind.Contact, SecurableElementKind.Staff);
+        subjects
+            .Select(static subject => subject.Column.Value)
+            .Should()
+            .Equal("ZStudent_DocumentId", "AContact_DocumentId", "BStaff_DocumentId");
+    }
+
+    [Test]
     public void It_should_report_no_applicable_strategy_when_no_matching_people_path_or_skipped_contributor_exists()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "StudentCarrier");

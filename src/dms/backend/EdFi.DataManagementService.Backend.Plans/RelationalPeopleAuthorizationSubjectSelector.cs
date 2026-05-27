@@ -397,7 +397,8 @@ public static class RelationalPeopleAuthorizationSubjectSelector
         return new SelectedPeopleStrategySubjects(
             [
                 .. subjectsByPredicateKey
-                    .Values.OrderBy(static subject =>
+                    .Values.OrderBy(subject => GetSubjectEligibilityOrder(supportedStrategy, subject))
+                    .ThenBy(static subject =>
                         subject.Contributors.Min(static contributor => contributor.ContributionOrder)
                     )
                     .ThenBy(static subject => subject.Table.ToString(), StringComparer.Ordinal)
@@ -410,6 +411,40 @@ public static class RelationalPeopleAuthorizationSubjectSelector
                     .ThenBy(static contributor => contributor.ReadableName, StringComparer.Ordinal),
             ]
         );
+    }
+
+    private static int GetSubjectEligibilityOrder(
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
+        RelationshipAuthorizationSubject subject
+    )
+    {
+        for (
+            var eligibilityOrder = 0;
+            eligibilityOrder < supportedStrategy.EligibleSubjects.Count;
+            eligibilityOrder++
+        )
+        {
+            var eligibleSubject = supportedStrategy.EligibleSubjects[eligibilityOrder];
+
+            if (eligibleSubject.PersonAuthViewKind is not { } authViewKind)
+            {
+                continue;
+            }
+
+            if (!subject.Contributors.Any(contributor => contributor.Kind == eligibleSubject.Kind))
+            {
+                continue;
+            }
+
+            var authObject = RelationshipAuthorizationAuthObject.CreatePerson(authViewKind);
+
+            if (subject.AuthObject == authObject)
+            {
+                return eligibilityOrder;
+            }
+        }
+
+        return int.MaxValue;
     }
 
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateUnresolvedPersonFailures(
