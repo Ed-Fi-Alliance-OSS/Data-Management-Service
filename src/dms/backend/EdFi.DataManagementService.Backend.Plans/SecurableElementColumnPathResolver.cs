@@ -43,8 +43,6 @@ internal static class SecurableElementColumnPathResolver
 
         var results = new List<ResolvedSecurableElementPath>();
         var unresolvedPaths = new List<string>();
-        var skippedArrayNestedPaths = new List<string>();
-        var hasApplicablePersonPath = false;
         var resolvedEdOrgCandidates = ResolveEducationOrganizationCandidates(subjectResource);
         var resolvedEdOrgByJsonPath = resolvedEdOrgCandidates
             .ResolvedCandidates.GroupBy(static candidate => candidate.JsonPath, StringComparer.Ordinal)
@@ -103,9 +101,7 @@ internal static class SecurableElementColumnPathResolver
             SecurableElementKind.Student,
             resourceLookup,
             results,
-            unresolvedPaths,
-            skippedArrayNestedPaths,
-            ref hasApplicablePersonPath
+            unresolvedPaths
         );
         ResolvePersonPaths(
             subjectResource,
@@ -114,9 +110,7 @@ internal static class SecurableElementColumnPathResolver
             SecurableElementKind.Contact,
             resourceLookup,
             results,
-            unresolvedPaths,
-            skippedArrayNestedPaths,
-            ref hasApplicablePersonPath
+            unresolvedPaths
         );
         ResolvePersonPaths(
             subjectResource,
@@ -125,9 +119,7 @@ internal static class SecurableElementColumnPathResolver
             SecurableElementKind.Staff,
             resourceLookup,
             results,
-            unresolvedPaths,
-            skippedArrayNestedPaths,
-            ref hasApplicablePersonPath
+            unresolvedPaths
         );
 
         if (unresolvedPaths.Count > 0)
@@ -137,17 +129,6 @@ internal static class SecurableElementColumnPathResolver
                 $"Failed to resolve securable element column paths for resource "
                     + $"'{resource.ProjectName}.{resource.ResourceName}': "
                     + $"unresolved paths: {string.Join(", ", unresolvedPaths.Distinct(StringComparer.Ordinal))}"
-            );
-        }
-
-        if (results.Count == 0 && !hasApplicablePersonPath && skippedArrayNestedPaths.Count > 0)
-        {
-            var resource = subjectResource.RelationalModel.Resource;
-            throw new InvalidOperationException(
-                $"Failed to resolve securable element column paths for resource "
-                    + $"'{resource.ProjectName}.{resource.ResourceName}': "
-                    + $"all paths require unsupported child-table traversal (array-nested): "
-                    + $"{string.Join(", ", skippedArrayNestedPaths.Distinct(StringComparer.Ordinal))}"
             );
         }
 
@@ -215,11 +196,12 @@ internal static class SecurableElementColumnPathResolver
     /// <summary>
     /// Resolves person (Student/Contact/Staff) securable element paths. One
     /// <see cref="ResolvedSecurableElementPath"/> is appended to <paramref name="results"/>
-    /// per declared root-level person path that resolves to a DocumentId chain. The
-    /// shortest-path rule is scoped to alternate routes for that one declared path, not to
-    /// collapsing independent declared paths for the same person kind. The exact self person
-    /// identity path is the only path where a null resolved chain plus a root-level path is not
-    /// an error — see
+    /// per declared root-level person path that resolves to a DocumentId chain. Array-nested
+    /// person paths are outside executable subject scope and are skipped here; the People
+    /// authorization subject selector records them as skipped diagnostics. The shortest-path
+    /// rule is scoped to alternate routes for that one declared path, not to collapsing
+    /// independent declared paths for the same person kind. The exact self person identity path
+    /// is the only path where a null resolved chain plus a root-level path is not an error — see
     /// <see cref="PersonJoinPathResolver.IsSelfPersonIdentityPath"/>.
     /// </summary>
     private static void ResolvePersonPaths(
@@ -229,9 +211,7 @@ internal static class SecurableElementColumnPathResolver
         SecurableElementKind kind,
         Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         List<ResolvedSecurableElementPath> results,
-        List<string> unresolvedPaths,
-        List<string> skippedArrayNestedPaths,
-        ref bool hasApplicablePersonPath
+        List<string> unresolvedPaths
     )
     {
         if (personPaths.Count == 0)
@@ -251,11 +231,8 @@ internal static class SecurableElementColumnPathResolver
                 out var unresolvedRootLevelPaths
             );
 
-            skippedArrayNestedPaths.AddRange(skippedPathsForElement);
-
             if (chain is not null)
             {
-                hasApplicablePersonPath = true;
                 results.Add(new ResolvedSecurableElementPath(kind, chain));
             }
 
@@ -271,7 +248,6 @@ internal static class SecurableElementColumnPathResolver
                     )
                 )
                 {
-                    hasApplicablePersonPath = true;
                     continue;
                 }
 

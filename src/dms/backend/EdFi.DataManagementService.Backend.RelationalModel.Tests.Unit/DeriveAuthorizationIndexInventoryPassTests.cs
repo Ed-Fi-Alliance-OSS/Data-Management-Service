@@ -1189,9 +1189,8 @@ public class Given_Person_Chain_Hitting_Pa_Covered_Column
 }
 
 /// <summary>
-/// Test fixture asserting the mixed array-nested + resolvable case: when at least one person
-/// securable path resolves, array-nested paths are silently skipped (no throw) and an auth
-/// index is emitted only for the resolvable path's hop.
+/// Test fixture asserting the mixed array-nested + resolvable case: array-nested paths are
+/// silently skipped (no throw) and an auth index is emitted only for the resolvable path's hop.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Mixed_Array_Nested_And_Resolvable_Person_Path
@@ -1234,53 +1233,36 @@ public class Given_Resource_With_Mixed_Array_Nested_And_Resolvable_Person_Path
 
 /// <summary>
 /// Test fixture asserting that when a resource's only person securable path is array-nested
-/// (and no other securable element resolved), the pass throws with the runtime resolver's
-/// "unsupported child-table traversal" message shape, naming both the resource and the path.
+/// (and no other securable element resolved), the pass succeeds without emitting auth indexes.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Array_Nested_Person_Path_Only
 {
-    private Exception? _exception;
+    private IReadOnlyList<DbIndexInfo> _authIndexes = default!;
 
     [SetUp]
     public void Setup()
     {
-        _exception = TestExceptions.CaptureException(() =>
-            AuthorizationIndexTestRunner.Build(ctx =>
+        _authIndexes = AuthorizationIndexTestRunner
+            .Build(ctx =>
                 ctx.ConcreteResourcesInNameOrder.Add(
                     AuthIndexFixtureResources.BuildResourceWithArrayNestedPersonPathOnly()
                 )
             )
-        );
+            .IndexesInCreateOrder.Where(i => i.Kind == DbIndexKind.Authorization)
+            .ToArray();
     }
 
     [Test]
-    public void It_should_throw_InvalidOperationException()
+    public void It_should_not_emit_any_auth_indexes()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-    }
-
-    [Test]
-    public void It_should_use_the_runtime_unsupported_child_table_traversal_message()
-    {
-        _exception!.Message.Should().Contain("unsupported child-table traversal");
-    }
-
-    [Test]
-    public void It_should_name_the_resource_and_offending_path()
-    {
-        _exception!.Message.Should().Contain("ArrayNestedPersonCarrier");
-        _exception.Message.Should().Contain("$.items[*].studentReference.studentUniqueId");
+        _authIndexes.Should().BeEmpty();
     }
 }
 
 /// <summary>
-/// Test fixture asserting the cross-pass <c>anyResolved</c> carryover: when a resource has a
-/// resolvable Namespace securable AND an array-nested-only Student path, the Namespace
-/// resolution marks the resource as "any resolved," so the array-nested Student path is
-/// silently skipped instead of throwing. Guards the seeding of
-/// <c>resourcesWithResolvedSecurable</c> from <c>EmitSecurableElementIndexes</c> into
-/// <c>EmitPersonJoinIndexes</c>.
+/// Test fixture asserting that a resource with a resolvable Namespace securable and an
+/// array-nested-only Student path emits only the Namespace auth index.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Resolved_Namespace_And_Array_Nested_Student_Path
@@ -1319,11 +1301,8 @@ public class Given_Resource_With_Resolved_Namespace_And_Array_Nested_Student_Pat
 }
 
 /// <summary>
-/// Test fixture asserting the cross-kind <c>anyResolved</c> carryover within
-/// <c>EmitPersonJoinIndexes</c>: when a resource resolves a Student path AND has an
-/// array-nested-only Contact path, the Student resolution marks the resource as "any resolved,"
-/// so the array-nested Contact path is silently skipped instead of throwing. Guards the
-/// shared <c>anyResolved</c> across Student / Contact / Staff iterations in the pass.
+/// Test fixture asserting that a resource with a resolvable Student path and an
+/// array-nested-only Contact path emits only the Student auth index.
 /// </summary>
 [TestFixture]
 public class Given_Resource_With_Resolved_Student_And_Array_Nested_Contact_Path
@@ -1364,9 +1343,8 @@ public class Given_Resource_With_Resolved_Student_And_Array_Nested_Contact_Path
 }
 
 /// <summary>
-/// Test fixture asserting that a zero-hop self person path counts as an applicable person
-/// subject even when child-collection person paths are skipped. The self path still emits no
-/// person-join index because the root <c>DocumentId</c> is the auth anchor.
+/// Test fixture asserting that a zero-hop self person path and child-collection person paths
+/// emit no person-join index because neither requires a root-table join hop.
 /// </summary>
 [TestFixture]
 public class Given_Person_Resource_With_Self_And_Array_Nested_Person_Securables
@@ -2964,9 +2942,9 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource declaring two Student securable paths: one array-nested (skipped by the
-    /// pass) and one resolvable to a direct reference. Drives the silent-skip branch: no throw,
-    /// and exactly one auth index emitted (for the resolvable path's hop). Tests using this
-    /// builder must also add <see cref="BuildPlainResource"/>(<c>"Student"</c>).
+    /// pass) and one resolvable to a direct reference. Exactly one auth index is emitted (for
+    /// the resolvable path's hop). Tests using this builder must also add
+    /// <see cref="BuildPlainResource"/>(<c>"Student"</c>).
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithMixedArrayNestedAndResolvablePersonPath()
     {
@@ -3010,9 +2988,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource declaring a resolvable Namespace securable element AND an array-nested
-    /// Student securable path. Drives the cross-pass <c>anyResolved</c> carryover from
-    /// <c>EmitSecurableElementIndexes</c> into <c>EmitPersonJoinIndexes</c> — the Namespace
-    /// resolution must mark the resource so the array-nested Student path is silently skipped.
+    /// Student securable path. The Namespace auth index is emitted while the array-nested
+    /// Student path is skipped.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithResolvedNamespaceAndArrayNestedStudentPath() =>
         BuildResource(
@@ -3033,9 +3010,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource declaring a resolvable Student securable element AND an array-nested
-    /// Contact securable path. Drives the cross-kind <c>anyResolved</c> carryover within
-    /// <c>EmitPersonJoinIndexes</c> — the Student resolution must mark the resource so the
-    /// array-nested Contact path is silently skipped.
+    /// Contact securable path. The Student auth index is emitted while the array-nested Contact
+    /// path is skipped.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithResolvedStudentAndArrayNestedContactPath()
     {
@@ -3075,10 +3051,8 @@ internal static class AuthIndexFixtureResources
 
     /// <summary>
     /// Subject resource whose only Student securable path is array-nested (contains <c>[*]</c>),
-    /// and which has no other resolvable securable elements. Person-join BFS currently follows
-    /// only root-table bindings, so array-nested paths are unsupported. Drives the throw branch
-    /// in <c>EmitPersonJoinIndexes</c> mirroring the runtime resolver's
-    /// "unsupported child-table traversal" message.
+    /// and which has no other resolvable securable elements. The DDL pass skips it because
+    /// array-nested People paths are outside executable subject scope.
     /// </summary>
     public static ConcreteResourceModel BuildResourceWithArrayNestedPersonPathOnly() =>
         BuildResource(

@@ -1342,9 +1342,11 @@ public class Given_SecurableElementColumnPathResolver
         }
 
         [Test]
-        public void It_should_throw_when_all_person_paths_are_array_nested()
+        public void It_should_skip_when_all_person_paths_are_array_nested()
         {
-            // Resource has only array-nested Student paths — should throw.
+            // Resource has only array-nested Student paths. These are retained by the People
+            // subject selector as skipped diagnostics, but this general resolver has no
+            // executable root-scope path to materialize.
             var rootTable = CreateRootTable(Table("TestResource"));
             var model = CreateModel("Ed-Fi", "TestResource", rootTable);
 
@@ -1358,13 +1360,9 @@ public class Given_SecurableElementColumnPathResolver
 
             var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
 
-            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
-            act.Should()
-                .Throw<InvalidOperationException>()
-                .WithMessage("*Ed-Fi.TestResource*")
-                .WithMessage("*unsupported child-table traversal*")
-                .WithMessage("*$.students[*].studentReference.studentUniqueId*");
+            results.Should().BeEmpty();
         }
     }
 

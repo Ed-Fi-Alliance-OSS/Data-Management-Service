@@ -94,6 +94,38 @@ public class Given_MappingSetCompiler
     }
 
     [Test]
+    public void It_should_compile_resources_with_only_array_nested_people_securable_paths()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        var supportedResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.SupportedResource
+        );
+
+        supportedResourceIndex.Should().NotBe(-1);
+
+        concreteResources[supportedResourceIndex] = concreteResources[supportedResourceIndex] with
+        {
+            SecurableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.studentReferences[*].studentReference.studentUniqueId"],
+                [],
+                []
+            ),
+        };
+        var modelSet = fixture.ModelSet with { ConcreteResourcesInNameOrder = concreteResources };
+
+        MappingSet mappingSet = null!;
+        var act = () => mappingSet = new MappingSetCompiler().Compile(modelSet);
+
+        act.Should().NotThrow();
+        mappingSet.SecurableElementColumnPathsByResource.Should().NotContainKey(fixture.SupportedResource);
+    }
+
+    [Test]
     public void It_should_build_mapping_set_key_and_resource_key_dictionaries_from_effective_schema_info()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Mssql);
