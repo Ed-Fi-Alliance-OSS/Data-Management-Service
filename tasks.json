@@ -853,5 +853,62 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalEdOrgAuthorizationSubjectSelector.cs"
     ],
     "completed": true
+  },
+  {
+    "category": "Failure Metadata",
+    "description": "Low: Preserve unresolved People path contribution order after planner-level failure aggregation.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationPlanner preserves UnresolvedSecurableElement failures in configured contribution order before falling back to JSON path, readable name, table, column, authorization object, or hint ordering.",
+      "PlanStoredValues, PlanProposedValues, and PlanUpdateValues preserve configured ordering for multiple unresolved Student, Contact, or Staff securable paths whose lexical order differs from configuration order.",
+      "Existing ordering by configured strategy raw index and relationship-local order remains unchanged across multiple configured strategies.",
+      "Selector-level unresolved ordering and resolved or skipped People subject ordering remain unchanged."
+    ],
+    "steps-to-verify": [
+      "Review RelationalPeopleAuthorizationSubjectSelector.OrderFailures and RelationshipAuthorizationPlanner.OrderFailures for consistent unresolved People contribution-order sorting.",
+      "Add planner unit coverage with two unresolved Student, Contact, or Staff paths configured in non-lexical order and assert stored security-configuration failures preserve configured contribution order.",
+      "Add proposed/update planner coverage, or a shared assertion, proving PlanProposedValues and PlanUpdateValues do not re-sort unresolved People failures lexically after aggregation.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Resolution",
+    "description": "Medium: Preserve People subject ordinals in strategy eligibility order across person kinds.",
+    "acceptance-criteria": [
+      "RelationshipsWithPeopleOnly emits executable People subjects in Student, Contact, Staff eligibility order before falling back to per-kind configured contribution order and physical column tie-breakers.",
+      "RelationshipsWithEdOrgsAndPeople and RelationshipsWithEdOrgsAndPeopleInverted keep applicable EdOrg subjects first and then emit People subjects in Student, Contact, Staff eligibility order.",
+      "RelationshipsWithStudentsOnly and RelationshipsWithStudentsOnlyThroughResponsibility keep existing same-kind contribution ordering and duplicate-strategy behavior unchanged.",
+      "Predicate dedupe still merges contributors for identical physical People predicates without reordering duplicate configured relationship strategies.",
+      "AUTH1 subject ordinals and no-claims or runtime failure mapping use the same deterministic subject order that the planner emits."
+    ],
+    "steps-to-verify": [
+      "Review RelationalPeopleAuthorizationSubjectSelector.SelectStrategySubjects and replace cross-kind table/column ordering with strategy eligibility order plus contribution-order tie-breakers.",
+      "Add selector unit coverage for a PeopleOnly resource with Student and Contact paths whose physical columns would sort Contact before Student, and assert Student remains subject ordinal 0.",
+      "Add planner or failure-mapper coverage proving mixed EdOrg-plus-People subject ordinals remain EdOrg first, then Student, Contact, Staff.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationalPeopleAuthorizationSubjectSelector|RelationshipAuthorizationPlanner|RelationshipAuthorizationAuth1FailurePayload\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalPeopleAuthorizationSubjectSelector.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationalPeopleAuthorizationSubjectSelectorTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Subject Scope",
+    "description": "Medium: Preserve skipped child-collection People diagnostics when another subject keeps the strategy executable.",
+    "acceptance-criteria": [
+      "When RelationalPeopleAuthorizationSubjectSelector selects executable subjects and also records ChildCollectionPersonPathOutsideSubjectScope skipped contributors, RelationshipAuthorizationPlanner preserves that skipped metadata in a durable plan-level or check-spec-level diagnostic field.",
+      "Mixed EdOrg-and-People strategies with an applicable EdOrg subject and only child-collection People paths continue with the EdOrg subject and do not emit a no-applicable-subject failure solely for the skipped People paths.",
+      "The preserved skipped metadata includes the original JSON path, readable name, person kind, selected auth object, table, column, contribution order, and ChildCollectionPersonPathOutsideSubjectScope reason.",
+      "Pure People strategies whose subject-scope filtering leaves no executable subjects continue to return NoApplicableRootSubject failures with skipped contributor diagnostics.",
+      "No GET-many or CRUD runtime path emits child-table People predicates as part of this diagnostic preservation."
+    ],
+    "steps-to-verify": [
+      "Review RelationalPeopleAuthorizationSubjectSelection.SkippedContributors and RelationshipAuthorizationPlanner.SelectPeopleSubjectsByStrategy to ensure skipped contributors are not discarded when subjects exist.",
+      "Extend RelationshipAuthorizationCheckSpec, SupportedRelationshipAuthorizationStrategySubjects, or an equivalent operation-neutral contract so downstream DMS-1095 and DMS-1158 consumers can inspect skipped child-collection People paths without re-resolving them.",
+      "Add planner unit coverage for a mixed EdOrg-and-People resource with an applicable root EdOrg subject and a child-collection Student, Contact, or Staff path; assert the plan remains executable and exposes the skipped contributor metadata.",
+      "Add regression coverage for a People-only child-collection path proving the existing NoApplicableRootSubject skipped-path failure remains unchanged.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RelationshipAuthorizationPlanner|RelationalPeopleAuthorizationSubjectSelector\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationContracts.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": true
   }
 ]

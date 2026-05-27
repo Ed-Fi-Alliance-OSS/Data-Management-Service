@@ -534,7 +534,11 @@ public sealed class RelationshipAuthorizationPlanner
             if (subjects.Count > 0)
             {
                 strategySubjects.Add(
-                    new SupportedRelationshipAuthorizationStrategySubjects(supportedStrategy, subjects)
+                    new SupportedRelationshipAuthorizationStrategySubjects(
+                        supportedStrategy,
+                        subjects,
+                        peopleSelection.SkippedContributors
+                    )
                 );
             }
         }
@@ -553,7 +557,7 @@ public sealed class RelationshipAuthorizationPlanner
     {
         if (!SelectsSubjectKind(supportedStrategy, SecurableElementKind.EducationOrganization))
         {
-            return new RelationshipAuthorizationStrategySubjectSelection([], []);
+            return new RelationshipAuthorizationStrategySubjectSelection([], [], []);
         }
 
         var selection = _edOrgAuthorizationSubjectSelector.Select(mappingSet, resource, supportedStrategy);
@@ -561,11 +565,12 @@ public sealed class RelationshipAuthorizationPlanner
         return selection.Outcome switch
         {
             RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success =>
-                new RelationshipAuthorizationStrategySubjectSelection(selection.Subjects, []),
+                new RelationshipAuthorizationStrategySubjectSelection(selection.Subjects, [], []),
             RelationalEdOrgAuthorizationSubjectSelectionOutcome.SecurityConfigurationError =>
                 new RelationshipAuthorizationStrategySubjectSelection(
                     [],
-                    selection.SecurityConfigurationFailures
+                    selection.SecurityConfigurationFailures,
+                    []
                 ),
             _ => throw new InvalidOperationException(
                 $"Unsupported EdOrg relationship authorization subject selection outcome '{selection.Outcome}'."
@@ -605,6 +610,36 @@ public sealed class RelationshipAuthorizationPlanner
                     (IReadOnlyList<RelationshipAuthorizationSubject>)
                         group.SelectMany(static strategySelection => strategySelection.Subjects).ToArray()
             );
+        var skippedContributorsByStrategy = selection
+            .StrategySubjectSelections.Select(strategySelection => new
+            {
+                Identity = CreateStrategyIdentity(
+                    strategySelection.ConfiguredStrategy,
+                    strategySelection.RelationshipLocalOrder
+                ),
+                strategySelection.SkippedContributors,
+            })
+            .Concat(
+                selection
+                    .SecurityConfigurationFailures.Where(static failure =>
+                        failure.SkippedContributors.Count > 0
+                    )
+                    .Select(failure => new
+                    {
+                        Identity = CreateStrategyIdentity(failure),
+                        failure.SkippedContributors,
+                    })
+            )
+            .GroupBy(static strategySelection => strategySelection.Identity)
+            .ToDictionary(
+                static group => group.Key,
+                static group =>
+                    (IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor>)
+                        group
+                            .SelectMany(static strategySelection => strategySelection.SkippedContributors)
+                            .Distinct()
+                            .ToArray()
+            );
 
         var failuresByStrategy = selection
             .SecurityConfigurationFailures.GroupBy(CreateStrategyIdentity)
@@ -613,7 +648,11 @@ public sealed class RelationshipAuthorizationPlanner
                 static group => (IReadOnlyList<RelationshipAuthorizationFailureMetadata>)group.ToArray()
             );
 
-        return new PeopleSubjectSelectionsByStrategy(subjectsByStrategy, failuresByStrategy);
+        return new PeopleSubjectSelectionsByStrategy(
+            subjectsByStrategy,
+            failuresByStrategy,
+            skippedContributorsByStrategy
+        );
     }
 
     private static RelationshipAuthorizationStrategySubjectSelection SelectPeopleSubjects(
@@ -623,7 +662,7 @@ public sealed class RelationshipAuthorizationPlanner
     {
         if (!SelectsPeopleSubject(supportedStrategy))
         {
-            return new RelationshipAuthorizationStrategySubjectSelection([], []);
+            return new RelationshipAuthorizationStrategySubjectSelection([], [], []);
         }
 
         var strategyIdentity = CreateStrategyIdentity(
@@ -633,7 +672,8 @@ public sealed class RelationshipAuthorizationPlanner
 
         return new RelationshipAuthorizationStrategySubjectSelection(
             peopleSubjectsByStrategy.SubjectsByStrategy.GetValueOrDefault(strategyIdentity) ?? [],
-            peopleSubjectsByStrategy.FailuresByStrategy.GetValueOrDefault(strategyIdentity) ?? []
+            peopleSubjectsByStrategy.FailuresByStrategy.GetValueOrDefault(strategyIdentity) ?? [],
+            peopleSubjectsByStrategy.SkippedContributorsByStrategy.GetValueOrDefault(strategyIdentity) ?? []
         );
     }
 
@@ -786,7 +826,8 @@ public sealed class RelationshipAuthorizationPlanner
                 rootTable,
                 rootDocumentIdColumn,
                 selectedStrategySubjects.Subjects,
-                supportedStrategy
+                supportedStrategy,
+                selectedStrategySubjects.SkippedContributors
             );
 
             if (checkSpecResult.PeopleAuthViewCandidateSubjects.Count > 0)
@@ -794,7 +835,8 @@ public sealed class RelationshipAuthorizationPlanner
                 peopleAuthViewCandidateStrategySubjects.Add(
                     new SupportedRelationshipAuthorizationStrategySubjects(
                         supportedStrategy,
-                        checkSpecResult.PeopleAuthViewCandidateSubjects
+                        checkSpecResult.PeopleAuthViewCandidateSubjects,
+                        []
                     )
                 );
             }
@@ -822,7 +864,8 @@ public sealed class RelationshipAuthorizationPlanner
         DbTableName rootTable,
         DbColumnName rootDocumentIdColumn,
         IReadOnlyList<RelationshipAuthorizationSubject> subjects,
-        SupportedRelationshipAuthorizationStrategy supportedStrategy
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
+        IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> skippedContributors
     ) =>
         new(
             new RelationshipAuthorizationCheckSpec(
@@ -832,7 +875,10 @@ public sealed class RelationshipAuthorizationPlanner
                 RelationshipAuthorizationValueSource.Stored,
                 subjects,
                 new RelationshipAuthorizationCheckTarget.Stored(rootTable, rootDocumentIdColumn)
-            ),
+            )
+            {
+                SkippedContributors = skippedContributors,
+            },
             [],
             subjects
         );
@@ -860,7 +906,7 @@ public sealed class RelationshipAuthorizationPlanner
                 EqualityComparer<DbColumnName>.Default
             );
 
-        return (_, rootDocumentIdColumn, subjects, supportedStrategy) =>
+        return (_, rootDocumentIdColumn, subjects, supportedStrategy, skippedContributors) =>
         {
             List<RelationshipAuthorizationFailureMetadata> failures = [];
             List<RelationshipAuthorizationSubject> executableSubjects = [];
@@ -952,6 +998,7 @@ public sealed class RelationshipAuthorizationPlanner
                 )
                 {
                     IneligibleSubjects = ineligibleSubjects,
+                    SkippedContributors = skippedContributors,
                 },
                 [],
                 peopleAuthViewCandidateSubjects
@@ -1785,7 +1832,8 @@ public sealed class RelationshipAuthorizationPlanner
         DbTableName rootTable,
         DbColumnName rootDocumentIdColumn,
         IReadOnlyList<RelationshipAuthorizationSubject> subjects,
-        SupportedRelationshipAuthorizationStrategy supportedStrategy
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
+        IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> skippedContributors
     );
 
     private sealed record CheckSpecCreationResult(
@@ -1807,12 +1855,14 @@ public sealed class RelationshipAuthorizationPlanner
 
     private sealed record SupportedRelationshipAuthorizationStrategySubjects(
         SupportedRelationshipAuthorizationStrategy Strategy,
-        IReadOnlyList<RelationshipAuthorizationSubject> Subjects
+        IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
+        IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors
     );
 
     private sealed record RelationshipAuthorizationStrategySubjectSelection(
         IReadOnlyList<RelationshipAuthorizationSubject> Subjects,
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures,
+        IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors
     );
 
     private readonly record struct RelationshipAuthorizationStrategyIdentity(
@@ -1828,7 +1878,11 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyDictionary<
             RelationshipAuthorizationStrategyIdentity,
             IReadOnlyList<RelationshipAuthorizationFailureMetadata>
-        > FailuresByStrategy
+        > FailuresByStrategy,
+        IReadOnlyDictionary<
+            RelationshipAuthorizationStrategyIdentity,
+            IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor>
+        > SkippedContributorsByStrategy
     )
     {
         public static PeopleSubjectSelectionsByStrategy Empty { get; } =
@@ -1840,6 +1894,10 @@ public sealed class RelationshipAuthorizationPlanner
                 new Dictionary<
                     RelationshipAuthorizationStrategyIdentity,
                     IReadOnlyList<RelationshipAuthorizationFailureMetadata>
+                >(),
+                new Dictionary<
+                    RelationshipAuthorizationStrategyIdentity,
+                    IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor>
                 >()
             );
     }

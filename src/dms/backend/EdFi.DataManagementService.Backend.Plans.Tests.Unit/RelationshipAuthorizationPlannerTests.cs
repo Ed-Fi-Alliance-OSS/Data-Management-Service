@@ -1640,6 +1640,82 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_preserve_skipped_child_collection_people_metadata_when_mixed_strategy_remains_executable()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "RootEdOrgChildStudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndChildStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+
+        checkSpec.Subjects.Should().ContainSingle().Which.IsPersonSubject.Should().BeFalse();
+
+        var skippedContributor = checkSpec.SkippedContributors.Should().ContainSingle().Subject;
+
+        skippedContributor.Kind.Should().Be(SecurableElementKind.Student);
+        skippedContributor.JsonPath.Should().Be("$.studentReferences[*].studentReference.studentUniqueId");
+        skippedContributor.ReadableName.Should().Be("StudentUniqueId");
+        skippedContributor.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        skippedContributor
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        skippedContributor
+            .Reason.Should()
+            .Be(RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope);
+        skippedContributor.Table.Should().Be(Table($"{resource.ResourceName}StudentReference"));
+        skippedContributor.Column.Should().Be(Col("StudentReference_DocumentId"));
+    }
+
+    [Test]
+    public void It_should_keep_people_only_child_collection_paths_as_no_applicable_subject_failures()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "ChildStudentAuthorizationResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateChildStudentSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+            ),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>();
+
+        var failure = ((RelationshipAuthorizationResult.SecurityConfigurationError)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.NoApplicableRootSubject);
+        failure.Location!.Kind.Should().Be(SecurableElementKind.Student);
+        failure.Location.JsonPath.Should().Be("$.studentReferences[*].studentReference.studentUniqueId");
+        failure
+            .SkippedContributors.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(RelationshipAuthorizationSkippedSubjectReason.ChildCollectionPersonPathOutsideSubjectScope);
+    }
+
+    [Test]
     public void It_should_keep_unresolved_securable_elements_as_security_configuration_failures()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "UnresolvedEdOrgStudentAuthorizationResource");
@@ -2225,6 +2301,87 @@ public class Given_RelationshipAuthorizationPlannerTests
             "SchoolId",
             studentPath
         );
+    }
+
+    private static MappingSet CreateMixedRootEdOrgAndChildStudentSubjectMappingSet(
+        QualifiedResourceName resource
+    ) => CreateChildStudentSubjectMappingSet(resource, includeRootEdOrgSubject: true);
+
+    private static MappingSet CreateChildStudentSubjectMappingSet(
+        QualifiedResourceName resource,
+        bool includeRootEdOrgSubject = false
+    )
+    {
+        const string schoolIdPath = "$.schoolReference.schoolId";
+        const string childStudentPath = "$.studentReferences[*].studentReference.studentUniqueId";
+        var childTableName = Table($"{resource.ResourceName}StudentReference");
+        var rootTable = CreateRootTable(
+            Table(resource.ResourceName),
+            includeRootEdOrgSubject
+                ?
+                [
+                    new DbColumnModel(
+                        Col("SchoolReference_SchoolId"),
+                        ColumnKind.Scalar,
+                        null,
+                        false,
+                        Path(schoolIdPath),
+                        null
+                    ),
+                ]
+                : []
+        );
+        var childTable = CreateChildTable(
+            childTableName,
+            "$.studentReferences[*]",
+            [
+                new DbColumnModel(
+                    Col("StudentReference_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    Path(childStudentPath),
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var concreteResource = CreateConcrete(
+            resource.ResourceName,
+            CreateModelWithTables(
+                resource.ResourceName,
+                rootTable,
+                [childTable],
+                [
+                    new DocumentReferenceBinding(
+                        true,
+                        Path(GetReferenceObjectPath(childStudentPath)),
+                        childTableName,
+                        Col("StudentReference_DocumentId"),
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        [
+                            new ReferenceIdentityBinding(
+                                Path(childStudentPath),
+                                Path(childStudentPath),
+                                Col("StudentUniqueId")
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            new ResourceSecurableElements(
+                includeRootEdOrgSubject ? [new EdOrgSecurableElement(schoolIdPath, "SchoolId")] : [],
+                [],
+                [childStudentPath],
+                [],
+                []
+            )
+        );
+
+        return CreateMappingSet([
+            concreteResource,
+            CreatePersonResource(SecurableElementKind.Student),
+            .. CreateRequiredPeopleAuthAssociationResources(),
+        ]);
     }
 
     private static MappingSet CreateMixedUnresolvedEdOrgAndRootStudentSubjectMappingSet(

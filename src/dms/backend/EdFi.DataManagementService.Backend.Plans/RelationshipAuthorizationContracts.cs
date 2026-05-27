@@ -340,6 +340,9 @@ public sealed record RelationshipAuthorizationCheckSpec(
 )
 {
     public IReadOnlyList<RelationshipAuthorizationIneligibleSubject> IneligibleSubjects { get; init; } = [];
+
+    public IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors { get; init; } =
+    [];
 }
 
 public enum RelationshipAuthorizationFailureKind
