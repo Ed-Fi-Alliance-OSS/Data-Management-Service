@@ -19,7 +19,7 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
         if (IsPeopleRelationshipStrategy(checkSpec.ConfiguredStrategy.StrategyName))
         {
             throw new InvalidOperationException(
-                $"PageDocumentId authorization does not support People relationship strategy '{checkSpec.ConfiguredStrategy.StrategyName}' before DMS-1095 integration."
+                $"PageDocumentId authorization does not support People relationship strategy '{checkSpec.ConfiguredStrategy.StrategyName}' until GET-many People relationship execution is enabled."
             );
         }
 
@@ -47,7 +47,7 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
         if (peopleStrategy is not null)
         {
             throw new ArgumentException(
-                $"Single-record relationship authorization SQL does not support People relationship strategy '{peopleStrategy.ConfiguredStrategy.StrategyName}' before DMS-1158 integration.",
+                $"Single-record relationship authorization SQL does not support People relationship strategy '{peopleStrategy.ConfiguredStrategy.StrategyName}' until People relationship CRUD execution is enabled.",
                 nameof(checkSpecs)
             );
         }

@@ -230,7 +230,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         adapt
             .Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*DMS-1095*");
+            .WithMessage("*RelationshipsWithStudentsOnly*GET-many People relationship execution*");
     }
 
     [Test]
@@ -256,7 +256,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         enforceBoundary
             .Should()
             .Throw<ArgumentException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*DMS-1158*");
+            .WithMessage("*RelationshipsWithStudentsOnly*People relationship CRUD execution*");
     }
 
     private static RelationshipAuthorizationCheckSpec CreateCheckSpec(

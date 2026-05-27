@@ -266,7 +266,7 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
         await execute
             .Should()
             .ThrowAsync<ArgumentException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*DMS-1158*");
+            .WithMessage("*RelationshipsWithStudentsOnly*People relationship CRUD execution*");
         commandExecutor.Commands.Should().BeEmpty();
     }
 
@@ -294,7 +294,7 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
         await execute
             .Should()
             .ThrowAsync<ArgumentException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*DMS-1158*");
+            .WithMessage("*RelationshipsWithStudentsOnly*People relationship CRUD execution*");
         commandExecutor.Commands.Should().BeEmpty();
     }
 

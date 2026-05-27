@@ -259,8 +259,8 @@ internal static class SecurableElementColumnPathResolver
                 results.Add(new ResolvedSecurableElementPath(kind, chain));
             }
 
-            // Surface any root-level path that did not bind (Fix #7). Only the exact self
-            // identity path on Student/Contact/Staff is zero-hop and intentionally skipped.
+            // Surface any root-level path that did not bind. Only the exact self identity
+            // path on Student/Contact/Staff is zero-hop and intentionally skipped.
             foreach (var unresolvedPath in unresolvedRootLevelPaths)
             {
                 if (

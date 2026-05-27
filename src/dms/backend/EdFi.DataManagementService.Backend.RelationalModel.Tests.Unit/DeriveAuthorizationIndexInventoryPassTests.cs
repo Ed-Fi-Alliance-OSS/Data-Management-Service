@@ -1905,11 +1905,11 @@ public class Given_SecurableElementLocationResolver_with_multi_candidate_path
 }
 
 /// <summary>
-/// Pins the surface-unresolved-sibling contract (Fix #7, DMS-1094 Round 6): when a Student
-/// path resolves alongside a sibling path that does not bind to any
-/// <see cref="DocumentReferenceBinding"/>, the pass throws on the unresolved sibling rather
-/// than silently dropping it. Matches the runtime resolver. Previously this fixture pinned
-/// the silent-skip contract — that hid schema drift until every path broke.
+/// Pins the mixed root-level People path contract: when a Student path resolves alongside a
+/// sibling path that does not bind to any <see cref="DocumentReferenceBinding"/>, the pass
+/// throws on the unresolved sibling rather than silently dropping it. Matches the runtime
+/// resolver. Previously this fixture pinned the silent-skip contract — that hid schema drift
+/// until every path broke.
 /// </summary>
 [TestFixture]
 public class Given_Subject_With_Mixed_Resolvable_And_Unresolvable_Root_Person_Paths

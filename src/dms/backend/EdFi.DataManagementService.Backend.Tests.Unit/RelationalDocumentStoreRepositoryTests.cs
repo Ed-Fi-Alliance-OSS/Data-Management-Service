@@ -909,7 +909,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure
             .FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople)
-            .And.Contain("DMS-1056");
+            .And.Contain("single-record EdOrg-only relationship execution boundary");
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -2972,7 +2972,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .As<QueryResult.QueryFailureNotImplemented>()
             .FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople)
-            .And.Contain("DMS-1055");
+            .And.Contain("GET-many EdOrg-only relationship query execution boundary");
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -3743,7 +3743,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure
             .FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople)
-            .And.Contain("DMS-1162");
+            .And.Contain("POST create-new EdOrg-only relationship execution boundary");
         _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
@@ -4113,7 +4113,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure
             .FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople)
-            .And.Contain("DMS-1163");
+            .And.Contain("PUT EdOrg-only relationship execution boundary");
         _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() =>
@@ -5388,7 +5388,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure
             .FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople)
-            .And.Contain("DMS-1056");
+            .And.Contain("single-record EdOrg-only relationship execution boundary");
         A.CallTo(_commandExecutor)
             .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
             .MustNotHaveHappened();
