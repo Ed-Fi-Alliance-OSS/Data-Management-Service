@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
+using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
@@ -170,11 +171,16 @@ public static class WebApplicationBuilderExtensions
                 IClaimsTableValidator,
                 Backend.Postgresql.ClaimsDataLoader.ClaimsTableValidator
             >();
+            webAppBuilder.Services.AddTransient<IResourceClaimRepository, ResourceClaimRepository>();
         }
         else
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddTransient<
+                IResourceClaimRepository,
+                MssqlUnsupportedResourceClaimRepository
+            >();
         }
     }
 
