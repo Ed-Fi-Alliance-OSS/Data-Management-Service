@@ -813,5 +813,45 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/SecurableElementColumnPathResolver.cs src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveAuthorizationIndexInventoryPass.cs"
     ],
     "completed": true
+  },
+  {
+    "category": "Auth View Selection",
+    "description": "Medium: Apply proposed-value eligibility and planning before aggregating People security-configuration failures.",
+    "acceptance-criteria": [
+      "PlanProposedValues derives operation-applicable proposed People candidates before aggregating security-configuration failures, even when selected subject resolution already produced failures.",
+      "POST create-new self-person subjects that are operation-ineligible with SelfPersonDocumentIdUnavailableForCreateNew are excluded from MissingPeopleAuthViewAssociations detection, including when the same strategy also has unresolved or no-applicable subject-selection failures.",
+      "PlanProposedValues still reports MissingPeopleAuthViewAssociations for selected operation-applicable People subjects when independent subject-selection failures are present.",
+      "PlanProposedValues aggregates UnresolvedSecurableElement, NoExecutableSubjects, MissingProposedRootBinding, and MissingPeopleAuthViewAssociations failures from the same operation-applicable proposed candidate set in deterministic order.",
+      "Existing stored-value and update-plan missing People auth view behavior remains unchanged.",
+      "Endpoint People staging continues to hide People-core-only security-configuration failures until DMS-1095 and DMS-1158 consume the core."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.PlanSupportedStrategies, PlanSelectedSupportedStrategies, and CreateProposedCheckSpecFactory so proposed eligibility and missing proposed root binding detection run before the planner returns early for selectedSubjects.Failures.",
+      "Add planner unit coverage for a Student POST create-new self-person subject with a second unresolved People securable path and suppressed People auth views; assert NoExecutableSubjects and UnresolvedSecurableElement are reported without MissingPeopleAuthViewAssociations for the ineligible self subject.",
+      "Add planner unit coverage for a proposed operation with an unresolved People path plus another operation-applicable People subject and suppressed People auth views; assert both the unresolved failure and MissingPeopleAuthViewAssociations are reported.",
+      "Add planner unit coverage proving MissingProposedRootBinding failures are still aggregated when independent subject-selection failures are present.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RelationshipAuthorizationPlannerTests.cs"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Simplification",
+    "description": "Low: Remove obsolete auth availability helpers and unused selector overloads that can drift from the active planning path.",
+    "acceptance-criteria": [
+      "AuthObjectDefinitions.HasAllPeopleAuthViewAssociations is removed so new code cannot bypass the AuthEdOrgHierarchy-aware GetPeopleAuthViewAvailability contract.",
+      "RelationalEdOrgAuthorizationSubjectSelector does not expose a multi-strategy Select overload unless production planning has a real call site for it.",
+      "Documentation, task text, and test verification notes that still name HasAllPeopleAuthViewAssociations are updated to reference the active availability helper when they describe current code.",
+      "No behavior changes are made to DDL emission, manifest emission, or relationship authorization planning."
+    ],
+    "steps-to-verify": [
+      "Remove AuthObjectDefinitions.HasAllPeopleAuthViewAssociations and update any current task text or test verification notes that described active code through that obsolete helper.",
+      "Run rg \"HasAllPeopleAuthViewAssociations\" . and confirm only historical design text remains.",
+      "Run rg \"Select\\(.*IReadOnlyList<SupportedRelationshipAuthorizationStrategy>\" src/dms/backend/EdFi.DataManagementService.Backend.Plans and confirm RelationalEdOrgAuthorizationSubjectSelector has no multi-strategy overload without a production call site.",
+      "Review RelationalModelDdlEmitter.EmitPeopleAuthViews, DerivedModelSetManifestEmitter.WriteAuthObjects, and RelationshipAuthorizationPlanner.CreateMissingPeopleAuthViewAssociationFailures to confirm they all use GetPeopleAuthViewAvailability.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RelationshipAuthorizationPlanner",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.External/AuthObjectDefinitions.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalEdOrgAuthorizationSubjectSelector.cs"
+    ],
+    "completed": false
   }
 ]

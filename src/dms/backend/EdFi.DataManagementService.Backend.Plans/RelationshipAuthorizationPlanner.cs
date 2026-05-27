@@ -457,17 +457,26 @@ public sealed class RelationshipAuthorizationPlanner
 
         if (selectedSubjects.Failures.Count > 0)
         {
-            var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
-                mappingSet,
-                resource,
-                selectedSubjects.StrategySubjects,
-                valueSource
-            );
+            var additionalPlanningFailures =
+                valueSource is RelationshipAuthorizationValueSource.Proposed
+                    ? CreateSelectedSupportedStrategySecurityConfigurationFailures(
+                        mappingSet,
+                        resource,
+                        valueSource,
+                        createCheckSpec,
+                        selectedSubjects.StrategySubjects
+                    )
+                    : CreateMissingPeopleAuthViewAssociationFailures(
+                        mappingSet,
+                        resource,
+                        selectedSubjects.StrategySubjects,
+                        valueSource
+                    );
 
             return new RelationshipAuthorizationResult.SecurityConfigurationError([
                 .. OrderFailures([
                     .. ApplyExecutionMetadata(selectedSubjects.Failures, supportedStrategies, valueSource),
-                    .. missingPeopleAuthViewFailures,
+                    .. additionalPlanningFailures,
                 ]),
             ]);
         }
@@ -668,6 +677,99 @@ public sealed class RelationshipAuthorizationPlanner
         IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects
     )
     {
+        var planningResult = CreateSelectedSupportedStrategyPlanningResult(
+            mappingSet,
+            resource,
+            createCheckSpec,
+            strategySubjects
+        );
+
+        if (planningResult.Failures.Count > 0)
+        {
+            var missingPeopleAuthViewPlanningFailures = CreateMissingPeopleAuthViewAssociationFailures(
+                mappingSet,
+                resource,
+                planningResult.PeopleAuthViewCandidateStrategySubjects,
+                valueSource
+            );
+
+            return new RelationshipAuthorizationResult.SecurityConfigurationError([
+                .. OrderFailures([.. planningResult.Failures, .. missingPeopleAuthViewPlanningFailures]),
+            ]);
+        }
+
+        var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
+            mappingSet,
+            resource,
+            planningResult.CheckSpecs
+        );
+
+        if (missingPeopleAuthViewFailures.Count > 0)
+        {
+            return new RelationshipAuthorizationResult.SecurityConfigurationError(
+                missingPeopleAuthViewFailures
+            );
+        }
+
+        if (authorizationContext.ClaimEducationOrganizationIds.Count == 0)
+        {
+            return new RelationshipAuthorizationResult.NoClaims(
+                planningResult.CheckSpecs,
+                CreateNoClaimsFailures(resource, planningResult.CheckSpecs)
+            );
+        }
+
+        return new RelationshipAuthorizationResult.Authorized(
+            planningResult.CheckSpecs,
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                mappingSet.Key.Dialect,
+                authorizationContext.ClaimEducationOrganizationIds,
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
+    }
+
+    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CreateSelectedSupportedStrategySecurityConfigurationFailures(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationshipAuthorizationValueSource valueSource,
+        CreateCheckSpec createCheckSpec,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects
+    )
+    {
+        var planningResult = CreateSelectedSupportedStrategyPlanningResult(
+            mappingSet,
+            resource,
+            createCheckSpec,
+            strategySubjects
+        );
+
+        if (planningResult.Failures.Count > 0)
+        {
+            var missingPeopleAuthViewPlanningFailures = CreateMissingPeopleAuthViewAssociationFailures(
+                mappingSet,
+                resource,
+                planningResult.PeopleAuthViewCandidateStrategySubjects,
+                valueSource
+            );
+
+            return [.. OrderFailures([.. planningResult.Failures, .. missingPeopleAuthViewPlanningFailures])];
+        }
+
+        return CreateMissingPeopleAuthViewAssociationFailures(
+            mappingSet,
+            resource,
+            planningResult.CheckSpecs
+        );
+    }
+
+    private static SelectedSupportedStrategyPlanningResult CreateSelectedSupportedStrategyPlanningResult(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        CreateCheckSpec createCheckSpec,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> strategySubjects
+    )
+    {
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
         var rootTableModel = concreteResourceModel.RelationalModel.Root;
         var rootTable = rootTableModel.Table;
@@ -709,48 +811,10 @@ public sealed class RelationshipAuthorizationPlanner
             }
         }
 
-        if (planningFailures.Count > 0)
-        {
-            var missingPeopleAuthViewPlanningFailures = CreateMissingPeopleAuthViewAssociationFailures(
-                mappingSet,
-                resource,
-                peopleAuthViewCandidateStrategySubjects,
-                valueSource
-            );
-
-            return new RelationshipAuthorizationResult.SecurityConfigurationError([
-                .. OrderFailures([.. planningFailures, .. missingPeopleAuthViewPlanningFailures]),
-            ]);
-        }
-
-        var missingPeopleAuthViewFailures = CreateMissingPeopleAuthViewAssociationFailures(
-            mappingSet,
-            resource,
-            checkSpecs
-        );
-
-        if (missingPeopleAuthViewFailures.Count > 0)
-        {
-            return new RelationshipAuthorizationResult.SecurityConfigurationError(
-                missingPeopleAuthViewFailures
-            );
-        }
-
-        if (authorizationContext.ClaimEducationOrganizationIds.Count == 0)
-        {
-            return new RelationshipAuthorizationResult.NoClaims(
-                checkSpecs,
-                CreateNoClaimsFailures(resource, checkSpecs)
-            );
-        }
-
-        return new RelationshipAuthorizationResult.Authorized(
+        return new SelectedSupportedStrategyPlanningResult(
             checkSpecs,
-            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
-                mappingSet.Key.Dialect,
-                authorizationContext.ClaimEducationOrganizationIds,
-                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
-            )
+            planningFailures,
+            peopleAuthViewCandidateStrategySubjects
         );
     }
 
@@ -1728,6 +1792,12 @@ public sealed class RelationshipAuthorizationPlanner
         RelationshipAuthorizationCheckSpec? CheckSpec,
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures,
         IReadOnlyList<RelationshipAuthorizationSubject> PeopleAuthViewCandidateSubjects
+    );
+
+    private sealed record SelectedSupportedStrategyPlanningResult(
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> CheckSpecs,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> Failures,
+        IReadOnlyList<SupportedRelationshipAuthorizationStrategySubjects> PeopleAuthViewCandidateStrategySubjects
     );
 
     private sealed record RelationshipAuthorizationSubjectSelectionResult(

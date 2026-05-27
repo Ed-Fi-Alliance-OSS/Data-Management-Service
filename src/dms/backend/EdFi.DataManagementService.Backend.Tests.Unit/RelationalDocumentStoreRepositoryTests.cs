@@ -7689,12 +7689,17 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ]
         );
 
-        return CreateMappingSet(
+        var mappingSet = CreateMappingSet(
             resourceKey.Resource,
             concreteResources,
             writePlan,
             CreateReadPlan(resourceModel, rootTable)
         );
+
+        return mappingSet with
+        {
+            Model = mappingSet.Model with { AuthEdOrgHierarchy = CreateAuthEdOrgHierarchy() },
+        };
     }
 
     private static MappingSet CreateProfileProjectionOrderSensitiveMappingSet(ResourceInfo resourceInfo)
@@ -8479,6 +8484,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     CreateMinimalConcreteResource((short)(firstResourceKeyId + index), resourceName)
             ),
         ];
+
+    private static AuthEdOrgHierarchy CreateAuthEdOrgHierarchy() =>
+        new([
+            new AuthEdOrgEntity(
+                "School",
+                new DbTableName(new DbSchemaName("edfi"), "School"),
+                new DbColumnName("SchoolId"),
+                []
+            ),
+        ]);
 
     private static MappingSet CreateMappingSet(
         QualifiedResourceName requestResource,
