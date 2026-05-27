@@ -5,7 +5,7 @@
 Draft. This document is the normative design for:
 
 - serving `_etag` / `_lastModifiedDate` as resource-state-sensitive metadata, and
-- enabling future Ed-Fi Change Query APIs (`ChangeVersion`).
+- enabling Ed-Fi Change Query APIs by stamping the global monotonic `ChangeVersion` that those APIs filter on (the API endpoints themselves are defined in [change-queries.md](change-queries.md)).
 
 ## Motivation
 
@@ -90,7 +90,7 @@ A document's full resource-state representation changes when any of the followin
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
 A successful update request that results in **no persisted row changes** is **not** a representation change. In that
-case, `ContentVersion`, `ContentLastModifiedAt`, and `dms.DocumentChangeEvent` MUST remain unchanged.
+case, `ContentVersion` and `ContentLastModifiedAt` MUST remain unchanged.
 
 ### What counts as an identity projection change?
 
@@ -167,84 +167,15 @@ projection after cache retrieval and preserve the cached/full-resource `_etag`. 
 `DataManagement:ResourceLinks:Enabled` strip pass does not change `_etag`, because `link` is excluded
 from canonicalization in both flag states.
 
-## Journaling for Change Queries
+## Change Query candidate selection (cross-reference)
 
-Change Queries need an efficient way to find “documents of resource R whose current `ChangeVersion` is in `[min,max]`” without scanning all documents.
+Change Query candidate selection is defined in [change-queries.md](change-queries.md). In summary:
 
-This redesign uses one journal:
+- The per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on each `StorageKind = RelationalTables` root and on `dms.Descriptor` is what resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads filter on.
+- Per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor` back the `/deletes` and `/keyChanges` endpoints; they are populated by the same `*_Stamp` triggers that stamp `dms.Document` (extended with `TriggerKindParameters.ChangeTracking`).
+- `/availableChangeVersions` is served by `dms.GetMaxChangeVersion()`.
 
-- `dms.DocumentChangeEvent` — append-only, representation changes only
-
-See [data-model.md](data-model.md) for the table DDL and recommended indexes.
-
-### Journal emission (normative)
-
-Whenever `dms.Document.ContentVersion` changes (including insert), emit one journal row:
-
-- `ChangeVersion = dms.Document.ContentVersion`
-- `DocumentId`
-- `ResourceKeyId`
-- `CreatedAt = now (UTC)`
-
-Recommended implementation: triggers on `dms.Document` that insert into `dms.DocumentChangeEvent` on `INSERT` and on `UPDATE OF ContentVersion`.
-
-### Candidate selection (“journal + verify”)
-
-Because `dms.DocumentChangeEvent` is append-only, there may be multiple rows for one `DocumentId` across time windows. Change Queries must return only documents whose **current** `ChangeVersion` is in the requested window.
-
-The selection algorithm is:
-
-1. Read candidate rows from `dms.DocumentChangeEvent` for the resource type and `[min,max]` window, ordered by `(ChangeVersion, DocumentId)` with cursor paging.
-2. Verify candidates by joining to `dms.Document` and keeping only rows where:
-   - `dms.Document.ContentVersion = dms.DocumentChangeEvent.ChangeVersion`
-3. Fetch/reconstitute and return the **current** representations for the resulting `DocumentId`s (the stamps already satisfy the window).
-
-In practice, step (1) may produce stale candidates (documents that changed again later); step (2) filters them out. If a page is underfilled after verification, the server continues reading more candidates until the page is full or the window is exhausted.
-
-### Example candidate query (PostgreSQL sketch)
-
-```sql
-WITH candidates AS (
-  SELECT e.ChangeVersion, e.DocumentId
-  FROM dms.DocumentChangeEvent e
-  WHERE e.ResourceKeyId = @ResourceKeyId
-    AND e.ChangeVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
-    AND (
-      e.ChangeVersion > @AfterChangeVersion OR
-      (e.ChangeVersion = @AfterChangeVersion AND e.DocumentId > @AfterDocumentId)
-    )
-  ORDER BY e.ChangeVersion, e.DocumentId
-  LIMIT @CandidateLimit
-)
-SELECT c.ChangeVersion, c.DocumentId
-FROM candidates c
-JOIN dms.Document d
-  ON d.DocumentId = c.DocumentId
- AND d.ContentVersion = c.ChangeVersion
-ORDER BY c.ChangeVersion, c.DocumentId;
-```
-
-### Example candidate query (SQL Server sketch)
-
-```sql
-WITH candidates AS (
-  SELECT TOP (@CandidateLimit) e.ChangeVersion, e.DocumentId
-  FROM dms.DocumentChangeEvent e
-  WHERE e.ResourceKeyId = @ResourceKeyId
-    AND e.ChangeVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
-    AND (
-      e.ChangeVersion > @AfterChangeVersion OR
-      (e.ChangeVersion = @AfterChangeVersion AND e.DocumentId > @AfterDocumentId)
-    )
-  ORDER BY e.ChangeVersion, e.DocumentId
-)
-SELECT c.ChangeVersion, c.DocumentId
-FROM candidates c
-JOIN dms.Document d
-  ON d.DocumentId = c.DocumentId
- AND d.ContentVersion = c.ChangeVersion
-ORDER BY c.ChangeVersion, c.DocumentId;
-```
+`update-tracking.md` owns the stamping contract on `dms.Document` and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
 
 ## Optimistic concurrency (`If-Match`)
 
@@ -258,10 +189,8 @@ With stored representation stamps:
 
 ## Retention and `oldestChangeVersion`
 
-Journals require retention planning once Change Queries are used in production.
+`oldestChangeVersion` is a floor: a client requesting any window `[min, max]` with `min < oldestChangeVersion` is asking for change history that may no longer be complete and should resync.
 
-Guidance:
+**v1 behavior:** `oldestChangeVersion = 0`, matching ODS. DMS does not automate retention pruning of `tracked_changes_*` tables in v1; see [change-queries.md](change-queries.md) §"Operational considerations: tracked-change table volume" for the manual truncation guidance DMS inherits from ODS, and the trade-off (loss of visibility into deletes and key-changes that predate the truncation point).
 
-- Retention policy should be defined per instance (time-based and/or size-based).
-- Expose `oldestChangeVersion` as the minimum retained `ChangeVersion` across the tracking tables that the Change Query API depends on (for v1: `dms.DocumentChangeEvent`).
-- When a client requests a window older than `oldestChangeVersion`, return a clear error instructing the client to resync.
+The resource-table `ContentVersion` mirror is excluded from any retention concept by design. The mirror always reflects current state; there is no retention shape on it, and no `/deletes` / `/keyChanges` semantic it could fail to honor.

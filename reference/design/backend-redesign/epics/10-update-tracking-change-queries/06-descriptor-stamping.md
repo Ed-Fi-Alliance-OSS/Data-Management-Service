@@ -3,16 +3,15 @@ jira: DMS-1008
 jira_url: https://edfi.atlassian.net/browse/DMS-1008
 ---
 
-# Story: Ensure Descriptor Writes Stamp and Journal Correctly (`dms.Descriptor`)
+# Story: Ensure Descriptor Writes Stamp Correctly (`dms.Descriptor`)
 
 ## Description
 
 When descriptor resources are stored in `dms.Descriptor`, updates to descriptor fields must still:
 
 - bump the descriptor document’s stored representation stamps on `dms.Document`, and
-- emit the corresponding `dms.DocumentChangeEvent` journal row (via triggers on `dms.Document` when `ContentVersion` changes).
 
-Successful descriptor updates that produce no persisted-row changes must not bump stamps or emit journal rows.
+Successful descriptor updates that produce no persisted-row changes must not bump stamps.
 
 This story ensures update tracking remains correct for descriptor resources without requiring per-descriptor tables.
 
@@ -20,9 +19,8 @@ This story ensures update tracking remains correct for descriptor resources with
 
 - INSERT/UPDATE/DELETE of a descriptor resource causes correct update-tracking behavior for the descriptor document:
   - updates to descriptor fields bump `dms.Document.ContentVersion/ContentLastModifiedAt`,
-  - unchanged descriptor PUT leaves `dms.Document.ContentVersion/ContentLastModifiedAt` unchanged and emits no journal row,
+  - unchanged descriptor PUT leaves `dms.Document.ContentVersion/ContentLastModifiedAt` unchanged,
   - identity immutability is enforced so `Uri` does not change (unless explicitly supported later),
-  - journal rows are emitted for descriptor document representation changes.
 - Trigger coverage includes `dms.Descriptor` changes (not just project-schema root/child/_ext tables).
 - Integration tests validate:
   - descriptor PUT changes `_etag/_lastModifiedDate/ChangeVersion` for the descriptor document,
@@ -31,12 +29,11 @@ This story ensures update tracking remains correct for descriptor resources with
 ## Tasks
 
 1. Emit per-dialect triggers/functions so updates to `dms.Descriptor` stamp the owning `dms.Document` row.
-2. Ensure existing `dms.Document` journaling triggers emit journal rows when `ContentVersion` changes for descriptor documents.
-3. Add an integration test that:
+2. Add an integration test that:
    1. creates a descriptor,
    2. updates a non-identity field,
-   3. asserts stored stamps and journal behavior,
-   4. repeats the same PUT and asserts stamps/journal remain unchanged.
+   3. asserts stored stamps,
+   4. repeats the same PUT and asserts stamps remain unchanged.
 
 ## Transition Notes
 
@@ -46,5 +43,5 @@ a temporary bridge for `If-Match` correctness until this story moves descriptor 
 `dms.Descriptor` triggers.
 
 When this story adds descriptor stamping triggers, remove the manual `dms.Document` stamp updates from
-`DescriptorWriteHandler` in the same change. Leaving both mechanisms active would double-stamp descriptor writes and
-can emit extra `dms.DocumentChangeEvent` journal rows.
+`DescriptorWriteHandler` in the same change. Leaving both mechanisms active would double-stamp descriptor writes.
+

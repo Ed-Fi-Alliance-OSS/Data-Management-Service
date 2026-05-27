@@ -236,7 +236,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      canonical/storage columns (binding aliases recompute).
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
-   - Generated triggers stamp `dms.Document` representation/identity versions for `_etag/_lastModifiedDate/ChangeVersion` and emit `dms.DocumentChangeEvent` (see [update-tracking.md](update-tracking.md)).
+   - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
 
 ### Authorization (CRUD checks)
 
@@ -292,7 +292,7 @@ whole-document no-op fast path:
   preflight query by default; the optimization is meant to reduce write amplification, not trade one write for an
   extra read roundtrip.
 - If the rowsets are equal, the request succeeds without issuing DML for the resource tables, `dms.Document`, or other
-  derived artifacts. No update-tracking stamps or change-journal rows are produced.
+  derived artifacts. No update-tracking stamps or `tracked_changes_*` rows are produced.
 - If any row differs, execute the normal merge write path unchanged.
 
 This is intentionally distinct from “API-surface partial updates”. The merge executor still implements full-document
@@ -492,22 +492,24 @@ When serving from `dms.DocumentCache`, treat a row as usable only if it is **fre
 
 ### Rebuild/invalidation triggers (eventual consistency)
 
-Because indirect representation changes are materialized as local updates (via cascades), `dms.DocumentChangeEvent` already captures:
-- direct content changes, and
-- indirect reference-identity changes on referrers.
+Because indirect representation changes are materialized as local updates to referrers (via PostgreSQL FK cascades and SQL Server `DbTriggerKind.IdentityPropagationFallback` triggers), referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes. `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on referrers, without reverse dependency expansion at the projector layer.
 
-So the projector does not require reverse dependency expansion. A minimal approach:
-1. Consume `dms.DocumentChangeEvent` in `ChangeVersion` order.
-2. Rebuild `dms.DocumentCache` for `(DocumentId, ChangeVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, `ContentVersion` plus the derived materialized `_etag`) to enforce freshness.
+A minimal projector approach:
+
+1. Consume `dms.Document` in `ContentVersion` order.
+2. Rebuild `dms.DocumentCache` for `(DocumentId, ContentVersion)` rows not yet applied.
+3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, the applied `ContentVersion` plus the derived materialized `_etag`) to enforce the freshness contract above.
 
 ---
 
 ## Delete Path (DELETE by id)
 
 1. Resolve `DocumentUuid` → `DocumentId`.
-2. Attempt delete from `dms.Document` (which cascades to resource tables and identities).
-3. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
+2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
+3. Delete the corresponding `dms.Document` row. The remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize lifecycle cleanup.
+4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
+
+Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.

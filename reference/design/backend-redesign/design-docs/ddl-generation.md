@@ -36,11 +36,13 @@ The DDL generation utility is responsible for database objects derived from the 
 
 - Core `dms.*` objects required for correctness and update tracking:
   - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
-  - update tracking / Change Queries: `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`
+  - update tracking / Change Queries: `dms.ChangeVersionSequence`, `dms.GetMaxChangeVersion()` function
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
-  - required triggers for:
-    - journaling (`dms.DocumentChangeEvent`), and
-    - update tracking stamping (see [update-tracking.md](update-tracking.md))
+- Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
+  - per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor`
+  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_Discriminator_ContentVersion`)
+  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `TriggerKindParameters.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
+  - ReadChanges authorization views
 - Optional projection objects (performance / integrations):
   - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
@@ -121,7 +123,7 @@ The DDL generator is the authoritative source of dialect-specific SQL text for p
 
 - schemas/tables/sequences/constraints/indexes,
 - abstract identity tables and union views,
-- trigger/function definitions (update tracking stamping, journaling, and identity maintenance),
+- trigger/function definitions (update tracking stamping, change tracking, and identity maintenance),
 - deterministic seeding and schema-fingerprint recording.
 
 Any SQL called out as “sketch” in design documents must be implemented as generator output and covered by DDL text snapshots and/or golden tests.
@@ -151,7 +153,7 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
-  - `dms.DocumentChangeEvent`
+  - `dms.GetMaxChangeVersion()` function (created after `dms.ChangeVersionSequence`)
 
 **Sequence**
 
@@ -160,9 +162,7 @@ This inventory is the explicit “what exists in the database” contract that t
 
 **Triggers (required)**
 
-- Journal emission triggers on `dms.Document`:
-  - PostgreSQL: trigger function + trigger (as defined in [update-tracking.md](update-tracking.md))
-  - SQL Server: `AFTER INSERT, UPDATE` trigger (as defined in [update-tracking.md](update-tracking.md))
+- None at the core `dms.*` schema layer. Stamping and change-tracking triggers are emitted at the per-project / per-resource layer (see §3); the shared `dms.Descriptor` table receives a `*_Stamp` trigger as part of that pass.
 
 **Indexes**
 
@@ -267,7 +267,7 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 
 **Triggers (required)**
 
-In addition to `dms.Document` journal triggers, emit per-table triggers derived from ApiSchema that:
+Emit per-table triggers derived from ApiSchema that:
 
 - stamp `dms.Document` representation/identity versions on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
 - maintain `dms.ReferentialIdentity` rows transactionally on identity projection changes, and

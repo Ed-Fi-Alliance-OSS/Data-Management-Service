@@ -16,11 +16,12 @@ Source documents:
 - Extensions (`_ext`): `reference/design/backend-redesign/design-docs/extensions.md`
 - Transactions & concurrency: `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
 - Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/design-docs/update-tracking.md`
+- Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, ContentVersion mirror): `reference/design/backend-redesign/design-docs/change-queries.md`
 - DDL generation: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 - DDL generator verification harness: `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`
 - Strengths/risks: `reference/design/backend-redesign/design-docs/strengths-risks.md`
 
-> Note on update tracking: `update-tracking.md` is the normative design for `_etag/_lastModifiedDate` and Change Queries. Where other docs describe read-time derivation or reverse-edge expansion, treat them as superseded.
+> Note on update tracking: `update-tracking.md` is the normative design for `_etag/_lastModifiedDate` and the `ChangeVersion` stamping contract on `dms.Document`. `change-queries.md` is the normative design for the Change Queries API surface (`/deletes`, `/keyChanges`, `/availableChangeVersions`), the per-resource `ContentVersion` mirror, and the `tracked_changes_*` tables. Where other docs describe read-time derivation or reverse-edge expansion, treat them as superseded.
 
 ## Goals and explicit decisions (high level)
 
@@ -85,8 +86,10 @@ Source documents:
   - `ContentVersion` (global monotonic stamp for representation changes; also serves as `ChangeVersion`).
   - `IdentityVersion` (global monotonic stamp for identity projection changes).
   - `ContentLastModifiedAt`, `IdentityLastModifiedAt`.
-- Journal (append-only):
-  - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId, CreatedAt)` emitted when `ContentVersion` changes.
+- Change Queries surface (see [change-queries.md](change-queries.md)):
+  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
+  - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`; back `/deletes` and `/keyChanges`. Populated by the same `*_Stamp` triggers extended with `TriggerKindParameters.ChangeTracking`.
+  - `dms.GetMaxChangeVersion()` function; backs `/availableChangeVersions`.
 - Served metadata:
   - `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`.
   - `_lastModifiedDate` served from `ContentLastModifiedAt`.
@@ -156,7 +159,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
   - table/column lists and types,
   - FK/descriptor bindings (including reference-identity bindings, canonical storage columns, and cascade semantics),
   - query compilation mappings (including reference-identity fields mapped to local columns),
-  - update-stamping trigger plans (resource-table changes → `dms.Document` stamps/journals).
+  - update-stamping trigger plans (resource-table changes → `dms.Document` stamps and `tracked_changes_*` rows).
 
 ## Write path (POST upsert / PUT by id)
 
@@ -198,10 +201,10 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - Per-resource triggers recompute `dms.ReferentialIdentity` when a document’s identity projection columns change (directly or via propagated updates to identity-component reference identity columns).
    - Identity changes therefore propagate transitively via DB-driven propagation (PostgreSQL FK cascades; SQL Server propagation-fallback triggers), without application-managed closure traversal.
 
-6. **Update tracking (stored metadata + journal)**
+6. **Update tracking (stored metadata + tracked-change rows)**
    - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion/ContentLastModifiedAt`.
    - Identity projection changes additionally bump `dms.Document.IdentityVersion/IdentityLastModifiedAt`.
-   - Emit `dms.DocumentChangeEvent` rows via triggers when `ContentVersion` changes.
+   - The `*_Stamp` triggers mirror the new `ContentVersion`/`ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) and append tombstone/key-change rows to the corresponding `tracked_changes_*` table when applicable (see [change-queries.md](change-queries.md)).
 
 ## Read path (GET by id / query)
 
@@ -255,5 +258,5 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 - **Very large scale tables**
   - `dms.Document` scale: avoid wide repeated strings in hot tables (use `ResourceKeyId` for `(ProjectName, ResourceName)` and store `ResourceVersion` on `dms.ResourceKey`, denormalizing only where needed for CDC/streaming).
-  - `dms.ReferentialIdentity` and `dms.DocumentChangeEvent` require careful indexing and may be large at scale; validate index and clustering choices per engine.
+  - `dms.ReferentialIdentity` requires careful indexing and may be large at scale; validate index and clustering choices per engine.
   
