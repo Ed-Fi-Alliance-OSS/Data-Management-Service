@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using static EdFi.DataManagementService.Backend.Plans.RelationshipAuthorizationPlanningHelpers;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -813,7 +814,10 @@ public sealed class RelationshipAuthorizationPlanner
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
         var rootTableModel = concreteResourceModel.RelationalModel.Root;
         var rootTable = rootTableModel.Table;
-        var rootDocumentIdColumn = GetRootDocumentIdColumn(rootTableModel);
+        var rootDocumentIdColumn = GetRootDocumentIdColumn(
+            rootTableModel,
+            "stored relationship authorization planning"
+        );
 
         List<RelationshipAuthorizationCheckSpec> checkSpecs = [];
         List<RelationshipAuthorizationFailureMetadata> planningFailures = [];
@@ -1545,19 +1549,6 @@ public sealed class RelationshipAuthorizationPlanner
             ),
         };
 
-    private static RelationshipAuthorizationPersonKind MapPersonKind(SecurableElementKind kind) =>
-        kind switch
-        {
-            SecurableElementKind.Student => RelationshipAuthorizationPersonKind.Student,
-            SecurableElementKind.Contact => RelationshipAuthorizationPersonKind.Contact,
-            SecurableElementKind.Staff => RelationshipAuthorizationPersonKind.Staff,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(kind),
-                kind,
-                "Unsupported relationship authorization person securable element kind."
-            ),
-        };
-
     private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombineAndOrderFailures(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> primaryFailures,
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> secondaryFailures
@@ -1764,42 +1755,6 @@ public sealed class RelationshipAuthorizationPlanner
         var nonNullBasisResource = basisResource.Value;
 
         return $"Strategy '{strategy.ConfiguredStrategy.StrategyName}' is known but not enabled by the shared relationship authorization core. Basis resource: '{nonNullBasisResource.ProjectName}.{nonNullBasisResource.ResourceName}'.";
-    }
-
-    private static IEnumerable<RelationshipAuthorizationFailureMetadata> OrderFailures(
-        IEnumerable<RelationshipAuthorizationFailureMetadata> failures
-    ) =>
-        failures
-            .OrderBy(static failure => failure.ConfiguredStrategy?.RawConfiguredIndex ?? int.MaxValue)
-            .ThenBy(static failure => failure.RelationshipLocalOrder ?? int.MaxValue)
-            .ThenBy(GetUnresolvedContributionOrder)
-            .ThenBy(static failure => failure.Location?.JsonPath, StringComparer.Ordinal)
-            .ThenBy(static failure => failure.Location?.ReadableName, StringComparer.Ordinal)
-            .ThenBy(static failure => failure.Location?.Table?.ToString(), StringComparer.Ordinal)
-            .ThenBy(static failure => failure.Location?.Column?.Value, StringComparer.Ordinal)
-            .ThenBy(static failure => failure.Location?.AuthorizationObjectName, StringComparer.Ordinal)
-            .ThenBy(static failure => failure.Hint, StringComparer.Ordinal);
-
-    private static int GetUnresolvedContributionOrder(RelationshipAuthorizationFailureMetadata failure) =>
-        failure.FailureKind is RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
-        && failure.Contributors.Count > 0
-            ? failure.Contributors.Min(static contributor => contributor.ContributionOrder)
-            : int.MaxValue;
-
-    private static DbColumnName GetRootDocumentIdColumn(DbTableModel rootTableModel)
-    {
-        var rootScopeLocatorColumns = rootTableModel.IdentityMetadata.RootScopeLocatorColumns;
-
-        return rootScopeLocatorColumns.Count switch
-        {
-            1 => rootScopeLocatorColumns[0],
-            0 => throw new InvalidOperationException(
-                $"Root table '{rootTableModel.Table}' does not expose a root-scope locator column for stored relationship authorization planning."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Root table '{rootTableModel.Table}' exposes multiple root-scope locator columns, which is not supported for stored relationship authorization planning."
-            ),
-        };
     }
 
     private static TableWritePlan GetRootTableWritePlan(ResourceWritePlan writePlan)
