@@ -24,6 +24,8 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Keycloak\EdFi.DmsConfigurationService.Backend.Keycloak.csproj" />
+        <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj" />
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.OpenIddict\EdFi.DmsConfigurationService.Backend.OpenIddict.csproj" />
+        <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
     </ItemGroup>
 </Project>

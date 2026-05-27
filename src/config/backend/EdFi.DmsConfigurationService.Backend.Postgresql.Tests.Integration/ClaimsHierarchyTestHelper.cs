@@ -37,7 +37,7 @@ public static class ClaimsHierarchyTestHelper
         var assembly = Assembly.GetExecutingAssembly();
 
         const string ResourceName =
-            "EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration.ClaimsHierarchyMetadata.json";
+            "EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.ClaimsHierarchyMetadata.json";
 
         using Stream stream =
             assembly.GetManifestResourceStream(ResourceName)
