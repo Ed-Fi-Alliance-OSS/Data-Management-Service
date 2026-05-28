@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Security;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -48,34 +49,14 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
         }
 
         RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForPageDocumentId(checkSpec);
-        var authObject = SelectPageDocumentIdAuthObject(checkSpec);
 
         return new PageDocumentIdAuthorizationStrategy(
-            MapKind(checkSpec.Direction),
-            [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
-            checkSpec.ConfiguredStrategy.RawConfiguredIndex,
+            MapKind(checkSpec.ConfiguredStrategy.StrategyName, checkSpec.Direction),
+            checkSpec.ConfiguredStrategy,
             checkSpec.RelationshipLocalOrder,
-            authObject.AllowsDirectClaimMatch
+            [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
+            checkSpec.SkippedContributors
         );
-    }
-
-    private static RelationshipAuthorizationAuthObject SelectPageDocumentIdAuthObject(
-        RelationshipAuthorizationCheckSpec checkSpec
-    )
-    {
-        var authObjects = checkSpec
-            .Subjects.Select(static subject => subject.AuthObject)
-            .Distinct()
-            .ToArray();
-
-        if (authObjects.Length != 1)
-        {
-            throw new InvalidOperationException(
-                "PageDocumentId authorization requires exactly one EdOrg auth object."
-            );
-        }
-
-        return authObjects[0];
     }
 
     private static PageDocumentIdAuthorizationSubject AdaptSubject(
@@ -85,6 +66,11 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
     {
         ArgumentNullException.ThrowIfNull(subject);
 
+        if (subject.PersonMetadata is not null)
+        {
+            return AdaptPersonSubject(rootTable, subject, subject.PersonMetadata);
+        }
+
         if (!subject.Table.Equals(rootTable))
         {
             throw new InvalidOperationException(
@@ -93,10 +79,60 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
             );
         }
 
-        return new PageDocumentIdAuthorizationSubject(subject.Table, subject.Column);
+        return new PageDocumentIdAuthorizationEdOrgSubject(
+            subject.Table,
+            subject.Column,
+            subject.AuthObject,
+            subject.Contributors
+        );
+    }
+
+    private static PageDocumentIdAuthorizationPersonSubject AdaptPersonSubject(
+        DbTableName rootTable,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata
+    )
+    {
+        if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
+        {
+            throw new InvalidOperationException(
+                $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match query root table '{rootTable}'."
+            );
+        }
+
+        return new PageDocumentIdAuthorizationPersonSubject(
+            subject.Table,
+            subject.Column,
+            subject.AuthObject,
+            subject.Contributors,
+            personMetadata
+        );
     }
 
     private static PageDocumentIdAuthorizationStrategyKind MapKind(
+        string strategyName,
+        RelationshipAuthorizationHierarchyDirection direction
+    ) =>
+        strategyName switch
+        {
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility =>
+                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
+            _ => MapLegacyEdOrgKind(direction),
+        };
+
+    private static PageDocumentIdAuthorizationStrategyKind MapLegacyEdOrgKind(
         RelationshipAuthorizationHierarchyDirection direction
     ) =>
         direction switch

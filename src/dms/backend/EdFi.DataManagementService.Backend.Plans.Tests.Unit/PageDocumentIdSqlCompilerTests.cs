@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -1467,10 +1468,31 @@ public class Given_PageDocumentIdSqlCompiler
         params PageDocumentIdAuthorizationSubject[] subjects
     )
     {
+        var direction =
+            kind is PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted
+                ? RelationshipAuthorizationHierarchyDirection.Inverted
+                : RelationshipAuthorizationHierarchyDirection.Normal;
+        var authObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction) with
+        {
+            AllowsDirectClaimMatch = allowsDirectClaimMatch,
+        };
+        var strategySubjects = subjects
+            .Select(subject =>
+                subject is PageDocumentIdAuthorizationEdOrgSubject edOrgSubject
+                    ? edOrgSubject with
+                    {
+                        AuthObject = authObject,
+                    }
+                    : subject
+            )
+            .ToArray();
+
         return new PageDocumentIdAuthorizationStrategy(
             kind,
-            subjects,
-            AllowsDirectClaimMatch: allowsDirectClaimMatch
+            new ConfiguredAuthorizationStrategy(MapStrategyName(kind), RawConfiguredIndex: 0),
+            RelationshipLocalOrder: 0,
+            strategySubjects,
+            []
         );
     }
 
@@ -1484,11 +1506,41 @@ public class Given_PageDocumentIdSqlCompiler
         DbTableName? table = null
     )
     {
-        return new PageDocumentIdAuthorizationSubject(
+        return new PageDocumentIdAuthorizationEdOrgSubject(
             table ?? new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
-            new DbColumnName(columnName)
+            new DbColumnName(columnName),
+            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                RelationshipAuthorizationHierarchyDirection.Normal
+            ),
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    SecurableElementKind.EducationOrganization,
+                    $"$.{columnName}",
+                    columnName
+                ),
+            ]
         );
     }
+
+    private static string MapStrategyName(PageDocumentIdAuthorizationStrategyKind kind) =>
+        kind switch
+        {
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted =>
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly =>
+                AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly =>
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility =>
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported strategy kind."),
+        };
 
     private static KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias> CreateUnifiedAliasMapping(
         DbColumnName aliasColumn,

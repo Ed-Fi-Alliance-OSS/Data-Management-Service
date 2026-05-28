@@ -399,7 +399,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         foreach (var strategy in normalizedStrategies)
         {
+            ArgumentNullException.ThrowIfNull(strategy.ConfiguredStrategy);
             ArgumentNullException.ThrowIfNull(strategy.Subjects);
+            ArgumentNullException.ThrowIfNull(strategy.SkippedContributors);
 
             if (strategy.Subjects.Any(static subject => subject is null))
             {
@@ -412,9 +414,15 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             if (strategy.Subjects.Count == 0)
             {
                 throw new ArgumentException(
-                    $"Authorization strategy '{strategy.Kind}' requires at least one authorization subject.",
+                    $"Authorization strategy '{strategy.ConfiguredStrategy.StrategyName}' requires at least one authorization subject.",
                     nameof(authorization)
                 );
+            }
+
+            foreach (var subject in strategy.Subjects)
+            {
+                ArgumentNullException.ThrowIfNull(subject.AuthObject);
+                ArgumentNullException.ThrowIfNull(subject.Contributors);
             }
         }
 
@@ -636,9 +644,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             AppendAuthorizationSubjectSql(
                 writer,
                 rootTable,
-                strategy.Kind,
                 strategy.Subjects[subjectIndex],
-                strategy.AllowsDirectClaimMatch,
                 authorizationClaimParameterization,
                 aliasAllocator.AllocateNext()
             );
@@ -648,9 +654,39 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static void AppendAuthorizationSubjectSql(
         SqlWriter writer,
         DbTableName rootTable,
-        PageDocumentIdAuthorizationStrategyKind strategyKind,
         PageDocumentIdAuthorizationSubject subject,
-        bool allowsDirectClaimMatch,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias
+    )
+    {
+        switch (subject)
+        {
+            case PageDocumentIdAuthorizationEdOrgSubject edOrgSubject:
+                AppendAuthorizationEdOrgSubjectSql(
+                    writer,
+                    rootTable,
+                    edOrgSubject,
+                    authorizationClaimParameterization,
+                    authAlias
+                );
+                return;
+            case PageDocumentIdAuthorizationPersonSubject:
+                throw new InvalidOperationException(
+                    "Page document-id SQL compilation does not yet support People relationship authorization subjects."
+                );
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(subject),
+                    subject.GetType().Name,
+                    "Unsupported page document-id authorization subject."
+                );
+        }
+    }
+
+    private static void AppendAuthorizationEdOrgSubjectSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationEdOrgSubject subject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
@@ -663,24 +699,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             );
         }
 
-        var (resourceEdOrgColumn, claimFilterColumn) = strategyKind switch
-        {
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly => (
-                AuthNames.TargetEdOrgId,
-                AuthNames.SourceEdOrgId
-            ),
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted => (
-                AuthNames.SourceEdOrgId,
-                AuthNames.TargetEdOrgId
-            ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(strategyKind),
-                strategyKind,
-                "Unsupported authorization strategy kind."
-            ),
-        };
-
-        if (allowsDirectClaimMatch)
+        if (subject.AuthObject.AllowsDirectClaimMatch)
         {
             writer.Append("(");
             AppendRootSubjectDirectClaimMatchSql(writer, subject, authorizationClaimParameterization);
@@ -688,8 +707,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             AppendRootSubjectHierarchyMatchSql(
                 writer,
                 subject,
-                resourceEdOrgColumn,
-                claimFilterColumn,
+                subject.AuthObject.SubjectValueColumn,
+                subject.AuthObject.ClaimEducationOrganizationIdColumn,
                 authorizationClaimParameterization,
                 authAlias
             );
@@ -700,8 +719,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         AppendRootSubjectHierarchyMatchSql(
             writer,
             subject,
-            resourceEdOrgColumn,
-            claimFilterColumn,
+            subject.AuthObject.SubjectValueColumn,
+            subject.AuthObject.ClaimEducationOrganizationIdColumn,
             authorizationClaimParameterization,
             authAlias
         );
@@ -709,7 +728,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
     private static void AppendRootSubjectDirectClaimMatchSql(
         SqlWriter writer,
-        PageDocumentIdAuthorizationSubject subject,
+        PageDocumentIdAuthorizationEdOrgSubject subject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
     )
     {
@@ -723,7 +742,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
     private static void AppendRootSubjectHierarchyMatchSql(
         SqlWriter writer,
-        PageDocumentIdAuthorizationSubject subject,
+        PageDocumentIdAuthorizationEdOrgSubject subject,
         DbColumnName resourceEdOrgColumn,
         DbColumnName claimFilterColumn,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
