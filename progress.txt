@@ -42,3 +42,8 @@ Task completed: e2e-tests for reference/design/backend-redesign/epics/14-authori
 Key decisions: assert dynamic correlationId with a dedicated E2E step; use existing AcademicWeek GET-by-id for stored-value relationship ProblemDetails; add proposed-value OrganizationDepartment POST with a temporary CMS claimset using RelationshipsWithEdOrgsOnly and @ResetClaimsetsAfterScenario to avoid claimset pollution; update existing RelationshipsWithEdOrgsOnly expected bodies to hardened wording.
 Files changed: RelationshipsWithEdOrgsOnly.feature, RelationshipsWithEdOrgsOnlyRelational.feature, StepDefinitions.cs, tasks.json, progress.txt.
 Blockers/notes: relational E2E stack requires explicit relational DB provisioning plus AppSettings__DmsInstanceDatabaseName=edfi_datamanagementservice_relational for valid signal. Verified focused 6-scenario filter passed and full Category=relational-backend passed 478/478 after clean teardown/setup/provision/restart.
+
+Task completed: regression-guardrails for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: treat stale task filter with no matching tests as non-signal and rerun current query authorization guardrails by test name; branch diff remains scoped to relationship auth DTO/formatter/wiring and tests, with no DDL, auth object generation, authoritative input golden, or People endpoint execution changes.
+Files changed: tasks.json, progress.txt.
+Blockers/notes: none. Core guardrail filter passed 52/52; PostgreSQL query auth guardrail filter passed 6/6 after correcting stale FullyQualifiedName filter.

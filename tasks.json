@@ -186,7 +186,7 @@
       "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalQueryAuthorization\"`.",
       "Review the diff and confirm no DDL, auth object generation, strategy planner semantics outside failure DTO mapping, or People CRUD execution paths were added."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "verification",
