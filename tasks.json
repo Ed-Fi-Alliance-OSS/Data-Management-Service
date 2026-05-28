@@ -205,6 +205,6 @@
       "Run the relevant PostgreSQL and SQL Server integration commands from the backend-integration and api-integration tasks when the required databases are available.",
       "Run the focused relational-backend E2E command from the e2e task after the relational dms-local stack is set up."
     ],
-    "completed": false
+    "completed": true
   }
 ]
