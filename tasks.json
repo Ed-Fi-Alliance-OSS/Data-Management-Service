@@ -275,6 +275,6 @@
       "Run the default E2E authorization scenarios against the default `.env.e2e` stack or inspect the generated NUnit categories to confirm untagged scenarios are not selected as relational-only tests.",
       "Run the focused relational-backend E2E command after setting up the `.env.e2e.relational` stack."
     ],
-    "completed": false
+    "completed": true
   }
 ]

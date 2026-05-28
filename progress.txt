@@ -62,3 +62,8 @@ Task completed: core-response configured auth-object hints for reference/design/
 Key decisions: carry configured auth-object FailureHint on relationship auth object DTO; formatter reads only that configured hint, ignoring strategy/subject/person diagnostic Hint fields so EdOrg-only failures emit no wire Hint.
 Files changed: RelationshipAuthorizationFailure.cs, RelationshipAuthorizationFailureMapper.cs, RelationshipAuthorizationProblemDetails.cs, relationship formatter/plans unit tests, API integration expectations, relational E2E expectations, tasks.json, progress.txt.
 Blockers/notes: none. Verified core formatter tests, plans AUTH1 payload tests, PostgreSQL/MSSQL API relationship ProblemDetails fixtures, and 5 affected relational E2E scenarios after relational stack rebuild/provision.
+
+Task completed: e2e-tests backend mode alignment for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: keep untagged RelationshipsWithEdOrgsOnly scenarios on legacy non-relational ForForbidden body; leave relational ProblemDetails assertions only on @relational-backend scenarios with shard tags; focused relational scenarios still assert content-type and non-empty correlationId.
+Files changed: RelationshipsWithEdOrgsOnly.feature, tasks.json, progress.txt.
+Blockers/notes: none. Verified default stack UseRelationalBackend=false scenarios 05/06 passed; relational stack UseRelationalBackend=true required provision-relational-e2e-database plus UseRelationalBackend=true and DmsInstanceDatabaseName=edfi_datamanagementservice_relational for focused 2-scenario ProblemDetails run, passed.
