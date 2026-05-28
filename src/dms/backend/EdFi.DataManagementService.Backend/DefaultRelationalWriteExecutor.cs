@@ -6,6 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -26,7 +27,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalReadMaterializer readMaterializer,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
-        null
+        null,
+    ILogger<DefaultRelationalWriteExecutor>? logger = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -65,7 +67,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             targetLookupResolver,
             relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance,
             relationshipAuthorizationProviderFailureExtractor
-                ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance
+                ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance,
+            logger
         );
 
     private readonly ProposedRelationshipAuthorizationOrchestrator _proposedRelationshipAuthorizationOrchestrator =

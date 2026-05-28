@@ -87,3 +87,8 @@ Task completed: e2e-tests remove internal relationship diagnostics for reference
 Key decisions: relational ProblemDetails E2E bodies now expect base detail only for EdOrg-only no-claims/no-relationship denials; dynamic correlationId is asserted with dedicated non-empty step instead of pinned values.
 Files changed: RelationshipsWithEdOrgsOnly.feature, tasks.json, progress.txt.
 Blockers/notes: none. Verified relational stack with provision-relational-e2e-database and AppSettings__DmsInstanceDatabaseName=edfi_datamanagementservice_relational; focused RelationshipsWithEdOrgsOnlyAuthorizationFeature relational-backend run passed 26/26. Docker health checks still report curl missing, but API tests passed.
+
+Task completed: observability invalid AUTH1 provider payload logging for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: classify invalid provider payload diagnostics at mapper boundary; log dialect, expected AUTH1 index, provider code/message fragment, length, and failure category before stored/proposed paths return security-configuration; keep wire error stable and sanitized.
+Files changed: RelationshipAuthorizationProviderFailureMapper.cs, SingleRecordRelationshipAuthorizationExecutor.cs, RelationalWriteNoProfilePersister.cs, StoredRelationshipAuthorizationOrchestrator.cs, DefaultRelationalWriteExecutor.cs, RelationalDocumentStoreRepository.cs, ReferenceResolverServiceCollectionExtensions.cs, focused backend unit tests, tasks.json, progress.txt.
+Blockers/notes: none. Verified focused invalid-payload backend tests, relationship AUTH1 payload tests, DI registration tests, and full backend unit project passed.

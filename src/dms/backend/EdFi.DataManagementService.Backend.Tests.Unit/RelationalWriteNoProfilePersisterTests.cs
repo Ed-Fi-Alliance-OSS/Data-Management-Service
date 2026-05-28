@@ -11,10 +11,12 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -24,11 +26,13 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Relational_Write_No_Profile_Persister
 {
     private RelationalWriteNoProfilePersister _sut = null!;
+    private RecordingLogger<RelationalWriteNoProfilePersister> _logger = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalWriteNoProfilePersister();
+        _logger = new RecordingLogger<RelationalWriteNoProfilePersister>();
+        _sut = new RelationalWriteNoProfilePersister(logger: _logger);
     }
 
     [Test]
@@ -360,6 +364,14 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
         writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+
+        var logRecord = _logger.Records.Should().ContainSingle().Subject;
+        logRecord.Level.Should().Be(LogLevel.Error);
+        logRecord.Message.Should().Contain("Dialect: Mssql");
+        logRecord.Message.Should().Contain("ExpectedEmittedAuth1Index: 0");
+        logRecord.Message.Should().Contain("ProviderErrorCode: none");
+        logRecord.Message.Should().Contain("ProviderMessageFragment: AUTH1 - 2|0|1|0:0:n");
+        logRecord.Message.Should().Contain("MappingFailureCategory: PayloadParseFailed");
     }
 
     [Test]

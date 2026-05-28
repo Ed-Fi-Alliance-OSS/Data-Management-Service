@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -19,6 +20,7 @@ using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -448,6 +450,7 @@ public class Given_Default_Relational_Write_Executor
             RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
             "2|0|1|0:0:n"
         );
+        var logger = new RecordingLogger<DefaultRelationalWriteExecutor>();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
             _referenceResolverAdapterFactory,
@@ -463,7 +466,8 @@ public class Given_Default_Relational_Write_Executor
             _writeExceptionClassifier,
             _writeConstraintResolver,
             _readMaterializer,
-            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
+            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
+            logger: logger
         );
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
             new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("AUTH1 failed"));
@@ -488,7 +492,14 @@ public class Given_Default_Relational_Write_Executor
             )
             .And.NotContain(error => error.Contains("2|0|1|0:0:n", StringComparison.Ordinal))
             .And.NotContain(error => error.Contains("AUTH1 failed", StringComparison.Ordinal));
-        providerFailureExtractor.ExtractCallCount.Should().Be(2);
+        var logRecord = logger.Records.Should().ContainSingle().Subject;
+        logRecord.Level.Should().Be(LogLevel.Error);
+        logRecord.Message.Should().Contain("Dialect: Pgsql");
+        logRecord.Message.Should().Contain("ExpectedEmittedAuth1Index: 0");
+        logRecord.Message.Should().Contain("ProviderErrorCode: AUTH1");
+        logRecord.Message.Should().Contain("ProviderMessageFragment: 2|0|1|0:0:n");
+        logRecord.Message.Should().Contain("MappingFailureCategory: PayloadParseFailed");
+        providerFailureExtractor.ExtractCallCount.Should().Be(1);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);

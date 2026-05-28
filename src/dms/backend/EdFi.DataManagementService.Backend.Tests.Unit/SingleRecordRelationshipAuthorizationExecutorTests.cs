@@ -9,10 +9,12 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -231,12 +233,14 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             SqlDialect.Pgsql,
             exceptionToThrow: new StubDbException("PostgreSQL provider exception")
         );
+        var logger = new RecordingLogger<SingleRecordRelationshipAuthorizationExecutor>();
         var sut = new SingleRecordRelationshipAuthorizationExecutor(
             commandExecutor,
             providerFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
                 payloadText
-            )
+            ),
+            logger: logger
         );
 
         var result = await sut.ExecuteAsync(
@@ -260,6 +264,14 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             .Be(
                 RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
             );
+
+        var logRecord = logger.Records.Should().ContainSingle().Subject;
+        logRecord.Level.Should().Be(LogLevel.Error);
+        logRecord.Message.Should().Contain("Dialect: Pgsql");
+        logRecord.Message.Should().Contain("ExpectedEmittedAuth1Index: 4");
+        logRecord.Message.Should().Contain("ProviderErrorCode: AUTH1");
+        logRecord.Message.Should().Contain("ProviderMessageFragment: 1|5|1|0:0:n");
+        logRecord.Message.Should().Contain("MappingFailureCategory: EmittedAuth1IndexMismatch");
     }
 
     [Test]

@@ -8,6 +8,8 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -46,7 +48,8 @@ public interface ISingleRecordRelationshipAuthorizationExecutor
 internal sealed class SingleRecordRelationshipAuthorizationExecutor(
     IRelationalCommandExecutor commandExecutor,
     IRelationalParameterConfigurator? parameterConfigurator = null,
-    IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
+    IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
+    ILogger? logger = null
 ) : ISingleRecordRelationshipAuthorizationExecutor
 {
     private const string AuthorizationResultColumn = "AuthorizationResult";
@@ -58,6 +61,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
         parameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
     private readonly IRelationshipAuthorizationProviderFailureExtractor _providerFailureExtractor =
         providerFailureExtractor ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
 
     public async Task<SingleRecordRelationshipAuthorizationExecutionResult> ExecuteAsync(
         SingleRecordRelationshipAuthorizationExecutionRequest request,
@@ -86,32 +90,38 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
                 .ConfigureAwait(false);
         }
         catch (DbException ex)
-            when (RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
+        {
+            if (
+                RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
                     request.MappingSet.Key.Dialect,
                     ex,
                     _providerFailureExtractor,
                     request.EmittedAuth1Index,
                     request.CheckSpecs,
                     request.ClaimEducationOrganizationIdParameterization.ClaimEducationOrganizationIds,
-                    out var relationshipFailure
+                    out var relationshipFailure,
+                    out var invalidFailureDiagnostic
                 )
             )
-        {
-            return new SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized(
-                relationshipFailure!
-            );
-        }
-        catch (DbException ex)
-            when (RelationshipAuthorizationProviderFailureMapper.IsRelationshipAuthorizationProviderFailure(
-                    request.MappingSet.Key.Dialect,
-                    ex,
-                    _providerFailureExtractor
-                )
-            )
-        {
-            return new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
-            );
+            {
+                return new SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized(
+                    relationshipFailure!
+                );
+            }
+
+            if (invalidFailureDiagnostic is not null)
+            {
+                RelationshipAuthorizationProviderFailureMapper.LogInvalidFailurePayload(
+                    _logger,
+                    invalidFailureDiagnostic
+                );
+
+                return new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
+                    RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                );
+            }
+
+            throw;
         }
     }
 

@@ -743,7 +743,8 @@ public sealed class RelationalDocumentStoreRepository(
         var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
             sessionCommandExecutor,
             _relationalParameterConfigurator,
-            _relationshipAuthorizationProviderFailureExtractor
+            _relationshipAuthorizationProviderFailureExtractor,
+            _logger
         );
         var authorizationExecutionResult = await authorizationExecutor
             .ExecuteAsync(
