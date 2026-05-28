@@ -239,7 +239,49 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
 
         result
             .Should()
-            .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>();
+            .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
+            .Which.FailureMessage.Should()
+            .Be(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            );
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_auth1_provider_payload_is_missing()
+    {
+        var commandExecutor = new RecordingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            exceptionToThrow: new StubDbException("PostgreSQL provider exception")
+        );
+        var sut = new SingleRecordRelationshipAuthorizationExecutor(
+            commandExecutor,
+            providerFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
+                RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+                string.Empty
+            )
+        );
+
+        var result = await sut.ExecuteAsync(
+            new SingleRecordRelationshipAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 349L,
+                [CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal)],
+                AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    [100L],
+                    "ClaimEducationOrganizationIds"
+                ),
+                EmittedAuth1Index: 4
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
+            .Which.FailureMessage.Should()
+            .Be(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            );
     }
 
     [Test]

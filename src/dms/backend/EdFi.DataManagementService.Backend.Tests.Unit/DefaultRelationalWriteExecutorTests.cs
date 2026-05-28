@@ -445,6 +445,60 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_security_configuration_when_stored_relationship_auth1_payload_is_invalid()
+    {
+        var providerFailureExtractor = new StubRelationshipAuthorizationProviderFailureExtractor(
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "2|0|1|0:0:n"
+        );
+        _sut = new DefaultRelationalWriteExecutor(
+            _writeSessionFactory,
+            _referenceResolverAdapterFactory,
+            _writeFlattener,
+            _currentStateLoader,
+            _currentEtagPreconditionChecker,
+            _committedRepresentationReader,
+            _targetLookupResolver,
+            _writeFreshnessChecker,
+            _noProfileMergeSynthesizer,
+            _profileMergeSynthesizer,
+            _noProfilePersister,
+            _writeExceptionClassifier,
+            _writeConstraintResolver,
+            _readMaterializer,
+            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
+        );
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("AUTH1 failed"));
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        var securityConfigurationFailure = updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Subject;
+        securityConfigurationFailure
+            .Errors.Should()
+            .Equal(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            )
+            .And.NotContain(error => error.Contains("2|0|1|0:0:n", StringComparison.Ordinal))
+            .And.NotContain(error => error.Contains("AUTH1 failed", StringComparison.Ordinal));
+        providerFailureExtractor.ExtractCallCount.Should().Be(2);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_locks_existing_put_target_before_returning_stored_relationship_no_claims()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -4297,6 +4351,37 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeNull();
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_failure_for_invalid_proposed_relationship_auth1_payloads()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfilePersister.ExceptionToThrow =
+            new RelationalWriteInvalidRelationshipAuthorizationFailureException(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var securityConfigurationFailure = upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Subject;
+        securityConfigurationFailure
+            .Errors.Should()
+            .Equal(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            );
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);

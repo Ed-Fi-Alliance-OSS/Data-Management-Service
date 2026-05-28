@@ -276,6 +276,44 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
+    public async Task It_maps_invalid_proposed_relationship_authorization_auth1_payloads_before_root_insert()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post, SqlDialect.Mssql);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ExceptionToThrow: new StubDbException("AUTH1 - 2|0|1|0:0:n")),
+        ]);
+
+        var action = async () => await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        var exception = await action
+            .Should()
+            .ThrowAsync<RelationalWriteInvalidRelationshipAuthorizationFailureException>();
+        exception
+            .Which.FailureMessage.Should()
+            .Be(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            );
+        exception.Which.FailureMessage.Should().NotContain("2|0|1|0:0:n");
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
+        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+    }
+
+    [Test]
     public async Task It_updates_matched_rows_and_clears_inlined_scope_columns_for_existing_document_requests()
     {
         var rootPlan = CreateRootPlan(includeShortName: true);

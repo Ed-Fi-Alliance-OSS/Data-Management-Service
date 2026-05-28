@@ -765,7 +765,7 @@ public sealed class RelationalDocumentStoreRepository(
             SingleRecordRelationshipAuthorizationExecutionResult.StaleTarget =>
                 new DeleteResult.DeleteFailureNotExists(),
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                new DeleteResult.UnknownFailure(invalidFailure.FailureMessage),
+                new DeleteResult.DeleteFailureSecurityConfiguration([invalidFailure.FailureMessage]),
             _ => throw new InvalidOperationException(
                 $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."
             ),
@@ -1837,7 +1837,7 @@ public sealed class RelationalDocumentStoreRepository(
             ),
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 new GetAuthorizationOutcome(
-                    new GetResult.UnknownFailure(invalidFailure.FailureMessage),
+                    new GetResult.GetFailureSecurityConfiguration([invalidFailure.FailureMessage]),
                     null,
                     false
                 ),

@@ -678,7 +678,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         if (IsRelationshipAuthorizationProviderFailure(dialect, exception))
         {
             throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                "Relationship authorization failed, but the AUTH1 failure metadata could not be mapped."
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
             );
         }
 

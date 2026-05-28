@@ -1,0 +1,210 @@
+[
+  {
+    "category": "backend-contracts",
+    "description": "Normalize invalid relationship AUTH1 provider payload handling so missing, malformed, unknown-version, truncated, or plan-ordinal-mismatched failure-set payloads fail closed as security-configuration errors instead of generic unknown/system failures or relationship 403 fallbacks.",
+    "acceptance-criteria": [
+      "All invalid relationship AUTH1 payload cases return the canonical security-configuration ProblemDetails type `urn:ed-fi:api:system:configuration:security` with status 500.",
+      "The security-configuration `errors` array contains exactly `The relationship authorization failure payload returned by the authorization provider is invalid and cannot be mapped to the configured relationship authorization plan.` for every invalid relationship AUTH1 payload case.",
+      "Raw provider exception text, malformed payload fragments, parser reasons, unknown versions, and invalid ordinal details are not emitted on the wire.",
+      "Valid relationship AUTH1 denial payloads still map to relationship authorization 403 failures.",
+      "Non-AUTH1 database exceptions continue through the existing non-relationship exception path."
+    ],
+    "steps-to-verify": [
+      "Review `RelationshipAuthorizationProviderFailureMapper`, `SingleRecordRelationshipAuthorizationExecutor`, `StoredRelationshipAuthorizationOrchestrator`, `RelationalWriteNoProfilePersister`, and repository result mapping for invalid-payload handling.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload\"`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor|FullyQualifiedName~RelationalDocumentStoreRepository\"`.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~Handler\"`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "backend-plans",
+    "description": "Harden relationship AUTH1 failure-set extraction and mapping so the versioned payload is treated as a failed OR group with plan-relative strategy and subject ordinals rather than as a single configured strategy index.",
+    "acceptance-criteria": [
+      "A relationship AUTH1 payload can identify multiple failed OR strategies and multiple failed subjects per strategy.",
+      "Mapped `RelationshipAuthorizationFailure` preserves configured strategy index, relationship-local order, strategy name/kind, subject index, failure kind, auth object, root binding, securable element metadata, hints, and People subject metadata in deterministic configured strategy/subject/contributor order.",
+      "Mapped claim EducationOrganizationIds are normalized deterministically and do not contain duplicates.",
+      "Stored-value payloads reject proposed-value-missing subject failures, proposed-value payloads reject stored-value-null subject failures, and no-relationship subject failures remain valid for both value sources.",
+      "Payload strategy and subject ordinals that do not exist in the active relationship plan are treated as invalid payloads for the security-configuration path.",
+      "The empty EdOrg claims short-circuit builds a synthetic no-relationship failure DTO from all operation-applicable executable relationship OR strategies and subjects in configured order without composing AUTH1 SQL."
+    ],
+    "steps-to-verify": [
+      "Review `RelationshipAuthorizationAuth1FailurePayloadCodec`, `RelationshipAuthorizationFailureMapper`, `RelationshipAuthorizationPlanner`, and the stored/proposed relationship authorization orchestrators.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload|FullyQualifiedName~RelationshipAuthorizationPlanner\"`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor\"`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "core-response",
+    "description": "Implement the relationship authorization ProblemDetails case selector and formatter that consumes the full `RelationshipAuthorizationFailure` DTO and produces the final RFC 9457 body for relationship 403 responses.",
+    "acceptance-criteria": [
+      "Relationship denials produce ProblemDetails members `type`, `title`, `status`, `detail`, `errors`, and `correlationId` matching `auth.md`.",
+      "Mixed failed relationship OR groups use precedence order: stored-value invalid data or element uninitialized, then proposed-value element required, then no relationship established.",
+      "Lower-precedence failed entries do not hide or downgrade higher-precedence entries.",
+      "Stored-value null failures use type `urn:ed-fi:api:security:authorization:relationships:invalid-data:element-uninitialized` and existing-data wording.",
+      "Proposed-value missing failures use type `urn:ed-fi:api:security:authorization:relationships:access-denied:element-required`, proposed-data wording, and an empty `errors` array.",
+      "No-relationship and no-claims relationship failures use type `urn:ed-fi:api:security:authorization` and the EdOrg-claims wording, including `(none)` when the normalized claim list is empty.",
+      "When multiple stored-value invalid-data securable names are selected, `detail` uses the clarified plural existing-data sentence from the story answers.",
+      "When multiple proposed-value element-required securable names are selected, `detail` uses the clarified plural proposed-data sentence from the story answers.",
+      "No-relationship failures selected from multiple failed OR strategies emit one aggregated `errors` entry with de-duplicated readable names, not one error per failed strategy or subject.",
+      "Selected invalid-data failures emit one `errors` entry per configured relationship strategy entry in configured order, while proposed element-required failures preserve strategy identity internally without emitting strategy-specific wire errors.",
+      "No formatter path re-queries authorization state to build the response."
+    ],
+    "steps-to-verify": [
+      "Review the relationship formatter implementation and confirm it is driven only by `RelationshipAuthorizationFailure`.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails\"`.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~FailureResponse\"`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "core-response",
+    "description": "Implement relationship ProblemDetails text helpers for readable securable names, singular/plural wording, EdOrg claim display, and authorization hint aggregation.",
+    "acceptance-criteria": [
+      "MetaEd/readable securable element names carried by the relationship auth core are preferred over fallback JSON path derivation.",
+      "Fallback names derive from JSON paths such as `$.schoolReference.schoolId` as `SchoolId` when readable metadata is absent.",
+      "Single selected readable securable elements use the singular relationship error text.",
+      "Multiple selected readable securable elements use the plural relationship error text with de-duplicated display names in deterministic first-seen configured strategy/subject/contributor order.",
+      "A single EdOrg claim renders with `claim`; multiple EdOrg claims render with `claims`.",
+      "An empty normalized EdOrg claim list renders as `(none)` through the EdOrg-claims wording.",
+      "More than five EdOrg claims render only the first five deterministic values followed by `...`.",
+      "Distinct authorization hints from selected failed entries are appended to `detail` after the base detail text in deterministic configured strategy/subject order, including for invalid-data and proposed element-required failures.",
+      "Duplicate authorization hints are removed by hint text while preserving the first configured strategy/subject occurrence."
+    ],
+    "steps-to-verify": [
+      "Run unit tests covering readable-name fallback, readable-name preference, singular and plural messages, no claims, one claim, five claims, more-than-five claims, duplicate display-name de-duplication, and duplicate hint de-duplication.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails\"`.",
+      "Review the generated response strings against `reference/design/backend-redesign/design-docs/auth.md` section `ProblemDetails` and the clarifying answers in the story."
+    ],
+    "completed": false
+  },
+  {
+    "category": "core-handler-integration",
+    "description": "Wire the relationship ProblemDetails formatter into GET-by-id, DELETE, POST-create/POST-as-update, and PUT handler responses for relationship authorization failures while leaving non-relationship authorization responses on their existing path.",
+    "acceptance-criteria": [
+      "`GetFailureRelationshipNotAuthorized`, `DeleteFailureRelationshipNotAuthorized`, `UpsertFailureRelationshipNotAuthorized`, and `UpdateFailureRelationshipNotAuthorized` use the new relationship formatter and the embedded `RelationshipAuthorizationFailure` DTO.",
+      "Legacy `FailureResponse.ForForbidden` behavior for non-relationship authorization failures remains unchanged except where shared infrastructure must support the new formatter.",
+      "Relationship failure responses use status 403 and `application/problem+json` where the surrounding handler convention requires a ProblemDetails content type.",
+      "`correlationId` is populated from the request trace id and remains dynamic; tests assert presence or an explicitly supplied echoed value rather than byte-for-byte fixed generated values.",
+      "Security-configuration failures continue to use status 500 and `FailureResponse.ForSecurityConfiguration`."
+    ],
+    "steps-to-verify": [
+      "Review `GetByIdHandler`, `DeleteByIdHandler`, `UpsertHandler`, `UpdateByIdHandler`, and `FailureResponse` for relationship-specific routing.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandler|FullyQualifiedName~DeleteByIdHandler|FullyQualifiedName~UpsertHandler|FullyQualifiedName~UpdateByIdHandler\"`.",
+      "Inspect handler unit assertions to confirm stable ProblemDetails members are exact and `correlationId` is validated as dynamic."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused unit tests for relationship ProblemDetails formatting from full failed OR-strategy metadata, including mixed failure kinds, multiple strategies, People metadata, no-claims synthetic failures, and final wire text rules.",
+    "acceptance-criteria": [
+      "Unit tests cover no-relationship formatting with one selected securable element and multiple selected securable elements.",
+      "Unit tests cover stored-value uninitialized existing-data formatting for one and multiple selected readable names.",
+      "Unit tests cover proposed-value missing proposed-data formatting for one and multiple selected readable names and assert `errors` is an empty array.",
+      "Unit tests cover mixed failure-kind precedence: stored null beats no relationship, proposed missing beats no relationship, and no relationship is selected only when no higher-precedence kind exists.",
+      "Unit tests cover multiple invalid-data strategy errors as one error entry per selected configured relationship strategy in configured order.",
+      "Unit tests cover no-relationship errors as a single aggregated error entry across selected failed OR strategies and subjects.",
+      "Unit tests cover People relationship DTO mapping, readable-name selection, People auth-view hints, and empty-claims formatting without requiring People CRUD endpoint execution."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails\"`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload\"`.",
+      "Review unit test names for NUnit style: fixture classes prefixed with `Given_`, setup methods for arrange/act where appropriate, and test methods prefixed with `It_`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "backend-integration-tests",
+    "description": "Add PostgreSQL and SQL Server provider-level backend integration coverage that proves relationship failure DTOs and invalid-payload security-configuration paths are preserved for unauthorized stored-value operations.",
+    "acceptance-criteria": [
+      "PostgreSQL GET-by-id unauthorized relationship denial preserves the full relationship failure DTO needed for final ProblemDetails formatting.",
+      "SQL Server GET-by-id unauthorized relationship denial preserves the full relationship failure DTO needed for final ProblemDetails formatting.",
+      "PostgreSQL DELETE unauthorized relationship denial preserves the full relationship failure DTO and still returns 403 before delete execution.",
+      "SQL Server DELETE unauthorized relationship denial preserves the full relationship failure DTO and still returns 403 before delete execution.",
+      "Stored null/uninitialized existing-data failures are covered for both dialects where fixture support exists.",
+      "Invalid relationship AUTH1 provider payload or unmappable payload ordinal cases surface as security-configuration failures rather than unknown failures.",
+      "Provider-level tests assert stable backend result contracts and DTO contents; final HTTP ProblemDetails body assertions are owned by the API-level integration task."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"Category=Authorization\"`.",
+      "Run `ConnectionStrings__MssqlAdmin='<admin-connection-string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"Category=Authorization\"` after verifying SQL Server is listening.",
+      "Review the PostgreSQL and SQL Server tests for equivalent assertions across dialects."
+    ],
+    "completed": false
+  },
+  {
+    "category": "api-integration-tests",
+    "description": "Add API-level integration tests for final HTTP ProblemDetails response bodies for unauthorized EdOrg relationship CRUD operations across PostgreSQL and SQL Server.",
+    "acceptance-criteria": [
+      "PostgreSQL unauthorized GET-by-id response body matches the final relationship ProblemDetails contract for all stable members and validates `correlationId` as present and non-empty.",
+      "SQL Server unauthorized GET-by-id response body matches the final relationship ProblemDetails contract for all stable members and validates `correlationId` as present and non-empty.",
+      "PostgreSQL and SQL Server unauthorized POST-create response bodies match the final no-relationship and proposed element-required ProblemDetails contracts as applicable.",
+      "PostgreSQL and SQL Server unauthorized PUT response bodies distinguish stored-value invalid-data failures from proposed-value element-required failures.",
+      "PostgreSQL and SQL Server unauthorized DELETE response bodies match the final relationship ProblemDetails contract.",
+      "At least one API-level test validates empty EdOrg claims render through the EdOrg-claims wording as `(none)`.",
+      "Tests avoid dedicated custom-view/no-EdOrg-claims wire assertions because custom view ProblemDetails are out of scope for this story."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration\"`.",
+      "Run `ConnectionStrings__MssqlAdmin='<admin-connection-string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration\"` after verifying SQL Server is listening.",
+      "Inspect response-shape assertions to confirm stable members are exact and dynamic `correlationId` handling follows the story guidance."
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Add focused relational-backend DMS E2E coverage for the externally observable relationship authorization ProblemDetails shape for one stored-value operation and one proposed-value operation.",
+    "acceptance-criteria": [
+      "A stored-value relationship denial E2E scenario validates status 403, final relationship ProblemDetails `type`, `title`, `status`, `detail`, `errors`, and a present/non-empty `correlationId`.",
+      "A proposed-value relationship denial E2E scenario validates status 403, final proposed element-required ProblemDetails `type`, `title`, `status`, `detail`, empty `errors`, and a present/non-empty `correlationId`.",
+      "The scenarios run only under the relational backend and use the NUnit category `relational-backend`.",
+      "The E2E expected bodies do not pin a generated correlation id unless the scenario intentionally supplies the configured correlation-id request header and asserts it is echoed."
+    ],
+    "steps-to-verify": [
+      "From `src/dms/tests/EdFi.DataManagementService.Tests.E2E`, run `pwsh ./teardown-local-dms.ps1`.",
+      "From `src/dms/tests/EdFi.DataManagementService.Tests.E2E`, run `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational`.",
+      "Verify relational backend settings with `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore|QueryHandler'`.",
+      "Run `env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\"` from `src/dms/tests/EdFi.DataManagementService.Tests.E2E`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "regression-guardrails",
+    "description": "Protect out-of-scope authorization behavior while hardening relationship ProblemDetails so shared response infrastructure changes do not regress namespace, ownership, custom-view, GET-many filtering, or temporary staging behavior.",
+    "acceptance-criteria": [
+      "Security-configuration failures from planning and invalid relationship AUTH1 payloads remain 500 responses and are not converted into 403 denials.",
+      "GET-many relationship authorization continues to filter rows and does not return 403 for unauthorized rows.",
+      "Namespace-based and ownership-based ProblemDetails behavior is unchanged except for shared helper changes required to preserve existing tests.",
+      "No new custom-view/no-EdOrg-claims ProblemDetails tests are added unless preserving existing shared formatter coverage requires them.",
+      "Temporary known-but-not-enabled staging surfaces for strategies outside the current CRUD relationship scope remain intact.",
+      "No database authorization objects, DDL, relationship strategy semantics, or People CRUD endpoint execution are introduced by this story."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResourceActionAuthorizationMiddleware|FullyQualifiedName~QueryRequestHandler|FullyQualifiedName~FailureResponse\"`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalQueryAuthorization\"`.",
+      "Review the diff and confirm no DDL, auth object generation, strategy planner semantics outside failure DTO mapping, or People CRUD execution paths were added."
+    ],
+    "completed": false
+  },
+  {
+    "category": "verification",
+    "description": "Run formatting and targeted verification for the full relationship ProblemDetails hardening change set.",
+    "acceptance-criteria": [
+      "Changed C# files are formatted with CSharpier.",
+      "Core, backend unit, plans unit, and relevant backend/API integration tests pass for the changed surface.",
+      "Any skipped SQL Server integration tests are documented as environment skips, not treated as product signals.",
+      "The final review notes identify the exact tests run and any residual test gaps."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet csharpier format src/dms`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`.",
+      "Run the relevant PostgreSQL and SQL Server integration commands from the backend-integration and api-integration tasks when the required databases are available.",
+      "Run the focused relational-backend E2E command from the e2e task after the relational dms-local stack is set up."
+    ],
+    "completed": false
+  }
+]

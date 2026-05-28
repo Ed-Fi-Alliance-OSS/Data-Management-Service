@@ -12,6 +12,9 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationshipAuthorizationProviderFailureMapper
 {
+    public const string InvalidFailurePayloadSecurityConfigurationError =
+        "The relationship authorization failure payload returned by the authorization provider is invalid and cannot be mapped to the configured relationship authorization plan.";
+
     public static bool TryMapRelationshipAuthorizationFailure(
         SqlDialect dialect,
         DbException exception,
@@ -60,11 +63,10 @@ internal static class RelationshipAuthorizationProviderFailureMapper
 
         var providerFailure = providerFailureExtractor.Extract(exception);
 
-        return RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
+        return RelationshipAuthorizationAuth1FailurePayloadCodec.IsProviderFailure(
             dialect,
             providerFailure.ErrorCode,
-            providerFailure.Message,
-            out _
+            providerFailure.Message
         );
     }
 

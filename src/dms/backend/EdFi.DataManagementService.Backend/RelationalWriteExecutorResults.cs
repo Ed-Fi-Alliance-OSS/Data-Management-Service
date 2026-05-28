@@ -56,6 +56,23 @@ internal static class RelationalWriteExecutorResults
         };
     }
 
+    public static RelationalWriteExecutorResult BuildSecurityConfigurationFailureResult(
+        RelationalWriteOperationKind operationKind,
+        string[] errors
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureSecurityConfiguration(errors)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureSecurityConfiguration(errors)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
     public static RelationalWriteExecutorResult BuildNoClaimsStoredRelationshipAuthorizationResult(
         RelationalWriteOperationKind operationKind,
         RelationshipAuthorizationResult.NoClaims noClaims

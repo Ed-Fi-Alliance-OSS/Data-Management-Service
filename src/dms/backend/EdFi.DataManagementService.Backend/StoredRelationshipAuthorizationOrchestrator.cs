@@ -323,9 +323,9 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
             },
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                RelationalWriteExecutorResults.BuildUnknownFailureResult(
+                RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                     request.OperationKind,
-                    invalidFailure.FailureMessage
+                    [invalidFailure.FailureMessage]
                 ),
             _ => throw new InvalidOperationException(
                 $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."

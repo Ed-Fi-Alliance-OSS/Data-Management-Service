@@ -109,7 +109,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
             )
         {
             return new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Relationship authorization failed, but the AUTH1 failure metadata could not be mapped."
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
             );
         }
     }

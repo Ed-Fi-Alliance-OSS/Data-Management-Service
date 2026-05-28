@@ -347,9 +347,9 @@ internal sealed class DefaultRelationalWriteExecutor(
         catch (RelationalWriteInvalidRelationshipAuthorizationFailureException ex)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return RelationalWriteExecutorResults.BuildUnknownFailureResult(
+            return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                 request.OperationKind,
-                ex.FailureMessage
+                [ex.FailureMessage]
             );
         }
         catch (DbException ex)
