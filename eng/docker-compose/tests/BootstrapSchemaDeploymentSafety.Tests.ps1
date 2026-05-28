@@ -507,6 +507,102 @@ exit $ExitCode
             $connectionString | Should -Not -Match "dms-postgresql"
         }
 
+        It "rejects an encrypted connection string when the encryption key is not configured" {
+            . $script:repo.ProvisionScript
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString "AAAAAAAAAAAAAAAAAAAAAA==" -EnvValues @{} } |
+                Should -Throw -ExpectedMessage "*DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set*"
+        }
+
+        It "rejects an encrypted connection string payload that is not valid base64" {
+            . $script:repo.ProvisionScript
+
+            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString "@@@@" -EnvValues $envValues } |
+                Should -Throw -ExpectedMessage "*not valid CMS encrypted base64*"
+        }
+
+        It "rejects an encrypted connection string payload too short to contain an IV" {
+            . $script:repo.ProvisionScript
+
+            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            $shortPayload = [Convert]::ToBase64String([byte[]]::new(8))
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $shortPayload -EnvValues $envValues } |
+                Should -Throw -ExpectedMessage "*payload is invalid*"
+        }
+
+        It "rejects an encrypted connection string that cannot be decrypted with the configured key" {
+            . $script:repo.ProvisionScript
+
+            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            # 16-byte IV plus a 17-byte ciphertext is not a whole AES block, so PKCS7 decryption
+            # fails deterministically rather than relying on a wrong-key padding collision.
+            $undecryptable = [Convert]::ToBase64String([byte[]]::new(33))
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $undecryptable -EnvValues $envValues } |
+                Should -Throw -ExpectedMessage "*could not be decrypted*"
+        }
+
+        It "fails fast when CMS instance results reach the query page size" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    1..500 | ForEach-Object {
+                        [pscustomobject]@{
+                            id = $_
+                            instanceName = "I$_"
+                            connectionString = "host=dms-postgresql;port=5432;username=postgres;password=x;database=db$_;"
+                            dmsInstanceRouteContexts = @()
+                        }
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+                Should -Throw -ExpectedMessage "*page size (500)*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse
+        }
+
+        It "provisions normally when instance results stay below the page size" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                $target = [pscustomobject]@{
+                    id = 1
+                    instanceName = "Target"
+                    connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=below_limit;'
+                    dmsInstanceRouteContexts = @()
+                }
+                $filler = 2..499 | ForEach-Object {
+                    [pscustomobject]@{
+                        id = $_
+                        instanceName = "I$_"
+                        connectionString = "host=dms-postgresql;port=5432;username=postgres;password=x;database=db$_;"
+                        dmsInstanceRouteContexts = @()
+                    }
+                }
+                return @($target) + @($filler)
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+                Should -Not -Throw
+            @(Get-Content -LiteralPath $capturePath) | Should -Contain "provision"
+        }
+
         It "resolves school-year selectors and fails when a year is ambiguous" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
