@@ -705,46 +705,48 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             );
         }
 
-        var rootPersonDocumentIdColumn = GetRootPersonDocumentIdColumn(rootTable, subject);
-        var rootSubqueryAlias = aliasAllocator.AllocateNext();
-        var authAlias = aliasAllocator.AllocateNext();
-
-        AppendRootDocumentIdInPersonAuthViewSql(
-            writer,
-            rootTable,
-            personMetadata.StoredAnchor.RootDocumentIdColumn,
-            rootPersonDocumentIdColumn,
-            subject.AuthObject,
-            authorizationClaimParameterization,
-            rootSubqueryAlias,
-            authAlias
-        );
-    }
-
-    private static DbColumnName GetRootPersonDocumentIdColumn(
-        DbTableName rootTable,
-        PageDocumentIdAuthorizationPersonSubject subject
-    )
-    {
-        var personMetadata = subject.PersonMetadata;
-
-        return personMetadata.Path.Kind switch
+        switch (personMetadata.Path.Kind)
         {
-            RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId => personMetadata
-                .StoredAnchor
-                .RootDocumentIdColumn,
-            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn =>
-                GetDirectRootPersonDocumentIdColumn(rootTable, subject),
-            RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath =>
-                throw new InvalidOperationException(
-                    "Page document-id SQL compilation does not yet support transitive People relationship authorization subjects."
-                ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(subject),
-                personMetadata.Path.Kind,
-                "Unsupported People relationship authorization subject path kind."
-            ),
-        };
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                AppendRootDocumentIdInPersonAuthViewSql(
+                    writer,
+                    rootTable,
+                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    subject.AuthObject,
+                    authorizationClaimParameterization,
+                    aliasAllocator.AllocateNext(),
+                    aliasAllocator.AllocateNext()
+                );
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
+                AppendRootDocumentIdInPersonAuthViewSql(
+                    writer,
+                    rootTable,
+                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    GetDirectRootPersonDocumentIdColumn(rootTable, subject),
+                    subject.AuthObject,
+                    authorizationClaimParameterization,
+                    aliasAllocator.AllocateNext(),
+                    aliasAllocator.AllocateNext()
+                );
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
+                AppendRootDocumentIdInTransitivePersonAuthViewSql(
+                    writer,
+                    rootTable,
+                    subject,
+                    authorizationClaimParameterization,
+                    aliasAllocator
+                );
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(subject),
+                    personMetadata.Path.Kind,
+                    "Unsupported People relationship authorization subject path kind."
+                );
+        }
     }
 
     private static DbColumnName GetDirectRootPersonDocumentIdColumn(
@@ -770,6 +772,134 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         }
 
         return step.SourceColumnName;
+    }
+
+    private static void AppendRootDocumentIdInTransitivePersonAuthViewSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        PlanSqlTableAliasAllocator aliasAllocator
+    )
+    {
+        var personMetadata = subject.PersonMetadata;
+        var pathSteps = personMetadata.Path.Steps;
+        ValidateTransitivePersonPath(rootTable, subject, pathSteps);
+
+        var rootSubqueryAlias = aliasAllocator.AllocateNext();
+        var pathJoinAliases = Enumerable
+            .Range(0, pathSteps.Count - 1)
+            .Select(_ => aliasAllocator.AllocateNext())
+            .ToArray();
+        var authAlias = aliasAllocator.AllocateNext();
+
+        writer.Append($"{_rootAlias}.");
+        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{rootSubqueryAlias}.");
+        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
+        writer.Append($" {rootSubqueryAlias}");
+
+        var currentSourceAlias = rootSubqueryAlias;
+
+        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target table for intermediate joins."
+                );
+            var targetColumn =
+                step.TargetColumnName
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target column for intermediate joins."
+                );
+            var joinAlias = pathJoinAliases[stepIndex];
+
+            writer.Append(" JOIN ");
+            writer.AppendRelation(new SqlRelationRef.PhysicalTable(targetTable));
+            writer.Append($" {joinAlias} ON {joinAlias}.");
+            writer.AppendQuoted(targetColumn.Value);
+            writer.Append($" = {currentSourceAlias}.");
+            writer.AppendQuoted(step.SourceColumnName.Value);
+
+            currentSourceAlias = joinAlias;
+        }
+
+        var terminalStep = pathSteps[^1];
+
+        writer.Append($" WHERE {currentSourceAlias}.");
+        writer.AppendQuoted(terminalStep.SourceColumnName.Value);
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{authAlias}.");
+        writer.AppendQuoted(subject.AuthObject.SubjectValueColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(subject.AuthObject.Name));
+        writer.Append($" {authAlias} WHERE {authAlias}.");
+        writer.AppendQuoted(subject.AuthObject.ClaimEducationOrganizationIdColumn.Value);
+        AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
+            writer,
+            authorizationClaimParameterization
+        );
+        writer.Append("))");
+    }
+
+    private static void ValidateTransitivePersonPath(
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        IReadOnlyList<ColumnPathStep> pathSteps
+    )
+    {
+        var expectedSourceTable = rootTable;
+
+        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+
+            if (!step.SourceTable.Equals(expectedSourceTable))
+            {
+                throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex} source table '{step.SourceTable}' does not match expected table '{expectedSourceTable}'."
+                );
+            }
+
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex} is missing a target table."
+                );
+
+            if (!pathSteps[stepIndex + 1].SourceTable.Equals(targetTable))
+            {
+                throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex + 1} source table '{pathSteps[stepIndex + 1].SourceTable}' does not match previous target table '{targetTable}'."
+                );
+            }
+
+            expectedSourceTable = targetTable;
+        }
+
+        var terminalStep = pathSteps[^1];
+
+        if (!terminalStep.SourceTable.Equals(expectedSourceTable))
+        {
+            throw new InvalidOperationException(
+                $"Transitive People authorization terminal source table '{terminalStep.SourceTable}' does not match expected table '{expectedSourceTable}'."
+            );
+        }
+
+        if (
+            !subject.Table.Equals(terminalStep.SourceTable)
+            || !subject.Column.Equals(terminalStep.SourceColumnName)
+        )
+        {
+            throw new InvalidOperationException(
+                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match transitive terminal path column '{terminalStep.SourceTable}.{terminalStep.SourceColumnName}'."
+            );
+        }
     }
 
     private static void AppendRootDocumentIdInPersonAuthViewSql(

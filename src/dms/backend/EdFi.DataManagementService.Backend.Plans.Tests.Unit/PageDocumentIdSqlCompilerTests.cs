@@ -1208,6 +1208,126 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().NotContain("USI");
     }
 
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"CourseTranscript\" t0 JOIN \"edfi\".\"StudentAcademicRecord\" t1 ON t1.\"DocumentId\" = t0.\"StudentAcademicRecord_DocumentId\" WHERE t1.\"Student_DocumentId\" IN (SELECT t2.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[CourseTranscript] t0 JOIN [edfi].[StudentAcademicRecord] t1 ON t1.[DocumentId] = t0.[StudentAcademicRecord_DocumentId] WHERE t1.[Student_DocumentId] IN (SELECT t2.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t2 WHERE t2.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+    )]
+    public void It_should_emit_transitive_student_authorization_sql_with_ordered_path_joins_for_page_and_total_count_queries(
+        SqlDialect dialect,
+        string expectedPredicateFragment
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    dialect,
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+                        CreateTransitivePersonAuthorizationSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Student,
+                            RelationshipAuthorizationPersonKind.Student,
+                            rootTable,
+                            [
+                                new ColumnPathStep(
+                                    rootTable,
+                                    new DbColumnName("StudentAcademicRecord_DocumentId"),
+                                    studentAcademicRecordTable,
+                                    new DbColumnName("DocumentId")
+                                ),
+                                new ColumnPathStep(
+                                    studentAcademicRecordTable,
+                                    new DbColumnName("Student_DocumentId"),
+                                    studentTable,
+                                    new DbColumnName("DocumentId")
+                                ),
+                            ]
+                        )
+                    )
+                ),
+                rootTable: rootTable
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(expectedPredicateFragment);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(expectedPredicateFragment);
+        plan.PageDocumentIdSql.Should().NotContain("UniqueId");
+        plan.PageDocumentIdSql.Should().NotContain("USI");
+        plan.PageDocumentIdSql.Should().NotContain("JOIN \"edfi\".\"Student\"");
+        plan.PageDocumentIdSql.Should().NotContain("JOIN [edfi].[Student]");
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"CourseTranscript\" t0 JOIN \"edfi\".\"StudentAcademicRecord\" t1 ON t1.\"DocumentId\" = t0.\"StudentAcademicRecord_DocumentId\" WHERE t1.\"Contact_DocumentId\" IN (SELECT t2.\"Contact_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[CourseTranscript] t0 JOIN [edfi].[StudentAcademicRecord] t1 ON t1.[DocumentId] = t0.[StudentAcademicRecord_DocumentId] WHERE t1.[Contact_DocumentId] IN (SELECT t2.[Contact_DocumentId] FROM [auth].[EducationOrganizationIdToContactDocumentId] t2 WHERE t2.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+    )]
+    public void It_should_emit_transitive_contact_authorization_sql_with_ordered_path_joins_for_page_and_total_count_queries(
+        SqlDialect dialect,
+        string expectedPredicateFragment
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var contactTable = new DbTableName(new DbSchemaName("edfi"), "Contact");
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    dialect,
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        CreateTransitivePersonAuthorizationSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Contact,
+                            RelationshipAuthorizationPersonKind.Contact,
+                            rootTable,
+                            [
+                                new ColumnPathStep(
+                                    rootTable,
+                                    new DbColumnName("StudentAcademicRecord_DocumentId"),
+                                    studentAcademicRecordTable,
+                                    new DbColumnName("DocumentId")
+                                ),
+                                new ColumnPathStep(
+                                    studentAcademicRecordTable,
+                                    new DbColumnName("Contact_DocumentId"),
+                                    contactTable,
+                                    new DbColumnName("DocumentId")
+                                ),
+                            ]
+                        )
+                    )
+                ),
+                rootTable: rootTable
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(expectedPredicateFragment);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(expectedPredicateFragment);
+        plan.PageDocumentIdSql.Should().NotContain("UniqueId");
+        plan.PageDocumentIdSql.Should().NotContain("USI");
+        plan.PageDocumentIdSql.Should().NotContain("JOIN \"edfi\".\"Contact\"");
+        plan.PageDocumentIdSql.Should().NotContain("JOIN [edfi].[Contact]");
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_or_multiple_authorization_strategies(SqlDialect dialect)
@@ -1769,6 +1889,39 @@ public class Given_PageDocumentIdSqlCompiler
                 personKind,
                 new RelationshipAuthorizationPersonSubjectPath(pathKind, pathSteps),
                 new RelationshipAuthorizationPersonStoredAnchor(resolvedRootTable, documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+    }
+
+    private static PageDocumentIdAuthorizationSubject CreateTransitivePersonAuthorizationSubject(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        DbTableName rootTable,
+        IReadOnlyList<ColumnPathStep> pathSteps
+    )
+    {
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var terminalStep = pathSteps[^1];
+
+        return new PageDocumentIdAuthorizationPersonSubject(
+            terminalStep.SourceTable,
+            terminalStep.SourceColumnName,
+            RelationshipAuthorizationAuthObject.CreatePerson(authViewKind),
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    MapPersonKind(personKind),
+                    $"$.{personKind.ToString().ToLowerInvariant()}Reference.{personKind.ToString().ToLowerInvariant()}UniqueId",
+                    $"{personKind}UniqueId"
+                ),
+            ],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                personKind,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+                    pathSteps
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(rootTable, documentIdColumn),
                 ProposedAnchor: null
             )
         );

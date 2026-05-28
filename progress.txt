@@ -15,3 +15,9 @@ Decisions: direct and self People subjects now emit root DocumentId IN subquerie
 Files changed: PageDocumentIdSqlCompiler.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
 Verification: csharpier on changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 74.
 Notes: transitive CourseTranscript -> StudentAcademicRecord -> Student SQL still not implemented.
+
+DMS-1095 06b people relationship auth get-many - completed PageDocumentIdSqlCompiler transitive People path predicate task.
+Decisions: transitive People subjects now emit root DocumentId IN subqueries that re-anchor root table with a table alias, JOIN ordered intermediate path targets, and filter terminal Student/Contact/Staff DocumentId columns through the selected auth view; terminal person table is not joined because the stored DocumentId column is sufficient and null/broken paths fall out by join/IN semantics.
+Files changed: PageDocumentIdSqlCompiler.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
+Verification: csharpier on changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 78.
+Notes: repository GET-many People staging removal and planner short-circuit ordering remain for later tasks.
