@@ -10,6 +10,8 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
@@ -24,10 +26,13 @@ internal static class ExternalDoublesRegistration
     public static void RegisterAll(
         IServiceCollection services,
         FixtureContext fixture,
-        string leasedConnectionString
+        string leasedConnectionString,
+        IClaimSetProvider claimSetProvider,
+        IReadOnlyList<long> clientEducationOrganizationIds
     )
     {
         services.RemoveAll<IJwtValidationService>();
+        services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
         services.RemoveAll<IClaimSetProvider>();
         services.RemoveAll<IApplicationContextProvider>();
         services.RemoveAll<IDmsInstanceProvider>();
@@ -37,10 +42,12 @@ internal static class ExternalDoublesRegistration
         services.AddSingleton<IJwtValidationService>(
             FakeJwtValidationService.Allowing(
                 ExternalDoublesConstants.SmokeToken,
-                ExternalDoublesConstants.SmokeClientId
+                ExternalDoublesConstants.SmokeClientId,
+                clientEducationOrganizationIds
             )
         );
-        services.AddSingleton<IClaimSetProvider>(new AllowAllClaimSetProvider(fixture));
+        services.AddSingleton(FakeOidcConfigurationManager.Stable());
+        services.AddSingleton(claimSetProvider);
         services.AddSingleton<IApplicationContextProvider>(FakeApplicationContextProvider.Stable());
         services.AddSingleton<IDmsInstanceProvider>(
             FakeDmsInstanceProvider.WithSingleInstance(

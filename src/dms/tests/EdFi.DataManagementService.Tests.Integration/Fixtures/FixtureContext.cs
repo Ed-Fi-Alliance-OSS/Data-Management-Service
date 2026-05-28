@@ -37,5 +37,6 @@ public enum FixtureKey
     ProfileNestedAndRootExtensionChildren,
     ProfileCollectionAlignedExtension,
     ProfileCollectionAlignedExtensionHiddenDescendant,
+    AuthorizationQuery,
     AuthoritativeDs52,
 }

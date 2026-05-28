@@ -151,7 +151,7 @@
       "Run `ConnectionStrings__MssqlAdmin='<admin-connection-string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration\"` after verifying SQL Server is listening.",
       "Inspect response-shape assertions to confirm stable members are exact and dynamic `correlationId` handling follows the story guidance."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e-tests",
