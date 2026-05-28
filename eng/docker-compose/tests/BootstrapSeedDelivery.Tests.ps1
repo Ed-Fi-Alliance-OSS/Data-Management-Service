@@ -1946,7 +1946,7 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             }
             finally {
                 Set-Location $originalLocation
-                Remove-Item function:script:Get-BulkLoadClient -ErrorAction SilentlyContinue
+                Remove-Item Function:\Get-BulkLoadClient -ErrorAction SilentlyContinue
                 Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
