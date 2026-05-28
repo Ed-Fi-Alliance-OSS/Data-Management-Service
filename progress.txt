@@ -7,3 +7,8 @@ Task completed: backend-plans for reference/design/backend-redesign/epics/14-aut
 Key decisions: keep internal NoClaims planner result as short-circuit signal, but map its external relationship failure DTO subjects as NoRelationship with empty normalized claim list so formatter can reuse normal no-relationship aggregation; preserve no-claims hint metadata on subjects/strategies.
 Files changed: RelationshipAuthorizationFailureMapper.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, DefaultRelationalWriteExecutorTests.cs, RelationalDocumentStoreRepositoryTests.cs, PostgreSQL/MSSQL relationship authorization integration expectations, tasks.json.
 Blockers/notes: none. Integration test projects build; DB-backed integration execution left to later integration task/environment.
+
+Task completed: core-response formatter for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: add DTO-only relationship ProblemDetails selector under FailureResponse; precedence stored-null > proposed-missing > no-relationship; aggregate no-relationship as one error, invalid-data as one error per selected configured strategy, proposed missing as empty errors.
+Files changed: FailureResponse.cs, RelationshipAuthorizationProblemDetails.cs, RelationshipAuthorizationProblemDetailsTests.cs, FailureResponseTests.cs, tasks.json.
+Blockers/notes: handler wiring still pending; public auth-view hint aggregation/readable-name edge coverage left to later core-response helper/unit-test tasks.
