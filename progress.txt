@@ -82,3 +82,8 @@ Task completed: backend-contracts proposed invalid-plan security configuration f
 Key decisions: proposed relationship invalid authorization plan extraction now uses BuildSecurityConfigurationFailureResult for POST/PUT, preserving the extractor failure message and avoiding generic UnknownFailure.
 Files changed: ProposedRelationshipAuthorizationOrchestrator.cs, DefaultRelationalWriteExecutorTests.cs, tasks.json, progress.txt.
 Blockers/notes: none. Verified CSharpier on changed C# files, focused backend invalid proposed-plan/auth1 tests, and Upsert/Update handler security-configuration tests passed.
+
+Task completed: e2e-tests remove internal relationship diagnostics for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: relational ProblemDetails E2E bodies now expect base detail only for EdOrg-only no-claims/no-relationship denials; dynamic correlationId is asserted with dedicated non-empty step instead of pinned values.
+Files changed: RelationshipsWithEdOrgsOnly.feature, tasks.json, progress.txt.
+Blockers/notes: none. Verified relational stack with provision-relational-e2e-database and AppSettings__DmsInstanceDatabaseName=edfi_datamanagementservice_relational; focused RelationshipsWithEdOrgsOnlyAuthorizationFeature relational-backend run passed 26/26. Docker health checks still report curl missing, but API tests passed.

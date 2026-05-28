@@ -291,7 +291,7 @@
       "Review `src/dms/core/EdFi.DataManagementService.Core/Response/RelationshipAuthorizationProblemDetails.cs` to confirm only configured authorization-view hints are emitted.",
       "From `src/dms/tests/EdFi.DataManagementService.Tests.E2E`, run the focused relational-backend E2E command after setting up the `.env.e2e.relational` stack."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "backend-contracts",

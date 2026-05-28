@@ -166,7 +166,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. Hint: Relationship authorization requires at least one claim EducationOrganizationId.",
+                      "detail": "Access to the requested data could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -176,6 +176,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
     Rule: PUT resource fails with a 403 forbidden error with no education organization ids claim
         Background:
@@ -245,7 +246,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. Hint: Relationship authorization requires at least one claim EducationOrganizationId.",
+                      "detail": "Access to the requested data could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -255,6 +256,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
     Rule: Create or update resource fails with a 403 forbidden error with no matching education organization ids claim
         Background:
@@ -518,7 +520,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                   "detail": "Access to the requested data could not be authorized.",
                    "type": "urn:ed-fi:api:security:authorization",
                    "title": "Authorization Denied",
                    "status": 403,
@@ -528,6 +530,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
         @relational-backend
         @relational-ci-shard-3
@@ -559,7 +562,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                   "detail": "Access to the requested data could not be authorized.",
                    "type": "urn:ed-fi:api:security:authorization",
                    "title": "Authorization Denied",
                    "status": 403,
@@ -569,6 +572,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
     Rule: Search for a resource with RelationshipsWithEdOrgsOnly authorization
         Background:
@@ -690,7 +694,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "detail": "Access to the requested data could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -700,6 +704,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                        ]
                       }
                   """
+              And the response body has a non-empty correlationId
 
         @relational-backend
         @relational-ci-shard-3
@@ -822,17 +827,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                    "detail": "Access to the requested data could not be authorized.",
                     "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
-                    "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
                       "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
         @relational-backend
         @relational-ci-shard-3
         Scenario: 14.3 Ensure client with access to school 20101 cannot delete by id LEA because it is up the hierarchy
@@ -842,17 +847,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                    "detail": "Access to the requested data could not be authorized.",
                     "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
-                    "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
                       "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
         @relational-backend
         @relational-ci-shard-3
         Scenario: 14.4 Ensure client with access to school 20202 cannot PUT LEA because it is up the hierarchy
@@ -878,17 +883,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                    "detail": "Access to the requested data could not be authorized.",
                     "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
-                    "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
                       "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
