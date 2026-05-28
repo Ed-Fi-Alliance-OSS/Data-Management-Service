@@ -32,14 +32,15 @@
       2. start-local-dms.ps1 -InfraOnly -EnableConfig -IdentityProvider self-contained.
       3. configure-local-dms-instance.ps1 registers the instance(s).
       4. provision-dms-schema.ps1 provisions the selected target databases.
-      5. Re-run step 4 to verify idempotence.
-      6. start-local-dms.ps1 -DmsOnly to start DMS against the provisioned database.
-      7. Assertions:
+      5. Re-run step 4 to confirm provision is safely re-runnable (idempotent re-invocation;
+         the re-run is asserted to complete without error - it does not diff schema state).
+      6. Corrupt the staged ApiSchema manifest and confirm provision rejects it by throwing,
+         then restore the manifest. This negative test runs before DMS is started.
+      7. start-local-dms.ps1 -DmsOnly to start DMS against the provisioned database.
+      8. Assertions:
            - DMS /health returns 200 within timeout.
            - psql lists at least one table in the provisioned database.
-           - Re-run of provision applies no DDL (idempotence captured in step 5).
-           - A deliberately corrupted ApiSchema manifest causes provision to fail.
-      8. Teardown (unless -SkipTeardown).
+      9. Teardown (unless -SkipTeardown).
 
     Exit code: 0 on full success, non-zero on the first failing assertion or step.
 
@@ -49,9 +50,6 @@
 .PARAMETER ApiSchemaPath
     Directory containing the ApiSchema content for prepare-dms-schema.ps1. Falls back
     to $env:DMS_SMOKE_API_SCHEMA_PATH.
-
-.PARAMETER Extensions
-    Optional extension list to forward to prepare-dms-schema.ps1.
 
 .PARAMETER ResultsPath
     Optional path; if supplied, writes a JSON summary of the run (step status + timings).
@@ -70,8 +68,6 @@ param(
     [string]$EnvironmentFile,
 
     [string]$ApiSchemaPath = $env:DMS_SMOKE_API_SCHEMA_PATH,
-
-    [string[]]$Extensions = @(),
 
     [string]$ResultsPath,
 
@@ -214,7 +210,6 @@ Invoke-SmokeStep -Name "preflight" -Body {
 
     Write-Host "[smoke] EnvironmentFile : $resolvedEnvFile"
     Write-Host "[smoke] ApiSchemaPath   : $ApiSchemaPath"
-    Write-Host "[smoke] Extensions      : $([string]::Join(',', $Extensions))"
 }
 
 $smokeFailed = $false
@@ -227,7 +222,6 @@ try {
     # Step 1: prepare workspace
     Invoke-SmokeStep -Name "prepare-dms-schema" -Body {
         $prepareArgs = @{ ApiSchemaPath = $ApiSchemaPath }
-        if ($Extensions.Count -gt 0) { $prepareArgs.Extensions = $Extensions }
         Invoke-PhaseScript `
             -ScriptPath "$script:DockerComposeRoot/prepare-dms-schema.ps1" `
             -Arguments $prepareArgs `
@@ -278,7 +272,43 @@ try {
             -Description "provision-dms-schema.ps1 (second run / idempotence)"
     }
 
-    # Step 6: DMS-only startup
+    # Step 6: negative test - a corrupted ApiSchema manifest must be rejected before DMS starts
+    Invoke-SmokeStep -Name "assert-corrupted-manifest-rejected" -Body {
+        $apiManifestPath = Join-Path $script:BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json"
+        if (-not (Test-Path -LiteralPath $apiManifestPath)) {
+            throw "ApiSchema manifest not found at $apiManifestPath; cannot test corruption rejection."
+        }
+
+        $savedManifest = Get-Content -LiteralPath $apiManifestPath -Raw
+        try {
+            "not-json{{" | Set-Content -LiteralPath $apiManifestPath -Encoding utf8 -NoNewline
+            $threw = $false
+            $caughtMessage = ""
+            Push-Location $script:DockerComposeRoot
+            try {
+                & "$script:DockerComposeRoot/provision-dms-schema.ps1" -EnvironmentFile $resolvedEnvFile 2>&1 | Out-Null
+            }
+            catch {
+                $threw = $true
+                $caughtMessage = $_.Exception.Message
+            }
+            finally {
+                Pop-Location
+            }
+            if (-not $threw) {
+                throw "Provision unexpectedly succeeded with a corrupted ApiSchema manifest."
+            }
+            if ($caughtMessage -notmatch 'malformed JSON|manifest') {
+                throw "Provision failed for an unexpected reason: $caughtMessage"
+            }
+            Write-Host "[smoke] Provision correctly rejected the corrupted ApiSchema manifest by throwing."
+        }
+        finally {
+            Set-Content -LiteralPath $apiManifestPath -Value $savedManifest -NoNewline
+        }
+    }
+
+    # Step 7: DMS-only startup
     Invoke-SmokeStep -Name "start-local-dms-dms-only" -Body {
         Invoke-PhaseScript `
             -ScriptPath "$script:DockerComposeRoot/start-local-dms.ps1" `
@@ -335,42 +365,6 @@ try {
             throw "Expected at least one provisioned table in schema 'dms' of database '$postgresDb'; got $tableCount."
         }
         Write-Host "[smoke] Provisioned tables in dms schema: $tableCount"
-    }
-
-    # Assertion: corrupted manifest is rejected
-    Invoke-SmokeStep -Name "assert-corrupted-manifest-rejected" -Body {
-        $apiManifestPath = Join-Path $script:BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json"
-        if (-not (Test-Path -LiteralPath $apiManifestPath)) {
-            throw "ApiSchema manifest not found at $apiManifestPath; cannot test corruption rejection."
-        }
-
-        $savedManifest = Get-Content -LiteralPath $apiManifestPath -Raw
-        try {
-            "not-json{{" | Set-Content -LiteralPath $apiManifestPath -Encoding utf8 -NoNewline
-            $threw = $false
-            $caughtMessage = ""
-            Push-Location $script:DockerComposeRoot
-            try {
-                & "$script:DockerComposeRoot/provision-dms-schema.ps1" -EnvironmentFile $resolvedEnvFile 2>&1 | Out-Null
-            }
-            catch {
-                $threw = $true
-                $caughtMessage = $_.Exception.Message
-            }
-            finally {
-                Pop-Location
-            }
-            if (-not $threw) {
-                throw "Provision unexpectedly succeeded with a corrupted ApiSchema manifest."
-            }
-            if ($caughtMessage -notmatch 'malformed JSON|manifest') {
-                throw "Provision failed for an unexpected reason: $caughtMessage"
-            }
-            Write-Host "[smoke] Provision correctly rejected the corrupted ApiSchema manifest by throwing."
-        }
-        finally {
-            Set-Content -LiteralPath $apiManifestPath -Value $savedManifest -NoNewline
-        }
     }
 }
 catch {
