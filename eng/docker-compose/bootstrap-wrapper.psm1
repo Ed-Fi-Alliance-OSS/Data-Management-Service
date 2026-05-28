@@ -172,6 +172,44 @@ function Resolve-WrapperIdentityProvider {
     return "self-contained"
 }
 
+function Resolve-WrapperSelectedInstanceIds {
+    <#
+    .SYNOPSIS
+    Extracts the configured DMS instance ids from configure-local-dms-instance.ps1's
+    structured result, preferring the documented SelectedInstanceIds property and falling
+    back to the legacy InstanceIds alias so the wrapper stays compatible with both shapes
+    during the transition. See command-boundaries.md Section 3.4.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Helper returns a collection of instance ids; the plural noun is the documented contract.')]
+    param(
+        [Parameter(Mandatory)]
+        $ConfigureResult
+    )
+
+    if ($null -eq $ConfigureResult) {
+        return [long[]]@()
+    }
+
+    foreach ($name in @("SelectedInstanceIds", "InstanceIds")) {
+        if ($ConfigureResult -is [System.Collections.IDictionary]) {
+            if ($ConfigureResult.Contains($name)) {
+                $value = $ConfigureResult[$name]
+                if ($null -ne $value) {
+                    return [long[]]@($value)
+                }
+            }
+            continue
+        }
+
+        $property = $ConfigureResult.PSObject.Properties[$name]
+        if ($null -ne $property -and $null -ne $property.Value) {
+            return [long[]]@($property.Value)
+        }
+    }
+
+    throw "configure-local-dms-instance.ps1 result is missing SelectedInstanceIds (and the legacy InstanceIds alias)."
+}
+
 function Invoke-BootstrapWrapper {
     <#
     .SYNOPSIS
@@ -364,6 +402,8 @@ function Invoke-BootstrapWrapper {
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
 
+        # configure-local-dms-instance.ps1 throws on failure (no exit code); clear any stale native exit code first.
+        $global:LASTEXITCODE = 0
         $configurationResult = & "$PSScriptRoot/configure-local-dms-instance.ps1" @configureArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "configure-local-dms-instance.ps1 failed with exit code $LASTEXITCODE."
@@ -374,12 +414,15 @@ function Invoke-BootstrapWrapper {
             throw "configure-local-dms-instance.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
         }
         $configured = $configurationResults[0]
+        $configuredInstanceIds = [long[]]@(Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured)
 
         $provisionArgs = @{
             EnvironmentFile = $effectiveEnvFile
-            InstanceId = [long[]]@($configured.InstanceIds)
+            InstanceId = $configuredInstanceIds
         }
 
+        # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
+        $global:LASTEXITCODE = 0
         & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
@@ -414,8 +457,8 @@ function Invoke-BootstrapWrapper {
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
             $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
         }
-        elseif (-not $configured.HasRouteQualifiedInstances -and @($configured.InstanceIds).Count -eq 1) {
-            $seedArgs.InstanceId = [long[]]@([long]$configured.InstanceIds[0])
+        elseif (-not $configured.HasRouteQualifiedInstances -and $configuredInstanceIds.Count -eq 1) {
+            $seedArgs.InstanceId = [long[]]@([long]$configuredInstanceIds[0])
         }
 
         & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
@@ -428,4 +471,4 @@ function Invoke-BootstrapWrapper {
     }
 }
 
-Export-ModuleMember -Function Invoke-BootstrapWrapper
+Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedInstanceIds

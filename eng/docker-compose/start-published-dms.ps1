@@ -3,6 +3,25 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+<#
+.SYNOPSIS
+    Post-bootstrap startup phase for the published DMS Docker stack.
+.DESCRIPTION
+    This script is the post-bootstrap startup phase. The wrapper
+    bootstrap-published-dms.ps1 orchestrates prepare -> infra -> configure -> provision ->
+    this script, so by the time the wrapper calls into here a .bootstrap/ workspace and
+    a provisioned database already exist.
+
+    Direct invocation is supported for diagnostics and partial-phase orchestration
+    (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
+    script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: schema
+    provisioning will NOT happen here. Callers are responsible for ensuring provisioning
+    has occurred (or accepting an unprovisioned DMS).
+
+    See command-boundaries.md Section 3 for the phase contract and
+    01-schema-deployment-safety.md for the DMS-1151 story.
+#>
+
 [CmdletBinding()]
 param (
     # Stop services instead of starting them
@@ -308,9 +327,25 @@ else {
 
 
     Write-Output "Starting published DMS"
-    $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
-    docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
-    $env:NEED_DATABASE_SETUP = $envValues["NEED_DATABASE_SETUP"]
+    # DMS-1151: schema provisioning is owned by provision-dms-schema.ps1 in the story-aligned
+    # bootstrap flow. Force the legacy Backend.Installer entrypoint off for every direct start
+    # path so a stale NEED_DATABASE_SETUP=true value in the env file or process environment
+    # cannot reactivate it. The DmsOnly branch above already does this; this block matches it for
+    # the regular up.
+    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
+    $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
+    $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
+    try {
+        $env:NEED_DATABASE_SETUP = "false"
+        $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+        $env:AppSettings__DeployDatabaseOnStartup = "false"
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
+    }
+    finally {
+        [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
+        [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
+        [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+    }
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start Published Docker environment, with exit code $LASTEXITCODE."

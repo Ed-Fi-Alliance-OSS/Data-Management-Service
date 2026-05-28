@@ -581,6 +581,15 @@ function Invoke-BootstrapStartupConfiguration {
         }
     }
 
+    if (-not $bootstrapMode -and -not $IsTeardown) {
+        # DMS-1151: surface the post-bootstrap contract. The wrapper produces .bootstrap/ before
+        # invoking the start scripts, so a missing manifest at non-teardown time means the caller
+        # is either invoking the start script directly (legitimate for diagnostics or partial-phase
+        # orchestration) or has stepped out of sequence. The warning is informational, not blocking
+        # — Story 03 owns the eventual hard contract.
+        Write-Warning "No bootstrap manifest detected at .bootstrap/. The DMS-1151 pre-start phases (prepare -> configure -> provision) have not produced a staged workspace. The bootstrap-(local|published)-dms.ps1 wrapper is the documented entry point; direct invocation of this script is supported only for diagnostic or partial-phase workflows. Schemas will NOT be provisioned by this script."
+    }
+
     if ($bootstrapMode) {
         Write-Output "Bootstrap manifest detected and validated. Staged schema and claims runtime startup remains deferred to Story 04; current bootstrap-present startup falls back to built-in DLL-backed schema assemblies."
         if ($AddExtensionSecurityMetadata) {

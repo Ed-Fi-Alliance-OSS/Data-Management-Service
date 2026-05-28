@@ -21,9 +21,6 @@ Import-Module "$PSScriptRoot/bootstrap-manifest.psm1" -Force -Global
 Import-Module "$PSScriptRoot/env-utility.psm1" -Force -Global
 Import-Module "$PSScriptRoot/../Dms-Management.psm1" -Force
 
-$script:BootstrapDmsInstanceClientId = "dms-instance-admin"
-$script:BootstrapDmsInstanceClientSecret = "ValidClientSecret1234567890!Abcd"
-
 if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
     function Format-LogSafeText {
         param($Value)
@@ -53,20 +50,7 @@ function Resolve-ConfigureEnvironmentFile {
         $Path
     )
 
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        $defaultEnv = Join-Path $PSScriptRoot ".env"
-        $fallbackEnv = Join-Path $PSScriptRoot ".env.example"
-        $Path = if (Test-Path -LiteralPath $defaultEnv) { $defaultEnv } else { $fallbackEnv }
-    }
-    elseif (-not [System.IO.Path]::IsPathRooted($Path)) {
-        $Path = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))
-    }
-
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "Environment file not found: $(Format-LogSafeText $Path)."
-    }
-
-    return [System.IO.Path]::GetFullPath($Path)
+    return Resolve-LocalSettingsEnvironmentFile -Path $Path -DockerComposeRoot $PSScriptRoot
 }
 
 function Get-EnvValueOrDefault {
@@ -81,11 +65,7 @@ function Get-EnvValueOrDefault {
         $DefaultValue = ""
     )
 
-    if ($EnvValues.ContainsKey($Name) -and -not [string]::IsNullOrWhiteSpace([string]$EnvValues[$Name])) {
-        return [string]$EnvValues[$Name]
-    }
-
-    return $DefaultValue
+    return Get-EnvValue -EnvValues $EnvValues -Name $Name -DefaultValue $DefaultValue
 }
 
 function Get-DmsInstanceRouteContexts {
@@ -102,6 +82,13 @@ function Get-DmsInstanceRouteContexts {
 }
 
 function ConvertTo-ConfigureResult {
+    <#
+    .SYNOPSIS
+    Builds the structured success-pipeline object emitted by configure-local-dms-instance.ps1.
+    See command-boundaries.md Section 3.4: the result must be JSON-compatible and contain
+    SelectedInstanceIds. CMSReadOnlyAccess fields are included when the configured local flow
+    has access to them so IDE next-step guidance can quote them without scraping prose.
+    #>
     param(
         [long[]]
         $InstanceIds = @(),
@@ -113,16 +100,83 @@ function ConvertTo-ConfigureResult {
         $Tenant = "",
 
         [int[]]
-        $SchoolYears = @()
+        $SchoolYears = @(),
+
+        [hashtable]
+        $CmsReadOnlyAccess = $null
     )
 
-    return [pscustomobject]@{
+    $result = [ordered]@{
+        # SelectedInstanceIds is the documented property name. InstanceIds is kept as a
+        # backward-compatible alias so existing callers (e.g. older wrapper checkouts during
+        # rollout) continue to work; new code should prefer SelectedInstanceIds.
+        SelectedInstanceIds = [long[]]@($InstanceIds)
         InstanceIds = [long[]]@($InstanceIds)
         RouteContexts = @($RouteContexts)
         Tenant = $Tenant
         SchoolYears = [int[]]@($SchoolYears)
         HasRouteQualifiedInstances = (@($RouteContexts).Count -gt 0)
     }
+
+    if ($null -ne $CmsReadOnlyAccess -and $CmsReadOnlyAccess.Count -gt 0) {
+        $result["CMSReadOnlyAccess"] = $CmsReadOnlyAccess
+    }
+
+    return [pscustomobject]$result
+}
+
+function Resolve-CmsReadOnlyAccessFromEnv {
+    <#
+    .SYNOPSIS
+    Builds the optional CMSReadOnlyAccess block included in the configure result. Returns
+    $null when none of CONFIG_SERVICE_CLIENT_ID, CONFIG_SERVICE_CLIENT_SCOPE, or
+    CONFIG_SERVICE_CLIENT_SECRET are explicitly present in the env file. Per
+    command-boundaries.md §3.4, "may include" means "include when actually populated"; a
+    default-derived client id alone does not satisfy that contract. The client id/scope/secret
+    come from the local environment file (start-local-dms.ps1's provider-specific local
+    identity setup writes them); this helper does not contact CMS.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    if ($null -eq $EnvValues -or -not (Test-CmsReadOnlyAccessEnvPresent -EnvValues $EnvValues)) {
+        return $null
+    }
+
+    $clientId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_ID" -DefaultValue "CMSReadOnlyAccess"
+    $scope = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SCOPE" -DefaultValue "edfi_admin_api/readonly_access"
+    $secret = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET"
+
+    $block = @{
+        ClientId = $clientId
+        Scope = $scope
+    }
+    if (-not [string]::IsNullOrWhiteSpace($secret)) {
+        $block["ClientSecret"] = $secret
+    }
+
+    return $block
+}
+
+function Test-CmsReadOnlyAccessEnvPresent {
+    <#
+    .SYNOPSIS
+    Returns $true when the env file explicitly supplies at least one of the three
+    CONFIG_SERVICE_CLIENT_* keys with a non-blank value. Used to gate the optional
+    CMSReadOnlyAccess block so defaults alone do not advertise the block as available.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    foreach ($name in @("CONFIG_SERVICE_CLIENT_ID", "CONFIG_SERVICE_CLIENT_SCOPE", "CONFIG_SERVICE_CLIENT_SECRET")) {
+        if ($EnvValues.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace([string]$EnvValues[$name])) {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Resolve-SchoolYearRange {
@@ -171,7 +225,7 @@ function Get-ExistingCompatibleInstance {
     $instance = $Instances[0]
     $routeContexts = @(Get-DmsInstanceRouteContexts -Instance $instance)
     if ($routeContexts.Count -gt 0) {
-        $contextList = ($routeContexts | ForEach-Object { "$($_.contextKey)=$($_.contextValue)" }) -join ", "
+        $contextList = ($routeContexts | ForEach-Object { "$(Format-LogSafeText $_.contextKey)=$(Format-LogSafeText $_.contextValue)" }) -join ", "
         throw "-NoDmsInstance found one existing instance, but it is route-qualified ($contextList). -NoDmsInstance supports exactly one route-unqualified instance; clean up CMS state or use -SchoolYearRange."
     }
 
@@ -208,17 +262,23 @@ function Invoke-ConfigureLocalDmsInstance {
         throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true."
     }
 
-    Write-Information "Registering CMS bootstrap client for DMS instance configuration." -InformationAction Continue
+    # DMS-1151: bootstrap admin token acquisition. Add-CmsClient is idempotent (existing
+    # client ids return a warning and continue) and is the only documented /connect/register
+    # side effect for the configure/provision phases. Client id/secret are resolved through
+    # the shared -EnvironmentFile helper so this phase and provision-dms-schema.ps1 agree on
+    # the admin client (DMS_BOOTSTRAP_ADMIN_CLIENT_ID / DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET).
+    $bootstrapAdmin = Resolve-BootstrapAdminClient -EnvValues $envValues
+    Write-Information "Acquiring CMS bootstrap admin token for DMS instance configuration." -InformationAction Continue
     Add-CmsClient `
         -CmsUrl $cmsUrl `
-        -ClientId $script:BootstrapDmsInstanceClientId `
-        -ClientSecret $script:BootstrapDmsInstanceClientSecret `
+        -ClientId $bootstrapAdmin.ClientId `
+        -ClientSecret $bootstrapAdmin.ClientSecret `
         -DisplayName "DMS Instance Setup Administrator"
 
     $configToken = Get-CmsToken `
         -CmsUrl $cmsUrl `
-        -ClientId $script:BootstrapDmsInstanceClientId `
-        -ClientSecret $script:BootstrapDmsInstanceClientSecret
+        -ClientId $bootstrapAdmin.ClientId `
+        -ClientSecret $bootstrapAdmin.ClientSecret
 
     if ($multiTenancyEnabled -and -not [string]::IsNullOrWhiteSpace($tenant)) {
         Write-Information "Ensuring local CMS tenant exists: $(Format-LogSafeText $tenant)." -InformationAction Continue
@@ -233,6 +293,7 @@ function Invoke-ConfigureLocalDmsInstance {
     $postgresPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_PASSWORD"
     $postgresDbName = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
     $postgresUser = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+    $cmsReadOnlyAccess = Resolve-CmsReadOnlyAccessFromEnv -EnvValues $envValues
 
     if ($NoDmsInstance) {
         Write-Information "Selecting existing route-unqualified DMS instance from CMS." -InformationAction Continue
@@ -240,7 +301,8 @@ function Invoke-ConfigureLocalDmsInstance {
         $selectedInstance = Get-ExistingCompatibleInstance -Instances $instances -Tenant $tenant
         return ConvertTo-ConfigureResult `
             -InstanceIds @([long]$selectedInstance.id) `
-            -Tenant $tenant
+            -Tenant $tenant `
+            -CmsReadOnlyAccess $cmsReadOnlyAccess
     }
 
     if ($schoolYears.Count -gt 0) {
@@ -277,7 +339,8 @@ function Invoke-ConfigureLocalDmsInstance {
             -InstanceIds $instanceIds `
             -RouteContexts $routeContexts `
             -Tenant $tenant `
-            -SchoolYears $schoolYears
+            -SchoolYears $schoolYears `
+            -CmsReadOnlyAccess $cmsReadOnlyAccess
     }
 
     Write-Information "Creating default route-unqualified DMS instance." -InformationAction Continue
@@ -300,7 +363,8 @@ function Invoke-ConfigureLocalDmsInstance {
 
     return ConvertTo-ConfigureResult `
         -InstanceIds @([long]$instanceId) `
-        -Tenant $tenant
+        -Tenant $tenant `
+        -CmsReadOnlyAccess $cmsReadOnlyAccess
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }

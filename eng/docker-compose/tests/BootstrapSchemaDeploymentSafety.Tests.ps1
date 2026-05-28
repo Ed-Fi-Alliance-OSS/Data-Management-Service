@@ -80,36 +80,46 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
                 [switch]$MissingCoreFile,
 
-                [switch]$PathTraversal
+                [switch]$PathTraversal,
+
+                # Extension project names included alongside the Ed-Fi core. Default preserves the
+                # historical core+Sample fixture; callers can pass @() for core-only or @("Sample",
+                # "Homograph") to exercise multi-extension ordering.
+                [string[]]$Extensions = @("Sample")
             )
 
             $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
             $apiSchemaRoot = Join-Path $bootstrapRoot "ApiSchema"
             New-Item -ItemType Directory -Path (Join-Path $apiSchemaRoot "schemas/Ed-Fi") -Force | Out-Null
-            New-Item -ItemType Directory -Path (Join-Path $apiSchemaRoot "schemas/Sample") -Force | Out-Null
+            foreach ($extensionName in $Extensions) {
+                New-Item -ItemType Directory -Path (Join-Path $apiSchemaRoot "schemas/$extensionName") -Force | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $apiSchemaRoot "schemas/$extensionName/ApiSchema.json") -Encoding utf8
+            }
 
             if (-not $MissingCoreFile) {
                 "{}" | Set-Content -LiteralPath (Join-Path $apiSchemaRoot "schemas/Ed-Fi/ApiSchema.json") -Encoding utf8
             }
-            "{}" | Set-Content -LiteralPath (Join-Path $apiSchemaRoot "schemas/Sample/ApiSchema.json") -Encoding utf8
 
             $coreSchemaPath = if ($PathTraversal) { "../escape.json" } else { "schemas/Ed-Fi/ApiSchema.json" }
+            $projects = @(
+                [ordered]@{
+                    projectName = "Ed-Fi"
+                    projectEndpointName = "ed-fi"
+                    isExtensionProject = $false
+                    schemaPath = $coreSchemaPath
+                }
+            )
+            foreach ($extensionName in $Extensions) {
+                $projects += [ordered]@{
+                    projectName = $extensionName
+                    projectEndpointName = $extensionName.ToLowerInvariant()
+                    isExtensionProject = $true
+                    schemaPath = "schemas/$extensionName/ApiSchema.json"
+                }
+            }
             $apiSchemaManifest = [ordered]@{
                 version = 1
-                projects = @(
-                    [ordered]@{
-                        projectName = "Ed-Fi"
-                        projectEndpointName = "ed-fi"
-                        isExtensionProject = $false
-                        schemaPath = $coreSchemaPath
-                    },
-                    [ordered]@{
-                        projectName = "Sample"
-                        projectEndpointName = "sample"
-                        isExtensionProject = $true
-                        schemaPath = "schemas/Sample/ApiSchema.json"
-                    }
-                )
+                projects = $projects
             }
             $apiSchemaManifest | ConvertTo-Json -Depth 20 |
                 Set-Content -LiteralPath (Join-Path $apiSchemaRoot "bootstrap-api-schema-manifest.json") -Encoding utf8
@@ -124,6 +134,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                     apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
                 }
                 claims = [ordered]@{
+                    mode = "Embedded"
                     directory = "claims"
                     fingerprint = "claims"
                     expectedVerificationChecks = @()
@@ -133,6 +144,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 }
             }
             New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $bootstrapRoot "claims") -Force | Out-Null
             $rootManifest | ConvertTo-Json -Depth 20 |
                 Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Encoding utf8
         }
@@ -262,6 +274,9 @@ exit $ExitCode
                 $params | Should -Contain "InfraOnly"
                 $params | Should -Contain "DmsOnly"
                 $params | Should -Contain "LoadSeedData"
+                $params | Should -Not -Contain "ApiSchemaPath"
+                $params | Should -Not -Contain "ClaimsDirectoryPath"
+                $params | Should -Not -Contain "Extensions"
             }
         }
     }
@@ -290,6 +305,51 @@ exit $ExitCode
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot -PathTraversal
 
             { Resolve-BootstrapSchemaWorkspace } | Should -Throw -ExpectedMessage "*parent path segments*"
+        }
+
+        It "rejects an absolute schemaPath in the ApiSchema manifest" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-workspace.psm1") -Force
+            $apiSchemaManifestPath = Join-Path $script:repo.BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json"
+
+            $absoluteSchemaPath = if ($IsWindows) { "C:\evil-schema.json" } else { "/tmp/evil-schema.json" }
+            $absolutePathManifest = [ordered]@{
+                version = 1
+                projects = @(
+                    [ordered]@{
+                        projectName = "Ed-Fi"
+                        projectEndpointName = "ed-fi"
+                        isExtensionProject = $false
+                        schemaPath = $absoluteSchemaPath
+                    }
+                )
+            }
+            $absolutePathManifest | ConvertTo-Json -Depth 20 |
+                Set-Content -LiteralPath $apiSchemaManifestPath -Encoding utf8
+
+            { Resolve-BootstrapSchemaWorkspace } | Should -Throw -ExpectedMessage "*must be relative*"
+        }
+
+        It "rejects a non-boolean isExtensionProject value in the ApiSchema manifest" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-workspace.psm1") -Force
+            $apiSchemaManifestPath = Join-Path $script:repo.BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json"
+
+            $nonBoolManifest = [ordered]@{
+                version = 1
+                projects = @(
+                    [ordered]@{
+                        projectName = "Ed-Fi"
+                        projectEndpointName = "ed-fi"
+                        isExtensionProject = "yes"
+                        schemaPath = "schemas/Ed-Fi/ApiSchema.json"
+                    }
+                )
+            }
+            $nonBoolManifest | ConvertTo-Json -Depth 20 |
+                Set-Content -LiteralPath $apiSchemaManifestPath -Encoding utf8
+
+            { Resolve-BootstrapSchemaWorkspace } | Should -Throw -ExpectedMessage "*malformed boolean*"
         }
 
         It "rejects missing and malformed manifest handoffs before provisioning can run" {
@@ -779,6 +839,1235 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             $sequence = @(Get-Content -LiteralPath $sequencePath)
             $sequence[-1] | Should -Be "start-dms need=false deploy=false app=false"
+        }
+    }
+
+    Context "legacy startup provisioning lockdown" {
+        It "local-dms.yml defaults NEED_DATABASE_SETUP to false" {
+            $localDmsYaml = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.yml") -Raw
+            $localDmsYaml | Should -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-false\}'
+            $localDmsYaml | Should -Not -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-true\}'
+        }
+
+        It "published-dms.yml defaults NEED_DATABASE_SETUP to false" {
+            $publishedDmsYaml = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.yml") -Raw
+            $publishedDmsYaml | Should -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-false\}'
+            $publishedDmsYaml | Should -Not -Match 'NEED_DATABASE_SETUP:\s*\$\{NEED_DATABASE_SETUP:-true\}'
+        }
+
+        It ".env.example sets NEED_DATABASE_SETUP=false" {
+            $envExample = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot ".env.example") -Raw
+            $envExample | Should -Match '(?m)^NEED_DATABASE_SETUP=false\s*$'
+            $envExample | Should -Not -Match '(?m)^NEED_DATABASE_SETUP=true\s*$'
+        }
+
+        It "start-local-dms.ps1 forces NEED_DATABASE_SETUP=false in the normal up path" {
+            $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+
+            # The normal `docker compose ... up` (not -DmsOnly) must wrap the call in a try/finally
+            # that forces NEED_DATABASE_SETUP=false. The -DmsOnly branch already did this; the
+            # remediation extends the guard to the main up path.
+            $envForceMatches = [regex]::Matches($startScript, '\$env:NEED_DATABASE_SETUP\s*=\s*"false"')
+            $envForceMatches.Count | Should -BeGreaterOrEqual 2
+        }
+
+        It "start-published-dms.ps1 forces NEED_DATABASE_SETUP=false in the normal up path" {
+            $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
+
+            $envForceMatches = [regex]::Matches($startScript, '\$env:NEED_DATABASE_SETUP\s*=\s*"false"')
+            $envForceMatches.Count | Should -BeGreaterOrEqual 2
+        }
+    }
+
+    Context "effective database target grouping" {
+        It "treats two instances with the same database name on different hosts as separate targets" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "A"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=shared_name;'
+                        dmsInstanceRouteContexts = @()
+                    },
+                    [pscustomobject]@{
+                        id = 2
+                        instanceName = "B"
+                        connectionString = 'host=other-postgresql;port=5432;username=postgres;password=secret-pass;database=shared_name;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1, 2)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            @($captured | Where-Object { $_ -eq "BEGIN" }).Count | Should -Be 2
+        }
+
+        It "treats two instances with the same database name on different ports as separate targets" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "A"
+                        connectionString = 'host=localhost;port=15432;username=postgres;password=secret-pass;database=shared_name;'
+                        dmsInstanceRouteContexts = @()
+                    },
+                    [pscustomobject]@{
+                        id = 2
+                        instanceName = "B"
+                        connectionString = 'host=localhost;port=15433;username=postgres;password=secret-pass;database=shared_name;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1, 2)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            @($captured | Where-Object { $_ -eq "BEGIN" }).Count | Should -Be 2
+        }
+
+        It "treats two instances sharing host/port/db under different users as separate targets" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "RoleA"
+                        connectionString = 'host=dms-postgresql;port=5432;username=app_role_a;password=secret-pass;database=shared_db;'
+                        dmsInstanceRouteContexts = @()
+                    },
+                    [pscustomobject]@{
+                        id = 2
+                        instanceName = "RoleB"
+                        connectionString = 'host=dms-postgresql;port=5432;username=app_role_b;password=secret-pass;database=shared_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1, 2)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            @($captured | Where-Object { $_ -eq "BEGIN" }).Count | Should -Be 2
+        }
+    }
+
+    Context "host-side target connection conversion" {
+        It "preserves per-instance username, password, and database from the stored connection string" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Tenant-A"
+                        connectionString = 'host=dms-postgresql;port=5432;username=tenant_a_user;password=tenant_a_secret;database=tenant_a_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "host=localhost"
+            $connectionString | Should -Match "port=5544"
+            $connectionString | Should -Match "username=tenant_a_user"
+            $connectionString | Should -Match "password=tenant_a_secret"
+            $connectionString | Should -Match "database=tenant_a_db"
+        }
+
+        It "preserves non-default external host and port for instances not on dms-postgresql:5432" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "External"
+                        connectionString = 'host=managed-pg.example.com;port=5439;username=ops_user;password=ops_pass;database=ext_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "host=managed-pg.example.com"
+            $connectionString | Should -Match "port=5439"
+            $connectionString | Should -Match "username=ops_user"
+            $connectionString | Should -Match "database=ext_db"
+            $connectionString | Should -Not -Match "host=localhost"
+        }
+
+        It "rejects MSSQL-style connection strings with an actionable error" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "MsSql"
+                        connectionString = 'Server=mssql-host;Initial Catalog=db1;User Id=sa;Password=foo;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+                Should -Throw -ExpectedMessage "*Only PostgreSQL provisioning is supported*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse
+        }
+    }
+
+    Context "configure result contract" {
+        It "returns SelectedInstanceIds plus a backward-compatible InstanceIds alias" {
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 99
+                        instanceName = "Sole"
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -NoDmsInstance
+
+            $result.PSObject.Properties.Name | Should -Contain "SelectedInstanceIds"
+            $result.SelectedInstanceIds | Should -Be @([long]99)
+            $result.InstanceIds | Should -Be @([long]99)
+        }
+
+        It "includes CMSReadOnlyAccess block when env supplies the client id" {
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-with-ro.env"
+            @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+NEED_DATABASE_SETUP=false
+DMS_DEPLOY_DATABASE_ON_STARTUP=false
+CONFIG_SERVICE_CLIENT_ID=CMSReadOnlyAccess
+CONFIG_SERVICE_CLIENT_SCOPE=edfi_admin_api/readonly_access
+CONFIG_SERVICE_CLIENT_SECRET=my-ro-secret
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Sole"
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $envFile -NoDmsInstance
+
+            $result.PSObject.Properties.Name | Should -Contain "CMSReadOnlyAccess"
+            $result.CMSReadOnlyAccess["ClientId"] | Should -Be "CMSReadOnlyAccess"
+            $result.CMSReadOnlyAccess["Scope"] | Should -Be "edfi_admin_api/readonly_access"
+            $result.CMSReadOnlyAccess["ClientSecret"] | Should -Be "my-ro-secret"
+        }
+    }
+
+    Context "provisioning summary and IDE guidance" {
+        It "emits the post-provisioning summary listing each provisioned target" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Single"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=summary_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            $output = & {
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            } *>&1 | Out-String
+
+            $output | Should -Match "Schema Provisioning Summary"
+            $output | Should -Match "database=summary_db"
+            $output | Should -Match "host=localhost"
+            $output | Should -Match "instance-ids=\[1\]"
+            $output | Should -Match "status=Provisioned"
+        }
+
+        It "emits IDE next-step guidance labeled with the Story 04 dependency" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 7
+                        instanceName = "Single"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=guidance_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            $output = & {
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(7)
+            } *>&1 | Out-String
+
+            $output | Should -Match "IDE next-step guidance"
+            $output | Should -Match "AppSettings__UseApiSchemaPath = true"
+            $output | Should -Match "AppSettings__ApiSchemaPath"
+            $output | Should -Match "Story 04"
+            $output | Should -Match "deferred"
+        }
+
+        It "guidance generator produces deterministic lines from a schema workspace and target list" {
+            . $script:repo.ProvisionScript
+
+            $schemaWorkspace = [pscustomobject]@{
+                BootstrapManifestPath = "/tmp/.bootstrap/bootstrap-manifest.json"
+                ApiSchemaManifestPath = "/tmp/.bootstrap/ApiSchema/bootstrap-api-schema-manifest.json"
+                CoreSchemaPath = "/tmp/.bootstrap/ApiSchema/schemas/Ed-Fi/ApiSchema.json"
+                ExtensionSchemaPaths = [string[]]@()
+                EffectiveSchemaHash = "hash-xyz"
+                WorkspaceFingerprint = "fp"
+            }
+            $targets = @(
+                [pscustomobject]@{
+                    DatabaseName = "td"
+                    Host = "h"
+                    Port = "5432"
+                    Dialect = "pgsql"
+                    Username = "u"
+                    InstanceIds = [long[]]@(1, 2)
+                    Status = "Provisioned"
+                }
+            )
+
+            $lines = Get-ProvisionIdeGuidance -SchemaWorkspace $schemaWorkspace -ProvisionedTargets $targets
+
+            ($lines -join "`n") | Should -Match "Provisioned 1 database target"
+            ($lines -join "`n") | Should -Match "database=td host=h port=5432 user=u"
+            ($lines -join "`n") | Should -Match "Story 04"
+        }
+    }
+
+    Context "shared env-file helpers" {
+        It "Resolve-LocalSettingsEnvironmentFile throws on missing file" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            { Resolve-LocalSettingsEnvironmentFile -Path "/does/not/exist.env" -DockerComposeRoot $script:repo.DockerComposeRoot } |
+                Should -Throw -ExpectedMessage "*Environment file not found*"
+        }
+
+        It "Resolve-LocalSettingsEnvironmentFile returns the absolute env path for the supplied file" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            $resolved = Resolve-LocalSettingsEnvironmentFile -Path $script:repo.EnvFile -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            [System.IO.Path]::IsPathRooted($resolved) | Should -BeTrue
+            $resolved | Should -Be ([System.IO.Path]::GetFullPath($script:repo.EnvFile))
+        }
+
+        It "Get-EnvValue returns the supplied default when the key is absent or blank" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            $envValues = @{ A = "alpha"; B = "" }
+            Get-EnvValue -EnvValues $envValues -Name "A" -DefaultValue "fallback" | Should -Be "alpha"
+            Get-EnvValue -EnvValues $envValues -Name "B" -DefaultValue "fallback" | Should -Be "fallback"
+            Get-EnvValue -EnvValues $envValues -Name "Z" -DefaultValue "fallback" | Should -Be "fallback"
+        }
+    }
+
+    Context "EnvironmentFile precedence" {
+        It "configure-local-dms-instance.ps1 reads only the supplied -EnvironmentFile, not ambient process env" {
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=isolated_db
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+NEED_DATABASE_SETUP=false
+DMS_DEPLOY_DATABASE_ON_STARTUP=false
+CONFIG_SERVICE_TENANT=isolated-tenant
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            # Set conflicting values in process env; the script must ignore them and use the file.
+            $env:POSTGRES_PASSWORD = "process-pass"
+            $env:POSTGRES_DB_NAME = "process_db"
+            $env:CONFIG_SERVICE_TENANT = "process-tenant"
+            try {
+                . $script:repo.ConfigureScript
+
+                function Add-CmsClient { }
+                function Get-CmsToken { return "token" }
+                function Get-DmsInstances {
+                    return @(
+                        [pscustomobject]@{
+                            id = 1
+                            instanceName = "Sole"
+                            dmsInstanceRouteContexts = @()
+                        }
+                    )
+                }
+
+                $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $isolatedEnvFile -NoDmsInstance
+
+                $result.Tenant | Should -Be "isolated-tenant"
+            }
+            finally {
+                $env:POSTGRES_PASSWORD = $null
+                $env:POSTGRES_DB_NAME = $null
+                $env:CONFIG_SERVICE_TENANT = $null
+            }
+        }
+
+        It "provision-dms-schema.ps1 host-side connection uses POSTGRES_PORT from supplied env file, not process env" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-port-isolation.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=isolated_db
+POSTGRES_PORT=9876
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+NEED_DATABASE_SETUP=false
+DMS_DEPLOY_DATABASE_ON_STARTUP=false
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            $env:POSTGRES_PORT = "1111"
+
+            try {
+                . $script:repo.ProvisionScript
+
+                function Add-CmsClient { }
+                function Get-CmsToken { return "token" }
+                function Get-DmsInstances {
+                    return @(
+                        [pscustomobject]@{
+                            id = 1
+                            instanceName = "Sole"
+                            connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=isolated_db;'
+                            dmsInstanceRouteContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -InstanceId @(1)
+
+                $captured = @(Get-Content -LiteralPath $capturePath)
+                $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+                $connectionString | Should -Match "port=9876"
+                $connectionString | Should -Not -Match "port=1111"
+            }
+            finally {
+                $env:POSTGRES_PORT = $null
+            }
+        }
+    }
+
+    Context "wrapper consumes SelectedInstanceIds" {
+        It "Resolve-WrapperSelectedInstanceIds prefers SelectedInstanceIds over the legacy alias" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
+
+            $configured = [pscustomobject]@{
+                SelectedInstanceIds = [long[]]@(101, 102)
+                InstanceIds = [long[]]@(901, 902)
+                HasRouteQualifiedInstances = $false
+            }
+            $resolved = Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured
+
+            $resolved | Should -Be @([long]101, [long]102)
+        }
+
+        It "Resolve-WrapperSelectedInstanceIds falls back to InstanceIds when SelectedInstanceIds is absent" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
+
+            $configured = [pscustomobject]@{
+                InstanceIds = [long[]]@(42)
+                HasRouteQualifiedInstances = $false
+            }
+            $resolved = Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured
+
+            $resolved | Should -Be @([long]42)
+        }
+
+        It "Resolve-WrapperSelectedInstanceIds throws when neither property is present" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
+
+            $configured = [pscustomobject]@{ Tenant = "" }
+
+            { Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured } |
+                Should -Throw -ExpectedMessage "*missing SelectedInstanceIds*"
+        }
+    }
+
+    Context "provision is an auth consumer only" {
+        It "does not call Add-CmsClient during provisioning" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { throw "Add-CmsClient must not be called during provisioning." }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Sole"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=auth_consumer_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+                Should -Not -Throw
+        }
+
+        It "surfaces an actionable error pointing to configure when Get-CmsToken fails" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { throw "Add-CmsClient must not be called during provisioning." }
+            function Get-CmsToken { throw "401 Unauthorized: invalid_client" }
+            function Get-DmsInstances { return @() }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+                Should -Throw -ExpectedMessage "*configure-local-dms-instance.ps1*"
+        }
+    }
+
+    Context "PostgreSQL port defaults" {
+        It "defaults a missing port to 5432 for an external PostgreSQL host" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "ExternalNoPort"
+                        connectionString = 'host=managed-pg.example.com;username=ops_user;password=ops_pass;database=ext_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "host=managed-pg.example.com"
+            $connectionString | Should -Match "port=5432"
+            $connectionString | Should -Not -Match "host=localhost"
+        }
+
+        It "defaults a missing port for dms-postgresql to the host-side mapped POSTGRES_PORT" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "DockerInternalNoPort"
+                        connectionString = 'host=dms-postgresql;username=postgres;password=secret-pass;database=docker_internal_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "host=localhost"
+            $connectionString | Should -Match "port=5544"
+        }
+
+        It "still fails fast when both host and port are missing" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "MissingHost"
+                        connectionString = 'username=postgres;password=secret-pass;database=no_host_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+                Should -Throw -ExpectedMessage "*missing a host key*"
+        }
+    }
+
+    Context "CMSReadOnlyAccess presence-gated emission" {
+        It "Resolve-CmsReadOnlyAccessFromEnv returns null when none of the three keys are present" {
+            . $script:repo.ConfigureScript
+
+            $result = Resolve-CmsReadOnlyAccessFromEnv -EnvValues @{
+                POSTGRES_PASSWORD = "x"
+            }
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Resolve-CmsReadOnlyAccessFromEnv defaults client id and scope when only the secret is supplied" {
+            . $script:repo.ConfigureScript
+
+            $result = Resolve-CmsReadOnlyAccessFromEnv -EnvValues @{
+                CONFIG_SERVICE_CLIENT_SECRET = "explicit-secret"
+            }
+
+            $result | Should -Not -BeNullOrEmpty
+            $result["ClientId"] | Should -Be "CMSReadOnlyAccess"
+            $result["Scope"] | Should -Be "edfi_admin_api/readonly_access"
+            $result["ClientSecret"] | Should -Be "explicit-secret"
+        }
+
+        It "configure result omits CMSReadOnlyAccess when the env file lacks the keys" {
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Sole"
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -NoDmsInstance
+
+            $result.PSObject.Properties.Name | Should -Not -Contain "CMSReadOnlyAccess"
+        }
+
+        It "Get-ProvisionCmsReadOnlyAccessGuidance returns empty when no CONFIG_SERVICE_CLIENT_* keys are present" {
+            . $script:repo.ProvisionScript
+
+            $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
+                POSTGRES_PASSWORD = "x"
+            }
+
+            $lines | Should -BeNullOrEmpty
+        }
+
+        It "Get-ProvisionCmsReadOnlyAccessGuidance emits the block when an explicit env key is supplied" {
+            . $script:repo.ProvisionScript
+
+            $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
+                CONFIG_SERVICE_CLIENT_SECRET = "explicit-secret"
+            }
+
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientId = CMSReadOnlyAccess"
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientSecret = \(present in environment file\)"
+        }
+    }
+
+    Context "behavioral start-script lockdown" {
+        BeforeAll {
+            function script:Invoke-StartScriptLockdownBlock {
+                <#
+                .SYNOPSIS
+                Extract the main up-path (or -DmsOnly) try/finally from start-local-dms.ps1
+                or start-published-dms.ps1 and execute it in an isolated scope with a docker
+                stub. The extracted block is the production code, so any drift in the lockdown
+                semantics (env assignment removed, docker call moved before the assignment,
+                env var renamed) is caught at the behavioral level — not just the regex level.
+                When -DmsOnly is set, the helper targets the -DmsOnly branch's try block (the
+                one with a trailing `dms` service name) instead of the main up block.
+                #>
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$ScriptPath,
+
+                    [Parameter(Mandatory)]
+                    [string]$CapturePath,
+
+                    [switch]$DmsOnly
+                )
+
+                $sourceText = Get-Content -Raw -LiteralPath $ScriptPath
+                $parseErrors = $null
+                $tokens = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseInput(
+                    $sourceText, [ref]$tokens, [ref]$parseErrors)
+                if ($parseErrors.Count -gt 0) {
+                    throw "Failed to parse $ScriptPath"
+                }
+
+                $tries = $ast.FindAll(
+                    { $args[0] -is [System.Management.Automation.Language.TryStatementAst] },
+                    $true)
+                # The outer try wraps the entire script body, so any docker call lives inside
+                # it. We want the innermost try whose body sets NEED_DATABASE_SETUP=false and
+                # immediately calls `docker compose ... up $upArgs` — main up path when -DmsOnly
+                # is false (regex rejects a trailing word like `dms`); -DmsOnly branch when
+                # -DmsOnly is true (regex requires a trailing `dms` service name).
+                if ($DmsOnly) {
+                    $dockerRegex = 'docker compose .* up \$upArgs\s+dms\b'
+                    $branchLabel = "-DmsOnly"
+                } else {
+                    $dockerRegex = 'docker compose .* up \$upArgs(?!\s*\w)'
+                    $branchLabel = "main up"
+                }
+                $candidates = @($tries | Where-Object {
+                    $bodyText = $_.Body.Extent.Text
+                    ($bodyText -match '\$env:NEED_DATABASE_SETUP\s*=\s*"false"') -and
+                    ($bodyText -match $dockerRegex)
+                })
+                $upPathTry = $candidates | Sort-Object { $_.Body.Extent.Text.Length } | Select-Object -First 1
+                if ($null -eq $upPathTry) {
+                    throw "Could not locate the $branchLabel lockdown try block in $ScriptPath"
+                }
+
+                $extracted = $upPathTry.Extent.Text
+                $escapedCapture = $CapturePath.Replace("'", "''")
+                # The docker stub deliberately omits a param() block: declaring
+                # ValueFromRemainingArguments makes it an advanced function, which then binds
+                # common parameters like -PipelineVariable and trips on the production
+                # `-p dms-local` flag. A simple function captures all args via the automatic
+                # `$args` variable and avoids the ambiguity.
+                $isolated = @"
+`$files = @('-f', 'local-dms.yml')
+`$EnvironmentFile = '.env'
+`$upArgs = @('-d')
+function docker {
+    Add-Content -LiteralPath '$escapedCapture' -Value "NEED_DATABASE_SETUP=`$env:NEED_DATABASE_SETUP"
+    Add-Content -LiteralPath '$escapedCapture' -Value "DMS_DEPLOY_DATABASE_ON_STARTUP=`$env:DMS_DEPLOY_DATABASE_ON_STARTUP"
+    Add-Content -LiteralPath '$escapedCapture' -Value "AppSettings__DeployDatabaseOnStartup=`$env:AppSettings__DeployDatabaseOnStartup"
+    `$global:LASTEXITCODE = 0
+}
+$extracted
+"@
+                & ([scriptblock]::Create($isolated))
+            }
+        }
+
+        It "start-local-dms.ps1 main up path captures NEED_DATABASE_SETUP=false at docker call time" {
+            $capturePath = Join-Path $script:repo.RepoRoot "docker-up-capture-local.txt"
+            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+
+            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
+            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
+            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
+        }
+
+        It "start-published-dms.ps1 main up path captures NEED_DATABASE_SETUP=false at docker call time" {
+            $capturePath = Join-Path $script:repo.RepoRoot "docker-up-capture-published.txt"
+            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+
+            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
+            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
+            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
+        }
+
+        It "start-local-dms.ps1 -DmsOnly path captures NEED_DATABASE_SETUP=false at docker call time" {
+            $capturePath = Join-Path $script:repo.RepoRoot "docker-dmsonly-capture-local.txt"
+            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+
+            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath -DmsOnly
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
+            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
+            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
+        }
+
+        It "start-published-dms.ps1 -DmsOnly path captures NEED_DATABASE_SETUP=false at docker call time" {
+            $capturePath = Join-Path $script:repo.RepoRoot "docker-dmsonly-capture-published.txt"
+            $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+
+            Invoke-StartScriptLockdownBlock -ScriptPath $startScriptPath -CapturePath $capturePath -DmsOnly
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $captured | Should -Contain "NEED_DATABASE_SETUP=false"
+            $captured | Should -Contain "DMS_DEPLOY_DATABASE_ON_STARTUP=false"
+            $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
+        }
+    }
+
+    Context "missing-manifest warning surfaces the post-bootstrap contract" {
+        It "warns when no .bootstrap workspace is present and -IsTeardown is false" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-manifest.psm1") -Force
+
+            $warnings = & { Invoke-BootstrapStartupConfiguration -IsTeardown:$false } 3>&1 |
+                Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+
+            $warnings.Count | Should -BeGreaterThan 0
+            ($warnings | ForEach-Object Message) -join " " | Should -Match "No bootstrap manifest detected"
+            ($warnings | ForEach-Object Message) -join " " | Should -Match "bootstrap-\(local\|published\)-dms.ps1 wrapper"
+            ($warnings | ForEach-Object Message) -join " " | Should -Match "Schemas will NOT be provisioned"
+        }
+
+        It "stays silent when a .bootstrap workspace is present" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-manifest.psm1") -Force
+
+            $warnings = & { Invoke-BootstrapStartupConfiguration -IsTeardown:$false } 3>&1 |
+                Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+
+            $warnings | Where-Object { $_.Message -match "No bootstrap manifest detected" } | Should -BeNullOrEmpty
+        }
+
+        It "stays silent during teardown even when no .bootstrap workspace is present" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-manifest.psm1") -Force
+
+            $warnings = & { Invoke-BootstrapStartupConfiguration -IsTeardown:$true } 3>&1 |
+                Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+
+            $warnings | Where-Object { $_.Message -match "No bootstrap manifest detected" } | Should -BeNullOrEmpty
+        }
+    }
+
+    Context "staged --schema path order matches manifest declaration order" {
+        BeforeAll {
+            function script:Get-OrderedSchemaPaths {
+                param([string[]]$Captured)
+
+                $paths = @()
+                for ($i = 0; $i -lt $Captured.Count; $i++) {
+                    if ($Captured[$i] -eq "--schema") {
+                        $paths += ($Captured[$i + 1]).Replace('\', '/')
+                    }
+                }
+                return ,$paths
+            }
+
+            function script:Invoke-OrderedProvisionCapture {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$CaptureName,
+                    [Parameter(Mandatory)]
+                    [string]$DatabaseName,
+                    [string[]]$Extensions = @("Sample")
+                )
+
+                New-StagedSchemaWorkspace `
+                    -DockerComposeRoot $script:repo.DockerComposeRoot `
+                    -Extensions $Extensions
+                $capturePath = Join-Path $script:repo.RepoRoot $CaptureName
+                $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+                $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+                . $script:repo.ProvisionScript
+
+                $connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=' +
+                    '${POSTGRES_PASSWORD};database=' + $DatabaseName + ';'
+                function Add-CmsClient { }
+                function Get-CmsToken { return "token" }
+                function Get-DmsInstances {
+                    return @(
+                        [pscustomobject]@{
+                            id = 1
+                            instanceName = "Sole"
+                            connectionString = $connectionString
+                            dmsInstanceRouteContexts = @()
+                        }
+                    )
+                }
+
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+                return @(Get-Content -LiteralPath $capturePath)
+            }
+        }
+
+        It "core-only manifest emits a single --schema for the Ed-Fi core schema" {
+            $captured = Invoke-OrderedProvisionCapture `
+                -CaptureName "schema-tool-args-core-only.txt" `
+                -DatabaseName "core_only_db" `
+                -Extensions @()
+
+            $schemaPaths = Get-OrderedSchemaPaths -Captured $captured
+            $schemaPaths.Count | Should -Be 1
+            $schemaPaths[0] | Should -Match "schemas/Ed-Fi/ApiSchema\.json$"
+        }
+
+        It "core + single extension emits --schema in [core, extension] order" {
+            $captured = Invoke-OrderedProvisionCapture `
+                -CaptureName "schema-tool-args-core-plus-sample.txt" `
+                -DatabaseName "core_plus_sample_db" `
+                -Extensions @("Sample")
+
+            $schemaPaths = Get-OrderedSchemaPaths -Captured $captured
+            $schemaPaths.Count | Should -Be 2
+            $schemaPaths[0] | Should -Match "schemas/Ed-Fi/ApiSchema\.json$"
+            $schemaPaths[1] | Should -Match "schemas/Sample/ApiSchema\.json$"
+        }
+
+        It "core + multiple extensions emits --schema in [core, ext1, ext2] declaration order" {
+            $captured = Invoke-OrderedProvisionCapture `
+                -CaptureName "schema-tool-args-multi-extension.txt" `
+                -DatabaseName "multi_ext_db" `
+                -Extensions @("Sample", "Homograph")
+
+            $schemaPaths = Get-OrderedSchemaPaths -Captured $captured
+            $schemaPaths.Count | Should -Be 3
+            $schemaPaths[0] | Should -Match "schemas/Ed-Fi/ApiSchema\.json$"
+            $schemaPaths[1] | Should -Match "schemas/Sample/ApiSchema\.json$"
+            $schemaPaths[2] | Should -Match "schemas/Homograph/ApiSchema\.json$"
+        }
+
+        It "identical schema argv on repeated invocations against the same workspace" {
+            New-StagedSchemaWorkspace `
+                -DockerComposeRoot $script:repo.DockerComposeRoot `
+                -Extensions @("Sample")
+
+            $toolDir1 = Join-Path $script:repo.RepoRoot "tool-run-1"
+            $toolDir2 = Join-Path $script:repo.RepoRoot "tool-run-2"
+            New-Item -ItemType Directory -Path $toolDir1 -Force | Out-Null
+            New-Item -ItemType Directory -Path $toolDir2 -Force | Out-Null
+            $capturePath1 = Join-Path $script:repo.RepoRoot "schema-tool-args-idempotent-1.txt"
+            $capturePath2 = Join-Path $script:repo.RepoRoot "schema-tool-args-idempotent-2.txt"
+            $fakeTool1 = New-FakeSchemaTool -Directory $toolDir1 -CapturePath $capturePath1
+            $fakeTool2 = New-FakeSchemaTool -Directory $toolDir2 -CapturePath $capturePath2
+            $connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=idempotent_db;'
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Sole"
+                        connectionString = $connectionString
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool1
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool2
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $first = Get-OrderedSchemaPaths -Captured @(Get-Content -LiteralPath $capturePath1)
+            $second = Get-OrderedSchemaPaths -Captured @(Get-Content -LiteralPath $capturePath2)
+
+            ($first -join "|") | Should -Be ($second -join "|")
+        }
+    }
+
+    Context "Resolve-BootstrapAdminClient" {
+        It "returns the historical defaults when neither override key is present" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            $resolved = Resolve-BootstrapAdminClient -EnvValues @{ POSTGRES_PASSWORD = "x" }
+
+            $resolved.ClientId | Should -Be "dms-instance-admin"
+            $resolved.ClientSecret | Should -Be "ValidClientSecret1234567890!Abcd"
+        }
+
+        It "returns env-file values when both overrides are supplied" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            $resolved = Resolve-BootstrapAdminClient -EnvValues @{
+                DMS_BOOTSTRAP_ADMIN_CLIENT_ID = "custom-admin"
+                DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET = "custom-secret"
+            }
+
+            $resolved.ClientId | Should -Be "custom-admin"
+            $resolved.ClientSecret | Should -Be "custom-secret"
+        }
+
+        It "applies the client id override while keeping the default secret" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            $resolved = Resolve-BootstrapAdminClient -EnvValues @{
+                DMS_BOOTSTRAP_ADMIN_CLIENT_ID = "id-only-admin"
+            }
+
+            $resolved.ClientId | Should -Be "id-only-admin"
+            $resolved.ClientSecret | Should -Be "ValidClientSecret1234567890!Abcd"
+        }
+
+        It "applies the client secret override while keeping the default id" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "env-utility.psm1") -Force
+
+            $resolved = Resolve-BootstrapAdminClient -EnvValues @{
+                DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET = "secret-only-value"
+            }
+
+            $resolved.ClientId | Should -Be "dms-instance-admin"
+            $resolved.ClientSecret | Should -Be "secret-only-value"
+        }
+    }
+
+    Context "bootstrap admin client flows through to configure and provision" {
+        It "configure-local-dms-instance.ps1 calls Add-CmsClient and Get-CmsToken with the env-resolved bootstrap admin client" {
+            $overrideEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-bootstrap-admin.env"
+            @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+NEED_DATABASE_SETUP=false
+DMS_DEPLOY_DATABASE_ON_STARTUP=false
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+DMS_BOOTSTRAP_ADMIN_CLIENT_ID=configure-side-admin
+DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=configure-side-secret
+"@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
+
+            . $script:repo.ConfigureScript
+
+            $script:capturedAddCmsClient = $null
+            $script:capturedGetCmsToken = $null
+            function Add-CmsClient {
+                param($CmsUrl, $ClientId, $ClientSecret, $DisplayName)
+                $script:capturedAddCmsClient = [pscustomobject]@{
+                    ClientId = $ClientId
+                    ClientSecret = $ClientSecret
+                }
+            }
+            function Get-CmsToken {
+                param($CmsUrl, $ClientId, $ClientSecret)
+                $script:capturedGetCmsToken = [pscustomobject]@{
+                    ClientId = $ClientId
+                    ClientSecret = $ClientSecret
+                }
+                return "token"
+            }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Sole"
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ConfigureLocalDmsInstance -EnvironmentFile $overrideEnvFile -NoDmsInstance | Out-Null
+
+            $script:capturedAddCmsClient.ClientId | Should -Be "configure-side-admin"
+            $script:capturedAddCmsClient.ClientSecret | Should -Be "configure-side-secret"
+            $script:capturedGetCmsToken.ClientId | Should -Be "configure-side-admin"
+            $script:capturedGetCmsToken.ClientSecret | Should -Be "configure-side-secret"
+        }
+
+        It "provision-dms-schema.ps1 calls Get-CmsToken with the env-resolved bootstrap admin client and does not register" {
+            $overrideEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-bootstrap-admin-prov.env"
+            @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+NEED_DATABASE_SETUP=false
+DMS_DEPLOY_DATABASE_ON_STARTUP=false
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+DMS_BOOTSTRAP_ADMIN_CLIENT_ID=provision-side-admin
+DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
+"@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
+
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            $script:capturedGetCmsToken = $null
+            function Add-CmsClient { throw "Add-CmsClient must not be called during provisioning." }
+            function Get-CmsToken {
+                param($CmsUrl, $ClientId, $ClientSecret)
+                $script:capturedGetCmsToken = [pscustomobject]@{
+                    ClientId = $ClientId
+                    ClientSecret = $ClientSecret
+                }
+                return "token"
+            }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Sole"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=prov_admin_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $overrideEnvFile -InstanceId @(1)
+
+            $script:capturedGetCmsToken.ClientId | Should -Be "provision-side-admin"
+            $script:capturedGetCmsToken.ClientSecret | Should -Be "provision-side-secret"
+        }
+
+        It "provision actionable error sanitizes an env-supplied client id containing log-injection characters" {
+            $overrideEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-injection-id.env"
+            $injectedId = "evil-admin`r`nFAKE-LOG-LINE"
+            @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+NEED_DATABASE_SETUP=false
+DMS_DEPLOY_DATABASE_ON_STARTUP=false
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
+"@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
+
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { throw "Add-CmsClient must not be called during provisioning." }
+            function Get-CmsToken { throw "401 Unauthorized" }
+            function Get-DmsInstances { return @() }
+
+            $thrownMessage = $null
+            try {
+                Invoke-ProvisionDmsSchema -EnvironmentFile $overrideEnvFile -InstanceId @(1)
+            }
+            catch {
+                $thrownMessage = $_.Exception.Message
+            }
+
+            $thrownMessage | Should -Not -BeNullOrEmpty
+            $thrownMessage | Should -Not -Match "`r"
+            $thrownMessage | Should -Not -Match "`n"
+            $thrownMessage | Should -Not -Match "FAKE-LOG-LINE"
+            $thrownMessage | Should -Match "evil-admin"
         }
     }
 }
