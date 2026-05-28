@@ -22,3 +22,8 @@ Task completed: core-response helpers for reference/design/backend-redesign/epic
 Key decisions: append distinct selected strategy/subject/person hints after final relationship detail text; normalize any leading Hint: prefix before de-dupe; keep lower-precedence hints out when stored/proposed cases win.
 Files changed: RelationshipAuthorizationProblemDetails.cs, RelationshipAuthorizationProblemDetailsTests.cs, tasks.json.
 Blockers/notes: none. Full core unit project passes; later unit-test task can add broader People DTO mapping coverage.
+
+Task completed: unit-tests for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: add People-shaped no-claims formatter coverage using full relationship failure DTO; verify empty EdOrg claims render as none, People readable-name metadata/fallback aggregate, and auth-view hints append without People endpoint execution.
+Files changed: RelationshipAuthorizationProblemDetailsTests.cs, tasks.json, progress.txt.
+Blockers/notes: none. Core formatter and backend AUTH1 payload/mapper filters pass.

@@ -81,16 +81,33 @@ public abstract class RelationshipAuthorizationProblemDetailsTestBase
         string personHint,
         params RelationshipAuthorizationSecurableElement[] securableElements
     ) =>
+        SubjectWithPersonHint(
+            index,
+            failureKind,
+            "Student",
+            "Student_DocumentId",
+            personHint,
+            securableElements
+        );
+
+    protected static RelationshipAuthorizationFailedSubject SubjectWithPersonHint(
+        int index,
+        RelationshipAuthorizationSubjectFailureKind failureKind,
+        string personKind,
+        string personDocumentIdColumnName,
+        string personHint,
+        params RelationshipAuthorizationSecurableElement[] securableElements
+    ) =>
         Subject(index, failureKind, securableElements) with
         {
             PersonSubject = new RelationshipAuthorizationPersonSubjectInfo(
-                PersonKind: "Student",
+                PersonKind: personKind,
                 PathKind: "DirectRootColumn",
                 DocumentIdPath:
                 [
                     new RelationshipAuthorizationPersonDocumentIdPathStepInfo(
                         "edfi.StudentSchoolAssociation",
-                        "Student_DocumentId",
+                        personDocumentIdColumnName,
                         TargetTableName: null,
                         TargetColumnName: null
                     ),
@@ -115,6 +132,69 @@ public abstract class RelationshipAuthorizationProblemDetailsTestBase
             "TargetEducationOrganizationId",
             "SourceEducationOrganizationId"
         );
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_RelationshipAuthorizationProblemDetails_For_People_No_Claims_Failures
+    : RelationshipAuthorizationProblemDetailsTestBase
+{
+    private static readonly TraceId _traceId = new("people-empty-claims-trace");
+
+    private JsonNode _response = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var relationshipFailure = Failure(
+            RelationshipAuthorizationFailureValueSource.Stored,
+            [],
+            StrategyWithHint(
+                0,
+                "RelationshipsWithPeopleOnly",
+                "Strategy 'RelationshipsWithPeopleOnly' uses People auth views.",
+                SubjectWithPersonHint(
+                    0,
+                    RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                    "Student",
+                    "Student_DocumentId",
+                    "Create a StudentSchoolAssociation auth-view row.",
+                    SecurableElement("Student Unique Id", "$.studentReference.studentUniqueId")
+                ),
+                SubjectWithPersonHint(
+                    1,
+                    RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                    "Contact",
+                    "Contact_DocumentId",
+                    "Hint: Create a ContactStudentSchoolAuthorization auth-view row.",
+                    SecurableElement("", "$.contactReference.contactUniqueId")
+                )
+            )
+        );
+
+        _response = FailureResponse.ForRelationshipAuthorization(_traceId, relationshipFailure);
+    }
+
+    [Test]
+    public void It_renders_empty_claims_with_people_readable_names()
+    {
+        ResponseErrors(_response)
+            .Should()
+            .Equal(
+                "No relationships have been established between the caller's education organization id claims (none) and one or more of the following properties of the resource item: 'Student Unique Id', 'ContactUniqueId'."
+            );
+    }
+
+    [Test]
+    public void It_appends_people_auth_view_hints_from_the_selected_failed_subjects()
+    {
+        _response["detail"]!
+            .ToString()
+            .Should()
+            .Be(
+                "Access to the requested data could not be authorized. Hint: Strategy 'RelationshipsWithPeopleOnly' uses People auth views. Create a StudentSchoolAssociation auth-view row. Create a ContactStudentSchoolAuthorization auth-view row."
+            );
+    }
 }
 
 [TestFixture]

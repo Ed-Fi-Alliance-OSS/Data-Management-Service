@@ -113,7 +113,7 @@
       "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload\"`.",
       "Review unit test names for NUnit style: fixture classes prefixed with `Given_`, setup methods for arrange/act where appropriate, and test methods prefixed with `It_`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "backend-integration-tests",
