@@ -1,0 +1,279 @@
+[
+  {
+    "category": "implementation",
+    "description": "Extend the page DocumentId authorization contract and adapter so GET-many can carry executable People relationship subjects from RelationshipAuthorizationResult.Authorized without losing configured strategy identity, relationship-local ordering, auth-object metadata, person DocumentId path metadata, or skipped contributor diagnostics.",
+    "acceptance-criteria": [
+      "PageDocumentIdAuthorizationSpec can represent EdOrg subjects and People subjects in the same relationship strategy.",
+      "PageDocumentIdAuthorizationSpecAdapter adapts stored People check specs for all five People relationship strategies instead of throwing the temporary GET-many People staging exception.",
+      "The adapter preserves RawConfiguredIndex, RelationshipLocalOrder, subject AND ordering, strategy OR ordering, person auth view table, person DocumentId output column, and root/stored path metadata.",
+      "Single-record GET-by-id, POST, PUT, and DELETE People relationship execution remains staged as not implemented for DMS-1158."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs and PageDocumentIdAuthorizationSpecAdapter.cs for a model that distinguishes EdOrg and People page subjects.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationEndpointExecutionBoundary\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Generalize PageDocumentIdSqlCompiler authorization emission so EdOrg and People page authorization subjects are emitted from auth-object metadata rather than the current EdOrg-only strategy-kind switch.",
+    "acceptance-criteria": [
+      "Existing EdOrg-only GET-many SQL remains unchanged for normal and inverted strategies, including direct claim match plus hierarchy lookup.",
+      "Authorization subjects inside one configured relationship strategy are combined with AND.",
+      "Configured relationship strategies, including duplicate strategy entries, are combined with OR and preserve configured order metadata.",
+      "Page and total-count SQL use the same authorization predicate shape.",
+      "People-involved strategies that include EducationOrganization subjects preserve the DMS-1055 concrete root-table EdOrg subject scope and direct-claim-plus-hierarchy behavior.",
+      "People GET-many authorization does not introduce generated SQL caching; it uses the existing per-plan SQL generation and runtime parameterization pipeline."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs authorization emission for data-driven auth-object handling.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Compare existing EdOrg-only SQL expectations in src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs against the generated page and total-count SQL."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Implement GET-many SQL emission for People self and direct root-column subjects using the required root DocumentId IN subquery shape against the selected People auth view.",
+    "acceptance-criteria": [
+      "Student, Contact, and Staff direct root-column subjects emit root DocumentId IN subqueries instead of JOINing auth views into the outer page query.",
+      "Student, Contact, and Staff self subjects use the zero-hop root DocumentId binding and never use UniqueId or USI values for authorization.",
+      "People auth view predicates use the auth view table name, SourceEducationOrganizationId claim column, and Student_DocumentId, Contact_DocumentId, or Staff_DocumentId output column carried by the shared People core.",
+      "The same People predicate is emitted for page SQL and total-count SQL."
+    ],
+    "steps-to-verify": [
+      "Add or update PageDocumentIdSqlCompilerTests cases for Student self, direct Student reference, direct Contact reference, and direct Staff reference.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Inspect generated SQL assertions for the root DocumentId IN (SELECT r2.DocumentId FROM ...) shape and absence of UniqueId or USI authorization joins."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Implement GET-many SQL emission for transitive People subjects by walking the shared DocumentId path metadata from the root table through intermediate tables to the terminal person DocumentId column.",
+    "acceptance-criteria": [
+      "Transitive Student, Contact, and Staff subjects emit a root DocumentId IN subquery anchored at a second root alias and joined through the ordered path supplied by RelationshipAuthorizationPersonSubjectMetadata.",
+      "A CourseTranscript to StudentAcademicRecord to Student subject emits the canonical root DocumentId IN shape described by DMS-1095.",
+      "Broken or null stored transitive path values naturally filter out as nonmatching rows for GET-many and do not create per-row invalid-data failures.",
+      "Table aliases are deterministic and do not collide with outer query, descriptor, document, or sibling authorization aliases."
+    ],
+    "steps-to-verify": [
+      "Add or update PageDocumentIdSqlCompilerTests for CourseTranscript -> StudentAcademicRecord -> Student and at least one transitive Contact or Staff path if available in fixtures.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Review generated PostgreSQL and SQL Server SQL snippets for ordered intermediate JOIN clauses inside the root DocumentId IN subquery."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Wire People relationship GET-many execution through RelationalDocumentStoreRepository by removing the query-only People staging failure while preserving staging for People GET-by-id, POST, PUT, and DELETE.",
+    "acceptance-criteria": [
+      "GET-many requests configured with People relationship strategies reach page keyset planning instead of returning the temporary 501 People staging response.",
+      "People relationship strategies are added to the relationship OR group when mixed with EdOrg-only relationship strategies.",
+      "Any non-relationship GET-many strategy already implemented in the relational path composes with the relationship OR group using final auth.md AND semantics.",
+      "Known non-relationship strategies that are not yet implemented for GET-many still return the existing 501 staging response when combined with People relationship strategies.",
+      "Unknown or invalid strategy metadata continues to use the security-configuration failure path.",
+      "GET-by-id, POST, PUT, and DELETE behavior for People relationship strategies remains deferred to DMS-1158."
+    ],
+    "steps-to-verify": [
+      "Review TryCreatePeopleEndpointStagingFailures usage in src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
+      "Run a targeted repository unit test proving GET-many no longer returns QueryFailureNotImplemented for RelationshipsWithStudentsOnly while GET-by-id still stages People CRUD execution."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Enforce DMS-1095 planning and short-circuit order for People relationship GET-many: classify strategies, resolve People subjects, validate selected auth views, then short-circuit empty EdOrg claims only for a valid supported plan.",
+    "acceptance-criteria": [
+      "Unresolved operation-applicable People subjects return a security-configuration failure before empty-claim short-circuiting.",
+      "Selected People subjects that require missing auth views return a security-configuration failure before empty-claim short-circuiting.",
+      "Missing People auth views do not fail a mixed EdOrg-and-People strategy when no executable People subjects are selected and applicable EdOrg subjects remain.",
+      "Mixed EdOrg-and-People strategies continue when ODS subject-scope filtering leaves at least one executable EdOrg or People subject, and fail as a security-configuration error only when no executable subjects remain.",
+      "A valid supported People relationship plan with no ClaimEducationOrganizationIds returns a 200 empty page and totalCount 0 when requested without composing or executing People auth-view SQL."
+    ],
+    "steps-to-verify": [
+      "Review RelationshipAuthorizationPlanner.PlanStoredValues behavior for SecurityConfigurationError, NoClaims, and missing People auth view failures.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationPlanner\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Ensure People relationship GET-many uses the DMS-1055 ClaimEducationOrganizationIds parameterization contract consistently for PostgreSQL arrays, SQL Server expanded scalar parameters below 2,000 unique IDs, and SQL Server dms.BigIntTable TVPs at 2,000 or more unique IDs.",
+    "acceptance-criteria": [
+      "People auth-view predicates use the same ClaimEducationOrganizationIds parameterization helper as EdOrg relationship predicates.",
+      "PostgreSQL People predicates use = ANY(@ClaimEducationOrganizationIds).",
+      "SQL Server People predicates use expanded scalar parameters for 1,999 unique IDs and dms.BigIntTable for 2,000 unique IDs.",
+      "Deduplication and ascending sort occur before SQL Server threshold selection.",
+      "Page and total-count parameter metadata include the required authorization parameters exactly once per query plan."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~AuthorizationClaimEducationOrganizationIdParameterizationFactory\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Review PageDocumentIdSqlCompilerTests assertions for PostgreSQL array, SQL Server scalar, and SQL Server structured People auth-view SQL."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused adapter and planner unit coverage for all five People relationship strategies and their GET-many-specific execution boundaries.",
+    "acceptance-criteria": [
+      "Unit tests cover RelationshipsWithEdOrgsAndPeople, RelationshipsWithEdOrgsAndPeopleInverted, RelationshipsWithPeopleOnly, RelationshipsWithStudentsOnly, and RelationshipsWithStudentsOnlyThroughResponsibility in stored GET-many planning.",
+      "Tests prove through-responsibility Student subjects select auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility and Student_DocumentId.",
+      "Tests prove RelationshipsWithEdOrgsAndPeopleInverted only inverts the EdOrg hierarchy subject and leaves People auth-view direction unchanged.",
+      "Tests prove child-collection People paths are skipped as ineligible and retained in diagnostics.",
+      "Tests prove missing People auth views and no-applicable-subject selections surface security-configuration failures."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector|FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter\"",
+      "Review new test names for Given_ fixture style and It_ test method prefixes.",
+      "Confirm no test relies on People GET-by-id, POST, PUT, or DELETE execution."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused SQL compiler unit coverage for DMS-1095 People GET-many page and total-count predicates across direct, self, transitive, mixed, and duplicate-avoidance cases.",
+    "acceptance-criteria": [
+      "Tests cover Student self resource, direct Student reference, transitive Student path, direct Contact reference, direct Staff reference, and StudentsOnlyThroughResponsibility.",
+      "Tests prove mixed EdOrg-and-People strategy subjects are ANDed within one strategy.",
+      "Tests prove EdOrg-only and People-involved relationship strategies are ORed as distinct branches.",
+      "Tests prove the SQL uses root DocumentId IN subqueries and does not introduce outer joins that can duplicate root documents.",
+      "Tests prove authorization filtering appears before paging and is also present in total-count SQL."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Inspect SQL expectations for both PostgreSQL and SQL Server variants.",
+      "Confirm test fixtures include page SQL and total-count SQL assertions for every People predicate shape."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add repository-level unit coverage for DMS-1095 GET-many runtime composition and failure surfaces.",
+    "acceptance-criteria": [
+      "Tests prove GET-many with a People relationship strategy executes page planning instead of returning the old 501 staging response.",
+      "Tests prove NoFurtherAuthorizationRequired remains a no-op when combined with People relationship strategies.",
+      "Tests prove any non-relationship GET-many strategy already implemented in the relational path is ANDed with the relationship strategy OR group.",
+      "Tests prove known unsupported NamespaceBased, OwnershipBased, and valid custom view-based strategies still return 501 when not yet implemented and mixed with People relationship strategies.",
+      "Tests prove invalid custom view metadata and unknown strategy names return security-configuration failures rather than 501.",
+      "Tests prove security-configuration failures use the canonical urn:ed-fi:api:system:configuration:security ProblemDetails type, title, status, and detail.",
+      "Tests prove empty EdOrg claims for a valid People plan return an empty QuerySuccess with totalCount 0 when requested."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests\"",
+      "Review the tests around QueryFailureNotImplemented and TryCreatePeopleEndpointStagingFailures for GET-many versus single-record operations.",
+      "Confirm QuerySuccess empty-page assertions cover both totalCount=true and totalCount=false behavior."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add PostgreSQL and SQL Server API-level integration coverage for Student-oriented People relationship GET-many filtering using real relational persistence and emitted People auth views.",
+    "acceptance-criteria": [
+      "Integration tests cover authorized and unauthorized GET-many results for Student self or direct Student subjects.",
+      "Integration tests cover RelationshipsWithStudentsOnlyThroughResponsibility using auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility.",
+      "Integration tests cover a transitive Student path such as CourseTranscript -> StudentAcademicRecord -> Student.",
+      "Integration tests prove null or broken stored transitive paths are filtered out as nonmatches without per-row invalid-data failures.",
+      "Tests run for both PostgreSQL and SQL Server where local admin connection strings are configured.",
+      "Tests do not require People-involved GET-by-id, POST, PUT, or DELETE authorization execution."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration&FullyQualifiedName~Relationship\"",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~Relationship\"",
+      "Review integration test setup to ensure seeded data uses backend setup helpers or direct database writes rather than People CRUD authorization paths."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add PostgreSQL and SQL Server API-level integration coverage for Contact and Staff People relationship GET-many filtering using real relational persistence and emitted People auth views.",
+    "acceptance-criteria": [
+      "Integration tests cover authorized and unauthorized Contact GET-many results using auth.EducationOrganizationIdToContactDocumentId and Contact_DocumentId.",
+      "Integration tests cover authorized and unauthorized Staff GET-many results using auth.EducationOrganizationIdToStaffDocumentId and Staff_DocumentId.",
+      "Staff coverage includes relationship visibility through staff education organization assignment or employment associations.",
+      "Tests run for both PostgreSQL and SQL Server where local admin connection strings are configured.",
+      "Tests do not require People-involved GET-by-id, POST, PUT, or DELETE authorization execution."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration&FullyQualifiedName~Relationship\"",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~Relationship\"",
+      "Review integration test setup to ensure seeded Contact and Staff data uses backend setup helpers or direct database writes rather than People CRUD authorization paths."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add integration coverage for People relationship GET-many composition, pagination, totalCount, and SQL Server authorization-parameter thresholds.",
+    "acceptance-criteria": [
+      "Tests prove RelationshipsWithEdOrgsAndPeople ANDs EdOrg and People subjects within one strategy, including EdOrg-pass/People-fail and People-pass/EdOrg-fail cases.",
+      "Tests prove EdOrg-only and People-involved relationship strategies are ORed and do not return duplicate root documents.",
+      "Tests prove authorization filtering occurs before offset/limit paging and before totalCount calculation.",
+      "Tests prove SQL Server uses expanded scalar parameters for 1,999 unique claim EdOrg IDs and dms.BigIntTable for 2,000 unique claim EdOrg IDs in an executed GET-many path.",
+      "Tests prove duplicate claim EdOrg IDs are deduped before threshold selection."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Relationship\"",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~Relationship\"",
+      "Inspect captured SQL or query parameter metadata assertions for SQL Server scalar and TVP branches."
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Retag the existing GET-many-only People relationship E2E scenarios required by DMS-1095 for relational backend execution without enabling scenarios that depend on People CRUD authorization.",
+    "acceptance-criteria": [
+      "RelationshipsWithEdOrgsAndPeople.feature scenarios 05, 14, 46, 47, and 54 have @relational-backend and an appropriate @relational-ci-shard-* tag.",
+      "RelationshipsWithEdOrgsAndStaffs.feature scenarios 04, 11, 16, and 23 have @relational-backend and an appropriate @relational-ci-shard-* tag.",
+      "People scenarios whose setup or assertion exercises People GET-by-id, POST, PUT, DELETE, mutation cascade, or the DMS-1158 deferred scenario list remain untagged for relational backend.",
+      "Retagged scenarios can run against the relational DMS E2E stack without depending on People CRUD authorization."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature for scenarios 05, 14, 46, 47, and 54.",
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature for scenarios 04, 11, 16, and 23.",
+      "Run env -u NODE_OPTIONS dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" after starting the relational E2E stack."
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Add focused relational E2E scenarios for DMS-1095 People GET-many gaps that are not covered by safe retagging, especially empty EdOrg claims and through-responsibility Student GET-many.",
+    "acceptance-criteria": [
+      "A focused Student GET-many E2E scenario verifies real token and claim-set wiring for a People relationship strategy.",
+      "A focused Staff GET-many E2E scenario verifies real token and claim-set wiring for staff assignment or employment relationships.",
+      "A focused empty EdOrg claims E2E scenario verifies a valid People relationship plan returns an empty page and totalCount 0.",
+      "A focused through-responsibility Student GET-many scenario is added if no existing scenario can be safely retagged without relying on People CRUD setup.",
+      "Contact E2E is added only if setup can avoid People CRUD authorization; otherwise Contact remains covered at PostgreSQL and SQL Server integration level for DMS-1095."
+    ],
+    "steps-to-verify": [
+      "Run pwsh ./teardown-local-dms.ps1 from src/dms/tests/EdFi.DataManagementService.Tests.E2E.",
+      "Run pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational from src/dms/tests/EdFi.DataManagementService.Tests.E2E.",
+      "Verify docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore|QueryHandler' includes AppSettings__UseRelationalBackend=true, AppSettings__Datastore=postgresql, and AppSettings__QueryHandler=postgresql.",
+      "Run env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" from src/dms/tests/EdFi.DataManagementService.Tests.E2E."
+    ],
+    "completed": false
+  },
+  {
+    "category": "verification",
+    "description": "Run focused formatting and verification for the DMS-1095 implementation scope after code and tests are updated.",
+    "acceptance-criteria": [
+      "Changed C# files are formatted with csharpier.",
+      "Backend plan unit tests pass.",
+      "Backend repository unit tests pass for DMS-1095 query authorization coverage.",
+      "PostgreSQL integration tests for People relationship GET-many pass.",
+      "SQL Server integration tests for People relationship GET-many pass when ConnectionStrings__MssqlAdmin is configured.",
+      "Relational-backend E2E tests for retagged or newly added DMS-1095 scenarios pass against a relational dms-local stack."
+    ],
+    "steps-to-verify": [
+      "Run dotnet csharpier format src/dms/backend src/dms/tests/EdFi.DataManagementService.Tests.Integration src/dms/tests/EdFi.DataManagementService.Tests.E2E",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Relationship\"",
+      "Run env -u NODE_OPTIONS dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\""
+    ],
+    "completed": false
+  }
+]
