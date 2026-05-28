@@ -19,27 +19,15 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 /// </summary>
 internal sealed class AllowAllClaimSetProvider(FixtureContext fixture) : IClaimSetProvider
 {
-    private static readonly string[] _actions = ["Create", "Read", "Update", "Delete"];
+    private static readonly string[] _noFurtherAuthorizationRequiredStrategies =
+    [
+        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+    ];
 
-    public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
-    {
-        var resourceClaims = fixture
-            .Resources.SelectMany(r =>
-                _actions.Select(a => new ResourceClaim(
-                    Name: $"{Conventions.EdFiOdsResourceClaimBaseUri}/{r.ProjectName.ToLowerInvariant()}/{r.ResourceName.ToLowerInvariant()}",
-                    Action: a,
-                    AuthorizationStrategies:
-                    [
-                        new AuthorizationStrategy(
-                            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
-                        ),
-                    ]
-                ))
-            )
-            .ToList();
+    private readonly ConfigurableClaimSetProvider _inner = new(
+        fixture,
+        static (_, _) => _noFurtherAuthorizationRequiredStrategies
+    );
 
-        return Task.FromResult<IList<ClaimSet>>([
-            new ClaimSet(Name: ExternalDoublesConstants.SmokeClaimSetName, ResourceClaims: resourceClaims),
-        ]);
-    }
+    public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null) => _inner.GetAllClaimSets(tenant);
 }
