@@ -64,11 +64,34 @@ function Resolve-BootstrapBulkLoadClient {
     .SYNOPSIS
     Resolves the repo-pinned BulkLoadClient Console DLL path. Fails fast when resolution is ambiguous or absent.
     #>
-    try {
-        $packageDir = (Get-BulkLoadClient -PackageVersion $script:BulkLoadClientPackageVersion).Trim()
+    $packageLeaf = "edfi.suite3.bulkloadclient.console.$($script:BulkLoadClientPackageVersion)"
+    $candidateCacheRoots = @(
+        (Get-Location).Path,
+        $PSScriptRoot,
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    )
+
+    $packageDir = $null
+    $seenCacheRoots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($cacheRoot in $candidateCacheRoots) {
+        if (-not $seenCacheRoots.Add($cacheRoot)) {
+            continue
+        }
+
+        $candidatePackageDir = [System.IO.Path]::GetFullPath((Join-Path $cacheRoot ".packages/$packageLeaf"))
+        if (Test-Path -LiteralPath $candidatePackageDir -PathType Container) {
+            $packageDir = $candidatePackageDir
+            break
+        }
     }
-    catch {
-        throw "BulkLoadClient package resolution failed for version $(Format-LogSafeText $script:BulkLoadClientPackageVersion): $(Format-LogSafeText ($_.Exception.Message))"
+
+    if ([string]::IsNullOrWhiteSpace($packageDir)) {
+        try {
+            $packageDir = (Get-BulkLoadClient -PackageVersion $script:BulkLoadClientPackageVersion).Trim()
+        }
+        catch {
+            throw "BulkLoadClient package resolution failed for version $(Format-LogSafeText $script:BulkLoadClientPackageVersion): $(Format-LogSafeText ($_.Exception.Message))"
+        }
     }
 
     if ([string]::IsNullOrWhiteSpace($packageDir)) {
@@ -523,7 +546,7 @@ function Assert-SeedDataPathHasXml {
     <#
     .SYNOPSIS
     Validates a user-supplied -SeedDataPath: must exist as a directory and contain at least
-    one loadable *.xml file (recursive, matching New-SeedWorkspace's search AND exclusion
+    one candidate *.xml file (recursive files only, matching New-SeedWorkspace's search and exclusion
     rules). Fails fast with a clear message before any health checks, credential creation,
     or BulkLoadClient invocation. Applying the same exclusion as workspace staging avoids
     the case where a folder of pure ODS package metadata (Manifest*.xml, [Content_Types].xml,
@@ -538,7 +561,7 @@ function Assert-SeedDataPathHasXml {
     }
 
     $loadableFiles = @(
-        Get-ChildItem -LiteralPath $SeedDataPath -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath $SeedDataPath -File -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue |
             Where-Object {
                 $relPath = $_.FullName.Substring($SeedDataPath.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, '/')
                 Test-SeedXmlIsLoadable -RelativePath $relPath -FileName $_.Name
@@ -652,7 +675,7 @@ function Resolve-SeedSource {
     if (-not (Test-Path -LiteralPath $descriptorsDir -PathType Container)) {
         throw "Built-in seed source for template '$(Format-LogSafeText $effectiveTemplate)' is missing the required descriptors/ subdirectory at $(Format-LogSafeText $descriptorsDir)."
     }
-    $descriptorXml = @(Get-ChildItem -LiteralPath $descriptorsDir -Filter "*.xml" -ErrorAction SilentlyContinue)
+    $descriptorXml = @(Get-ChildItem -LiteralPath $descriptorsDir -File -Filter "*.xml" -ErrorAction SilentlyContinue)
     if ($descriptorXml.Count -eq 0) {
         throw "Built-in seed source descriptors/ directory is empty for template '$(Format-LogSafeText $effectiveTemplate)': $(Format-LogSafeText $descriptorsDir)."
     }
@@ -660,7 +683,7 @@ function Resolve-SeedSource {
         if (-not (Test-Path -LiteralPath $resourcesDir -PathType Container)) {
             throw "Built-in Populated seed source is missing the required resources/ subdirectory at $(Format-LogSafeText $resourcesDir)."
         }
-        $resourceXml = @(Get-ChildItem -LiteralPath $resourcesDir -Filter "*.xml" -ErrorAction SilentlyContinue)
+        $resourceXml = @(Get-ChildItem -LiteralPath $resourcesDir -File -Filter "*.xml" -ErrorAction SilentlyContinue)
         if ($resourceXml.Count -eq 0) {
             throw "Built-in Populated seed source resources/ directory is empty: $(Format-LogSafeText $resourcesDir)."
         }
@@ -701,78 +724,262 @@ function Remove-SeedWorkspace {
     }
 }
 
+function Get-BulkLoadClientInterchangeNameFromXsdFileName {
+    param(
+        [string]$FileName
+    )
+
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
+    if ($baseName -match '^Interchange-(?<name>.+)$') {
+        return $Matches.name
+    }
+
+    if ($baseName -match '^(?:.+-)?EXTENSION-Interchange-(?<name>.+?)(?:-Extension)?$') {
+        return $Matches.name
+    }
+
+    return $null
+}
+
+function Get-BulkLoadClientInterchangeNames {
+    <#
+    .SYNOPSIS
+    Reads BulkLoadClient interchange names from core and extension Interchange XSD files.
+    #>
+    param(
+        [string]$XsdDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $XsdDirectory -PathType Container)) {
+        throw "BulkLoadClient XSD directory does not exist or is not a directory: $(Format-LogSafeText $XsdDirectory)"
+    }
+
+    $names = [System.Collections.Generic.List[string]]::new()
+    $xsdFiles = @(
+        Get-ChildItem -LiteralPath $XsdDirectory -File -Filter "*.xsd" -ErrorAction SilentlyContinue |
+            Sort-Object -Property Name
+    )
+
+    foreach ($file in $xsdFiles) {
+        $name = Get-BulkLoadClientInterchangeNameFromXsdFileName -FileName $file.Name
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $names.Add($name)
+        }
+    }
+
+    if ($names.Count -eq 0) {
+        throw "BulkLoadClient XSD directory contains no core or extension Interchange XSD files: $(Format-LogSafeText $XsdDirectory)"
+    }
+
+    return @($names | Sort-Object -Unique)
+}
+
+function Resolve-SeedExactInterchangeName {
+    param(
+        [string]$Name,
+        [string[]]$InterchangeNames
+    )
+
+    foreach ($interchangeName in $InterchangeNames) {
+        if ($Name.Equals($interchangeName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $interchangeName
+        }
+    }
+
+    return $null
+}
+
+function Resolve-SeedLeafInterchangeName {
+    param(
+        [string]$LeafName,
+        [string[]]$InterchangeNames
+    )
+
+    $leafBase = [System.IO.Path]::GetFileNameWithoutExtension($LeafName)
+    foreach ($interchangeName in @($InterchangeNames | Sort-Object -Property Length -Descending)) {
+        if ($leafBase.Equals($interchangeName, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $leafBase.StartsWith("$interchangeName-", [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $interchangeName
+        }
+    }
+
+    return $null
+}
+
+function Resolve-SeedXmlRootInterchangeName {
+    param(
+        [string]$RootName,
+        [string[]]$InterchangeNames
+    )
+
+    if ($RootName -match '^Interchange(?<name>.+)$') {
+        return Resolve-SeedExactInterchangeName -Name $Matches.name -InterchangeNames $InterchangeNames
+    }
+
+    return $null
+}
+
+function Resolve-SeedXmlSchemaLocationInterchangeName {
+    param(
+        [string[]]$SchemaLocationValues,
+        [string[]]$InterchangeNames
+    )
+
+    foreach ($schemaLocation in $SchemaLocationValues) {
+        if ([string]::IsNullOrWhiteSpace($schemaLocation)) {
+            continue
+        }
+
+        $tokens = @($schemaLocation -split '\s+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        foreach ($token in $tokens) {
+            $normalizedToken = $token.Replace('\', '/')
+            $leaf = ($normalizedToken -split '/')[-1]
+            if (-not $leaf.EndsWith(".xsd", [System.StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $name = Get-BulkLoadClientInterchangeNameFromXsdFileName -FileName $leaf
+            if ([string]::IsNullOrWhiteSpace($name)) {
+                continue
+            }
+
+            $interchangeName = Resolve-SeedExactInterchangeName -Name $name -InterchangeNames $InterchangeNames
+            if (-not [string]::IsNullOrWhiteSpace($interchangeName)) {
+                return $interchangeName
+            }
+        }
+    }
+
+    return $null
+}
+
+function Resolve-SeedXmlDeclaredInterchangeName {
+    param(
+        [string]$FilePath,
+        [string[]]$InterchangeNames
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FilePath)) {
+        return $null
+    }
+
+    $settings = [System.Xml.XmlReaderSettings]::new()
+    $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+
+    $reader = $null
+    try {
+        $reader = [System.Xml.XmlReader]::Create($FilePath, $settings)
+        while ($reader.Read()) {
+            if ($reader.NodeType -ne [System.Xml.XmlNodeType]::Element) {
+                continue
+            }
+
+            $rootInterchangeName = Resolve-SeedXmlRootInterchangeName -RootName $reader.LocalName -InterchangeNames $InterchangeNames
+            if (-not [string]::IsNullOrWhiteSpace($rootInterchangeName)) {
+                return $rootInterchangeName
+            }
+
+            $schemaLocation = $reader.GetAttribute("schemaLocation", "http://www.w3.org/2001/XMLSchema-instance")
+            $noNamespaceSchemaLocation = $reader.GetAttribute("noNamespaceSchemaLocation", "http://www.w3.org/2001/XMLSchema-instance")
+            return Resolve-SeedXmlSchemaLocationInterchangeName `
+                -SchemaLocationValues @($schemaLocation, $noNamespaceSchemaLocation) `
+                -InterchangeNames $InterchangeNames
+        }
+    }
+    catch {
+        throw "Seed XML declaration cannot be inspected for BulkLoadClient interchange discovery at $(Format-LogSafeText $FilePath): $(Format-LogSafeText ($_.Exception.Message))"
+    }
+    finally {
+        if ($null -ne $reader) {
+            $reader.Dispose()
+        }
+    }
+
+    return $null
+}
+
 function Get-SeedFileTargetName {
     <#
     .SYNOPSIS
-    Computes the deterministic collision-safe flat target filename for one source XML file.
-    Format: <sourceKey>__<sha256-8>__<original-leaf-name>
-    The hash covers <sourceKey>|<normalized-relative-path> (lower-invariant).
+    Computes the BulkLoadClient-compatible target path for one source XML file.
+    Preserves already-compatible names and normalizes wrapper directories so the final
+    path is InterchangeName.xml, InterchangeName-*.xml, or InterchangeName/*.xml.
     #>
     param(
-        [string]$SourceKey,
-        [string]$RelativePath
+        [string]$RelativePath,
+        [string]$SourceFilePath,
+        [string[]]$InterchangeNames,
+        [string]$SourceInterchangeName
     )
 
-    $hashInput = "$SourceKey|$($RelativePath.ToLowerInvariant())"
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($hashInput)
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $hash = [System.Convert]::ToHexString($sha256.ComputeHash($bytes)).Substring(0, 8).ToLowerInvariant()
-    }
-    finally {
-        $sha256.Dispose()
+    $normalizedRelativePath = $RelativePath.Replace('\', '/')
+    $segments = @($normalizedRelativePath -split '/' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($segments.Count -eq 0) {
+        throw "Seed XML path is empty."
     }
 
-    $leaf = Split-Path -Leaf $RelativePath
-    return "${SourceKey}__${hash}__${leaf}"
+    $leaf = $segments[$segments.Count - 1]
+    if (-not $leaf.EndsWith(".xml", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Seed XML path does not end with .xml: $(Format-LogSafeText $RelativePath)"
+    }
+
+    $separator = [string][System.IO.Path]::DirectorySeparatorChar
+    if ($segments.Count -gt 1) {
+        $parent = $segments[$segments.Count - 2]
+        $parentInterchangeName = Resolve-SeedExactInterchangeName -Name $parent -InterchangeNames $InterchangeNames
+        if (-not [string]::IsNullOrWhiteSpace($parentInterchangeName)) {
+            return "$parentInterchangeName$separator$leaf"
+        }
+    }
+
+    $leafInterchangeName = Resolve-SeedLeafInterchangeName -LeafName $leaf -InterchangeNames $InterchangeNames
+    if (-not [string]::IsNullOrWhiteSpace($leafInterchangeName)) {
+        return $leaf
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SourceInterchangeName)) {
+        return "$SourceInterchangeName$separator$leaf"
+    }
+
+    $declaredInterchangeName = Resolve-SeedXmlDeclaredInterchangeName -FilePath $SourceFilePath -InterchangeNames $InterchangeNames
+    if (-not [string]::IsNullOrWhiteSpace($declaredInterchangeName)) {
+        return "$declaredInterchangeName$separator$leaf"
+    }
+
+    throw "Seed XML path is not discoverable by BulkLoadClient. Use InterchangeName.xml, InterchangeName-*.xml, or InterchangeName/*.xml: $(Format-LogSafeText $RelativePath)"
 }
 
-function New-SeedWorkspace {
+function Get-SeedWorkspacePlan {
     <#
     .SYNOPSIS
-    Materializes XML seed files from one or more source directories into a flat deterministic
-    BulkLoadClient data directory under .bootstrap/seed/data/. Returns workspace paths.
-
-    Collision detection runs before any copy so the workspace is never partially populated when
-    a collision is found.
+    Computes staged source-to-target copies and validates BulkLoadClient discoverability without
+    touching the seed workspace.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
     param(
-        [string]$BootstrapRoot,
-        [string[]]$SourceDirectories
+        [string[]]$SourceDirectories,
+        [string[]]$InterchangeNames
     )
 
-    $seedRoot = Join-Path $BootstrapRoot "seed"
-    $dataDir = Join-Path $seedRoot "data"
-    $workingDir = Join-Path $seedRoot "working"
-
-    # Wipe and recreate from scratch on every run
-    if (Test-Path -LiteralPath $seedRoot) {
-        Remove-Item -LiteralPath $seedRoot -Recurse -Force -ErrorAction Stop
+    $knownInterchangeNames = @($InterchangeNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    if ($knownInterchangeNames.Count -eq 0) {
+        throw "Seed workspace requires at least one BulkLoadClient interchange name."
     }
-    New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
-    New-Item -ItemType Directory -Path $workingDir -Force | Out-Null
 
-    # Collect all planned copies first so collision detection can run before any IO.
-    # Exclusion rules live in $script:SeedXmlExcludePatterns so Assert-SeedDataPathHasXml
-    # filters the same way at preflight.
     $plan = [System.Collections.Generic.List[pscustomobject]]::new()
     $targetNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $collisions = [System.Collections.Generic.List[string]]::new()
+    $invalidPaths = [System.Collections.Generic.List[string]]::new()
 
     foreach ($sourceDir in $SourceDirectories) {
-        # Disambiguate the per-source key by combining parent dir + leaf so future seed-catalog
-        # extras with the same leaf (e.g., two extensions exporting `resources/`) don't share a
-        # source key and collide on every shared filename. The hash inside Get-SeedFileTargetName
-        # already prevents target-name collisions, but the source key also surfaces in error
-        # messages and target filenames; readable disambiguation makes failures debuggable.
         $leaf = Split-Path -Leaf $sourceDir
         $parent = Split-Path -Parent $sourceDir
         $parentLeaf = if ([string]::IsNullOrWhiteSpace($parent)) { "" } else { Split-Path -Leaf $parent }
         $sourceKey = if ([string]::IsNullOrWhiteSpace($parentLeaf)) { $leaf } else { "${parentLeaf}__${leaf}" }
+        $sourceInterchangeName = Resolve-SeedExactInterchangeName -Name $leaf -InterchangeNames $knownInterchangeNames
 
         $xmlFiles = @(
-            Get-ChildItem -LiteralPath $sourceDir -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue |
+            Get-ChildItem -LiteralPath $sourceDir -File -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue |
                 Where-Object {
                     $relPath = $_.FullName.Substring($sourceDir.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, '/')
                     Test-SeedXmlIsLoadable -RelativePath $relPath -FileName $_.Name
@@ -781,7 +988,13 @@ function New-SeedWorkspace {
 
         foreach ($file in $xmlFiles) {
             $relPath = $file.FullName.Substring($sourceDir.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, '/').Replace('\', '/')
-            $targetName = Get-SeedFileTargetName -SourceKey $sourceKey -RelativePath $relPath
+            try {
+                $targetName = Get-SeedFileTargetName -RelativePath $relPath -SourceFilePath $file.FullName -InterchangeNames $knownInterchangeNames -SourceInterchangeName $sourceInterchangeName
+            }
+            catch {
+                $invalidPaths.Add("Invalid seed XML path from $(Format-LogSafeText $sourceKey):$(Format-LogSafeText $relPath) - $(Format-LogSafeText ($_.Exception.Message))")
+                continue
+            }
 
             if (-not $targetNames.Add($targetName)) {
                 $collisions.Add("Target name collision: $(Format-LogSafeText $targetName) from $(Format-LogSafeText $sourceKey):$(Format-LogSafeText $relPath)")
@@ -795,14 +1008,71 @@ function New-SeedWorkspace {
         }
     }
 
-    if ($collisions.Count -gt 0) {
-        throw "Seed workspace would have deterministic name collisions - aborting before any copy:`n$($collisions -join "`n")"
+    if ($invalidPaths.Count -gt 0) {
+        throw "Seed workspace contains XML files BulkLoadClient cannot discover - aborting before any copy:`n$($invalidPaths -join "`n")"
     }
+
+    if ($collisions.Count -gt 0) {
+        throw "Seed workspace would have target path collisions - aborting before any copy:`n$($collisions -join "`n")"
+    }
+
+    return @($plan)
+}
+
+function Assert-SeedWorkspacePathsAreDiscoverable {
+    <#
+    .SYNOPSIS
+    Validates that seed XML paths can be staged into BulkLoadClient-discoverable target paths.
+    #>
+    param(
+        [string[]]$SourceDirectories,
+        [string[]]$InterchangeNames
+    )
+
+    $null = Get-SeedWorkspacePlan -SourceDirectories $SourceDirectories -InterchangeNames $InterchangeNames
+}
+
+function New-SeedWorkspace {
+    <#
+    .SYNOPSIS
+    Materializes XML seed files from one or more source directories into a deterministic
+    BulkLoadClient data directory under .bootstrap/seed/data/. Returns workspace paths.
+
+    Collision detection runs before any copy so the workspace is never partially populated when
+    a collision is found. Staging preserves or normalizes files into BulkLoadClient-compatible
+    target paths and fails on real target collisions instead of prefixing every file.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
+    param(
+        [string]$BootstrapRoot,
+        [string[]]$SourceDirectories,
+        [string[]]$InterchangeNames
+    )
+
+    $seedRoot = Join-Path $BootstrapRoot "seed"
+    $dataDir = Join-Path $seedRoot "data"
+    $workingDir = Join-Path $seedRoot "working"
+
+    # Wipe and recreate from scratch on every run
+    if (Test-Path -LiteralPath $seedRoot) {
+        Remove-Item -LiteralPath $seedRoot -Recurse -Force -ErrorAction Stop
+    }
+    New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $workingDir -Force | Out-Null
+
+    # Collect all planned copies first so collision detection can run before any copy.
+    # Exclusion rules live in $script:SeedXmlExcludePatterns so Assert-SeedDataPathHasXml
+    # filters the same way at preflight.
+    $plan = Get-SeedWorkspacePlan -SourceDirectories $SourceDirectories -InterchangeNames $InterchangeNames
 
     # All clear; perform the copies.
     $stagedFiles = [System.Collections.Generic.List[string]]::new()
     foreach ($entry in $plan) {
         $dest = Join-Path $dataDir $entry.TargetName
+        $destParent = Split-Path -Parent $dest
+        if (-not [string]::IsNullOrWhiteSpace($destParent) -and -not (Test-Path -LiteralPath $destParent)) {
+            New-Item -ItemType Directory -Path $destParent -Force | Out-Null
+        }
         Copy-Item -LiteralPath $entry.Source -Destination $dest -ErrorAction Stop
         $stagedFiles.Add($dest)
     }
@@ -972,7 +1242,8 @@ function Get-SeedXsdDirectory {
     param(
         [hashtable]$Manifest,
         [string]$WorkspaceRoot,
-        [string]$BootstrapRoot
+        [string]$BootstrapRoot,
+        [switch]$ExtensionProjectsOnly
     )
 
     $relApiSchemaManifestPath = $Manifest["schema"]["apiSchemaManifestPath"]
@@ -1016,16 +1287,39 @@ function Get-SeedXsdDirectory {
     $xsdCollisions = [System.Collections.Generic.List[string]]::new()
 
     if ($null -ne $projects) {
+        $selectedExtensionNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        if ($Manifest["schema"].ContainsKey("selectedExtensions")) {
+            foreach ($selectedExtension in @($Manifest["schema"]["selectedExtensions"])) {
+                if (-not [string]::IsNullOrWhiteSpace($selectedExtension)) {
+                    $null = $selectedExtensionNames.Add([string]$selectedExtension)
+                }
+            }
+        }
+
         foreach ($project in @($projects)) {
             $xsdDir = $null
             $projectName = $null
+            $projectEndpointName = $null
+            $isExtensionProject = $false
             if ($project -is [System.Collections.IDictionary]) {
                 if ($project.ContainsKey("xsdDirectory")) { $xsdDir = $project["xsdDirectory"] }
                 if ($project.ContainsKey("projectName")) { $projectName = $project["projectName"] }
+                if ($project.ContainsKey("projectEndpointName")) { $projectEndpointName = $project["projectEndpointName"] }
+                if ($project.ContainsKey("isExtensionProject")) { $isExtensionProject = [bool]$project["isExtensionProject"] }
             }
             else {
                 if ($null -ne $project.xsdDirectory) { $xsdDir = $project.xsdDirectory }
                 if ($null -ne $project.projectName) { $projectName = $project.projectName }
+                if ($null -ne $project.projectEndpointName) { $projectEndpointName = $project.projectEndpointName }
+                if ($null -ne $project.isExtensionProject) { $isExtensionProject = [bool]$project.isExtensionProject }
+            }
+
+            if (-not $isExtensionProject -and -not [string]::IsNullOrWhiteSpace($projectEndpointName)) {
+                $isExtensionProject = $selectedExtensionNames.Contains([string]$projectEndpointName)
+            }
+
+            if ($ExtensionProjectsOnly -and -not $isExtensionProject) {
+                continue
             }
 
             if ([string]::IsNullOrWhiteSpace($xsdDir)) {
@@ -1079,6 +1373,71 @@ function Get-SeedXsdDirectory {
     }
 
     return $xsdDestDir
+}
+
+function Copy-SeedXsdFilesIntoDirectory {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
+    param(
+        [string]$SourceDirectory,
+        [string]$DestinationDirectory,
+        [switch]$SkipExisting
+    )
+
+    $xsdFiles = @(Get-ChildItem -LiteralPath $SourceDirectory -Filter "*.xsd" -File -Recurse -ErrorAction SilentlyContinue)
+    foreach ($xsdFile in $xsdFiles) {
+        $destination = Join-Path $DestinationDirectory $xsdFile.Name
+        if (Test-Path -LiteralPath $destination -PathType Leaf) {
+            if ($SkipExisting) {
+                continue
+            }
+
+            throw "Staged XSD files would have deterministic name collisions: $(Format-LogSafeText $xsdFile.Name)"
+        }
+
+        Copy-Item -LiteralPath $xsdFile.FullName -Destination $destination -ErrorAction Stop
+    }
+}
+
+function New-BuiltInSeedXsdDirectory {
+    <#
+    .SYNOPSIS
+    Resolves the XSD directory used by built-in seed loading. Core seed XML remains validated
+    against the pinned Ed-Fi-Data-Standard tag, while catalog-backed extension seed packages
+    add extension XSDs from the staged ApiSchema workspace.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
+    param(
+        [string]$DataStandardXsdDirectory,
+        [hashtable]$Manifest,
+        [string]$BootstrapRoot,
+        [switch]$IncludeExtensionXsds
+    )
+
+    if (-not (Test-Path -LiteralPath $DataStandardXsdDirectory -PathType Container)) {
+        throw "Bulk XSD directory not found in Ed-Fi-Data-Standard tag $(Format-LogSafeText $script:DataStandardRefTag): $(Format-LogSafeText $DataStandardXsdDirectory)"
+    }
+
+    if (-not $IncludeExtensionXsds) {
+        return $DataStandardXsdDirectory
+    }
+
+    $extensionXsdWorkspaceRoot = Join-Path $BootstrapRoot "extension-xsd"
+    $extensionXsdDir = Get-SeedXsdDirectory `
+        -Manifest $Manifest `
+        -WorkspaceRoot $extensionXsdWorkspaceRoot `
+        -BootstrapRoot $BootstrapRoot `
+        -ExtensionProjectsOnly
+
+    $combinedXsdDir = Join-Path $BootstrapRoot "xsd"
+    if (Test-Path -LiteralPath $combinedXsdDir) {
+        Remove-Item -LiteralPath $combinedXsdDir -Recurse -Force -ErrorAction Stop
+    }
+    New-Item -ItemType Directory -Path $combinedXsdDir -Force | Out-Null
+
+    Copy-SeedXsdFilesIntoDirectory -SourceDirectory $DataStandardXsdDirectory -DestinationDirectory $combinedXsdDir
+    Copy-SeedXsdFilesIntoDirectory -SourceDirectory $extensionXsdDir -DestinationDirectory $combinedXsdDir -SkipExisting
+
+    return $combinedXsdDir
 }
 
 function Invoke-BulkLoadClient {
@@ -1284,16 +1643,27 @@ if ($seedSource.Kind -eq "BuiltIn") {
     if ([string]::IsNullOrWhiteSpace($dataStandardRoot)) {
         throw "Internal error: BuiltIn seed source requires dataStandardRoot to be resolved before XSD resolution."
     }
-    $resolvedXsdDir = Join-Path $dataStandardRoot "Schemas/Bulk"
-    if (-not (Test-Path -LiteralPath $resolvedXsdDir -PathType Container)) {
-        throw "Bulk XSD directory not found in Ed-Fi-Data-Standard tag $(Format-LogSafeText $script:DataStandardRefTag): $(Format-LogSafeText $resolvedXsdDir)"
-    }
+    $resolvedXsdDir = New-BuiltInSeedXsdDirectory `
+        -DataStandardXsdDirectory (Join-Path $dataStandardRoot "Schemas/Bulk") `
+        -Manifest $manifest `
+        -BootstrapRoot $bootstrapRoot `
+        -IncludeExtensionXsds:($extensionExtraDirs.Count -gt 0)
 }
 else {
     $resolvedXsdDir = Get-SeedXsdDirectory `
         -Manifest $manifest `
         -WorkspaceRoot $bootstrapRoot `
         -BootstrapRoot $bootstrapRoot
+}
+
+# Validate the same staged target-path contract that New-SeedWorkspace will use, but do it
+# before DMS health checks and CMS SeedLoader credential creation so bad custom seed paths
+# do not leave vendor/application state behind.
+$preflightInterchangeNames = Get-BulkLoadClientInterchangeNames -XsdDirectory $resolvedXsdDir
+foreach ($tier in $tiers) {
+    $tierSourceDirs = @($tier.SourceDirectory) + @($tier.ExtraDirectories)
+    Write-Host "Preflighting seed workspace materialization for $(Format-LogSafeText $tier.Name) tier..."
+    Assert-SeedWorkspacePathsAreDiscoverable -SourceDirectories $tierSourceDirs -InterchangeNames $preflightInterchangeNames
 }
 
 # --- Step 1: Env resolution ---
@@ -1382,9 +1752,10 @@ function Invoke-SeedTierLoad {
     )
 
     $tierSourceDirs = @($Tier.SourceDirectory) + @($Tier.ExtraDirectories)
+    $interchangeNames = Get-BulkLoadClientInterchangeNames -XsdDirectory $XsdDirectory
 
     Write-Host "Materializing seed workspace for $(Format-LogSafeText $Tier.Name) tier..."
-    $workspace = New-SeedWorkspace -BootstrapRoot $BootstrapRoot -SourceDirectories $tierSourceDirs
+    $workspace = New-SeedWorkspace -BootstrapRoot $BootstrapRoot -SourceDirectories $tierSourceDirs -InterchangeNames $interchangeNames
     Write-Host "Workspace ready at $(Format-LogSafeText $workspace.DataDirectory); staged $(Format-LogSafeText ($workspace.StagedFiles.Count)) XML file(s)."
 
     Write-Host "Invoking BulkLoadClient against $(Format-LogSafeText $Tier.Name) tier..."

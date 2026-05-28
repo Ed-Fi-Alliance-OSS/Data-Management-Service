@@ -181,9 +181,14 @@ direct-SQL path as an ongoing or permanent alternative.
   emits an informational warning rather than silently implying extension seed data was loaded.
 - When a built-in extension seed source is selected, the selected extension security fragment(s) must also
   attach the required `SeedLoader` permissions for every resource emitted by that extension's seed package.
-- Bootstrap stages the selected XML interchange files into one flat ignored BulkLoadClient data directory
-  before invocation. The staging step must use deterministic collision-safe file naming or fail before
-  invoking BulkLoadClient if it cannot produce a valid data directory.
+- Bootstrap stages the selected XML interchange files into tier-specific ignored BulkLoadClient data
+  directories before invocation, materializing BulkLoadClient-discoverable target paths such as
+  `InterchangeName.xml`, `InterchangeName-*.xml`, and `InterchangeName/*.xml`. Already-compatible names are
+  preserved; non-contract wrapper directories may be stripped only when the file, immediate parent folder,
+  selected source directory, XML root element, or `xsi:schemaLocation` identifies a known interchange from core
+  or extension interchange XSD filenames. The staging step must fail before CMS SeedLoader credential creation
+  or BulkLoadClient invocation if a source XML cannot be mapped to a known interchange or if two source files
+  would materialize to the same relative path.
 - Seed loading relies on BulkLoadClient dependency and interchange ordering metadata, not bootstrap-defined
   filename prefixes or numeric ordering.
 - Seed loading surfaces the tool's terminal summary or terminal error diagnostics; bootstrap passes those
@@ -259,7 +264,8 @@ direct-SQL path as an ongoing or permanent alternative.
    `-AdditionalNamespacePrefix` values used only for SeedLoader vendor authorization.
    This task is what allows built-in extension seed packages to be advertised at all.
 4. Implement seed-workspace creation, XML interchange materialization for both built-in artifacts and
-   `-SeedDataPath`, deterministic collision-safe file naming or pre-invocation failure, the
+   `-SeedDataPath`, BulkLoadClient-discoverable target-path materialization with pre-invocation invalid-path
+   and collision failure, the
    `SchoolYearType` REST precondition for the configured year range, and cleanup behavior. For built-in
    sources the workspace is split into a descriptor subdirectory and a resource subdirectory so the
    `Populated` flow can sequence BulkLoadClient invocations correctly. Ordering remains owned by

@@ -140,23 +140,20 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 
 | Item | Detail |
 |---|---|
-| **Preconditions** | Current Story 00 startup may validate a bootstrap manifest when present, but staged claims startup is not activated until Story 04 enables DMS staged-schema runtime loading. When invoked with `-DmsBaseUrl`, `configure-local-dms-instance.ps1` and `provision-dms-schema.ps1` have already completed for the selected target set. |
-| **Inputs** | `-InfraOnly` (exclude DMS container from Docker startup); `-DmsBaseUrl <url>` (post-provision health endpoint of IDE-hosted DMS; valid only with `-InfraOnly` and only at the DMS-start/health-wait point after schema provisioning); `-EnvironmentFile <path>` (select Docker Compose env file and shared local settings); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); `-EnableKafkaUI`; `-EnableSwaggerUI`; teardown flags `-d`/`-v` |
-| **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; healthy Config Service; healthy DMS container (non-`-InfraOnly` path) or confirmed healthy IDE-hosted DMS endpoint (post-provision `-DmsBaseUrl` path) |
-| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; validates the bootstrap manifest when present but does not apply manifest-selected staged claims to Config Service startup until Story 04 can also point DMS at the matching staged ApiSchema workspace; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); polls `$DmsBaseUrl/health` with timeout only during the post-provision DMS-start/health-wait invocation |
-| **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present; `-DmsBaseUrl` supplied before the selected instances and target databases are ready; `-DmsBaseUrl` health-wait timeout |
+| **Preconditions** | Current Story 00 startup may validate a bootstrap manifest when present, but staged claims startup is not activated until Story 04 enables DMS staged-schema runtime loading. |
+| **Inputs** | `-EnvironmentFile <path>` (select Docker Compose env file and shared local settings); `-Rebuild` / `-r`; `-IdentityProvider`; `-EnableConfig` (legacy compat, not a meaningful opt-out in the normative flow); `-EnableKafkaUI`; `-EnableSwaggerUI`; teardown flags `-d`/`-v`; transitional legacy flags still owned by the start scripts, including `-NoDmsInstance`, `-SchoolYearRange`, `-LoadSeedData`, `-AddSmokeTestCredentials`, and `-AddExtensionSecurityMetadata` |
+| **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; healthy Config Service; healthy DMS container |
+| **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; validates the bootstrap manifest when present but does not apply manifest-selected staged claims to Config Service startup until Story 04 can also point DMS at the matching staged ApiSchema workspace; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path) |
+| **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present |
 | **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; configure DMS instances; create smoke-test or seed-loading CMS application credentials; load seed data; accept schema or claims parameters |
 
-**Boundary note:** `-InfraOnly` and `-DmsBaseUrl` are Docker-layer controls - they decide whether a DMS
-container starts or an already-provisioned IDE-hosted DMS endpoint is health-checked. Story 00 makes staged
+**Boundary note:** Story 00 makes staged
 schema/security the prepared bootstrap contract, not the Docker runtime source of truth. It keeps staged
 schema and staged claims startup inactive as a pair, because activating only CMS claims while DMS remains
 DLL-backed can produce mismatched authorization metadata. Story 04 owns the claims-ready gate for staged
-bootstrap startup, including any CMS load/composition result or authorization metadata verification. `-DmsBaseUrl`
-is never a shortcut around instance creation or schema
-provisioning: the wrapper must hold that value until after `configure-local-dms-instance.ps1` and
-`provision-dms-schema.ps1` have completed, and manual phase flows must invoke the external health wait in
-the same post-provision position. Once DMS health is confirmed, any later step is owned by wrapper
+bootstrap startup, including any CMS load/composition result or authorization metadata verification. DMS-1152
+does not add an IDE-hosted start/health-wait surface to `start-local-dms.ps1`; IDE continuation remains owned
+by the later entry-point workflow. Once DMS health is confirmed, any later step is owned by wrapper
 orchestration or by the developer invoking the next phase command explicitly.
 
 ---
@@ -219,11 +216,11 @@ orchestration target the same local environment.
 | **Preconditions** | Live DMS process healthy at the target base URL (`/health` returns 200); CMS remains reachable so this phase can create `SeedLoader` credentials immediately before BulkLoadClient invocation; bootstrap manifest exists with schema, claims, and seed sections compatible with the requested seed-source flags; the repo-pinned BulkLoadClient XML mode is compatible with the target DMS discovery/dependency metadata, OAuth, data, and XSD metadata or staged-XSD inputs. See Story 02. |
 | **Inputs** | `-EnvironmentFile <path>` (select local settings for CMS URL, auth defaults, tenant scope, and Docker-local DMS URL); `-BootstrapManifestPath <path>` (optional override for the bootstrap manifest; defaults to `eng/docker-compose/.bootstrap/bootstrap-manifest.json`); `-InstanceId <long[]>` (explicit numeric DMS instance ID selector; omit when exactly one instance exists); `-DmsBaseUrl <url>` (BulkLoadClient target endpoint; defaults to the Docker-local DMS URL resolved from the local settings and must be explicit for IDE-hosted seed loading); `-IdentityProvider` (auth provider used to resolve the BulkLoadClient OAuth endpoint; defaults to the provider resolved from the local settings when that parameter is omitted); `-SeedTemplate Minimal\|Populated` (mutually exclusive with `-SeedDataPath`); `-SeedDataPath <path>` (custom ODS XML interchange directory); `-AdditionalNamespacePrefix <string[]>` (optional additive namespace prefixes for custom seed authorization, especially `-SeedDataPath` payloads with agency or custom namespaces); `-SchoolYear <int[]>` (school-year filter; omit when exactly one instance exists) |
 | **Outputs** | Seeded DMS instance(s); seed workspace cleaned up on success |
-| **Side effects** | Creates `SeedLoader` application via `Add-CmsClient` / `Add-Application` using the de-duplicated baseline seed namespace prefixes, selected extension namespace prefixes, and any `-AdditionalNamespacePrefix` values; resolves BulkLoadClient package; resolves the OAuth URL from `-IdentityProvider`; materializes XML interchange files into a flat seed workspace; invokes BulkLoadClient once per school year with the route-qualified DMS base URL, `-d` data directory, `-w` working directory, `-k`/`-s` credentials, `-o` OAuth URL, and either `-x` staged XSD directory or `-z` XSD metadata URL; retains seed workspace on failure |
+| **Side effects** | Creates `SeedLoader` application via `Add-CmsClient` / `Add-Application` using the de-duplicated baseline seed namespace prefixes, selected extension namespace prefixes, and any `-AdditionalNamespacePrefix` values; resolves BulkLoadClient package; resolves the OAuth URL from `-IdentityProvider`; materializes XML interchange files into ignored seed workspaces using BulkLoadClient-discoverable target paths such as `InterchangeName.xml`, `InterchangeName-*.xml`, and `InterchangeName/*.xml`; invokes BulkLoadClient once per selected target and seed tier with the route-qualified DMS base URL, `-d` data directory, `-w` working directory, `-k`/`-s` credentials, `-o` OAuth URL, and either `-x` staged XSD directory or `-z` XSD metadata URL; retains seed workspace on failure |
 | **Failure conditions** | Missing, malformed, unsupported-version, or incomplete bootstrap manifest; bootstrap manifest schema section says Mode 3 (`-ApiSchemaPath`) and `-SeedTemplate` is specified; zero matching instances found; multiple matching instances found without an explicit `-InstanceId` or `-SchoolYear` selector; unsupported `-IdentityProvider`; `-SeedTemplate` and `-SeedDataPath` both supplied; blank or malformed `-AdditionalNamespacePrefix` value; BulkLoadClient exits non-zero; package-backed built-in seed source unavailable; catalog-advertised built-in seed package for an extension unavailable; DMS health endpoint unreachable; XML seed source cannot be materialized into a valid BulkLoadClient data directory; required XSD inputs are unavailable |
 | **Must NOT do** | Create `CMSReadOnlyAccess` (that belongs to `start-local-dms.ps1` through provider-specific local identity setup) or smoke-test credentials (those belong to `configure-local-dms-instance.ps1`); reuse `SeedLoader` credentials for smoke tests; perform DDL work; accept schema or claims parameters |
 
-**Boundary note:** This phase uses existing BulkLoadClient XML interchange loading as the API-based replacement for the deprecated direct-SQL seed path. Direct invocation of `load-dms-seed-data.ps1` always performs seed delivery; it does not accept a second `-LoadSeedData` switch. Selector resolution rule: when exactly one DMS instance exists in CMS and no selector is supplied, auto-select it; when multiple instances exist and no explicit `-InstanceId` or `-SchoolYear` is provided, fail fast with guidance to supply an explicit selector. Endpoint resolution is phase-owned: `load-dms-seed-data.ps1` never infers the IDE URL from a prior `start-local-dms.ps1` invocation. Manual IDE-hosted seed loading passes `-DmsBaseUrl` explicitly; wrapper IDE continuation forwards the same `-DmsBaseUrl` value to this phase when `-LoadSeedData` is selected. Identity-provider resolution is also phase-owned: direct seed invocation passes `-IdentityProvider` when the running environment uses a non-default provider; otherwise the seed phase uses the provider from the shared `-EnvironmentFile` resolver and does not rely on process environment variables left behind by an earlier `start-local-dms.ps1` call. `load-dms-seed-data.ps1` consumes schema mode, selected extensions, and extension namespace prefixes from the bootstrap manifest instead of accepting schema or claims parameters; it owns any seed-catalog lookup for built-in extension seed packages. `-AdditionalNamespacePrefix` is a declared authorization input for SeedLoader vendor creation only; it does not cause bootstrap to inspect XML files, infer missing extensions, or synthesize claim grants.
+**Boundary note:** This phase uses existing BulkLoadClient XML interchange loading as the API-based replacement for the deprecated direct-SQL seed path. Direct invocation of `load-dms-seed-data.ps1` always performs seed delivery; it does not accept a second `-LoadSeedData` switch. Selector resolution rule: when exactly one DMS instance exists in CMS and no selector is supplied, auto-select it; when multiple instances exist and no explicit `-InstanceId` or `-SchoolYear` is provided, fail fast with guidance to supply an explicit selector. Endpoint resolution is phase-owned: `load-dms-seed-data.ps1` never infers the IDE URL from a prior `start-local-dms.ps1` invocation. Manual IDE-hosted seed loading passes `-DmsBaseUrl` explicitly; DMS-1152 wrappers do not expose the deferred IDE-hosted continuation flags. Identity-provider resolution is also phase-owned: direct seed invocation passes `-IdentityProvider` when the running environment uses a non-default provider; otherwise the seed phase uses the provider from the shared `-EnvironmentFile` resolver and does not rely on process environment variables left behind by an earlier `start-local-dms.ps1` call. `load-dms-seed-data.ps1` consumes schema mode, selected extensions, and extension namespace prefixes from the bootstrap manifest instead of accepting schema or claims parameters; it owns any seed-catalog lookup for built-in extension seed packages. `-AdditionalNamespacePrefix` is a declared authorization input for SeedLoader vendor creation only; it does not cause bootstrap to inspect XML files, infer missing extensions, or synthesize claim grants.
 
 ---
 
@@ -236,29 +233,29 @@ orchestration target the same local environment.
 | Item | Detail |
 |---|---|
 | **Preconditions** | None additional beyond what phase commands require. |
-| **Inputs** | `-Extensions <name>` (forwarded to `prepare-dms-schema.ps1`); `-ApiSchemaPath <path>` (forwarded to `prepare-dms-schema.ps1`); `-ClaimsDirectoryPath <path>` (forwarded to `prepare-dms-claims.ps1`); `-InfraOnly` (forwarded to the initial `start-local-dms.ps1` infrastructure invocation); `-DmsBaseUrl <url>` (held by the wrapper until the post-provision DMS-start/health-wait invocation, forwarded to `start-local-dms.ps1` with `-InfraOnly`, and also forwarded to `load-dms-seed-data.ps1` as the BulkLoadClient base URL when `-LoadSeedData` is selected); `-EnvironmentFile <path>` (forwarded to every phase that contacts local services: `start-local-dms.ps1`, `configure-local-dms-instance.ps1`, `provision-dms-schema.ps1`, and `load-dms-seed-data.ps1`); `-IdentityProvider` (forwarded to `start-local-dms.ps1`, and also forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-EnableKafkaUI` and `-EnableSwaggerUI` (forwarded to `start-local-dms.ps1`); `-SchoolYearRange <range>` (forwarded to `configure-local-dms-instance.ps1` for the school-year instance-creation workflow); `-LoadSeedData` (wrapper-level opt-in that causes the wrapper to invoke `load-dms-seed-data.ps1`); `-SeedTemplate` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-SeedDataPath <path>` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-AdditionalNamespacePrefix <string[]>` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-Rebuild`/`-r`; `-AddSmokeTestCredentials` |
+| **Inputs** | `-EnvironmentFile <path>` (forwarded to the start and seed phases); `-IdentityProvider` (resolved once and forwarded to `start-local-dms.ps1` or `start-published-dms.ps1`, and also to `load-dms-seed-data.ps1` when seed loading is selected); `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, and `-AddExtensionSecurityMetadata` (forwarded to the selected start phase; `-EnableConfig` is forced when seed loading is selected); `-SchoolYearRange <range>` (forwarded to the selected start phase and expanded to `-SchoolYear <int[]>` for the seed phase when seed loading is selected); `-LoadSeedData` (wrapper-level opt-in that causes the wrapper to invoke `load-dms-seed-data.ps1`); `-SeedTemplate`, `-SeedDataPath <path>`, and `-AdditionalNamespacePrefix <string[]>` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected) |
 | **Outputs** | Delegated entirely to the phase commands it calls |
 | **Side effects** | Delegates to phase commands; prints next-step guidance when a phase is intentionally omitted |
 | **Failure conditions** | Propagates non-zero exit from any called phase command |
 | **Must NOT do** | Implement phase-specific behavior; own schema logic; perform claims parsing; inspect database state; synthesize credentials; implement retry or fallback logic; persist runtime state across invocations (per-invocation transient artifacts under `.bootstrap/` are permitted for the orchestration-policy slice listed in the delivery status above); absorb any concern owned by a phase command |
 
 **Boundary note:** The wrapper owns orchestration only: it may sequence phase commands, forward
-developer-facing parameters, pass same-invocation structured outputs such as selected instance IDs to later
-phases, and print next-step guidance. The wrapper does not expose `-InstanceId`; explicit ID targeting is
-phase-command-only. During a single invocation the wrapper may read the structured result from
-`configure-local-dms-instance.ps1` and forward its `SelectedInstanceIds` as internal `-InstanceId` arguments
-to later phases in the same process. The wrapper's school-year flag is `-SchoolYearRange`, matching the
-instance-creation phase it calls; downstream manual selector flags remain `-SchoolYear <int[]>` on
-`provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. For IDE continuation, the wrapper does not pass
-`-DmsBaseUrl` to the initial infrastructure-only start. It carries that value forward and passes it first at
-the post-provision DMS-start/health-wait point, after instance configuration and schema provisioning have
-completed. If seed loading is selected, it forwards the same URL again to `load-dms-seed-data.ps1` as the
-BulkLoadClient base URL and forwards the selected `-IdentityProvider` so the seed phase resolves the
-matching OAuth endpoint. It also forwards `-AdditionalNamespacePrefix` to the seed phase when supplied. It
+developer-facing parameters, expand wrapper-owned convenience inputs into phase-owned parameters, and print
+next-step guidance. The DMS-1152 wrapper does not expose `-InstanceId`; explicit ID
+targeting is phase-command-only. The wrapper's school-year flag is `-SchoolYearRange`, matching the existing
+start-script workflow it calls; when seed loading is selected, it expands that range to the
+`-SchoolYear <int[]>` selector consumed by `load-dms-seed-data.ps1`. Downstream manual selector flags remain
+`-SchoolYear <int[]>` on `provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. If seed loading is selected,
+it forwards the selected `-IdentityProvider` so the seed phase resolves the matching OAuth endpoint. It also
+forwards `-AdditionalNamespacePrefix` to the seed phase when supplied. It
 forwards the same `-EnvironmentFile` to every phase that contacts local services so manual and wrapper flows
 resolve the same CMS, tenant, DMS, and database defaults. It must not implement
 phase-specific behavior, retry or fallback logic, persisted resume state, schema provisioning, CMS
 configuration, or seed loading directly, and it never parses human-readable output to recover phase results.
+
+Broader wrapper consolidation flags such as `-Extensions`, `-ApiSchemaPath`, `-ClaimsDirectoryPath`,
+`-InfraOnly`, `-DmsBaseUrl`, `-Rebuild`, and `-AddSmokeTestCredentials` remain deferred to their owning
+bootstrap stories. DMS-1152 delivers the wrapper surface needed for API-based XML seed delivery.
 
 ---
 
@@ -267,11 +264,10 @@ configuration, or seed loading directly, and it never parses human-readable outp
 ```
 prepare-dms-schema.ps1
   -> prepare-dms-claims.ps1
-       -> start-local-dms.ps1 -InfraOnly  (starts PostgreSQL, Keycloak/OpenIddict, Config Service)
+       -> start-local-dms.ps1  (starts PostgreSQL, Keycloak/OpenIddict, Config Service, and DMS)
             -> configure-local-dms-instance.ps1  (CMS HTTP API ready)
-                 -> provision-dms-schema.ps1  (-InstanceId passed by wrapper in-memory, or explicit selector in manual flow)
-                      -> start-local-dms.ps1  (starts DMS container; or `-InfraOnly -DmsBaseUrl` waits for IDE-hosted DMS here)
-                           -> load-dms-seed-data.ps1  (-InstanceId passed by wrapper in-memory or explicit selector, -DmsBaseUrl for seed target, -IdentityProvider for OAuth endpoint, live DMS + SeedLoader credentials)
+                 -> provision-dms-schema.ps1  (-InstanceId or -SchoolYear selector)
+                      -> load-dms-seed-data.ps1  (-InstanceId or -SchoolYear selector, optional -DmsBaseUrl for direct seed target, -IdentityProvider for OAuth endpoint, live DMS + SeedLoader credentials)
 ```
 
 Each phase begins only when all of its required inputs are ready. No phase polls for or waits on
@@ -309,15 +305,15 @@ Each phase accepts only the parameters relevant to its concern.
 |---|---|
 | `prepare-dms-schema.ps1` | Story 00: `-ApiSchemaPath`; Story 06: `-Extensions` |
 | `prepare-dms-claims.ps1` | `-ClaimsDirectoryPath` |
-| `start-local-dms.ps1` | `-InfraOnly`, `-DmsBaseUrl`, `-EnvironmentFile <path>`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-EnableKafkaUI`, `-EnableSwaggerUI`, `-d`/`-v` |
+| `start-local-dms.ps1` | `-EnvironmentFile <path>`, `-Rebuild`/`-r`, `-IdentityProvider`, `-EnableConfig` (legacy compat), `-EnableKafkaUI`, `-EnableSwaggerUI`, `-d`/`-v`, plus transitional legacy flags still owned by the start scripts: `-NoDmsInstance`, `-SchoolYearRange`, `-LoadSeedData`, `-AddSmokeTestCredentials`, and `-AddExtensionSecurityMetadata` |
 | `configure-local-dms-instance.ps1` | `-EnvironmentFile <path>`, `-NoDmsInstance`, `-SchoolYearRange`, `-AddSmokeTestCredentials` |
 | `provision-dms-schema.ps1` | `-EnvironmentFile <path>`, `-InstanceId <long[]>`, `-SchoolYear <int[]>` |
 | `load-dms-seed-data.ps1` | `-EnvironmentFile <path>`, `-BootstrapManifestPath <path>`, `-InstanceId <long[]>`, `-DmsBaseUrl <url>`, `-IdentityProvider`, `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix <string[]>`, `-SchoolYear <int[]>` |
-| `bootstrap-local-dms.ps1` | Story 00: `-ApiSchemaPath`, `-ClaimsDirectoryPath`, `-InfraOnly`, `-DmsBaseUrl`, `-EnvironmentFile <path>`, `-IdentityProvider`, `-EnableKafkaUI`, `-EnableSwaggerUI`, `-SchoolYearRange`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath <path>`, `-AdditionalNamespacePrefix <string[]>`, `-Rebuild`/`-r`, `-AddSmokeTestCredentials`; Story 06: `-Extensions` |
+| `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` | DMS-1152: `-EnvironmentFile <path>`, `-IdentityProvider`, `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, `-AddExtensionSecurityMetadata`, `-SchoolYearRange`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath <path>`, `-AdditionalNamespacePrefix <string[]>` |
 
-`-DmsBaseUrl` has two phase-specific uses with the same value in IDE continuation: `start-local-dms.ps1`
-uses it only for the post-provision health wait, while `load-dms-seed-data.ps1` uses it as the
-BulkLoadClient base URL. The wrapper forwards it at both phase points when `-LoadSeedData` is selected.
+`-DmsBaseUrl` remains phase-owned by direct `load-dms-seed-data.ps1` invocation in DMS-1152. The IDE-hosted
+wrapper continuation flow is deferred to the entry-point workflow that owns `-InfraOnly`/`-DmsBaseUrl`
+orchestration.
 `-IdentityProvider` also remains phase-owned: startup uses it to configure the local auth environment, and
 seed loading uses the same value to resolve the BulkLoadClient OAuth endpoint. The wrapper forwards the
 same developer-selected value to both phases instead of requiring either phase to infer it from the other.

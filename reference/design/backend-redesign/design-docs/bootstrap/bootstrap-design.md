@@ -1077,10 +1077,14 @@ prescribe:
 - internal archive layouts, or
 - reserved numeric ranges for custom or third-party extension publishers.
 
-The bootstrap-side contract is simpler: every resolved source must be materializable into the flat directory
-shape required by the active BulkLoadClient phase, and each staged workspace must not contain filename
-collisions. If two materialized sources would stage the same relative filename into that workspace, the
-bootstrap script must detect the collision and exit with a clear error before invoking BulkLoadClient.
+The bootstrap-side contract is simpler: every resolved source must be materializable into the input directory
+shape required by the active BulkLoadClient phase using discoverable target paths such as
+`InterchangeName.xml`, `InterchangeName-*.xml`, and `InterchangeName/*.xml`. Already-compatible names are
+preserved; non-contract wrapper directories may be stripped only when the file, immediate parent folder,
+selected source directory, XML root element, or `xsi:schemaLocation` identifies a known interchange from core
+or extension interchange XSD filenames. If a source XML cannot be mapped, or if two materialized sources would
+stage the same relative path into that workspace, the bootstrap script must detect the failure and exit with a
+clear error before creating CMS SeedLoader credentials or invoking BulkLoadClient.
 Automatic merging of more than one built-in source is supported only when those published artifacts already
 conform to the external ordering contract consumed by BulkLoadClient. Bootstrap materializes the files; it
 does not define or reinterpret that ordering contract.
@@ -1161,7 +1165,8 @@ govern compatibility for the run.
 tag and copy the selected XML interchange files into tier-specific bootstrap seed workspaces: descriptors for
 `Minimal`, descriptors then resources for `Populated`, and the developer-supplied XML directory for
 `-SeedDataPath`. For catalog-advertised built-in extension seed sources, use the seed catalog's seed-source
-resolution path. Detect and abort on filename collisions between all materialized sources before proceeding.
+resolution path. Detect and abort on target-path collisions between all materialized sources before creating
+CMS SeedLoader credentials or invoking BulkLoadClient.
 The external artifact naming and publishing model for distributing seed files outside the repo remains in
 DMS-1119; any required ordering contract remains owned by BulkLoadClient. Phase 2 replaces the XML sources
 with JSONL files while preserving the same `-SeedTemplate` and `-SeedDataPath` selection boundary.
@@ -1619,10 +1624,10 @@ Built-in extension seed package availability is determined only by the seed cata
 
 This table is source-author guidance for Ed-Fi-managed built-in artifacts, not a bootstrap validation rule
 for third-party publishers or for developer-supplied `-SeedDataPath` directories. The bootstrap contract
-remains collision-based: any staged workspace is valid only when it can be flattened into the required
-BulkLoadClient input directory without filename collisions. Any stronger ordering semantics remain external
-to DMS bootstrap, and future built-in multi-source merging depends on those external artifacts honoring the
-active BulkLoadClient contract for the phase.
+remains collision-based and discovery-based: any staged workspace is valid only when it materializes
+BulkLoadClient-discoverable target paths without target-path collisions. Any stronger ordering semantics
+remain external to DMS bootstrap, and future built-in multi-source merging depends on those external artifacts
+honoring the active BulkLoadClient contract for the phase.
 
 **Bootstrap implications:**
 
@@ -1634,7 +1639,7 @@ active BulkLoadClient contract for the phase.
    package already follows the external ordering contract required by the active BulkLoadClient phase.
 3. Until an extension defines that package in the seed catalog, developers supply extension
    payloads through `-SeedDataPath` when needed.
-4. If more than one built-in source is ever merged into the workspace, filename collisions remain a
+4. If more than one built-in source is ever merged into the workspace, target-path collisions remain a
    bootstrap-time error and must abort before BulkLoadClient runs.
 
 This keeps the BulkLoadClient invocation shape phase-owned while keeping seed package availability a

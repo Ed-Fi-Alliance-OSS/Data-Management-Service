@@ -125,6 +125,17 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         # against dot-sourcing via the InvocationName check at the bottom of the script.
         Import-Module "$script:sourceDockerComposeRoot/bootstrap-manifest.psm1" -Force
         . "$script:sourceDockerComposeRoot/load-dms-seed-data.ps1"
+        $script:seedWorkspaceInterchangeNames = @(
+            "AssessmentMetadata",
+            "Course",
+            "Descriptor",
+            "Descriptors",
+            "EducationOrganization",
+            "Student",
+            "StudentAttendance",
+            "StudentAssessment",
+            "StudentEnrollment"
+        )
     }
 
     BeforeEach {
@@ -429,6 +440,50 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             Remove-Item -LiteralPath $destRoot -Recurse -Force
         }
 
+        It "preflights representative built-in Minimal and Populated inventories before runtime" {
+            $fakeRepo = New-TestDirectory
+            $destRoot = New-TestDirectory
+            try {
+                New-FakeDataStandardRoot `
+                    -Root $fakeRepo `
+                    -IncludeBulkXsds $true `
+                    -DescriptorNames @("AcademicHonorCategoryDescriptor", "BusRouteDescriptor") `
+                    -SampleResourceNames @("EducationOrganization.xml", "Student.xml", "StudentEnrollment.xml") `
+                    -SampleDescriptorNames @("AncestryEthnicOriginDescriptor") `
+                    -BulkXsdNames @(
+                        "Interchange-Descriptors",
+                        "Interchange-EducationOrganization",
+                        "Interchange-Student",
+                        "Interchange-StudentEnrollment"
+                    )
+
+                $interchangeNames = Get-BulkLoadClientInterchangeNames -XsdDirectory (Join-Path $fakeRepo "Schemas/Bulk")
+
+                $minimal = Initialize-CoreSeedSource -Template "Minimal" -DataStandardRoot $fakeRepo -DestinationRoot $destRoot
+                {
+                    Assert-SeedWorkspacePathsAreDiscoverable `
+                        -SourceDirectories @($minimal.DescriptorsDirectory) `
+                        -InterchangeNames $interchangeNames
+                } | Should -Not -Throw
+
+                $populated = Initialize-CoreSeedSource -Template "Populated" -DataStandardRoot $fakeRepo -DestinationRoot $destRoot
+                {
+                    Assert-SeedWorkspacePathsAreDiscoverable `
+                        -SourceDirectories @($populated.DescriptorsDirectory) `
+                        -InterchangeNames $interchangeNames
+                } | Should -Not -Throw
+                {
+                    Assert-SeedWorkspacePathsAreDiscoverable `
+                        -SourceDirectories @($populated.ResourcesDirectory) `
+                        -InterchangeNames $interchangeNames
+                } | Should -Not -Throw
+            }
+            finally {
+                Remove-Item -LiteralPath $fakeRepo -Recurse -Force
+                Remove-Item -LiteralPath $destRoot -Recurse -Force
+            }
+        }
+
         It "Initialize-CoreSeedSource Populated lets a sample-side descriptor overwrite a same-named file from Descriptors/" {
             # Mirrors the v5.2.0 collision case (DiagnosisDescriptor.xml exists in both Descriptors/
             # and Samples/Sample XML/). The sample-side payload must win because it carries the richer
@@ -672,25 +727,201 @@ Describe "DMS-1152 API seed delivery bootstrap" {
     }
 
     Context "seed workspace materialization" {
-        It "stages XML files into a flat deterministic .bootstrap/seed/data directory" {
+        It "derives known interchange names from Bulk XSD filenames" {
+            $xsdDir = New-TestDirectory
+            "<schema />" | Set-Content -LiteralPath (Join-Path $xsdDir "Interchange-EducationOrganization.xsd") -Encoding utf8
+            "<schema />" | Set-Content -LiteralPath (Join-Path $xsdDir "Interchange-StudentAssessment.xsd") -Encoding utf8
+            "<schema />" | Set-Content -LiteralPath (Join-Path $xsdDir "TPDM-EXTENSION-Interchange-Candidate-Extension.xsd") -Encoding utf8
+            "<schema />" | Set-Content -LiteralPath (Join-Path $xsdDir "EXTENSION-Interchange-Example.xsd") -Encoding utf8
+            "<schema />" | Set-Content -LiteralPath (Join-Path $xsdDir "EducationOrganization.xsd") -Encoding utf8
+
+            $names = Get-BulkLoadClientInterchangeNames -XsdDirectory $xsdDir
+
+            $names | Should -Contain "EducationOrganization"
+            $names | Should -Contain "StudentAssessment"
+            $names | Should -Contain "Candidate"
+            $names | Should -Contain "Example"
+            $names | Should -Not -Contain "Interchange-EducationOrganization"
+            $names | Should -Not -Contain "TPDM-EXTENSION-Interchange-Candidate-Extension"
+
+            Remove-Item -LiteralPath $xsdDir -Recurse -Force
+        }
+
+        It "uses extension XSD interchange names when staging extension seed XML" {
+            $xsdDir = New-TestDirectory
             $sourceDir = New-TestDirectory
-            $subDir = Join-Path $sourceDir "descriptors"
-            New-Item -ItemType Directory -Path $subDir -Force | Out-Null
-            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "SchoolYearTypes.xml") -Encoding utf8
-            "<root />" | Set-Content -LiteralPath (Join-Path $subDir "GradeDescriptor.xml") -Encoding utf8
+            "<schema />" | Set-Content -LiteralPath (Join-Path $xsdDir "TPDM-EXTENSION-Interchange-Candidate-Extension.xsd") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "Candidate.xml") -Encoding utf8
+
+            $names = Get-BulkLoadClientInterchangeNames -XsdDirectory $xsdDir
+            $workspace = New-SeedWorkspace `
+                -BootstrapRoot $script:repo.BootstrapRoot `
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $names
+
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "Candidate.xml") | Should -BeTrue
+
+            Remove-Item -LiteralPath $xsdDir -Recurse -Force
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
+        It "preserves BulkLoadClient-compatible interchange file names and folders" {
+            $sourceDir = New-TestDirectory
+            $interchangeDir = Join-Path $sourceDir "EducationOrganization"
+            New-Item -ItemType Directory -Path $interchangeDir -Force | Out-Null
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "EducationOrganization.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "StudentAssessment-Benchmarks.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $interchangeDir "part1.xml") -Encoding utf8
 
             $workspace = New-SeedWorkspace `
                 -BootstrapRoot $script:repo.BootstrapRoot `
-                -SourceDirectories @($sourceDir)
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
 
-            $stagedItems = @(Get-ChildItem -LiteralPath $workspace.DataDirectory)
-            $stagedItems | Should -Not -BeNullOrEmpty
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "EducationOrganization.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "StudentAssessment-Benchmarks.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "EducationOrganization/part1.xml") | Should -BeTrue
+            @($workspace.StagedFiles | Where-Object { (Split-Path -Leaf $_) -eq "EducationOrganization.xml" }).Count | Should -Be 1
+            @($workspace.StagedFiles | Where-Object { (Split-Path -Leaf $_) -match ".+__[0-9a-f]{8}__.+" }).Count | Should -Be 0
 
-            $subDirs = @($stagedItems | Where-Object { $_.PSIsContainer })
-            $subDirs.Count | Should -Be 0 -Because "materialization must produce a flat directory"
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
 
-            $files = @($stagedItems | Where-Object { -not $_.PSIsContainer })
-            $files.Count | Should -Be 2
+        It "normalizes wrapper directories to BulkLoadClient-discoverable target paths" {
+            $sourceDir = New-TestDirectory
+            $resourcesDir = Join-Path $sourceDir "resources"
+            $interchangeDir = Join-Path $resourcesDir "EducationOrganization"
+            New-Item -ItemType Directory -Path $interchangeDir -Force | Out-Null
+            "<root />" | Set-Content -LiteralPath (Join-Path $resourcesDir "EducationOrganization.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $resourcesDir "StudentAssessment-Benchmarks.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $interchangeDir "part1.xml") -Encoding utf8
+
+            $workspace = New-SeedWorkspace `
+                -BootstrapRoot $script:repo.BootstrapRoot `
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
+
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "EducationOrganization.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "StudentAssessment-Benchmarks.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "EducationOrganization/part1.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "resources/EducationOrganization.xml") | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "resources/EducationOrganization/part1.xml") | Should -BeFalse
+
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
+        It "infers target interchange from XML declarations when sample filenames are not interchange-prefixed" {
+            $sourceDir = New-TestDirectory
+            '<?xml version="1.0" encoding="UTF-8"?><InterchangeAssessmentMetadata xmlns="http://ed-fi.org/5.2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://ed-fi.org/5.2.0 ../../Schemas/Bulk/Interchange-AssessmentMetadata.xsd" />' |
+                Set-Content -LiteralPath (Join-Path $sourceDir "AssessmentSample.xml") -Encoding utf8
+            '<?xml version="1.0" encoding="UTF-8"?><InterchangeStudentAttendance xmlns="http://ed-fi.org/5.2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://ed-fi.org/5.2.0 ../../Schemas/Bulk/Interchange-StudentAttendance.xsd" />' |
+                Set-Content -LiteralPath (Join-Path $sourceDir "StudentSchoolAttendance.xml") -Encoding utf8
+            '<?xml version="1.0" encoding="UTF-8"?><InterchangeStudentEnrollment xmlns="http://ed-fi.org/5.2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://ed-fi.org/5.2.0 ../../Schemas/Bulk/Interchange-StudentEnrollment.xsd" />' |
+                Set-Content -LiteralPath (Join-Path $sourceDir "StudentTransportation.xml") -Encoding utf8
+
+            $workspace = New-SeedWorkspace `
+                -BootstrapRoot $script:repo.BootstrapRoot `
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
+
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "AssessmentMetadata/AssessmentSample.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "StudentAttendance/StudentSchoolAttendance.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "StudentEnrollment/StudentTransportation.xml") | Should -BeTrue
+
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
+        It "infers target interchange from schemaLocation when the XML root is not an interchange element" {
+            $sourceDir = New-TestDirectory
+            '<?xml version="1.0" encoding="UTF-8"?><Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://ed-fi.org/5.2.0 ../../Schemas/Bulk/Interchange-StudentAttendance.xsd" />' |
+                Set-Content -LiteralPath (Join-Path $sourceDir "AttendanceSeed.xml") -Encoding utf8
+
+            $workspace = New-SeedWorkspace `
+                -BootstrapRoot $script:repo.BootstrapRoot `
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
+
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "StudentAttendance/AttendanceSeed.xml") | Should -BeTrue
+
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
+        It "stages files from an interchange-named source directory under that interchange folder" {
+            $rootDir = New-TestDirectory
+            $sourceDir = Join-Path $rootDir "descriptors"
+            New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "AcademicHonorCategoryDescriptor.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "BusRouteDescriptor.xml") -Encoding utf8
+
+            $workspace = New-SeedWorkspace `
+                -BootstrapRoot $script:repo.BootstrapRoot `
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
+
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "Descriptors/AcademicHonorCategoryDescriptor.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "Descriptors/BusRouteDescriptor.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "AcademicHonorCategoryDescriptor.xml") | Should -BeFalse
+
+            Remove-Item -LiteralPath $rootDir -Recurse -Force
+        }
+
+        It "rejects nested XML paths that cannot be mapped to a known interchange" {
+            $sourceDir = New-TestDirectory
+            $resourcesDir = Join-Path $sourceDir "resources"
+            New-Item -ItemType Directory -Path $resourcesDir -Force | Out-Null
+            "<root />" | Set-Content -LiteralPath (Join-Path $resourcesDir "part1.xml") -Encoding utf8
+
+            {
+                New-SeedWorkspace `
+                    -BootstrapRoot $script:repo.BootstrapRoot `
+                    -SourceDirectories @($sourceDir) `
+                    -InterchangeNames $script:seedWorkspaceInterchangeNames
+            } | Should -Throw -ExpectedMessage "*cannot discover*resources/part1.xml*"
+
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
+        It "preflights undiscoverable paths without touching the seed workspace" {
+            $sourceDir = New-TestDirectory
+            $resourcesDir = Join-Path $sourceDir "resources"
+            New-Item -ItemType Directory -Path $resourcesDir -Force | Out-Null
+            "<root />" | Set-Content -LiteralPath (Join-Path $resourcesDir "part1.xml") -Encoding utf8
+
+            {
+                Assert-SeedWorkspacePathsAreDiscoverable `
+                    -SourceDirectories @($sourceDir) `
+                    -InterchangeNames $script:seedWorkspaceInterchangeNames
+            } | Should -Throw -ExpectedMessage "*cannot discover*resources/part1.xml*"
+
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "seed") | Should -BeFalse
+
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
+        It "ignores directories whose names end with .xml during custom seed preflight and staging" {
+            $sourceDir = New-TestDirectory
+            New-Item -ItemType Directory -Path (Join-Path $sourceDir "Fake.xml") -Force | Out-Null
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "Student.xml") -Encoding utf8
+
+            { Assert-SeedDataPathHasXml -SeedDataPath $sourceDir } | Should -Not -Throw
+
+            $workspace = New-SeedWorkspace `
+                -BootstrapRoot $script:repo.BootstrapRoot `
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
+
+            $workspace.StagedFiles.Count | Should -Be 1
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "Student.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace.DataDirectory "Fake.xml") | Should -BeFalse
+
+            Remove-Item -LiteralPath $sourceDir -Recurse -Force
+        }
+
+        It "rejects a custom seed path that contains only directories named like XML files" {
+            $sourceDir = New-TestDirectory
+            New-Item -ItemType Directory -Path (Join-Path $sourceDir "Fake.xml") -Force | Out-Null
+
+            { Assert-SeedDataPathHasXml -SeedDataPath $sourceDir } | Should -Throw -ExpectedMessage "*contains no loadable *.xml files*"
 
             Remove-Item -LiteralPath $sourceDir -Recurse -Force
         }
@@ -704,17 +935,18 @@ Describe "DMS-1152 API seed delivery bootstrap" {
 
             "<root />" | Set-Content -LiteralPath (Join-Path $relsDir "metadata.xml") -Encoding utf8
             "<root />" | Set-Content -LiteralPath (Join-Path $districtRelsDir "Student.xml") -Encoding utf8
-            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "Course_relationships.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "Course.xml") -Encoding utf8
 
             { Assert-SeedDataPathHasXml -SeedDataPath $sourceDir } | Should -Not -Throw
 
             $workspace = New-SeedWorkspace `
                 -BootstrapRoot $script:repo.BootstrapRoot `
-                -SourceDirectories @($sourceDir)
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
 
             $stagedNames = @($workspace.StagedFiles | ForEach-Object { Split-Path -Leaf $_ })
             $stagedNames.Count | Should -Be 2
-            @($stagedNames | Where-Object { $_ -match "Course_relationships\.xml" }).Count | Should -Be 1
+            @($stagedNames | Where-Object { $_ -match "Course\.xml" }).Count | Should -Be 1
             @($stagedNames | Where-Object { $_ -match "Student\.xml" }).Count | Should -Be 1
             @($stagedNames | Where-Object { $_ -match "metadata\.xml" }).Count | Should -Be 0
 
@@ -726,52 +958,65 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
             $sourceDir = Join-Path $bootstrapRoot "seed-source/minimal"
             New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "SchoolYearTypes.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $sourceDir "Student.xml") -Encoding utf8
 
             $workspace = New-SeedWorkspace `
                 -BootstrapRoot $bootstrapRoot `
-                -SourceDirectories @($sourceDir)
+                -SourceDirectories @($sourceDir) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
 
             $workspace.StagedFiles.Count | Should -Be 1
             Test-Path -LiteralPath $sourceDir -PathType Container | Should -BeTrue
-            Test-Path -LiteralPath (Join-Path $sourceDir "SchoolYearTypes.xml") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $sourceDir "Student.xml") | Should -BeTrue
 
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "generates collision-safe file names using source key and path hash" {
+        It "fails on real target name collisions instead of prefixing every file" {
             $srcA = New-TestDirectory
             $srcB = New-TestDirectory
-            "<root />" | Set-Content -LiteralPath (Join-Path $srcA "Common.xml") -Encoding utf8
-            "<root />" | Set-Content -LiteralPath (Join-Path $srcB "Common.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $srcA "EducationOrganization.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $srcB "EducationOrganization.xml") -Encoding utf8
 
-            $workspace = New-SeedWorkspace `
-                -BootstrapRoot $script:repo.BootstrapRoot `
-                -SourceDirectories @($srcA, $srcB)
-
-            $files = @(Get-ChildItem -LiteralPath $workspace.DataDirectory -File)
-            $files.Count | Should -Be 2
-
-            $names = $files | ForEach-Object Name
-            $names[0] | Should -Not -Be $names[1]
-
-            $keyA = Split-Path -Leaf $srcA
-            $keyB = Split-Path -Leaf $srcB
-            ($names | Where-Object { $_ -match [regex]::Escape($keyA) }).Count | Should -Be 1
-            ($names | Where-Object { $_ -match [regex]::Escape($keyB) }).Count | Should -Be 1
+            {
+                New-SeedWorkspace `
+                    -BootstrapRoot $script:repo.BootstrapRoot `
+                    -SourceDirectories @($srcA, $srcB) `
+                    -InterchangeNames $script:seedWorkspaceInterchangeNames
+            } | Should -Throw -ExpectedMessage "*collision*EducationOrganization.xml*"
 
             Remove-Item -LiteralPath $srcA -Recurse -Force
             Remove-Item -LiteralPath $srcB -Recurse -Force
         }
 
-        It "fails before BulkLoadClient when deterministic names would collide" {
+        It "fails before BulkLoadClient when XML declaration-inferred target paths collide" {
+            $srcA = New-TestDirectory
+            $srcB = New-TestDirectory
+            '<?xml version="1.0" encoding="UTF-8"?><InterchangeAssessmentMetadata xmlns="http://ed-fi.org/5.2.0" />' |
+                Set-Content -LiteralPath (Join-Path $srcA "AssessmentSample.xml") -Encoding utf8
+            '<?xml version="1.0" encoding="UTF-8"?><InterchangeAssessmentMetadata xmlns="http://ed-fi.org/5.2.0" />' |
+                Set-Content -LiteralPath (Join-Path $srcB "AssessmentSample.xml") -Encoding utf8
+
+            {
+                New-SeedWorkspace `
+                    -BootstrapRoot $script:repo.BootstrapRoot `
+                    -SourceDirectories @($srcA, $srcB) `
+                    -InterchangeNames $script:seedWorkspaceInterchangeNames
+            } | Should -Throw -ExpectedMessage "*collision*AssessmentMetadata*AssessmentSample.xml*"
+
+            Remove-Item -LiteralPath $srcA -Recurse -Force
+            Remove-Item -LiteralPath $srcB -Recurse -Force
+        }
+
+        It "fails before BulkLoadClient when relative target paths would collide" {
             $srcA = New-TestDirectory
             "<root />" | Set-Content -LiteralPath (Join-Path $srcA "Descriptor.xml") -Encoding utf8
 
             {
                 New-SeedWorkspace `
                     -BootstrapRoot $script:repo.BootstrapRoot `
-                    -SourceDirectories @($srcA, $srcA)
+                    -SourceDirectories @($srcA, $srcA) `
+                    -InterchangeNames $script:seedWorkspaceInterchangeNames
             } | Should -Throw -ExpectedMessage "*collision*"
 
             $seedDataDir = Join-Path $script:repo.BootstrapRoot "seed/data"
@@ -785,11 +1030,12 @@ Describe "DMS-1152 API seed delivery bootstrap" {
 
         It "removes seed workspace on success and retains on failure" {
             $srcA = New-TestDirectory
-            "<root />" | Set-Content -LiteralPath (Join-Path $srcA "SchoolYearTypes.xml") -Encoding utf8
+            "<root />" | Set-Content -LiteralPath (Join-Path $srcA "Student.xml") -Encoding utf8
 
             $workspace = New-SeedWorkspace `
                 -BootstrapRoot $script:repo.BootstrapRoot `
-                -SourceDirectories @($srcA)
+                -SourceDirectories @($srcA) `
+                -InterchangeNames $script:seedWorkspaceInterchangeNames
             Test-Path -LiteralPath $workspace.DataDirectory | Should -BeTrue
 
             $seedRoot = Join-Path $script:repo.BootstrapRoot "seed"
@@ -799,7 +1045,8 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             try {
                 New-SeedWorkspace `
                     -BootstrapRoot $script:repo.BootstrapRoot `
-                    -SourceDirectories @($srcA, $srcA)
+                    -SourceDirectories @($srcA, $srcA) `
+                    -InterchangeNames $script:seedWorkspaceInterchangeNames
             }
             catch {
                 # Expected; collision was detected.
@@ -1523,8 +1770,8 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             $nestedXsdDir = Join-Path $xsdSourceDir "nested"
             New-Item -ItemType Directory -Path $xsdSourceDir -Force | Out-Null
             New-Item -ItemType Directory -Path $nestedXsdDir -Force | Out-Null
-            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $xsdSourceDir "Ed-Fi-Core.xsd") -Encoding utf8
-            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $nestedXsdDir "Nested-Support.xsd") -Encoding utf8
+            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $xsdSourceDir "Interchange-EducationOrganization.xsd") -Encoding utf8
+            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $nestedXsdDir "Interchange-Student.xsd") -Encoding utf8
 
             # Create an ApiSchema manifest under .bootstrap that references the xsd directory
             $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
@@ -1549,8 +1796,12 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             $result | Should -Be (Join-Path $workspaceRoot "xsd")
             $copied = @(Get-ChildItem -LiteralPath $result -Filter "*.xsd" -ErrorAction SilentlyContinue)
             $copied.Count | Should -Be 2
-            $copied.Name | Should -Contain "Ed-Fi-Core.xsd"
-            $copied.Name | Should -Contain "Nested-Support.xsd"
+            $copied.Name | Should -Contain "Interchange-EducationOrganization.xsd"
+            $copied.Name | Should -Contain "Interchange-Student.xsd"
+
+            $interchangeNames = Get-BulkLoadClientInterchangeNames -XsdDirectory $result
+            $interchangeNames | Should -Contain "EducationOrganization"
+            $interchangeNames | Should -Contain "Student"
 
             # Fail when no xsdDirectory in manifest
             $emptyManifestRelPath = "ApiSchema/empty-manifest.json"
@@ -1579,7 +1830,7 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
                 $apiSchemaDir = Join-Path $bootstrapRoot "ApiSchema"
                 $xsdSourceDir = Join-Path $apiSchemaDir "content/Ed-Fi/xsd"
                 New-Item -ItemType Directory -Path $xsdSourceDir -Force | Out-Null
-                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $xsdSourceDir "Ed-Fi-Core.xsd") -Encoding utf8
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $xsdSourceDir "Interchange-EducationOrganization.xsd") -Encoding utf8
 
                 $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
                 $manifestPath = Join-Path $bootstrapRoot $manifestRelPath
@@ -1603,7 +1854,71 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
 
                 $copied = @(Get-ChildItem -LiteralPath $result -Filter "*.xsd" -ErrorAction SilentlyContinue)
                 $copied.Count | Should -Be 1
-                $copied.Name | Should -Contain "Ed-Fi-Core.xsd"
+                $copied.Name | Should -Contain "Interchange-EducationOrganization.xsd"
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
+        }
+
+        It "combines pinned core XSDs with staged extension XSDs for built-in extension seed packages" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                $coreXsdDir = Join-Path $tmpRoot "data-standard/Schemas/Bulk"
+                $apiSchemaDir = Join-Path $bootstrapRoot "ApiSchema"
+                $stagedCoreXsdDir = Join-Path $apiSchemaDir "content/Ed-Fi/xsd"
+                $extensionXsdDir = Join-Path $apiSchemaDir "content/TPDM/xsd"
+                New-Item -ItemType Directory -Path $coreXsdDir -Force | Out-Null
+                New-Item -ItemType Directory -Path $stagedCoreXsdDir -Force | Out-Null
+                New-Item -ItemType Directory -Path $extensionXsdDir -Force | Out-Null
+
+                "<xs:schema>pinned core</xs:schema>" | Set-Content -LiteralPath (Join-Path $coreXsdDir "Interchange-Student.xsd") -Encoding utf8
+                "<xs:schema>staged core duplicate</xs:schema>" | Set-Content -LiteralPath (Join-Path $stagedCoreXsdDir "Interchange-Student.xsd") -Encoding utf8
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $extensionXsdDir "TPDM-EXTENSION-Interchange-Candidate-Extension.xsd") -Encoding utf8
+
+                $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                $manifestPath = Join-Path $bootstrapRoot $manifestRelPath
+                @{
+                    projects = @(
+                        @{
+                            projectName = "Ed-Fi"
+                            projectEndpointName = "ed-fi"
+                            isExtensionProject = $false
+                            xsdDirectory = "content/Ed-Fi/xsd"
+                        },
+                        @{
+                            projectName = "TPDM"
+                            projectEndpointName = "tpdm"
+                            isExtensionProject = $true
+                            xsdDirectory = "content/TPDM/xsd"
+                        }
+                    )
+                } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+                $manifest = @{
+                    schema = @{
+                        apiSchemaManifestPath = $manifestRelPath
+                        selectedExtensions = @("tpdm")
+                    }
+                }
+
+                $result = New-BuiltInSeedXsdDirectory `
+                    -DataStandardXsdDirectory $coreXsdDir `
+                    -Manifest $manifest `
+                    -BootstrapRoot $bootstrapRoot `
+                    -IncludeExtensionXsds
+
+                $xsdFiles = @(Get-ChildItem -LiteralPath $result -Filter "*.xsd" -ErrorAction SilentlyContinue)
+                $xsdFiles.Name | Should -Contain "Interchange-Student.xsd"
+                $xsdFiles.Name | Should -Contain "TPDM-EXTENSION-Interchange-Candidate-Extension.xsd"
+
+                $interchangeNames = Get-BulkLoadClientInterchangeNames -XsdDirectory $result
+                $interchangeNames | Should -Contain "Student"
+                $interchangeNames | Should -Contain "Candidate"
+
+                Get-Content -LiteralPath (Join-Path $result "Interchange-Student.xsd") -Raw |
+                    Should -Match "pinned core"
             }
             finally {
                 Remove-Item -LiteralPath $tmpRoot -Recurse -Force
@@ -1612,6 +1927,30 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
     }
 
     Context "BulkLoadClient XML interface preflight" {
+        It "uses cached pinned BulkLoadClient package before the feed-backed resolver" {
+            $tmpRoot = New-TestDirectory
+            $originalLocation = Get-Location
+            $packageDir = Join-Path $tmpRoot ".packages/edfi.suite3.bulkloadclient.console.7.3.10212"
+            $dllDir = Join-Path $packageDir "tools/net8.0/any"
+            New-Item -ItemType Directory -Path $dllDir -Force | Out-Null
+            $expectedDll = Join-Path $dllDir "EdFi.BulkLoadClient.Console.dll"
+            "" | Set-Content -LiteralPath $expectedDll -Encoding utf8
+
+            function script:Get-BulkLoadClient {
+                throw "feed-backed resolver should not be called when pinned package is cached"
+            }
+
+            try {
+                Set-Location $tmpRoot
+                Resolve-BootstrapBulkLoadClient | Should -Be $expectedDll
+            }
+            finally {
+                Set-Location $originalLocation
+                Remove-Item function:script:Get-BulkLoadClient -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It "passes when --help output advertises every required XML-mode flag" {
             $fakeHelp = @"
 EdFi.BulkLoadClient.Console fake
@@ -2383,6 +2722,18 @@ EdFi.BulkLoadClient.Console fake
                 $callBlock | Should -Match '-XsdDirectory\s+\$\w+' -Because "Invoke-SeedTierLoad call site must pass -XsdDirectory: $callBlock"
                 $callBlock | Should -Not -Match '-Manifest\s+\$\w+' -Because "no Invoke-SeedTierLoad call site may pass -Manifest (not a declared parameter): $callBlock"
             }
+        }
+
+        It "preflights seed workspace materialization before env, health, or CMS credential work" {
+            $preflightIndex = $script:seedScriptContent.IndexOf("Preflighting seed workspace materialization")
+            $envIndex = $script:seedScriptContent.IndexOf("# --- Step 1: Env resolution ---")
+            $healthIndex = $script:seedScriptContent.IndexOf("Wait-DmsHealthy -DmsBaseUrl")
+            $credentialIndex = $script:seedScriptContent.LastIndexOf("New-SeedLoaderCredentials")
+
+            $preflightIndex | Should -BeGreaterThan -1
+            $preflightIndex | Should -BeLessThan $envIndex -Because "bad seed paths should fail before env-dependent service checks"
+            $preflightIndex | Should -BeLessThan $healthIndex -Because "bad seed paths should fail before DMS health checks"
+            $preflightIndex | Should -BeLessThan $credentialIndex -Because "bad seed paths should fail before creating SeedLoader CMS state"
         }
 
         It "SchoolYearType precondition POSTs to /data/ed-fi/schoolYearTypes (no /v3/)" {
