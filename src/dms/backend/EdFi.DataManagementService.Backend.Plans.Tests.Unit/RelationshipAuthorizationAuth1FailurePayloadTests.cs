@@ -281,6 +281,48 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_fail_closed_when_payload_omits_a_failed_or_strategy()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                11,
+                1,
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_fail_closed_when_the_runtime_failure_kind_does_not_match_the_value_source()
     {
         var checkSpecs = new[]

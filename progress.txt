@@ -72,3 +72,8 @@ Task completed: cleanup relationship auth transitional wire text for reference/d
 Key decisions: relationship backend result variants now carry only RelationshipAuthorizationFailure; handlers already render wire ProblemDetails from DTO, so removed duplicate ErrorMessages/Hints and deleted backend-only RelationshipAuthorizationErrorMessageFormatter.
 Files changed: relationship backend result records, RelationalWriteExecutorResults, RelationalDocumentStoreRepository, focused backend/core handler unit tests, tasks.json, progress.txt.
 Blockers/notes: none. Verified CSharpier on changed C# files, focused core handler tests, and focused backend repository/executor unit tests passed.
+
+Task completed: backend-contracts omitted AUTH1 failed OR strategy validation for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: relationship AUTH1 mapper now requires every active OR check spec to have at least one failed subject in provider payload; omitted strategy ordinals fail closed as invalid payload/security configuration, while generated all-strategy payloads still map in deterministic order.
+Files changed: RelationshipAuthorizationFailureMapper.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, tasks.json, progress.txt.
+Blockers/notes: none. Verified CSharpier on changed C# files, plans AUTH1 payload tests, and focused SingleRecordRelationshipAuthorizationExecutor backend tests passed.

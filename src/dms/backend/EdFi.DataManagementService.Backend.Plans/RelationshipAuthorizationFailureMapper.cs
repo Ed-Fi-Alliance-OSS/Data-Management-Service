@@ -173,7 +173,7 @@ public static class RelationshipAuthorizationFailureMapper
 
             if (subjectFailures.Length == 0)
             {
-                continue;
+                return false;
             }
 
             var checkSpec = checkSpecs[strategyOrdinal];
@@ -187,7 +187,7 @@ public static class RelationshipAuthorizationFailureMapper
         }
 
         if (
-            failedStrategies.Count == 0
+            failedStrategies.Count != checkSpecs.Count
             || payload.SubjectFailures.Any(failure => failure.StrategyOrdinal >= checkSpecs.Count)
         )
         {
