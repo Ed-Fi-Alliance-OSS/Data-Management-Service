@@ -203,6 +203,10 @@ internal sealed class MssqlRelationalQueryAuthorizationRecordingWriteSession(
 internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDisposable
 {
     private const int MaximumPageSize = 500;
+    private readonly Func<
+        RelationshipAuthorizationProviderFailure,
+        RelationshipAuthorizationProviderFailure
+    >? _providerFailureTransform;
     private static readonly BaseResourceInfo SchoolResource = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("School"),
@@ -227,6 +231,16 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     public MappingSet MappingSet => _fixture.MappingSet;
 
     public MssqlGeneratedDdlTestDatabase Database { get; private set; } = null!;
+
+    public MssqlRelationalQueryAuthorizationTestContext(
+        Func<
+            RelationshipAuthorizationProviderFailure,
+            RelationshipAuthorizationProviderFailure
+        >? providerFailureTransform = null
+    )
+    {
+        _providerFailureTransform = providerFailureTransform;
+    }
 
     public async Task InitializeAsync(
         string fixtureRelativePath,
@@ -1313,7 +1327,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         return resourceHandle;
     }
 
-    private static ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
+    private ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
     {
         ServiceCollection services = [];
 
@@ -1335,6 +1349,17 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()
         );
+
+        if (_providerFailureTransform is not null)
+        {
+            services.Replace(
+                ServiceDescriptor.Scoped<IRelationshipAuthorizationProviderFailureExtractor>(
+                    _ => new TransformingMssqlRelationshipAuthorizationProviderFailureExtractor(
+                        _providerFailureTransform
+                    )
+                )
+            );
+        }
 
         if (replaceReadTargetLookup)
         {
@@ -1583,6 +1608,18 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         ResourceSchema ResourceSchema,
         ResourceInfo ResourceInfo
     );
+
+    private sealed class TransformingMssqlRelationshipAuthorizationProviderFailureExtractor(
+        Func<RelationshipAuthorizationProviderFailure, RelationshipAuthorizationProviderFailure> transform
+    ) : IRelationshipAuthorizationProviderFailureExtractor
+    {
+        public RelationshipAuthorizationProviderFailure Extract(DbException exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+
+            return transform(new RelationshipAuthorizationProviderFailure(null, exception.Message));
+        }
+    }
 
     private static long GetRequiredInt64(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt64(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);

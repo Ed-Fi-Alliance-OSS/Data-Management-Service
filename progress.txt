@@ -27,3 +27,8 @@ Task completed: unit-tests for reference/design/backend-redesign/epics/14-author
 Key decisions: add People-shaped no-claims formatter coverage using full relationship failure DTO; verify empty EdOrg claims render as none, People readable-name metadata/fallback aggregate, and auth-view hints append without People endpoint execution.
 Files changed: RelationshipAuthorizationProblemDetailsTests.cs, tasks.json, progress.txt.
 Blockers/notes: none. Core formatter and backend AUTH1 payload/mapper filters pass.
+
+Task completed: backend-integration-tests for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: assert full stored relationship failure DTO in PostgreSQL/MSSQL GET and DELETE denials; keep final HTTP body coverage out of backend tests; emulate unmappable AUTH1 provider payload by transforming provider-extracted DB failure payload after real DB denial.
+Files changed: RelationshipAuthorizationBackendFailureAssertions.cs, PostgreSQL/MSSQL relationship GET/DELETE authorization tests, PostgreSQL/MSSQL relationship query auth test contexts, tasks.json.
+Blockers/notes: none. PostgreSQL Authorization filter passed after starting Docker Desktop; MSSQL Authorization filter passed using temporary SQL Server on localhost,1434.

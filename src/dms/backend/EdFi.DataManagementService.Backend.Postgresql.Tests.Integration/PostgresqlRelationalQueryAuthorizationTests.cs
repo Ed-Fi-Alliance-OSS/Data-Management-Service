@@ -160,6 +160,10 @@ internal sealed class PostgresqlRelationalQueryAuthorizationRecordingWriteSessio
 internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsyncDisposable
 {
     private const int MaximumPageSize = 500;
+    private readonly Func<
+        RelationshipAuthorizationProviderFailure,
+        RelationshipAuthorizationProviderFailure
+    >? _providerFailureTransform;
     private readonly Dictionary<
         (string ProjectEndpointName, string ResourceName),
         ResourceHandle
@@ -173,6 +177,16 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     public MappingSet MappingSet => _fixture.MappingSet;
 
     public PostgresqlGeneratedDdlTestDatabase Database { get; private set; } = null!;
+
+    public PostgresqlRelationalQueryAuthorizationTestContext(
+        Func<
+            RelationshipAuthorizationProviderFailure,
+            RelationshipAuthorizationProviderFailure
+        >? providerFailureTransform = null
+    )
+    {
+        _providerFailureTransform = providerFailureTransform;
+    }
 
     public async Task InitializeAsync(
         string fixtureRelativePath,
@@ -1145,7 +1159,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         return resourceHandle;
     }
 
-    private static ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
+    private ServiceProvider CreateServiceProvider(bool replaceReadTargetLookup)
     {
         ServiceCollection services = [];
 
@@ -1170,6 +1184,17 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         services.Replace(
             ServiceDescriptor.Scoped<IRelationalReadMaterializer, RecordingRelationalReadMaterializer>()
         );
+
+        if (_providerFailureTransform is not null)
+        {
+            services.Replace(
+                ServiceDescriptor.Scoped<IRelationshipAuthorizationProviderFailureExtractor>(
+                    _ => new TransformingPostgresqlRelationshipAuthorizationProviderFailureExtractor(
+                        _providerFailureTransform
+                    )
+                )
+            );
+        }
 
         if (replaceReadTargetLookup)
         {
@@ -1365,6 +1390,25 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         ResourceSchema ResourceSchema,
         ResourceInfo ResourceInfo
     );
+
+    private sealed class TransformingPostgresqlRelationshipAuthorizationProviderFailureExtractor(
+        Func<RelationshipAuthorizationProviderFailure, RelationshipAuthorizationProviderFailure> transform
+    ) : IRelationshipAuthorizationProviderFailureExtractor
+    {
+        public RelationshipAuthorizationProviderFailure Extract(DbException exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+
+            var providerFailure = exception is PostgresException postgresException
+                ? new RelationshipAuthorizationProviderFailure(
+                    postgresException.SqlState,
+                    postgresException.MessageText
+                )
+                : new RelationshipAuthorizationProviderFailure(null, exception.Message);
+
+            return transform(providerFailure);
+        }
+    }
 
     private static long GetRequiredInt64(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt64(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);

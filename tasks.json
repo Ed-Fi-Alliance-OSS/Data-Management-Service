@@ -132,7 +132,7 @@
       "Run `ConnectionStrings__MssqlAdmin='<admin-connection-string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"Category=Authorization\"` after verifying SQL Server is listening.",
       "Review the PostgreSQL and SQL Server tests for equivalent assertions across dialects."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "api-integration-tests",
