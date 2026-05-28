@@ -217,23 +217,17 @@ internal static class RelationshipAuthorizationProblemDetails
 
         foreach (var failure in selectedFailures)
         {
-            foreach (var hint in SelectHints(failure).Select(NormalizeHint))
+            // Only auth-object failure hints are wire-visible; strategy/subject hints are diagnostics.
+            var hint = NormalizeHint(failure.Subject.AuthObject.FailureHint);
+            if (string.IsNullOrWhiteSpace(hint) || !seenHints.Add(hint))
             {
-                if (string.IsNullOrWhiteSpace(hint) || !seenHints.Add(hint))
-                {
-                    continue;
-                }
-
-                hints.Add(hint);
+                continue;
             }
+
+            hints.Add(hint);
         }
 
         return [.. hints];
-    }
-
-    private static IEnumerable<string?> SelectHints(SelectedRelationshipAuthorizationFailure failure)
-    {
-        yield return failure.Subject.AuthObject.FailureHint;
     }
 
     private static string NormalizeHint(string? hint)

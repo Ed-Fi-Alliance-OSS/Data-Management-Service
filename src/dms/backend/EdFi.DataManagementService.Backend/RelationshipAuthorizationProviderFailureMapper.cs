@@ -41,28 +41,6 @@ internal static class RelationshipAuthorizationProviderFailureMapper
         int expectedEmittedAuth1Index,
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
         IReadOnlyList<long> claimEducationOrganizationIds,
-        out RelationshipAuthorizationFailure? relationshipFailure
-    )
-    {
-        return TryMapRelationshipAuthorizationFailure(
-            dialect,
-            exception,
-            providerFailureExtractor,
-            expectedEmittedAuth1Index,
-            checkSpecs,
-            claimEducationOrganizationIds,
-            out relationshipFailure,
-            out _
-        );
-    }
-
-    public static bool TryMapRelationshipAuthorizationFailure(
-        SqlDialect dialect,
-        DbException exception,
-        IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
-        int expectedEmittedAuth1Index,
-        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
-        IReadOnlyList<long> claimEducationOrganizationIds,
         out RelationshipAuthorizationFailure? relationshipFailure,
         out RelationshipAuthorizationProviderFailureDiagnostic? invalidFailureDiagnostic
     )
@@ -158,24 +136,6 @@ internal static class RelationshipAuthorizationProviderFailureMapper
             RelationshipAuthorizationProviderFailureMappingCategory.PayloadMappingFailed
         );
         return false;
-    }
-
-    public static bool IsRelationshipAuthorizationProviderFailure(
-        SqlDialect dialect,
-        DbException exception,
-        IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor
-    )
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        ArgumentNullException.ThrowIfNull(providerFailureExtractor);
-
-        var providerFailure = providerFailureExtractor.Extract(exception);
-
-        return RelationshipAuthorizationAuth1FailurePayloadCodec.IsProviderFailure(
-            dialect,
-            providerFailure.ErrorCode,
-            providerFailure.Message
-        );
     }
 
     public static void LogInvalidFailurePayload(
