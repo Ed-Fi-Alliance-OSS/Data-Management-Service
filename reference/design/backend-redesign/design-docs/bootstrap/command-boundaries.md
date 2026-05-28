@@ -145,7 +145,7 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 | **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; healthy Config Service; healthy DMS container |
 | **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; validates the bootstrap manifest when present but does not apply manifest-selected staged claims to Config Service startup until Story 04 can also point DMS at the matching staged ApiSchema workspace; calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path) |
 | **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present |
-| **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; configure DMS instances; create smoke-test or seed-loading CMS application credentials; load seed data; accept schema or claims parameters |
+| **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; accept schema or claims parameters. **End-state contract owned by DMS-1153** (see Boundary note): configure DMS instances; create smoke-test or seed-loading CMS application credentials; load seed data — the transitional `-NoDmsInstance` / `-LoadSeedData` / `-AddSmokeTestCredentials` Inputs flags retain these on the start scripts until DMS-1153 de-scopes them |
 
 **Boundary note:** Story 00 makes staged
 schema/security the prepared bootstrap contract, not the Docker runtime source of truth. It keeps staged
@@ -155,6 +155,16 @@ bootstrap startup, including any CMS load/composition result or authorization me
 does not add an IDE-hosted start/health-wait surface to `start-local-dms.ps1`; IDE continuation remains owned
 by the later entry-point workflow. Once DMS health is confirmed, any later step is owned by wrapper
 orchestration or by the developer invoking the next phase command explicitly.
+
+The Must-NOT row separates two kinds of prohibition. The first group (resolve/validate ApiSchema, touch the
+staged workspace, provision databases, enable the legacy installer path, accept schema/claims parameters) is
+permanent. The second group (configure DMS instances, create smoke-test/seed-loading credentials, load seed
+data) is the end-state contract owned by DMS-1153 (`epics/16-bootstrap/03-entry-point-and-ide-workflow.md`),
+which makes `start-local-dms.ps1` infrastructure-lifecycle-only. Until that story lands, the start scripts
+intentionally retain the transitional `-NoDmsInstance`, `-LoadSeedData`, and `-AddSmokeTestCredentials` flags
+listed in Inputs, so the apparent Inputs/Must-NOT overlap is deliberate and time-bounded rather than a
+contradiction. DMS-1151 adds the `-InfraOnly` / `-DmsOnly` split-startup switches and drives them from the
+wrapper, but does not remove these legacy flags.
 
 ---
 

@@ -581,7 +581,7 @@ function Get-ProvisionIdeGuidance {
 
     $lines.Add("")
     $lines.Add("--- IDE next-step guidance ---")
-    $lines.Add("Staged schema workspace: $(Format-LogSafeText $SchemaWorkspace.BootstrapManifestPath)")
+    $lines.Add("Bootstrap manifest:      $(Format-LogSafeText $SchemaWorkspace.BootstrapManifestPath)")
     $lines.Add("  ApiSchema manifest:    $(Format-LogSafeText $SchemaWorkspace.ApiSchemaManifestPath)")
     if ($SchemaWorkspace.EffectiveSchemaHash) {
         $lines.Add("  Effective schema hash: $(Format-LogSafeText $SchemaWorkspace.EffectiveSchemaHash)")

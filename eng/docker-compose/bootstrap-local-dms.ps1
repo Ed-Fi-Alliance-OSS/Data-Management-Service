@@ -27,6 +27,10 @@
     The shared wrapper body lives in `bootstrap-wrapper.psm1`; this entry script only
     selects the target start script (`start-local-dms.ps1`).
 
+    Precondition: the wrapper requires a staged bootstrap schema workspace. Run
+    `prepare-dms-schema.ps1` (Story 00) for the current checkout first; the wrapper fails
+    fast when the staged workspace is absent rather than starting an unprovisionable stack.
+
 .PARAMETER LoadSeedData
     When supplied, invokes `load-dms-seed-data.ps1` after `start-local-dms.ps1` completes.
 
@@ -68,8 +72,12 @@
     passed to the seed phase via `-SchoolYear`.
 
 .EXAMPLE
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
     pwsh ./bootstrap-local-dms.ps1
-    Default happy path: starts the local stack, no seed loading.
+    Common happy path: stage the schema workspace (Story 00 / prepare-dms-schema.ps1), then
+    start the local stack and provision schemas, no seed loading. The wrapper requires a staged
+    bootstrap workspace and fails fast if `prepare-dms-schema.ps1` has not been run for the
+    current checkout.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
