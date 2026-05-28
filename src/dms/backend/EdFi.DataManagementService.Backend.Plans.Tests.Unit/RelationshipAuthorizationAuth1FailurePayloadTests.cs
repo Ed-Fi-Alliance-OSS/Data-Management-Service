@@ -940,9 +940,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             .ContainSingle()
             .Subject;
 
-        failedSubject
-            .FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         failedSubject.Hint.Should().Be(authObject.FailureHint);
         failedSubject
             .AuthObject.Name.Should()
@@ -1031,6 +1029,12 @@ public class Given_RelationshipAuthorizationFailureMapper
 
         failedStrategy.AuthObject.Should().BeNull();
         failedStrategy.FailedSubjects.Select(static subject => subject.SubjectIndex).Should().Equal(0, 1);
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.FailureKind)
+            .Should()
+            .OnlyContain(static failureKind =>
+                failureKind == RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            );
         failedStrategy
             .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
             .Should()

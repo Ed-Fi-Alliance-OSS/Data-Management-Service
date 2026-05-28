@@ -349,7 +349,7 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
 
         var failure = AssertRelationshipDenied(
             result,
-            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
         );
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
         _context.AssertNoHydration();

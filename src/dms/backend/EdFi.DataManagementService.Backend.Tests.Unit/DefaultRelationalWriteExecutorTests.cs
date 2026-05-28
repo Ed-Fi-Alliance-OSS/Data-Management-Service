@@ -532,7 +532,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailedSubjects.Should()
             .ContainSingle()
             .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
@@ -668,7 +668,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailedSubjects.Should()
             .ContainSingle()
             .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);

@@ -89,7 +89,7 @@ public static class RelationshipAuthorizationFailureMapper
 
                         return MapSubject(
                             subjectIndex,
-                            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                            RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                             subject,
                             checkSpec.ValueSource,
                             subjectFailureMetadata?.Hint

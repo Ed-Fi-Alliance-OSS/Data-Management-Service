@@ -863,9 +863,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
             .Should()
             .AllSatisfy(subject =>
-                subject
-                    .FailureKind.Should()
-                    .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds)
+                subject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship)
             );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
@@ -3929,9 +3927,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Hint.Should()
             .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
         var failedSubject = failedStrategy.FailedSubjects.Should().ContainSingle().Which;
-        failedSubject
-            .FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         failedSubject.RootBinding.ColumnName.Should().Be("SchoolId");
         failedSubject
             .Hint.Should()
@@ -4300,7 +4296,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Which.FailedSubjects.Should()
             .ContainSingle()
             .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequest
             .StoredRelationshipAuthorization.Should()
@@ -5722,9 +5718,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
             .Should()
             .AllSatisfy(subject =>
-                subject
-                    .FailureKind.Should()
-                    .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds)
+                subject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship)
             );
         A.CallTo(_commandExecutor)
             .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
@@ -7197,7 +7191,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     [
                         new RelationshipAuthorizationFailedSubject(
                             SubjectIndex: 0,
-                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                             RootBinding: new RelationshipAuthorizationRootBinding(
                                 "Ed-Fi.School",
                                 "edfi.School",

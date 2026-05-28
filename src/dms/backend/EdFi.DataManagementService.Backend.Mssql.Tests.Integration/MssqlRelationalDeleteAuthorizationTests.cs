@@ -481,7 +481,7 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
 
         var failure = AssertRelationshipDenied(
             result,
-            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
         );
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
         await AssertRowsAsync(

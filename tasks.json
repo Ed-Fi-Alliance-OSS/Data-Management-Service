@@ -33,7 +33,7 @@
       "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload|FullyQualifiedName~RelationshipAuthorizationPlanner\"`.",
       "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor\"`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "core-response",
