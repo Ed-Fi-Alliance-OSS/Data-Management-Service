@@ -184,12 +184,12 @@ internal class UpdateByIdHandler(
             ),
             UpdateFailureRelationshipNotAuthorized failure => new FrontendResponse(
                 StatusCode: 403,
-                Body: FailureResponse.ForForbidden(
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: failure.ErrorMessages,
-                    hints: failure.Hints
+                Body: FailureResponse.ForRelationshipAuthorization(
+                    requestInfo.FrontendRequest.TraceId,
+                    failure.RelationshipFailure
                 ),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             UpdateFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,

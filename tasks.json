@@ -94,7 +94,7 @@
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandler|FullyQualifiedName~DeleteByIdHandler|FullyQualifiedName~UpsertHandler|FullyQualifiedName~UpdateByIdHandler\"`.",
       "Inspect handler unit assertions to confirm stable ProblemDetails members are exact and `correlationId` is validated as dynamic."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",

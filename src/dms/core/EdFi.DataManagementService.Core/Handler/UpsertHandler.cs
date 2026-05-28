@@ -183,12 +183,12 @@ internal class UpsertHandler(
             ),
             UpsertFailureRelationshipNotAuthorized failure => new(
                 StatusCode: 403,
-                Body: ForForbidden(
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: failure.ErrorMessages,
-                    hints: failure.Hints
+                Body: ForRelationshipAuthorization(
+                    requestInfo.FrontendRequest.TraceId,
+                    failure.RelationshipFailure
                 ),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             UpsertFailureNotImplemented failure => new(
                 StatusCode: 501,
