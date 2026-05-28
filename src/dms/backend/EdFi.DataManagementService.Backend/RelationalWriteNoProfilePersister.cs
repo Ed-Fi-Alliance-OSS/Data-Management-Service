@@ -685,7 +685,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             );
 
             throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         }
 

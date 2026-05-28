@@ -262,7 +262,7 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
             .Which.FailureMessage.Should()
             .Be(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
 
         var logRecord = logger.Records.Should().ContainSingle().Subject;
@@ -304,7 +304,7 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
             .Which.FailureMessage.Should()
             .Be(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
     }
 
@@ -342,7 +342,7 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
             .Which.FailureMessage.Should()
             .Be(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
     }
 

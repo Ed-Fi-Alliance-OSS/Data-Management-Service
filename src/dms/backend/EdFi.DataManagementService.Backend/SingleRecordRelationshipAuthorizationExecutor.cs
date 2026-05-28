@@ -117,7 +117,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
                 );
 
                 return new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                    RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                    RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
                 );
             }
 

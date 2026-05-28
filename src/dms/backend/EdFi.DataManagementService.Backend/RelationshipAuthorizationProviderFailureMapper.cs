@@ -31,9 +31,6 @@ internal static class RelationshipAuthorizationProviderFailureMapper
 {
     private const int MaxProviderMessageFragmentLength = 512;
 
-    public const string InvalidFailurePayloadSecurityConfigurationError =
-        "The relationship authorization failure payload returned by the authorization provider is invalid and cannot be mapped to the configured relationship authorization plan.";
-
     public static bool TryMapRelationshipAuthorizationFailure(
         SqlDialect dialect,
         DbException exception,

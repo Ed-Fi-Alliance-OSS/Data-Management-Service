@@ -189,7 +189,7 @@ public static class RelationshipAuthorizationAuth1FailurePayloadCodec
     public static bool IsProviderFailure(
         SqlDialect dialect,
         string? providerErrorCode,
-        string providerMessage
+        string? providerMessage
     ) =>
         dialect switch
         {

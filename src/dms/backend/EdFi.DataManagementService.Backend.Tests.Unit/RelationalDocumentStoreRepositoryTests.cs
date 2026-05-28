@@ -793,7 +793,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
                     new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                        RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                        RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
                     )
                 )
             );
@@ -804,7 +804,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure
             .Errors.Should()
             .Equal(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
@@ -5594,7 +5594,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
         ConfigureDeleteRelationshipAuthorization(
             new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             )
         );
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
@@ -5619,7 +5619,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure
             .Errors.Should()
             .Equal(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);

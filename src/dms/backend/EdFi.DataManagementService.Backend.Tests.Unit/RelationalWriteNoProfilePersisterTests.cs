@@ -321,7 +321,7 @@ public class Given_Relational_Write_No_Profile_Persister
         exception
             .Which.FailureMessage.Should()
             .Be(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
@@ -358,7 +358,7 @@ public class Given_Relational_Write_No_Profile_Persister
         exception
             .Which.FailureMessage.Should()
             .Be(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         exception.Which.FailureMessage.Should().NotContain("2|0|1|0:0:n");
         writeSession.Commands.Should().ContainSingle();

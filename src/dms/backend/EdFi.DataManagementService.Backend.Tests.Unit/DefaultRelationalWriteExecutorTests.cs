@@ -488,7 +488,7 @@ public class Given_Default_Relational_Write_Executor
         securityConfigurationFailure
             .Errors.Should()
             .Equal(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             )
             .And.NotContain(error => error.Contains("2|0|1|0:0:n", StringComparison.Ordinal))
             .And.NotContain(error => error.Contains("AUTH1 failed", StringComparison.Ordinal));
@@ -4370,7 +4370,7 @@ public class Given_Default_Relational_Write_Executor
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         _noProfilePersister.ExceptionToThrow =
             new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
 
         var result = await _sut.ExecuteAsync(
@@ -4388,7 +4388,7 @@ public class Given_Default_Relational_Write_Executor
         securityConfigurationFailure
             .Errors.Should()
             .Equal(
-                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);

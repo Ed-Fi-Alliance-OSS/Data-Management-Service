@@ -549,7 +549,7 @@ public static class RelationshipAuthorizationFailureMapper
                 AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility =>
                 AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-            _ => MapEdOrgStrategyKind(checkSpec.Direction),
+            _ => checkSpec.ConfiguredStrategy.StrategyName,
         };
 
     private static string MapEdOrgStrategyKind(RelationshipAuthorizationHierarchyDirection direction) =>
