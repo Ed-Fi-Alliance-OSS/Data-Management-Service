@@ -77,7 +77,7 @@
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails\"`.",
       "Review the generated response strings against `reference/design/backend-redesign/design-docs/auth.md` section `ProblemDetails` and the clarifying answers in the story."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "core-handler-integration",

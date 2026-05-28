@@ -17,3 +17,8 @@ Task completed: core-handler-integration for reference/design/backend-redesign/e
 Key decisions: route relationship-specific GET/DELETE/POST/PUT backend failures through ForRelationshipAuthorization and embedded RelationshipFailure DTO; keep legacy ForForbidden for non-relationship authorization failures; mark relationship 403 bodies as application/problem+json.
 Files changed: GetByIdHandler.cs, DeleteByIdHandler.cs, UpsertHandler.cs, UpdateByIdHandler.cs, focused handler unit tests, tasks.json.
 Blockers/notes: none. Formatter hint aggregation/readable-name helper hardening still owned by later core-response/unit-test tasks.
+
+Task completed: core-response helpers for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: append distinct selected strategy/subject/person hints after final relationship detail text; normalize any leading Hint: prefix before de-dupe; keep lower-precedence hints out when stored/proposed cases win.
+Files changed: RelationshipAuthorizationProblemDetails.cs, RelationshipAuthorizationProblemDetailsTests.cs, tasks.json.
+Blockers/notes: none. Full core unit project passes; later unit-test task can add broader People DTO mapping coverage.

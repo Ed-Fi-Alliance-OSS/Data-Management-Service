@@ -53,10 +53,11 @@ internal static class RelationshipAuthorizationProblemDetails
     )
     {
         var readableNames = SelectReadableNames(selectedFailures);
+        var hints = SelectHints(selectedFailures);
 
         return new RelationshipAuthorizationProblemDetailsResult(
             ElementUninitializedType,
-            FormatStoredValueNullDetail(readableNames),
+            AppendHints(FormatStoredValueNullDetail(readableNames), hints),
             SelectStoredValueNullErrors(selectedFailures)
         );
     }
@@ -66,10 +67,11 @@ internal static class RelationshipAuthorizationProblemDetails
     )
     {
         var readableNames = SelectReadableNames(selectedFailures);
+        var hints = SelectHints(selectedFailures);
 
         return new RelationshipAuthorizationProblemDetailsResult(
             ElementRequiredType,
-            FormatProposedValueMissingDetail(readableNames),
+            AppendHints(FormatProposedValueMissingDetail(readableNames), hints),
             []
         );
     }
@@ -81,10 +83,11 @@ internal static class RelationshipAuthorizationProblemDetails
     {
         var readableNames = SelectReadableNames(selectedFailures);
         var (claimNoun, claimDisplay) = FormatClaimEducationOrganizationIds(relationshipFailure);
+        var hints = SelectHints(selectedFailures);
 
         return new RelationshipAuthorizationProblemDetailsResult(
             AuthorizationType,
-            BaseDetail,
+            AppendHints(BaseDetail, hints),
             [FormatNoRelationshipError(claimNoun, claimDisplay, readableNames)]
         );
     }
@@ -205,6 +208,53 @@ internal static class RelationshipAuthorizationProblemDetails
                 .Where(static readableName => !string.IsNullOrWhiteSpace(readableName))
                 .Distinct(StringComparer.Ordinal),
         ];
+
+    private static string[] SelectHints(
+        IReadOnlyList<SelectedRelationshipAuthorizationFailure> selectedFailures
+    )
+    {
+        HashSet<string> seenHints = new(StringComparer.Ordinal);
+        List<string> hints = [];
+
+        foreach (var failure in selectedFailures)
+        {
+            foreach (var hint in SelectHints(failure).Select(NormalizeHint))
+            {
+                if (string.IsNullOrWhiteSpace(hint) || !seenHints.Add(hint))
+                {
+                    continue;
+                }
+
+                hints.Add(hint);
+            }
+        }
+
+        return [.. hints];
+    }
+
+    private static IEnumerable<string?> SelectHints(SelectedRelationshipAuthorizationFailure failure)
+    {
+        yield return failure.Strategy.Hint;
+        yield return failure.Subject.Hint;
+        yield return failure.Subject.PersonSubject?.Hint;
+    }
+
+    private static string NormalizeHint(string? hint)
+    {
+        if (string.IsNullOrWhiteSpace(hint))
+        {
+            return string.Empty;
+        }
+
+        var normalizedHint = hint.Trim();
+
+        return normalizedHint.StartsWith("Hint:", StringComparison.Ordinal)
+            ? normalizedHint["Hint:".Length..].TrimStart()
+            : normalizedHint;
+    }
+
+    private static string AppendHints(string detail, IReadOnlyList<string> hints) =>
+        hints.Count == 0 ? detail : $"{detail} Hint: {string.Join(" ", hints)}";
 
     private static IEnumerable<string> SelectReadableNames(RelationshipAuthorizationFailedSubject subject)
     {
