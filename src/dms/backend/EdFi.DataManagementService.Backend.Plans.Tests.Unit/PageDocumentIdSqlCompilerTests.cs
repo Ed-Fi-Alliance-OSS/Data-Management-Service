@@ -1164,6 +1164,196 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().NotContain("JOIN [auth]");
     }
 
+    [Test]
+    public void It_should_emit_postgresql_array_claim_parameter_sql_for_people_authorization_once_per_query()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    SqlDialect.Pgsql,
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        CreatePersonAuthorizationSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Student,
+                            RelationshipAuthorizationPersonKind.Student,
+                            new DbColumnName("Student_DocumentId"),
+                            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn
+                        )
+                    )
+                )
+            )
+        );
+
+        const string ExpectedPeopleClaimFilter =
+            "WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)";
+
+        plan.PageDocumentIdSql.Should().Contain(ExpectedPeopleClaimFilter);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(ExpectedPeopleClaimFilter);
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds", "offset", "limit");
+        plan.PageParametersInOrder[0].Binding.Kind.Should().Be(QuerySqlParameterBindingKind.PgsqlArray);
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds");
+        plan.TotalCountParametersInOrder!.Value[0]
+            .Binding.Kind.Should()
+            .Be(QuerySqlParameterBindingKind.PgsqlArray);
+    }
+
+    [Test]
+    public void It_should_emit_sql_server_scalar_claim_parameters_for_people_authorization_below_threshold()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    SqlDialect.Mssql,
+                    CreateClaimEducationOrganizationIds(1999),
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        CreatePersonAuthorizationSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Student,
+                            RelationshipAuthorizationPersonKind.Student,
+                            new DbColumnName("Student_DocumentId"),
+                            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn
+                        )
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should()
+            .Contain(
+                "WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1"
+            );
+        plan.PageDocumentIdSql.Should().Contain("@ClaimEducationOrganizationIds_1998");
+        plan.PageDocumentIdSql.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should()
+            .Contain(
+                "WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1"
+            );
+        plan.TotalCountSql.Should().Contain("@ClaimEducationOrganizationIds_1998");
+        plan.TotalCountSql.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
+        plan.PageParametersInOrder.Should().HaveCount(2001);
+        plan.PageParametersInOrder[0].ParameterName.Should().Be("ClaimEducationOrganizationIds_0");
+        plan.PageParametersInOrder[1998].ParameterName.Should().Be("ClaimEducationOrganizationIds_1998");
+        plan.PageParametersInOrder[1999].ParameterName.Should().Be("offset");
+        plan.PageParametersInOrder[2000].ParameterName.Should().Be("limit");
+        plan.PageParametersInOrder.Take(1999)
+            .Should()
+            .OnlyContain(parameter => parameter.Binding.Kind == QuerySqlParameterBindingKind.Scalar);
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Should().HaveCount(1999);
+        plan.TotalCountParametersInOrder!.Value[0]
+            .ParameterName.Should()
+            .Be("ClaimEducationOrganizationIds_0");
+        plan.TotalCountParametersInOrder!.Value[^1]
+            .ParameterName.Should()
+            .Be("ClaimEducationOrganizationIds_1998");
+        plan.TotalCountParametersInOrder!.Value.Should()
+            .OnlyContain(parameter => parameter.Binding.Kind == QuerySqlParameterBindingKind.Scalar);
+    }
+
+    [Test]
+    public void It_should_emit_sql_server_structured_claim_parameter_sql_for_people_authorization_at_threshold()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    SqlDialect.Mssql,
+                    CreateClaimEducationOrganizationIds(2000),
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        CreatePersonAuthorizationSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Student,
+                            RelationshipAuthorizationPersonKind.Student,
+                            new DbColumnName("Student_DocumentId"),
+                            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn
+                        )
+                    )
+                )
+            )
+        );
+
+        const string ExpectedPeopleClaimFilter =
+            "WHERE t1.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)";
+
+        plan.PageDocumentIdSql.Should().Contain(ExpectedPeopleClaimFilter);
+        plan.PageDocumentIdSql.Should().NotContain("@ClaimEducationOrganizationIds_0");
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(ExpectedPeopleClaimFilter);
+        plan.TotalCountSql.Should().NotContain("@ClaimEducationOrganizationIds_0");
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds", "offset", "limit");
+        plan.PageParametersInOrder[0]
+            .Binding.Should()
+            .Be(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ClaimEducationOrganizationIds");
+        plan.TotalCountParametersInOrder!.Value[0]
+            .Binding.Should()
+            .Be(QuerySqlParameterBinding.CreateMssqlStructured("dms.BigIntTable", "Id"));
+    }
+
+    [Test]
+    public void It_should_dedupe_people_claim_ids_before_sql_server_threshold_selection()
+    {
+        List<long> claimEducationOrganizationIds = [.. CreateClaimEducationOrganizationIds(1999)];
+        claimEducationOrganizationIds.AddRange(CreateClaimEducationOrganizationIds(1999).Reverse());
+        claimEducationOrganizationIds.Add(1999L);
+
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    SqlDialect.Mssql,
+                    claimEducationOrganizationIds,
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        CreatePersonAuthorizationSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Student,
+                            RelationshipAuthorizationPersonKind.Student,
+                            new DbColumnName("Student_DocumentId"),
+                            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn
+                        )
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("@ClaimEducationOrganizationIds_1998");
+        plan.PageDocumentIdSql.Should().NotContain("@ClaimEducationOrganizationIds_1999");
+        plan.PageDocumentIdSql.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
+        plan.PageParametersInOrder.Should().HaveCount(2001);
+        plan.PageParametersInOrder[0].ParameterName.Should().Be("ClaimEducationOrganizationIds_0");
+        plan.PageParametersInOrder[1998].ParameterName.Should().Be("ClaimEducationOrganizationIds_1998");
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Should().HaveCount(1999);
+        plan.TotalCountParametersInOrder!.Value[^1]
+            .ParameterName.Should()
+            .Be("ClaimEducationOrganizationIds_1998");
+    }
+
     [TestCase(
         SqlDialect.Pgsql,
         "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"Student\" t0 WHERE t0.\"DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"

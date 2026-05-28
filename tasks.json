@@ -115,7 +115,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
       "Review PageDocumentIdSqlCompilerTests assertions for PostgreSQL array, SQL Server scalar, and SQL Server structured People auth-view SQL."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",

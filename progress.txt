@@ -33,3 +33,9 @@ Decisions: existing planner already classifies/resolves People subjects and vali
 Files changed: RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
 Verification: csharpier on RelationalDocumentStoreRepositoryTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner" passed 54; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepositoryTests" passed 184.
 Notes: parameterization-specific People SQL coverage remains for next task.
+
+DMS-1095 06b people relationship auth get-many - completed People GET-many ClaimEducationOrganizationIds parameterization coverage task.
+Decisions: production compiler already routes People auth-view predicates through shared DMS-1055 helper; added explicit People SQL compiler regressions for PostgreSQL array, SQL Server 1,999 scalar params, SQL Server 2,000 dms.BigIntTable TVP, dedupe-before-threshold, and page/total-count parameter metadata.
+Files changed: PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
+Verification: csharpier on PageDocumentIdSqlCompilerTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~AuthorizationClaimEducationOrganizationIdParameterizationFactory" passed 6; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 82.
+Notes: next task likely adapter/planner unit matrix for all five People relationship strategies.
