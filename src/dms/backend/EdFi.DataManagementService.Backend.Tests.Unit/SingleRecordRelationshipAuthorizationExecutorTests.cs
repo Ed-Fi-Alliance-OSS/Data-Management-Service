@@ -213,6 +213,56 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
     }
 
     [Test]
+    public async Task It_fails_closed_when_auth1_provider_payload_uses_an_unexpected_emitted_check_index()
+    {
+        var payloadText = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                5,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+        var commandExecutor = new RecordingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            exceptionToThrow: new StubDbException("PostgreSQL provider exception")
+        );
+        var sut = new SingleRecordRelationshipAuthorizationExecutor(
+            commandExecutor,
+            providerFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
+                RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+                payloadText
+            )
+        );
+
+        var result = await sut.ExecuteAsync(
+            new SingleRecordRelationshipAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 348L,
+                [CreateStoredCheckSpec(RelationshipAuthorizationHierarchyDirection.Normal)],
+                AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    [100L],
+                    "ClaimEducationOrganizationIds"
+                ),
+                EmittedAuth1Index: 4
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
+            .Which.FailureMessage.Should()
+            .Be(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            );
+    }
+
+    [Test]
     public async Task It_fails_closed_when_auth1_provider_payload_cannot_be_mapped()
     {
         var commandExecutor = new RecordingRelationalCommandExecutor(

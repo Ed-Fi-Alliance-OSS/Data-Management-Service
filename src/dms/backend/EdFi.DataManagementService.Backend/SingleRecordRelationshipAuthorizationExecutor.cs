@@ -90,6 +90,7 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
                     request.MappingSet.Key.Dialect,
                     ex,
                     _providerFailureExtractor,
+                    request.EmittedAuth1Index,
                     request.CheckSpecs,
                     request.ClaimEducationOrganizationIdParameterization.ClaimEducationOrganizationIds,
                     out var relationshipFailure

@@ -642,6 +642,7 @@ internal sealed class RelationalWriteNoProfilePersister(
             dialect,
             exception,
             _relationshipAuthorizationProviderFailureExtractor,
+            relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
             relationshipAuthorizationRuntimeCheck.CheckSpecs,
             relationshipAuthorizationRuntimeCheck
                 .ClaimEducationOrganizationIdParameterization

@@ -276,6 +276,55 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
+    public async Task It_fails_closed_when_proposed_relationship_authorization_auth1_payload_has_unexpected_emitted_check_index()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post, SqlDialect.Mssql);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var auth1Payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                runtimeCheck.EmittedAuth1Index + 1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ExceptionToThrow: new StubDbException($"AUTH1 - {auth1Payload}")),
+        ]);
+
+        var action = async () => await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        var exception = await action
+            .Should()
+            .ThrowAsync<RelationalWriteInvalidRelationshipAuthorizationFailureException>();
+        exception
+            .Which.FailureMessage.Should()
+            .Be(
+                RelationshipAuthorizationProviderFailureMapper.InvalidFailurePayloadSecurityConfigurationError
+            );
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
+        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+    }
+
+    [Test]
     public async Task It_maps_invalid_proposed_relationship_authorization_auth1_payloads_before_root_insert()
     {
         var rootPlan = CreateRootPlan();

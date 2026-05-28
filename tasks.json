@@ -206,5 +206,75 @@
       "Run the focused relational-backend E2E command from the e2e task after the relational dms-local stack is set up."
     ],
     "completed": true
+  },
+  {
+    "category": "core-response",
+    "description": "Medium: Limit relationship authorization ProblemDetails `Hint:` text to configured authorization-view hints instead of internal relationship failure diagnostics.",
+    "acceptance-criteria": [
+      "Stored-value null, proposed-value missing, no-relationship, and no-claim failures do not append internal diagnostic text such as missing subject values, null stored values, provider row matching, or claim requirements as wire-visible `Hint:` text.",
+      "EdOrg-hierarchy-only relationship failures emit no hint unless a configured authorization object provides a user-facing failure hint.",
+      "People or view-backed relationship failures append only the configured user-facing authorization hint text from the selected auth object, without diagnostic prefixes such as the auth view name or claim requirement explanation.",
+      "Duplicate configured hint text is still de-duplicated while preserving deterministic configured strategy and subject order.",
+      "Core, API integration, and relational E2E expected ProblemDetails bodies are updated to match `auth.md` authorization hint rules."
+    ],
+    "steps-to-verify": [
+      "Review `RelationshipAuthorizationFailureMapper`, `RelationshipAuthorizationPlanner`, and `RelationshipAuthorizationProblemDetails` for separation between internal failure diagnostics and wire-visible authorization hints.",
+      "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails\"`.",
+      "Run the relevant PostgreSQL and SQL Server API integration response-shape tests for relationship authorization ProblemDetails.",
+      "Run the focused relational-backend E2E scenarios after setting up the relational dms-local stack."
+    ],
+    "completed": false
+  },
+  {
+    "category": "backend-contracts",
+    "description": "Medium: Validate the emitted AUTH1 check index from relationship authorization provider payloads against the operation's expected emitted check index.",
+    "acceptance-criteria": [
+      "`RelationshipAuthorizationFailureMapper` rejects otherwise well-formed AUTH1 payloads whose emitted check index does not match the expected relationship authorization check for the current operation.",
+      "GET, DELETE, stored-value write checks, and proposed-value write checks all pass the expected emitted AUTH1 index into relationship failure mapping.",
+      "A mismatched emitted check index follows the canonical security-configuration failure path with the stable invalid-payload error message.",
+      "Valid payloads with the expected emitted check index continue to map to relationship authorization 403 failures.",
+      "Unit tests cover a well-formed payload with valid strategy and subject ordinals but an unexpected emitted AUTH1 index."
+    ],
+    "steps-to-verify": [
+      "Review `RelationshipAuthorizationAuth1FailurePayload`, `RelationshipAuthorizationFailureMapper`, `SingleRecordRelationshipAuthorizationExecutor`, `RelationalWriteNoProfilePersister`, and repository provider-failure mapping call sites.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload\"`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor|FullyQualifiedName~RelationalDocumentStoreRepository\"`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Remove or narrow transitional relationship authorization error-message formatting now that handlers render relationship ProblemDetails from `RelationshipAuthorizationFailure`.",
+    "acceptance-criteria": [
+      "Relationship-specific backend result variants no longer carry unused `ErrorMessages` or `Hints` fields unless a current non-HTTP consumer still requires them.",
+      "`RelationshipAuthorizationErrorMessageFormatter` is removed, narrowed, or documented as backend-only if it still has an active consumer.",
+      "Stale TODO comments about future ProblemDetails hint rendering are removed because relationship ProblemDetails now owns wire hint rendering.",
+      "Backend unit tests assert relationship failure metadata instead of transitional parallel wire-text strings where possible.",
+      "HTTP handler behavior remains driven by `FailureResponse.ForRelationshipAuthorization(RelationshipAuthorizationFailure)`."
+    ],
+    "steps-to-verify": [
+      "Review relationship-not-authorized result types in `EdFi.DataManagementService.Core.External/Backend` and their repository construction sites.",
+      "Review all references to `RelationshipAuthorizationErrorMessageFormatter` and remove or narrow any dead formatting path.",
+      "Run affected backend and core handler unit tests for relationship authorization failures."
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Medium: Keep relationship authorization E2E ProblemDetails expectations aligned with the backend mode under test.",
+    "acceptance-criteria": [
+      "Untagged/default-backend scenarios in `RelationshipsWithEdOrgsOnly.feature` do not expect relational-only `RelationshipAuthorizationFailure` ProblemDetails from the legacy non-relational authorization path.",
+      "Any scenario that asserts the new relational relationship ProblemDetails body is tagged with `@relational-backend` and an appropriate relational CI shard tag.",
+      "Existing default-backend relationship authorization coverage is preserved with expectations that match the non-relational `GetFailureNotAuthorized`/`UpsertFailureNotAuthorized` response path, unless the scenario is intentionally moved to relational-only coverage.",
+      "Focused final ProblemDetails shape coverage remains in relational-backend E2E scenarios and validates dynamic `correlationId` presence without pinning generated values.",
+      "Feature tags make the required DMS Docker environment unambiguous for both default and relational E2E runs."
+    ],
+    "steps-to-verify": [
+      "Review `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsOnly.feature` for untagged scenarios that assert the new relationship ProblemDetails body.",
+      "Review `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsOnlyRelational.feature` for relational-only final ProblemDetails assertions.",
+      "Run the default E2E authorization scenarios against the default `.env.e2e` stack or inspect the generated NUnit categories to confirm untagged scenarios are not selected as relational-only tests.",
+      "Run the focused relational-backend E2E command after setting up the `.env.e2e.relational` stack."
+    ],
+    "completed": false
   }
 ]

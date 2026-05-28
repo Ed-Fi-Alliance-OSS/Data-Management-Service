@@ -19,6 +19,7 @@ internal static class RelationshipAuthorizationProviderFailureMapper
         SqlDialect dialect,
         DbException exception,
         IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
+        int expectedEmittedAuth1Index,
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
         IReadOnlyList<long> claimEducationOrganizationIds,
         out RelationshipAuthorizationFailure? relationshipFailure
@@ -26,6 +27,7 @@ internal static class RelationshipAuthorizationProviderFailureMapper
     {
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(providerFailureExtractor);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedEmittedAuth1Index);
         ArgumentNullException.ThrowIfNull(checkSpecs);
         ArgumentNullException.ThrowIfNull(claimEducationOrganizationIds);
 
@@ -46,6 +48,7 @@ internal static class RelationshipAuthorizationProviderFailureMapper
         return payload is not null
             && RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
                 payload,
+                expectedEmittedAuth1Index,
                 checkSpecs,
                 claimEducationOrganizationIds,
                 out relationshipFailure

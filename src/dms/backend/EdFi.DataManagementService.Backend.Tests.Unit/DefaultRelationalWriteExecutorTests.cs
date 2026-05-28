@@ -5663,6 +5663,7 @@ public class Given_Default_Relational_Write_Executor
         if (
             !RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
                 new RelationshipAuthorizationAuth1FailurePayload(0, subjectFailures),
+                expectedEmittedAuth1Index: 0,
                 authorized.CheckSpecs,
                 authorized.ClaimEducationOrganizationIdParameterization!.ClaimEducationOrganizationIds,
                 out var relationshipFailure

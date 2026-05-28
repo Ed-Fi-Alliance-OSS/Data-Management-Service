@@ -133,18 +133,24 @@ public static class RelationshipAuthorizationFailureMapper
 
     public static bool TryMapAuth1Failure(
         RelationshipAuthorizationAuth1FailurePayload payload,
+        int expectedEmittedAuth1Index,
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
         IReadOnlyList<long> claimEducationOrganizationIds,
         out RelationshipAuthorizationFailure? relationshipFailure
     )
     {
         ArgumentNullException.ThrowIfNull(payload);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedEmittedAuth1Index);
         ArgumentNullException.ThrowIfNull(checkSpecs);
         ArgumentNullException.ThrowIfNull(claimEducationOrganizationIds);
 
         relationshipFailure = null;
 
-        if (checkSpecs.Count == 0 || HasDuplicateSubjectFailureOrdinals(payload.SubjectFailures))
+        if (
+            payload.EmittedAuth1Index != expectedEmittedAuth1Index
+            || checkSpecs.Count == 0
+            || HasDuplicateSubjectFailureOrdinals(payload.SubjectFailures)
+        )
         {
             return false;
         }
