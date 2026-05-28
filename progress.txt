@@ -92,3 +92,8 @@ Task completed: observability invalid AUTH1 provider payload logging for referen
 Key decisions: classify invalid provider payload diagnostics at mapper boundary; log dialect, expected AUTH1 index, provider code/message fragment, length, and failure category before stored/proposed paths return security-configuration; keep wire error stable and sanitized.
 Files changed: RelationshipAuthorizationProviderFailureMapper.cs, SingleRecordRelationshipAuthorizationExecutor.cs, RelationalWriteNoProfilePersister.cs, StoredRelationshipAuthorizationOrchestrator.cs, DefaultRelationalWriteExecutor.cs, RelationalDocumentStoreRepository.cs, ReferenceResolverServiceCollectionExtensions.cs, focused backend unit tests, tasks.json, progress.txt.
 Blockers/notes: none. Verified focused invalid-payload backend tests, relationship AUTH1 payload tests, DI registration tests, and full backend unit project passed.
+
+Task completed: cleanup external no-claim relationship failure kind for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: remove external NoClaimEducationOrganizationIds DTO value; no-claims mapping already emits NoRelationship subjects, so formatter no-relationship selection now only accepts NoRelationship.
+Files changed: RelationshipAuthorizationFailure.cs, RelationshipAuthorizationProblemDetails.cs, tasks.json, progress.txt.
+Blockers/notes: none. Verified CSharpier on changed C# files, rg remaining NoClaimEducationOrganizationIds uses are planner-internal, and focused RelationshipAuthorizationProblemDetails tests passed.

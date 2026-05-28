@@ -23,7 +23,6 @@ public enum RelationshipAuthorizationSubjectFailureKind
 {
     StoredValueNull,
     ProposedValueMissing,
-    NoClaimEducationOrganizationIds,
     NoRelationship,
 }
 

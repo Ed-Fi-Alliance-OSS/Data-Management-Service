@@ -341,7 +341,7 @@
       "Run `rg \"RelationshipAuthorizationSubjectFailureKind\\.NoClaimEducationOrganizationIds|NoClaimEducationOrganizationIds\" src/dms/core src/dms/backend` and confirm remaining uses are limited to planner-internal `RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds` where appropriate.",
       "Run `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails\"`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "observability",

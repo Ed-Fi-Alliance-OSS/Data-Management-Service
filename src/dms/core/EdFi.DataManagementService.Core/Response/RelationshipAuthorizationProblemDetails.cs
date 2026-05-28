@@ -129,8 +129,7 @@ internal static class RelationshipAuthorizationProblemDetails
             RelationshipAuthorizationProblemDetailsCase.ProposedValueMissing => failureKind
                 == RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
             RelationshipAuthorizationProblemDetailsCase.NoRelationship => failureKind
-                == RelationshipAuthorizationSubjectFailureKind.NoRelationship
-                || failureKind == RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                == RelationshipAuthorizationSubjectFailureKind.NoRelationship,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(selectedCase),
                 selectedCase,
