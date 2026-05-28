@@ -28,13 +28,16 @@ param (
     # Enable Swagger UI for the DMS API
     [Switch]$EnableSwaggerUI,
 
-    # Load seed data using database template package
-    [Switch]
-    $LoadSeedData,
-
     # Add smoke test credentials
     [Switch]
     $AddSmokeTestCredentials,
+
+    # Load seed data via the direct-SQL database-template path. Retained pending the implementation
+    # gate in bootstrap-design.md §6.4 line 1250: removal is gated on Story 04 XSD-staging
+    # verification. The new API-based seed path — load-dms-seed-data.ps1 + bootstrap-*-dms.ps1 —
+    # is the forward contract; the slice that closes the gate owns this switch's removal.
+    [Switch]
+    $LoadSeedData,
 
     # Identity provider type
     [string]
@@ -84,6 +87,7 @@ Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadat
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
+$cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
 Write-Output "Identity Provider $IdentityProvider"
 if($IdentityProvider -eq "keycloak")
@@ -223,7 +227,7 @@ else {
     {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
-        $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
+        $credentials = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
 
 
         Write-Output "Smoke test credentials created successfully!"
@@ -238,16 +242,16 @@ else {
 
         try {
             # Create system administrator credentials
-            Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "DMS Instance Setup Administrator"
+            Add-CmsClient -CmsUrl $cmsUrl -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "DMS Instance Setup Administrator"
 
             # Get configuration service token
-            $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
+            $configToken = Get-CmsToken -CmsUrl $cmsUrl -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
 
             # Create tenant if multi-tenancy is enabled
             if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $envValues.CONFIG_SERVICE_TENANT) {
                 Write-Output "Multi-tenancy is enabled. Creating tenant: $($envValues.CONFIG_SERVICE_TENANT)"
                 try {
-                    $tenantId = Add-Tenant -CmsUrl "http://localhost:8081" -AccessToken $configToken -TenantName $envValues.CONFIG_SERVICE_TENANT
+                    $tenantId = Add-Tenant -CmsUrl $cmsUrl -AccessToken $configToken -TenantName $envValues.CONFIG_SERVICE_TENANT
                     Write-Output "Tenant created successfully with ID: $tenantId"
                 }
                 catch {
@@ -269,7 +273,7 @@ else {
 
                     # Create instances for each year in the range
                     $instances = Add-DmsSchoolYearInstances `
-                        -CmsUrl "http://localhost:8081" `
+                        -CmsUrl $cmsUrl `
                         -AccessToken $configToken `
                         -StartYear $startYear `
                         -EndYear $endYear `
@@ -288,7 +292,7 @@ else {
                 Write-Output "Creating initial DMS Instance..."
 
                 # Create DMS Instance using environment variables
-                $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development" -Tenant $tenant
+                $instanceId = Add-DmsInstance -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development" -Tenant $tenant
 
                 Write-Output "DMS Instance created successfully with ID: $instanceId"
             }

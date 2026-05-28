@@ -98,7 +98,7 @@ param(
     [switch]
     $SkipDockerBuild,
 
-    # Load seed data when starting DMS environment.
+    # Forwarded to start-{local,published}-dms.ps1 to opt into the seed phase after the stack starts.
     [switch]
     $LoadSeedData,
 
@@ -679,6 +679,13 @@ function Start-DockerEnvironment {
             Pop-Location
         }
     }
+
+    # build-dms.ps1's -LoadSeedData invokes start-(local|published)-dms.ps1 directly with -LoadSeedData,
+    # which runs the direct-SQL database-template-package path via setup-database-template.psm1.
+    # The new API-based seed flow (bootstrap-(local|published)-dms.ps1 + load-dms-seed-data.ps1) is
+    # the forward developer-facing contract; the deletion of the direct-SQL path here is gated on
+    # bootstrap-design.md §6.4 (line 1250) Story-04 XSD-staging verification. See those scripts'
+    # docstrings for the same gate citation.
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"

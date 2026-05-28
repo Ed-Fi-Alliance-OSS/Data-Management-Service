@@ -31,6 +31,26 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
     private IClaimsTableValidator _claimsTableValidator = null!;
     private IClaimsUploadService _claimsUploadService = null!;
 
+    // Derives the expected claim set count from the embedded Claims.json so additions
+    // (e.g. SeedLoader) don't require touching every count assertion in this file.
+    // The Given_Embedded_Claims_Json unit-test fixture is the stronger contract for
+    // claim set semantics; these counts only verify "all of them loaded".
+    private static readonly int EmbeddedClaimSetCount = LoadEmbeddedClaimSetCount();
+
+    private static int LoadEmbeddedClaimSetCount()
+    {
+        var assembly = typeof(ClaimsProvider).Assembly;
+        var resourceName = $"{assembly.GetName().Name}.Claims.Claims.json";
+        using var stream =
+            assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Could not load embedded resource '{resourceName}'.");
+        using var reader = new StreamReader(stream);
+        var root =
+            JsonNode.Parse(reader.ReadToEnd())
+            ?? throw new InvalidOperationException("Embedded Claims.json parsed to null.");
+        return root.AsObject()["claimSets"]!.AsArray().Count;
+    }
+
     [SetUp]
     public void Setup()
     {
@@ -296,7 +316,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         );
 
         // All claim sets in the default Claims.json are system reserved
-        Assert.That(systemReservedCount, Is.EqualTo(19));
+        Assert.That(systemReservedCount, Is.EqualTo(EmbeddedClaimSetCount));
     }
 
     [Test]
@@ -309,8 +329,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         Assert.That(result, Is.TypeOf<ClaimsDataLoadResult.Success>());
         var success = (ClaimsDataLoadResult.Success)result;
 
-        // We expect 19 claim sets from the embedded Claims.json
-        Assert.That(success.ClaimSetsLoaded, Is.EqualTo(19));
+        Assert.That(success.ClaimSetsLoaded, Is.EqualTo(EmbeddedClaimSetCount));
         Assert.That(success.HierarchyLoaded, Is.True);
     }
 
@@ -672,11 +691,11 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
                 );
                 Assert.That(tempCustomExists, Is.False);
 
-                // Verify standard claims are restored (19 from embedded)
+                // Verify standard claims are restored
                 var standardClaimCount = await connection.ExecuteScalarAsync<int>(
                     "SELECT COUNT(*) FROM dmscs.ClaimSet WHERE IsSystemReserved = true"
                 );
-                Assert.That(standardClaimCount, Is.EqualTo(19));
+                Assert.That(standardClaimCount, Is.EqualTo(EmbeddedClaimSetCount));
 
                 // Verify hierarchy includes embedded base claims
                 var hierarchyResult = await _claimsHierarchyRepository.GetClaimsHierarchy();
@@ -709,7 +728,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             Assert.That(initialResult, Is.TypeOf<ClaimsDataLoadResult.Success>());
 
             var (initialClaimSetCount, initialHierarchyCount) = await GetClaimsTableCountsAsync();
-            Assert.That(initialClaimSetCount, Is.EqualTo(19));
+            Assert.That(initialClaimSetCount, Is.EqualTo(EmbeddedClaimSetCount));
             Assert.That(initialHierarchyCount, Is.EqualTo(1));
 
             // Create a filesystem mode loader (simulating configuration change)

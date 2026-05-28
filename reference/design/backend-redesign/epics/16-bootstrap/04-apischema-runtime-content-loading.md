@@ -41,6 +41,9 @@ both materialize to the same workspace before runtime starts.
 - Missing optional content, such as an extension with no discovery/specification JSON or no XSD files, follows
   the same endpoint behavior as a selected package that does not provide those optional assets. Missing schema
   JSON remains a Story 00 staging failure, not a runtime fallback.
+- File-based XSD endpoint behavior is compatible with the repo-pinned BulkLoadClient XML mode used by Story
+  02: the client can either retrieve the XSD metadata it needs from DMS or seed delivery can pass the same
+  staged XSD directory with BulkLoadClient `-x`.
 - Docker-hosted DMS and IDE-hosted DMS use the same staged workspace contract:
   - Docker: `AppSettings:UseApiSchemaPath=true`, `AppSettings:ApiSchemaPath=/app/ApiSchema`,
   - IDE: `AppSettings:UseApiSchemaPath=true`,
@@ -66,6 +69,7 @@ both materialize to the same workspace before runtime starts.
    - metadata/specification JSON loading from files,
    - XSD file listing from manifest `xsdDirectory` entries,
    - XSD stream loading from files,
+   - BulkLoadClient-compatible XSD metadata behavior for the file-based workspace,
    - no `*.ApiSchema.dll` required in the staged workspace,
    - rejection of manifest paths that escape the workspace.
 6. Keep runtime content loading separate from bootstrap package resolution, schema selection, claims staging,
