@@ -17,7 +17,11 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 /// </summary>
 internal static class FakeJwtValidationService
 {
-    public static IJwtValidationService Allowing(string tokenId, string clientId)
+    public static IJwtValidationService Allowing(
+        string tokenId,
+        string clientId,
+        IReadOnlyList<long>? educationOrganizationIds = null
+    )
     {
         var fake = A.Fake<IJwtValidationService>();
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim("client_id", clientId)], "test"));
@@ -25,7 +29,9 @@ internal static class FakeJwtValidationService
             tokenId,
             clientId,
             ExternalDoublesConstants.SmokeClaimSetName,
-            [],
+            educationOrganizationIds is null
+                ? []
+                : [.. educationOrganizationIds.Select(static id => new EducationOrganizationId(id))],
             [],
             [new DmsInstanceId(ExternalDoublesConstants.StableDmsInstanceId)]
         );

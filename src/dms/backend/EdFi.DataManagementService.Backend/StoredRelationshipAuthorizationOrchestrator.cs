@@ -6,6 +6,8 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -13,7 +15,8 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
-        null
+        null,
+    ILogger? relationshipAuthorizationLogger = null
 )
 {
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
@@ -25,6 +28,8 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
+    private readonly ILogger _relationshipAuthorizationLogger =
+        relationshipAuthorizationLogger ?? NullLogger.Instance;
 
     public async Task<StoredRelationshipAuthorizationBoundary> ResolveAsync(
         RelationalWriteExecutorRequest request,
@@ -287,7 +292,8 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
             writeSession.CreateCommandExecutor(),
             _relationalParameterConfigurator,
-            _relationshipAuthorizationProviderFailureExtractor
+            _relationshipAuthorizationProviderFailureExtractor,
+            _relationshipAuthorizationLogger
         );
         var authorizationExecutionResult = await authorizationExecutor
             .ExecuteAsync(
@@ -323,9 +329,9 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
             },
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                RelationalWriteExecutorResults.BuildUnknownFailureResult(
+                RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                     request.OperationKind,
-                    invalidFailure.FailureMessage
+                    [invalidFailure.FailureMessage]
                 ),
             _ => throw new InvalidOperationException(
                 $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."

@@ -3,17 +3,17 @@ jira: DMS-1165
 jira_url: https://edfi.atlassian.net/browse/DMS-1165
 ---
 
-# Slice 6: Relationship Auth ProblemDetails Hardening
+# Relationship Auth ProblemDetails Hardening
 
 ## Purpose
 
-Harden relationship authorization error handling so the EdOrg CRUD slices and People core metadata produce the exact RFC 9457 ProblemDetails shapes described in `auth.md`.
+Harden relationship authorization error handling so the EdOrg CRUD stories and People core metadata produce the exact RFC 9457 ProblemDetails shapes described in `auth.md`.
 
-This slice should refine response mapping and tests. It should not introduce new authorization strategies or endpoint execution behavior.
+This story should refine response mapping and tests. It should not introduce new authorization strategies or endpoint execution behavior.
 
 ## In Scope
 
-- Consume the Slice 2 relationship authorization failure-set contract produced from `AUTH1` failures, including all failed OR-strategy/subject entries and their failure kinds.
+- Consume the relationship authorization failure-set contract produced from `AUTH1` failures, including all failed OR-strategy/subject entries and their failure kinds.
 - Do not assume one relationship `AUTH1` failure maps to one configured strategy index; relationship payloads may identify a failed OR group plus plan-relative strategy/subject ordinals.
 - Format relationship authorization 403 responses per `auth.md` §"ProblemDetails".
 - Translate securable element JSON paths to readable names, preferring MetaEd/readable names when available.
@@ -33,10 +33,10 @@ This slice should refine response mapping and tests. It should not introduce new
 
 ## ProblemDetails Cases
 
-This slice owns final formatting for relationship authorization cases from `auth.md`:
+This story owns final formatting for relationship authorization cases from `auth.md`:
 
 - Relationship-based no relationships established with EdOrg claims.
-- Relationship-based no relationships established without EdOrg claims where applicable to a relationship/custom-view-style check.
+- Relationship-based no relationships established with an empty normalized EdOrg claim list, rendered through the EdOrg-claims wording with `none`.
 - Required relationship securable element uninitialized in existing data.
 - Required relationship securable element missing from proposed data.
 - Mixed failed relationship OR groups, using failure-kind precedence: existing stored-value invalid data, proposed-value element required, then no relationship established.
@@ -53,7 +53,7 @@ This slice owns final formatting for relationship authorization cases from `auth
   - `errors`, and
   - `correlationId`
   matching the `auth.md` RFC 9457 contract.
-- The versioned relationship `AUTH1` failure-set payload introduced by Slice 2 is handled reliably for PostgreSQL and SQL Server failure patterns.
+- The versioned relationship `AUTH1` failure-set payload is handled reliably for PostgreSQL and SQL Server failure patterns.
 - ProblemDetails formatting uses the full relationship failure DTO/failure set, including mixed no-relationship, stored-null, and proposed-value failure kinds, without re-querying authorization state.
 - When a failed relationship OR group contains mixed failure kinds, the formatter selects the top-level ProblemDetails `type`, `detail`, and primary error text using this precedence: existing stored-value invalid data / element uninitialized; proposed-value element required; no relationship established / no matching authorization relationship.
 - Lower-precedence failed entries do not hide or downgrade higher-precedence entries. If multiple entries share the selected precedence, their readable securable names, strategy identity, and hints are aggregated in deterministic configured order.
@@ -75,7 +75,7 @@ This slice owns final formatting for relationship authorization cases from `auth
 
 ### Unit tests
 
-- PostgreSQL and SQL Server relationship `AUTH1` payload extraction regressions, using the shared Slice 2 parser/DTO contract.
+- PostgreSQL and SQL Server relationship `AUTH1` payload extraction regressions, using the shared parser/DTO contract.
 - Formatting from full failed OR-strategy metadata, including multiple strategies and mixed failure kinds.
 - Mixed failure-kind precedence chooses existing-data invalid-data over no-relationship failures, proposed-value element-required over no-relationship failures, and no-relationship only when no higher-precedence failure kind is present.
 - Single securable element message.
@@ -100,4 +100,52 @@ This slice owns final formatting for relationship authorization cases from `auth
 
 ## Reviewer Focus
 
-Reviewers should focus on wire compatibility with `auth.md`, not on authorization SQL semantics already owned by earlier slices.
+Reviewers should focus on wire compatibility with `auth.md`, not on authorization SQL semantics already owned by earlier stories.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+1. For relationship invalid-data and proposed element-required failures, `auth.md` gives singular examples only; what exact plural `detail` and `errors` wording should this story use when multiple same-precedence securable elements are selected?
+2. For relationship proposed element-required failures, `auth.md` says `Error: (empty)`; should the final RFC 9457 body include `"errors": []`, omit the member, or emit strategy/securable diagnostic text?
+3. When a relationship failure has no normalized EdOrg claims, should EdOrg-only and People relationship failures always use the EdOrg-claims wording with `(none)`, and reserve the "without EdOrg claims" existing/proposed wording for custom-view-style failures that truly do not use EdOrg claims?
+4. Should authorization hints be appended only for no-relationship failures, or also for selected invalid-data and proposed element-required relationship failures when the failed entries carry auth-view hint metadata?
+5. When multiple selected failures share the same displayed readable securable name across strategies or contributing paths, should the formatter de-duplicate by displayed name, preserve one entry per contributing path, or preserve one entry per failed strategy/subject?
+6. For multiple selected invalid-data failures across different relationship strategies, should `errors` contain one message per strategy using each `{authorizationStrategyName}`, or one aggregated message that lists multiple strategy names?
+7. Since People CRUD endpoint execution is out of scope but People core metadata is in scope, should this story add unit coverage for People-specific relationship failure DTOs, readable names, auth-view hints, and no-claims formatting even though integration/E2E coverage remains EdOrg-only?
+
+### Answers 1
+
+1. Use the existing `auth.md` singular wording for one selected readable securable name. For multiple existing-data invalid-data names, use `detail`: `Access to the requested data could not be authorized. The existing values of one or more of the following properties are required for authorization purposes: '{ReadableSecurableElement1}', '{ReadableSecurableElement2}'.` For multiple proposed element-required names, use `detail`: `Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: '{ReadableSecurableElement1}', '{ReadableSecurableElement2}'.`
+2. Include the `errors` member as an empty array: `"errors": []`. Do not omit the member and do not add strategy/securable diagnostic text for proposed element-required failures; `auth.md` defines that case as having an empty error list.
+3. Yes. EdOrg-only and People relationship failures should use the EdOrg-claims wording with claims rendered as `(none)` when the normalized EdOrg claim list is empty. Reserve the "without EdOrg claims" existing/proposed wording for custom-view-style failures that truly do not use EdOrg claims.
+4. Append authorization hints for the selected top-level relationship failure kind whenever the selected failed entries carry hint metadata, including invalid-data and proposed element-required failures. Append distinct hints to `detail` after the selected base detail text, preserving configured strategy/subject order.
+5. De-duplicate displayed readable securable names in the user-facing property list. Use first occurrence in deterministic configured strategy/subject/contributor order to establish ordering, and preserve the contributing path/strategy metadata internally for tests and strategy-specific error generation.
+6. For selected invalid-data failures, emit one `errors` entry per selected configured relationship strategy entry in configured order, using that entry's `{authorizationStrategyName}`. If multiple selected subjects fail under the same configured strategy, aggregate their readable securable names in `detail` and keep a single strategy error for that strategy entry. Do not collapse multiple strategy names into one combined error sentence.
+7. Yes. Add unit coverage for People relationship failure DTO mapping, readable-name selection, auth-view hint aggregation, and empty-claims formatting using People metadata. Keep backend integration and E2E coverage focused on EdOrg CRUD response shapes until People CRUD endpoint execution is in scope.
+
+### Questions 2
+
+1. If the versioned compact `AUTH1` failure-set payload is missing, malformed, uses an unknown version, is truncated, or maps to plan-relative ordinals that do not exist in the relationship plan, what response should this story produce: canonical security-configuration 500, generic system 500, or a relationship 403 fallback?
+2. For proposed-value relationship element-required failures, Answer 1.2 says the final body must include `"errors": []`, but the story also says to preserve strategy identity for element-required failures. Should that identity be preserved only in the internal DTO/unit assertions, with no strategy-specific text on the wire?
+3. For final response-shape integration and E2E assertions, should `correlationId` be asserted only as a present/non-empty value matching the DMS correlation-id format, or should tests inject/fix the correlation id and compare the entire ProblemDetails body exactly?
+4. Given Answer 1.3 reserves the "without EdOrg claims" wording for custom-view-style failures and custom view ProblemDetails are explicitly out of scope for this story, should this story remove/avoid adding tests for `auth.md` §2.4 unless a shared formatter already covers it, leaving CRUD custom-view wire coverage to the view-based auth story?
+5. When no-relationship failures are selected from multiple OR strategies, should the final `errors` array contain a single aggregated no-relationship message with de-duplicated readable names, or one message per selected failed strategy/subject?
+
+### Answers 2
+
+1. Produce the canonical security-configuration 500. A missing, malformed, unknown-version, truncated, or plan-ordinal-mismatched relationship `AUTH1` payload means the SQL-to-backend authorization contract cannot be trusted, so this story should fail closed with `urn:ed-fi:api:system:configuration:security` rather than inventing a relationship 403 fallback or returning a generic system error. Include a deterministic security-configuration error entry that identifies the invalid relationship authorization failure payload; keep raw provider text in logs only.
+2. Yes. Preserve strategy identity for proposed element-required failures in the parsed failure set, external relationship failure DTO, and unit assertions, but do not emit strategy-specific `errors` text on the wire. The final ProblemDetails body still uses `"errors": []`; only allowed wire-visible additions are the selected `detail` text and any distinct authorization hints already allowed by Answer 1.4.
+3. Assert `correlationId` as present and non-empty. Do not require a GUID-only or otherwise fixed generated format: DMS may echo the configured correlation-id request header when one is supplied, and otherwise uses the server trace identifier. Response-shape tests should compare all stable ProblemDetails members exactly and treat `correlationId` as a validated dynamic field. If a test intentionally supplies the configured correlation-id header, it may assert that the response echoes that value; otherwise it should only assert that the value is present and non-empty. Do not make integration or E2E tests inject a fixed correlation id just to compare the entire body byte-for-byte.
+4. Yes. this story should avoid adding dedicated tests for `auth.md` §2.4 custom-view/no-EdOrg-claims wording, because custom view ProblemDetails are outside this story. If a shared formatter already has narrow unit coverage that must be preserved while changing relationship code, keep that coverage; leave CRUD custom-view wire assertions to the view-based authorization story.
+5. Emit a single aggregated no-relationship `errors` entry. Aggregate the selected failed OR-strategy/subject readable securable names in deterministic configured strategy/subject/contributor order, de-duplicate by displayed readable name, and format the EdOrg claim text once. Preserve per-strategy and per-subject identity internally for DTO assertions and hint ordering; do not emit one no-relationship error per failed strategy or subject.
+
+### Questions 3
+
+1. For the empty normalized EdOrg-claims short-circuit where no `AUTH1` SQL is composed, should the synthetic relationship failure DTO include all executable relationship OR strategies/subjects in configured order so no-relationship names and distinct hints aggregate exactly like an evaluated failed OR group?
+2. What exact deterministic security-configuration `errors` entry should be emitted when the relationship `AUTH1` failure-set payload is missing, malformed, unknown-version, truncated, or maps to invalid plan-relative ordinals?
+
+### Answers 3
+
+1. Yes. Build the synthetic no-claims relationship failure DTO from the operation-applicable relationship plan after security-configuration and operation-eligibility filtering. Include every executable relationship OR strategy and subject in deterministic configured strategy/subject/contributor order, mark each selected entry as no relationship established, carry the normalized empty EdOrg-claim context, and preserve each subject's readable names and hint metadata. Do not compose `AUTH1` SQL for this path. This story's formatter should then aggregate readable names and distinct hints exactly as it does for an evaluated failed OR group, with claims rendered as `(none)`.
+2. Use this single stable `errors` entry for all invalid relationship `AUTH1` failure-set payload cases: `The relationship authorization failure payload returned by the authorization provider is invalid and cannot be mapped to the configured relationship authorization plan.` Keep provider-specific text, malformed payload fragments, parser reasons, and invalid ordinal/version details in logs only.

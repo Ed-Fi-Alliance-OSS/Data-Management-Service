@@ -80,6 +80,52 @@ public class Given_RelationshipAuthorizationAuth1FailurePayloadCodec
         sqlServerPayload.SubjectFailures.Should().HaveCount(2);
     }
 
+    [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, "1|7|1|0:0:n", true)]
+    [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, null, true)]
+    [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, "", true)]
+    [TestCase(null, "1|7|1|0:0:n", false)]
+    [TestCase("", "1|7|1|0:0:n", false)]
+    [TestCase("23505", "AUTH1 - 1|7|1|0:0:n", false)]
+    public void It_should_identify_postgresql_provider_failures_by_error_code(
+        string? providerErrorCode,
+        string? providerMessage,
+        bool expected
+    )
+    {
+        var result = RelationshipAuthorizationAuth1FailurePayloadCodec.IsProviderFailure(
+            SqlDialect.Pgsql,
+            providerErrorCode,
+            providerMessage
+        );
+
+        result.Should().Be(expected);
+    }
+
+    [TestCase(null, "Conversion failed when converting the varchar value 'AUTH1 - 1|7|1|0:0:n'.", true)]
+    [TestCase("", "Conversion failed when converting the varchar value 'AUTH1 - 1|7|1|0:0:n'.", true)]
+    [TestCase(
+        RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+        "Conversion failed when converting the varchar value 'AUTH1 - 1|7|1|0:0:n'.",
+        true
+    )]
+    [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, null, false)]
+    [TestCase(RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode, "", false)]
+    [TestCase(null, "Conversion failed without a relationship authorization marker.", false)]
+    public void It_should_identify_sql_server_provider_failures_by_message_marker(
+        string? providerErrorCode,
+        string? providerMessage,
+        bool expected
+    )
+    {
+        var result = RelationshipAuthorizationAuth1FailurePayloadCodec.IsProviderFailure(
+            SqlDialect.Mssql,
+            providerErrorCode,
+            providerMessage
+        );
+
+        result.Should().Be(expected);
+    }
+
     [TestCase("2|7|1|0:0:n")]
     [TestCase("1|7|2|0:0:n")]
     [TestCase("1|7|2|0:0:n,")]
@@ -152,12 +198,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ]
         );
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
-            payload,
-            checkSpecs,
-            [300L, 100L, 300L],
-            out var relationshipFailure
-        );
+        var mapped = TryMapAuth1Failure(payload, checkSpecs, [300L, 100L, 300L], out var relationshipFailure);
 
         mapped.Should().BeTrue();
         relationshipFailure.Should().NotBeNull();
@@ -218,6 +259,83 @@ public class Given_RelationshipAuthorizationFailureMapper
     }
 
     [Test]
+    public void It_should_preserve_unknown_strategy_name_as_strategy_kind()
+    {
+        const string strategyName = "CustomRelationshipAuthorizationStrategy";
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                strategyName,
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                10,
+                0,
+                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Inverted
+                ),
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                42,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeTrue();
+        relationshipFailure.Should().NotBeNull();
+
+        var failedStrategy = relationshipFailure!.FailedStrategies.Should().ContainSingle().Subject;
+        failedStrategy.StrategyName.Should().Be(strategyName);
+        failedStrategy.StrategyKind.Should().Be(strategyName);
+    }
+
+    [Test]
+    public void It_should_fail_closed_when_the_emitted_check_index_does_not_match_the_expected_check()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+        };
+        var payload = new RelationshipAuthorizationAuth1FailurePayload(
+            42,
+            [
+                new RelationshipAuthorizationAuth1SubjectFailure(
+                    0,
+                    0,
+                    RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                ),
+            ]
+        );
+
+        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            payload,
+            expectedEmittedAuth1Index: 41,
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_fail_closed_when_payload_ordinals_do_not_match_the_check_specs()
     {
         var checkSpecs = new[]
@@ -230,13 +348,55 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 1,
                 [
                     new RelationshipAuthorizationAuth1SubjectFailure(
                         0,
                         1,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            ),
+            checkSpecs,
+            [100L],
+            out var relationshipFailure
+        );
+
+        mapped.Should().BeFalse();
+        relationshipFailure.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_fail_closed_when_payload_omits_a_failed_or_strategy()
+    {
+        var checkSpecs = new[]
+        {
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Normal,
+                10,
+                0,
+                CreateSubject("SchoolId", "$.schoolReference.schoolId")
+            ),
+            CreateStoredCheckSpec(
+                RelationshipAuthorizationHierarchyDirection.Inverted,
+                11,
+                1,
+                CreateSubject(
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyReference.localEducationAgencyId"
+                )
+            ),
+        };
+
+        var mapped = TryMapAuth1Failure(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
                         RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
                     ),
                 ]
@@ -263,7 +423,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 1,
                 [
@@ -300,7 +460,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 1,
                 [
@@ -362,7 +522,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 1,
                 [
@@ -453,7 +613,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 3,
                 [
@@ -478,6 +638,13 @@ public class Given_RelationshipAuthorizationFailureMapper
             .StrategyKind.Should()
             .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
         failedStrategy.AuthObject!.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedStrategy
+            .AuthObject.FailureHint.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject
+                    .CreatePerson(RelationshipAuthorizationPersonAuthViewKind.Student)
+                    .FailureHint
+            );
         failedStrategy.FailedSubjects.Should().ContainSingle();
 
         var failedSubject = failedStrategy.FailedSubjects[0];
@@ -489,6 +656,13 @@ public class Given_RelationshipAuthorizationFailureMapper
         failedSubject.SecurableElements[0].JsonPath.Should().Be("$.studentReference.studentUniqueId");
         failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
         failedSubject.AuthObject.SubjectValueColumn.Should().Be("Student_DocumentId");
+        failedSubject
+            .AuthObject.FailureHint.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject
+                    .CreatePerson(RelationshipAuthorizationPersonAuthViewKind.Student)
+                    .FailureHint
+            );
         failedSubject.PersonSubject.Should().NotBeNull();
         failedSubject.PersonSubject!.PersonKind.Should().Be("Student");
         failedSubject.PersonSubject.PathKind.Should().Be("DirectRootColumn");
@@ -557,7 +731,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 4,
                 [
@@ -626,7 +800,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 4,
                 [
@@ -693,7 +867,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 5,
                 [
@@ -764,7 +938,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 6,
                 [
@@ -838,7 +1012,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 7,
                 [
@@ -940,9 +1114,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             .ContainSingle()
             .Subject;
 
-        failedSubject
-            .FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         failedSubject.Hint.Should().Be(authObject.FailureHint);
         failedSubject
             .AuthObject.Name.Should()
@@ -1031,6 +1203,12 @@ public class Given_RelationshipAuthorizationFailureMapper
 
         failedStrategy.AuthObject.Should().BeNull();
         failedStrategy.FailedSubjects.Select(static subject => subject.SubjectIndex).Should().Equal(0, 1);
+        failedStrategy
+            .FailedSubjects.Select(static subject => subject.FailureKind)
+            .Should()
+            .OnlyContain(static failureKind =>
+                failureKind == RelationshipAuthorizationSubjectFailureKind.NoRelationship
+            );
         failedStrategy
             .FailedSubjects.Select(static subject => subject.AuthObject.Name.ToString())
             .Should()
@@ -1222,7 +1400,7 @@ public class Given_RelationshipAuthorizationFailureMapper
             ),
         };
 
-        var mapped = RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+        var mapped = TryMapAuth1Failure(
             new RelationshipAuthorizationAuth1FailurePayload(
                 6,
                 [
@@ -1498,6 +1676,20 @@ public class Given_RelationshipAuthorizationFailureMapper
             )
         );
     }
+
+    private static bool TryMapAuth1Failure(
+        RelationshipAuthorizationAuth1FailurePayload payload,
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        out RelationshipAuthorizationFailure? relationshipFailure
+    ) =>
+        RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
+            payload,
+            payload.EmittedAuth1Index,
+            checkSpecs,
+            claimEducationOrganizationIds,
+            out relationshipFailure
+        );
 
     private static RelationshipAuthorizationSubject[] StampNonPersonSubjects(
         RelationshipAuthorizationAuthObject authObject,

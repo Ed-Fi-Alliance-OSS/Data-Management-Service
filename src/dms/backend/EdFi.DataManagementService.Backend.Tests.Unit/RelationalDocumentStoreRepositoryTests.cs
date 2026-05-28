@@ -47,8 +47,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private static readonly ResourceInfo _studentResourceInfo = CreateResourceInfo("Student");
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
-    private const string RelationshipAuthorizationSchoolIdErrorMessage =
-        "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's SchoolId value.";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),
@@ -744,12 +742,70 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.GetDocumentById(getRequest);
 
         var failure = result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>().Subject;
-        failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
-        failure.Hints.Should().BeNull();
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_get_relationship_authorization_payload_is_invalid()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-bebebebebebe"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
+                    new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
+                        RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+                    )
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -800,9 +856,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
             .Should()
             .AllSatisfy(subject =>
-                subject
-                    .FailureKind.Should()
-                    .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds)
+                subject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship)
             );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
@@ -3845,9 +3899,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
         failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(failure.RelationshipFailure));
-        failure
             .RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Proposed);
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
@@ -3866,9 +3917,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Hint.Should()
             .Be("Relationship authorization requires at least one claim EducationOrganizationId.");
         var failedSubject = failedStrategy.FailedSubjects.Should().ContainSingle().Which;
-        failedSubject
-            .FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         failedSubject.RootBinding.ColumnName.Should().Be("SchoolId");
         failedSubject
             .Hint.Should()
@@ -4203,7 +4252,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
                         new UpdateResult.UpdateFailureRelationshipNotAuthorized(
-                            ["stored relationship denied"],
                             CreateNoClaimsStoredRelationshipFailure()
                         )
                     )
@@ -4237,7 +4285,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Which.FailedSubjects.Should()
             .ContainSingle()
             .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequest
             .StoredRelationshipAuthorization.Should()
@@ -5530,12 +5578,49 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
-        failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
-        failure.Hints.Should().BeNull();
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_delete_relationship_authorization_payload_is_invalid()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
+        ConfigureDeleteRelationshipAuthorization(
+            new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            )
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
+            documentUuid,
+            123L,
+            isMatch: false
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, writePrecondition, documentUuid);
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901L]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            );
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -5568,16 +5653,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
         failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        failure
-            .ErrorMessages.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("'SchoolId'")
-            .And.Contain("'StudentUniqueId'")
-            .And.NotContain("auth.EducationOrganizationIdToStudentDocumentId")
-            .And.NotContain("auth.EducationOrganizationIdToEducationOrganizationId");
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .SelectMany(static subject => subject.SecurableElements)
+            .Select(static element => element.ReadableName)
+            .Should()
+            .Equal("SchoolId", "StudentUniqueId");
         var failedStrategy = failure.RelationshipFailure.FailedStrategies.Should().ContainSingle().Which;
         failedStrategy.AuthObject.Should().BeNull();
         failedStrategy
@@ -5617,9 +5697,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
             .Should()
             .AllSatisfy(subject =>
-                subject
-                    .FailureKind.Should()
-                    .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds)
+                subject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship)
             );
         A.CallTo(_commandExecutor)
             .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
@@ -7092,7 +7170,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     [
                         new RelationshipAuthorizationFailedSubject(
                             SubjectIndex: 0,
-                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                            FailureKind: RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                             RootBinding: new RelationshipAuthorizationRootBinding(
                                 "Ed-Fi.School",
                                 "edfi.School",

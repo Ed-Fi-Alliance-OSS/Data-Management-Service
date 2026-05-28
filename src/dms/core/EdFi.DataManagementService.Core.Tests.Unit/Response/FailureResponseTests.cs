@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Response;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Failure_Response_For_Data_Conflict
+public class Given_FailureResponse_For_Data_Conflict
 {
     private const string ExpectedType = "urn:ed-fi:api:data-conflict:dependent-item-exists";
     private const string ExpectedTitle = "Dependent Item Exists";
@@ -83,7 +83,7 @@ public class Given_Failure_Response_For_Data_Conflict
 
 [TestFixture]
 [Parallelizable]
-public class Given_Failure_Response_For_Security_Configuration
+public class Given_FailureResponse_For_Security_Configuration
 {
     private static readonly TraceId _traceId = new("security-trace");
 

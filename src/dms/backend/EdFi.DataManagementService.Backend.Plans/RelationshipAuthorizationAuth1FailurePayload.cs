@@ -186,6 +186,23 @@ public static class RelationshipAuthorizationAuth1FailurePayloadCodec
         return TryParsePayload(payloadText, out payload);
     }
 
+    public static bool IsProviderFailure(
+        SqlDialect dialect,
+        string? providerErrorCode,
+        string? providerMessage
+    ) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => string.Equals(
+                providerErrorCode,
+                ProviderFailureCode,
+                StringComparison.Ordinal
+            ),
+            SqlDialect.Mssql => !string.IsNullOrWhiteSpace(providerMessage)
+                && providerMessage.Contains(MssqlPayloadMarker, StringComparison.Ordinal),
+            _ => false,
+        };
+
     public static bool TryExtractProviderPayload(
         SqlDialect dialect,
         string? providerErrorCode,

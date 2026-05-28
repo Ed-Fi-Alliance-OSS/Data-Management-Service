@@ -11,10 +11,12 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -24,11 +26,13 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Relational_Write_No_Profile_Persister
 {
     private RelationalWriteNoProfilePersister _sut = null!;
+    private RecordingLogger<RelationalWriteNoProfilePersister> _logger = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalWriteNoProfilePersister();
+        _logger = new RecordingLogger<RelationalWriteNoProfilePersister>();
+        _sut = new RelationalWriteNoProfilePersister(logger: _logger);
     }
 
     [Test]
@@ -273,6 +277,101 @@ public class Given_Relational_Write_No_Profile_Persister
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
         writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_proposed_relationship_authorization_auth1_payload_has_unexpected_emitted_check_index()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post, SqlDialect.Mssql);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var auth1Payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                runtimeCheck.EmittedAuth1Index + 1,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ExceptionToThrow: new StubDbException($"AUTH1 - {auth1Payload}")),
+        ]);
+
+        var action = async () => await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        var exception = await action
+            .Should()
+            .ThrowAsync<RelationalWriteInvalidRelationshipAuthorizationFailureException>();
+        exception
+            .Which.FailureMessage.Should()
+            .Be(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            );
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
+        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+    }
+
+    [Test]
+    public async Task It_maps_invalid_proposed_relationship_authorization_auth1_payloads_before_root_insert()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post, SqlDialect.Mssql);
+        var runtimeCheck = CreateProposedSchoolIdRelationshipAuthorizationRuntimeCheck(request, rootPlan);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ExceptionToThrow: new StubDbException("AUTH1 - 2|0|1|0:0:n")),
+        ]);
+
+        var action = async () => await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        var exception = await action
+            .Should()
+            .ThrowAsync<RelationalWriteInvalidRelationshipAuthorizationFailureException>();
+        exception
+            .Which.FailureMessage.Should()
+            .Be(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            );
+        exception.Which.FailureMessage.Should().NotContain("2|0|1|0:0:n");
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Contain("AUTH1");
+        writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO [dms].[Document]");
+
+        var logRecord = _logger.Records.Should().ContainSingle().Subject;
+        logRecord.Level.Should().Be(LogLevel.Error);
+        logRecord.Message.Should().Contain("Dialect: Mssql");
+        logRecord.Message.Should().Contain("ExpectedEmittedAuth1Index: 0");
+        logRecord.Message.Should().Contain("ProviderErrorCode: none");
+        logRecord.Message.Should().Contain("ProviderMessageFragment: AUTH1 - 2|0|1|0:0:n");
+        logRecord.Message.Should().Contain("MappingFailureCategory: PayloadParseFailed");
     }
 
     [Test]

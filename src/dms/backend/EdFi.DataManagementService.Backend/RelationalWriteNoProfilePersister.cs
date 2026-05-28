@@ -13,6 +13,8 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -36,7 +38,8 @@ internal interface IRelationalWritePersister
 internal sealed class RelationalWriteNoProfilePersister(
     IRelationalParameterConfigurator? parameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
-        null
+        null,
+    ILogger<RelationalWriteNoProfilePersister>? logger = null
 ) : IRelationalWritePersister
 {
     private const string AuthorizationResultColumn = "AuthorizationResult";
@@ -46,6 +49,8 @@ internal sealed class RelationalWriteNoProfilePersister(
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
+    private readonly ILogger<RelationalWriteNoProfilePersister> _logger =
+        logger ?? NullLogger<RelationalWriteNoProfilePersister>.Instance;
 
     public async Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
@@ -636,24 +641,20 @@ internal sealed class RelationalWriteNoProfilePersister(
         SqlDialect dialect,
         ProposedRelationshipAuthorizationRuntimeCheck relationshipAuthorizationRuntimeCheck,
         DbException exception,
-        out RelationshipAuthorizationFailure? relationshipFailure
+        out RelationshipAuthorizationFailure? relationshipFailure,
+        out RelationshipAuthorizationProviderFailureDiagnostic? invalidFailureDiagnostic
     ) =>
         RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
             dialect,
             exception,
             _relationshipAuthorizationProviderFailureExtractor,
+            relationshipAuthorizationRuntimeCheck.EmittedAuth1Index,
             relationshipAuthorizationRuntimeCheck.CheckSpecs,
             relationshipAuthorizationRuntimeCheck
                 .ClaimEducationOrganizationIdParameterization
                 .ClaimEducationOrganizationIds,
-            out relationshipFailure
-        );
-
-    private bool IsRelationshipAuthorizationProviderFailure(SqlDialect dialect, DbException exception) =>
-        RelationshipAuthorizationProviderFailureMapper.IsRelationshipAuthorizationProviderFailure(
-            dialect,
-            exception,
-            _relationshipAuthorizationProviderFailureExtractor
+            out relationshipFailure,
+            out invalidFailureDiagnostic
         );
 
     [DoesNotReturn]
@@ -668,17 +669,23 @@ internal sealed class RelationalWriteNoProfilePersister(
                 dialect,
                 relationshipAuthorizationRuntimeCheck,
                 exception,
-                out var relationshipFailure
+                out var relationshipFailure,
+                out var invalidFailureDiagnostic
             )
         )
         {
             throw new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure!);
         }
 
-        if (IsRelationshipAuthorizationProviderFailure(dialect, exception))
+        if (invalidFailureDiagnostic is not null)
         {
+            RelationshipAuthorizationProviderFailureMapper.LogInvalidFailurePayload(
+                _logger,
+                invalidFailureDiagnostic
+            );
+
             throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                "Relationship authorization failed, but the AUTH1 failure metadata could not be mapped."
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         }
 

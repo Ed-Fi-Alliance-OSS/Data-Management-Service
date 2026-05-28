@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -66,10 +67,14 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<
-                ISingleRecordRelationshipAuthorizationExecutor,
-                SingleRecordRelationshipAuthorizationExecutor
-            >()
+            ServiceDescriptor.Scoped<ISingleRecordRelationshipAuthorizationExecutor>(
+                static serviceProvider => new SingleRecordRelationshipAuthorizationExecutor(
+                    serviceProvider.GetRequiredService<IRelationalCommandExecutor>(),
+                    serviceProvider.GetService<IRelationalParameterConfigurator>(),
+                    serviceProvider.GetService<IRelationshipAuthorizationProviderFailureExtractor>(),
+                    serviceProvider.GetService<ILogger<SingleRecordRelationshipAuthorizationExecutor>>()
+                )
+            )
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<

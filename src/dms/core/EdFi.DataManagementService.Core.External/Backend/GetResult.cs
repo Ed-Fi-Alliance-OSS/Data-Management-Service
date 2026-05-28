@@ -41,11 +41,8 @@ public record GetResult
     /// <summary>
     /// A failure because stored relationship authorization denied access to the document.
     /// </summary>
-    public record GetFailureRelationshipNotAuthorized(
-        string[] ErrorMessages,
-        RelationshipAuthorizationFailure RelationshipFailure,
-        string[]? Hints = null
-    ) : GetResult();
+    public record GetFailureRelationshipNotAuthorized(RelationshipAuthorizationFailure RelationshipFailure)
+        : GetResult();
 
     /// <summary>
     /// A failure because the requested read operation is intentionally not implemented.

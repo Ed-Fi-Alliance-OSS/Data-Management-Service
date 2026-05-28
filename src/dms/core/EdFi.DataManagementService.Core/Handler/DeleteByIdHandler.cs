@@ -94,12 +94,12 @@ internal class DeleteByIdHandler(
             ),
             DeleteFailureRelationshipNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
-                Body: FailureResponse.ForForbidden(
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: notAuthorized.ErrorMessages,
-                    hints: notAuthorized.Hints
+                Body: FailureResponse.ForRelationshipAuthorization(
+                    requestInfo.FrontendRequest.TraceId,
+                    notAuthorized.RelationshipFailure
                 ),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             DeleteFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,

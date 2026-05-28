@@ -743,7 +743,8 @@ public sealed class RelationalDocumentStoreRepository(
         var authorizationExecutor = new SingleRecordRelationshipAuthorizationExecutor(
             sessionCommandExecutor,
             _relationalParameterConfigurator,
-            _relationshipAuthorizationProviderFailureExtractor
+            _relationshipAuthorizationProviderFailureExtractor,
+            _logger
         );
         var authorizationExecutionResult = await authorizationExecutor
             .ExecuteAsync(
@@ -765,18 +766,16 @@ public sealed class RelationalDocumentStoreRepository(
             SingleRecordRelationshipAuthorizationExecutionResult.StaleTarget =>
                 new DeleteResult.DeleteFailureNotExists(),
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                new DeleteResult.UnknownFailure(invalidFailure.FailureMessage),
+                new DeleteResult.DeleteFailureSecurityConfiguration([invalidFailure.FailureMessage]),
             _ => throw new InvalidOperationException(
                 $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."
             ),
         };
     }
 
-    // TODO: Aggregate failed strategy and subject hints into Hints when relationship
-    // authorization ProblemDetails owns hint rendering.
     private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
+    ) => new(relationshipFailure);
 
     private static RelationalCommand BuildDocumentDeleteByDocumentIdCommand(
         SqlDialect dialect,
@@ -1837,7 +1836,7 @@ public sealed class RelationalDocumentStoreRepository(
             ),
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 new GetAuthorizationOutcome(
-                    new GetResult.UnknownFailure(invalidFailure.FailureMessage),
+                    new GetResult.GetFailureSecurityConfiguration([invalidFailure.FailureMessage]),
                     null,
                     false
                 ),
@@ -1873,15 +1872,13 @@ public sealed class RelationalDocumentStoreRepository(
             out relationshipFailure
         );
 
-    // TODO: Aggregate failed strategy and subject hints into Hints when relationship
-    // authorization ProblemDetails owns hint rendering.
     private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
+    ) => new(relationshipFailure);
 
     private static UpsertResult.UpsertFailureRelationshipNotAuthorized CreateUpsertRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
+    ) => new(relationshipFailure);
 
     private sealed record GetAuthorizationOutcome(
         GetResult? FailureResult,
@@ -2435,11 +2432,6 @@ public sealed class RelationalDocumentStoreRepository(
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires proposed-value EducationOrganization subject "
                     + $"{FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from relationship authorization metadata"}, "
                     + $"but root column '{failure.Location?.Table}.{failure.Location?.Column?.Value}' does not have a matching root write binding.",
-            RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations =>
-                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
-                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' selects People relationship subject '{failure.Location?.Kind}' "
-                    + $"through auth view '{failure.Location?.AuthorizationObjectName}', but the people auth views were not emitted in mapping set "
-                    + $"'{MappingSetResourceLookupExtensions.FormatMappingSetKey(mappingSet.Key)}'. {failure.Hint}",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failure),
                 failure.FailureKind,

@@ -23,7 +23,6 @@ public enum RelationshipAuthorizationSubjectFailureKind
 {
     StoredValueNull,
     ProposedValueMissing,
-    NoClaimEducationOrganizationIds,
     NoRelationship,
 }
 
@@ -89,7 +88,8 @@ public sealed record RelationshipAuthorizationRootBinding(
 public sealed record RelationshipAuthorizationAuthObjectInfo(
     string Name,
     string SubjectValueColumn,
-    string ClaimEducationOrganizationIdColumn
+    string ClaimEducationOrganizationIdColumn,
+    string? FailureHint = null
 );
 
 /// <summary>

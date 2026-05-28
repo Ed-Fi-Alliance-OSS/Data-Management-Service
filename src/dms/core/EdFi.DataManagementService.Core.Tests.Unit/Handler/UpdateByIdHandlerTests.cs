@@ -744,21 +744,10 @@ public class UpdateByIdHandlerTests
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Relationship_Not_Authorized : UpdateByIdHandlerTests
     {
-        private static readonly string[] _responseErrors =
-        [
-            "The caller is not authorized to update the existing resource.",
-        ];
-        private static readonly string[] _responseHints =
-        [
-            "Verify the caller has an education organization relationship to the stored values.",
-        ];
-
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly UpdateFailureRelationshipNotAuthorized Response = new(
-                _responseErrors,
-                CreateStoredRelationshipFailure(),
-                _responseHints
+                CreateStoredRelationshipFailure()
             );
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
@@ -781,15 +770,31 @@ public class UpdateByIdHandlerTests
         public void It_maps_the_relationship_denial_to_http_403()
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
             requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            requestInfo.FrontendResponse.Body!["type"]!
+                .ToString()
+                .Should()
+                .Be("urn:ed-fi:api:security:authorization");
+            requestInfo.FrontendResponse.Body!["title"]!.ToString().Should().Be("Authorization Denied");
+            requestInfo.FrontendResponse.Body!["status"]!.GetValue<int>().Should().Be(403);
+            requestInfo.FrontendResponse.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Be("Access to the requested data could not be authorized.");
+            requestInfo.FrontendResponse.Body!["correlationId"]!
+                .ToString()
+                .Should()
+                .Be("relationship-put-403");
             requestInfo.FrontendResponse.Body!["errors"]!
                 .AsArray()
                 .Select(static error => error!.ToString())
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be(_responseErrors[0]);
-            requestInfo.FrontendResponse.Body!["detail"]!.ToString().Should().Contain(_responseHints[0]);
+                .Be(
+                    "No relationships have been established between the caller's education organization id claim ('255901') and the resource item's 'SchoolId' value."
+                );
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }

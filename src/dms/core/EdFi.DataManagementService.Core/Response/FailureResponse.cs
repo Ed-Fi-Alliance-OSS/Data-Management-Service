@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using static EdFi.DataManagementService.Core.UtilityService;
 
@@ -221,6 +222,24 @@ public static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors: errors
+        );
+    }
+
+    public static JsonNode ForRelationshipAuthorization(
+        TraceId traceId,
+        RelationshipAuthorizationFailure relationshipFailure
+    )
+    {
+        var problemDetails = RelationshipAuthorizationProblemDetails.Format(relationshipFailure);
+
+        return CreateBaseJsonObject(
+            detail: problemDetails.Detail,
+            type: problemDetails.Type,
+            title: "Authorization Denied",
+            status: 403,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: problemDetails.Errors
         );
     }
 

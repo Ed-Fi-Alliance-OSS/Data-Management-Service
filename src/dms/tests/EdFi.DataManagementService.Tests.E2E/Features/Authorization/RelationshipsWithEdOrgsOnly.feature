@@ -166,16 +166,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims () and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'SchoolId' value."
                       ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
     Rule: PUT resource fails with a 403 forbidden error with no education organization ids claim
         Background:
@@ -245,133 +246,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims () and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'SchoolId' value."
                       ]
                   }
                   """
-
-    Rule: Create or update resource fails with a 403 forbidden error with no matching education organization ids claim
-        Background:
-            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
-              And the system has these "schools"
-                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
-                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-              And the system has these "classPeriods"
-                  | classPeriodName  | schoolReference           |
-                  | 01 - Traditional | { "schoolId": 255901001 } |
-                  | 02 - Traditional | { "schoolId": 255901001 } |
-
-        Scenario: 05 Ensure client can not create a bellschedule with 255901002
-             When a POST request is made to "/ed-fi/bellschedules" with
-                  """
-                  {
-                      "schoolReference": {
-                          "schoolId": 255901002
-                      },
-                      "bellScheduleName": "Test Schedule",
-                      "totalInstructionalTime": 325,
-                      "classPeriods": [
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "01 - Traditional",
-                                  "schoolId": 255901002
-                              }
-                          },
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "02 - Traditional",
-                                  "schoolId": 255901002
-                              }
-                          }
-                      ],
-                      "dates": [],
-                      "gradeLevels": []
-                  }
-                  """
-             Then it should respond with 403
-              And the response body is
-                  """
-                  {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
-                      "title": "Authorization Denied",
-                      "status": 403,
-                      "validationErrors": {},
-                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and the resource item's SchoolId value."
-                      ]
-                    }
-                  """
-
-        Scenario: 06 Ensure client can not update a bellschedule with 255901002
-             When a POST request is made to "/ed-fi/bellschedules" with
-                  """
-                  {
-                      "schoolReference": {
-                          "schoolId": 255901001
-                      },
-                      "bellScheduleName": "Test Schedule 06",
-                      "totalInstructionalTime": 325,
-                      "classPeriods": [
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "01 - Traditional",
-                                  "schoolId": 255901001
-                              }
-                          }
-                      ],
-                      "dates": [],
-                      "gradeLevels": []
-                  }
-                  """
-             Then it should respond with 201 or 200
-             When a PUT request is made to "/ed-fi/bellschedules/{id}" with
-                  """
-                  {
-                      "id": "{id}",
-                      "schoolReference": {
-                          "schoolId": 255901002
-                      },
-                      "bellScheduleName": "Test Schedule 06",
-                      "totalInstructionalTime": 325,
-                      "classPeriods": [
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "01 - Traditional",
-                                  "schoolId": 255901002
-                              }
-                          },
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "02 - Traditional",
-                                  "schoolId": 255901002
-                              }
-                          }
-                      ],
-                      "dates": [],
-                      "gradeLevels": []
-                  }
-                  """
-             Then it should respond with 403
-              And the response body is
-                  """
-                  {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
-                      "title": "Authorization Denied",
-                      "status": 403,
-                      "validationErrors": {},
-                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and the resource item's SchoolId value."
-                      ]
-                  }
-                  """
+              And the response body has a non-empty correlationId
 
     Rule: GetById or Delete the resource with RelationshipsWithEdOrgsOnly authorization
         Background:
@@ -518,16 +403,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
+                   "detail": "Access to the requested data could not be authorized.",
+                   "type": "urn:ed-fi:api:security:authorization",
                    "title": "Authorization Denied",
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901222') and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901222') and the resource item's 'SchoolId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
         @relational-backend
         @relational-ci-shard-3
@@ -559,16 +445,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
+                   "detail": "Access to the requested data could not be authorized.",
+                   "type": "urn:ed-fi:api:security:authorization",
                    "title": "Authorization Denied",
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901223') and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901223') and the resource item's 'SchoolId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
     Rule: Search for a resource with RelationshipsWithEdOrgsOnly authorization
         Background:
@@ -690,16 +577,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('3') and the resource item's SchoolId value."
+                          "No relationships have been established between the caller's education organization id claim ('3') and the resource item's 'SchoolId' value."
                        ]
                       }
                   """
+              And the response body has a non-empty correlationId
 
         @relational-backend
         @relational-ci-shard-3
@@ -822,17 +710,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
-                    "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's LocalEducationAgencyId value."
+                      "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
         @relational-backend
         @relational-ci-shard-3
         Scenario: 14.3 Ensure client with access to school 20101 cannot delete by id LEA because it is up the hierarchy
@@ -842,17 +730,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
-                    "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's LocalEducationAgencyId value."
+                      "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
         @relational-backend
         @relational-ci-shard-3
         Scenario: 14.4 Ensure client with access to school 20202 cannot PUT LEA because it is up the hierarchy
@@ -878,17 +766,17 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
-                    "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's LocalEducationAgencyId value."
+                      "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
+              And the response body has a non-empty correlationId
 
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:

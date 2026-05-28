@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -221,7 +222,14 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
     {
         var result = await GetRootChildAsync(_authorizationRootChildSeeds[1], _normalStrategy);
 
-        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        var failure = AssertRelationshipDenied(
+            result,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+        );
+        RelationshipAuthorizationBackendFailureAssertions.AssertStoredRootSchoolNoRelationshipFailure(
+            failure.RelationshipFailure,
+            ClaimEducationOrganizationId
+        );
         _context.AssertNoHydration();
     }
 
@@ -341,7 +349,7 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
 
         var failure = AssertRelationshipDenied(
             result,
-            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
         );
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
         _context.AssertNoHydration();
@@ -358,7 +366,14 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
             _normalStrategy
         );
 
-        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.StoredValueNull);
+        var failure = AssertRelationshipDenied(
+            result,
+            RelationshipAuthorizationSubjectFailureKind.StoredValueNull
+        );
+        RelationshipAuthorizationBackendFailureAssertions.AssertStoredNullableSchoolNullFailure(
+            failure.RelationshipFailure,
+            ClaimEducationOrganizationId
+        );
         _context.AssertNoHydration();
     }
 
@@ -415,4 +430,90 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
             .Contain(expectedFailureKind);
         return failure;
     }
+}
+
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_An_Unmappable_AUTH1_Payload
+{
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+
+    private static readonly QuerySchoolSeed _schoolSeed = new(
+        new DocumentUuid(Guid.Parse("22222222-9000-0000-0000-000000000001")),
+        300,
+        "West School"
+    );
+
+    private static readonly AuthorizationRootChildSeed _authorizationRootChildSeed = new(
+        new DocumentUuid(Guid.Parse("55555555-9000-0000-0000-000000000001")),
+        901,
+        "invalid-auth1-payload",
+        300,
+        []
+    );
+
+    private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _context = new PostgresqlRelationalQueryAuthorizationTestContext(
+            ReplaceAuth1PayloadWithUnmappableOrdinal
+        );
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false,
+            replaceReadTargetLookup: false
+        );
+        await _context.SeedSchoolDescriptorDataAsync();
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateSchoolAsync(_schoolSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(_authorizationRootChildSeed)
+        );
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, _schoolSeed.SchoolId);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_when_the_provider_payload_cannot_map_to_the_plan()
+    {
+        var result = await _context.GetByIdAsync(
+            RelationshipAuthorizationCrudTestSupport.ProjectEndpointName,
+            RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
+            _authorizationRootChildSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
+        );
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        RelationshipAuthorizationBackendFailureAssertions.AssertInvalidFailurePayloadSecurityConfiguration(
+            failure.Errors
+        );
+        _context.AssertNoHydration();
+    }
+
+    private static RelationshipAuthorizationProviderFailure ReplaceAuth1PayloadWithUnmappableOrdinal(
+        RelationshipAuthorizationProviderFailure providerFailure
+    ) => providerFailure with { Message = "1|0|1|99:0:n" };
 }

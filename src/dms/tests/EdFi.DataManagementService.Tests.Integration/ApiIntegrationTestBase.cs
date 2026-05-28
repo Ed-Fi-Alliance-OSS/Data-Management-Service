@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.AspNetCore.Hosting;
@@ -38,6 +39,23 @@ public abstract class ApiIntegrationTestBase
     /// the per-dialect base class (for example, <c>"postgresql"</c> or <c>"mssql"</c>).
     /// </summary>
     protected abstract string Datastore { get; }
+
+    /// <summary>
+    /// Allows focused authorization scenarios to run the real authorization middleware while
+    /// keeping the existing smoke scenarios on the historical bypassed path.
+    /// </summary>
+    protected virtual bool BypassAuthorization => true;
+
+    /// <summary>
+    /// EducationOrganizationIds returned from the fake JWT validation service.
+    /// </summary>
+    protected virtual IReadOnlyList<long> ClientEducationOrganizationIds => [];
+
+    /// <summary>
+    /// Builds the claim set provider used by the in-process host.
+    /// </summary>
+    protected virtual IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        new AllowAllClaimSetProvider(fixture);
 
     /// <summary>
     /// Provisions a fresh per-test database from the dialect's baseline and returns its
@@ -78,7 +96,7 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:Datastore", Datastore);
             builder.UseSetting("AppSettings:QueryHandler", "postgresql");
             builder.UseSetting("AppSettings:DeployDatabaseOnStartup", "false");
-            builder.UseSetting("AppSettings:BypassAuthorization", "true");
+            builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
             builder.UseSetting("ConfigurationServiceSettings:ClientSecret", "test-cms-secret");
@@ -86,7 +104,13 @@ public abstract class ApiIntegrationTestBase
 
             builder.ConfigureServices(services =>
             {
-                ExternalDoublesRegistration.RegisterAll(services, fixtureContext, leasedConnectionString);
+                ExternalDoublesRegistration.RegisterAll(
+                    services,
+                    fixtureContext,
+                    leasedConnectionString,
+                    CreateClaimSetProvider(fixtureContext),
+                    ClientEducationOrganizationIds
+                );
             });
         });
 

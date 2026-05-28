@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -19,6 +20,7 @@ using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -27,9 +29,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Default_Relational_Write_Executor
 {
-    private const string ProposedRelationshipAuthorizationSchoolIdErrorMessage =
-        "No relationships have been established between the caller's education organization id claims ('1234') and the resource item's SchoolId value.";
-
     private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
     private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
@@ -445,6 +444,69 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_security_configuration_when_stored_relationship_auth1_payload_is_invalid()
+    {
+        var providerFailureExtractor = new StubRelationshipAuthorizationProviderFailureExtractor(
+            RelationshipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            "2|0|1|0:0:n"
+        );
+        var logger = new RecordingLogger<DefaultRelationalWriteExecutor>();
+        _sut = new DefaultRelationalWriteExecutor(
+            _writeSessionFactory,
+            _referenceResolverAdapterFactory,
+            _writeFlattener,
+            _currentStateLoader,
+            _currentEtagPreconditionChecker,
+            _committedRepresentationReader,
+            _targetLookupResolver,
+            _writeFreshnessChecker,
+            _noProfileMergeSynthesizer,
+            _profileMergeSynthesizer,
+            _noProfilePersister,
+            _writeExceptionClassifier,
+            _writeConstraintResolver,
+            _readMaterializer,
+            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
+            logger: logger
+        );
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("AUTH1 failed"));
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        var securityConfigurationFailure = updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Subject;
+        securityConfigurationFailure
+            .Errors.Should()
+            .Equal(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            )
+            .And.NotContain(error => error.Contains("2|0|1|0:0:n", StringComparison.Ordinal))
+            .And.NotContain(error => error.Contains("AUTH1 failed", StringComparison.Ordinal));
+        var logRecord = logger.Records.Should().ContainSingle().Subject;
+        logRecord.Level.Should().Be(LogLevel.Error);
+        logRecord.Message.Should().Contain("Dialect: Pgsql");
+        logRecord.Message.Should().Contain("ExpectedEmittedAuth1Index: 0");
+        logRecord.Message.Should().Contain("ProviderErrorCode: AUTH1");
+        logRecord.Message.Should().Contain("ProviderMessageFragment: 2|0|1|0:0:n");
+        logRecord.Message.Should().Contain("MappingFailureCategory: PayloadParseFailed");
+        providerFailureExtractor.ExtractCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_locks_existing_put_target_before_returning_stored_relationship_no_claims()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -478,7 +540,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailedSubjects.Should()
             .ContainSingle()
             .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
@@ -614,7 +676,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailedSubjects.Should()
             .ContainSingle()
             .Which.FailureKind.Should()
-            .Be(RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds);
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
@@ -4303,6 +4365,91 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_security_configuration_failure_for_invalid_proposed_relationship_auth1_payloads()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfilePersister.ExceptionToThrow =
+            new RelationalWriteInvalidRelationshipAuthorizationFailureException(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var securityConfigurationFailure = upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Subject;
+        securityConfigurationFailure
+            .Errors.Should()
+            .Equal(
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+            );
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_returns_security_configuration_failure_for_invalid_proposed_relationship_authorization_plans(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateRequest(operationKind);
+        var authorization = CreateProposedSchoolIdRelationshipAuthorization(request) with
+        {
+            ClaimEducationOrganizationIdParameterization = null,
+        };
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = authorization,
+            }
+        );
+
+        const string expectedFailureMessage =
+            "Proposed relationship authorization produced executable checks without claim EducationOrganizationId parameterization.";
+
+        switch (operationKind)
+        {
+            case RelationalWriteOperationKind.Post:
+                result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Upsert>()
+                    .Which.Result.Should()
+                    .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+                    .Which.Errors.Should()
+                    .Equal(expectedFailureMessage);
+                break;
+
+            case RelationalWriteOperationKind.Put:
+                result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Update>()
+                    .Which.Result.Should()
+                    .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+                    .Which.Errors.Should()
+                    .Equal(expectedFailureMessage);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+        }
+
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_mixed_missing_and_no_relationship_failure_metadata_from_authorization_sql()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
@@ -4401,10 +4548,6 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
             .Subject;
         notAuthorized.RelationshipFailure.Should().BeSameAs(relationshipFailure);
-        notAuthorized
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        notAuthorized.ErrorMessages.Should().Equal(ProposedRelationshipAuthorizationSchoolIdErrorMessage);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -5578,6 +5721,7 @@ public class Given_Default_Relational_Write_Executor
         if (
             !RelationshipAuthorizationFailureMapper.TryMapAuth1Failure(
                 new RelationshipAuthorizationAuth1FailurePayload(0, subjectFailures),
+                expectedEmittedAuth1Index: 0,
                 authorized.CheckSpecs,
                 authorized.ClaimEducationOrganizationIdParameterization!.ClaimEducationOrganizationIds,
                 out var relationshipFailure

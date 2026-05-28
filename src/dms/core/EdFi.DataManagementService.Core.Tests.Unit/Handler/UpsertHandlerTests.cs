@@ -782,21 +782,10 @@ public class UpsertHandlerTests
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Relationship_Not_Authorized : UpsertHandlerTests
     {
-        private static readonly string[] _responseErrors =
-        [
-            "The caller is not authorized to create the proposed resource.",
-        ];
-        private static readonly string[] _responseHints =
-        [
-            "Verify the caller has an education organization relationship to the proposed values.",
-        ];
-
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly UpsertFailureRelationshipNotAuthorized Response = new(
-                _responseErrors,
-                CreateProposedRelationshipFailure(),
-                _responseHints
+                CreateProposedRelationshipFailure()
             );
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
@@ -820,15 +809,31 @@ public class UpsertHandlerTests
         public void It_maps_the_relationship_denial_to_http_403()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .ToString()
+                .Should()
+                .Be("urn:ed-fi:api:security:authorization");
+            _requestInfo.FrontendResponse.Body!["title"]!.ToString().Should().Be("Authorization Denied");
+            _requestInfo.FrontendResponse.Body!["status"]!.GetValue<int>().Should().Be(403);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Be("Access to the requested data could not be authorized.");
+            _requestInfo.FrontendResponse.Body!["correlationId"]!
+                .ToString()
+                .Should()
+                .Be("relationship-post-403");
             _requestInfo.FrontendResponse.Body!["errors"]!
                 .AsArray()
                 .Select(static error => error!.ToString())
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be(_responseErrors[0]);
-            _requestInfo.FrontendResponse.Body!["detail"]!.ToString().Should().Contain(_responseHints[0]);
+                .Be(
+                    "No relationships have been established between the caller's education organization id claim ('255901') and the resource item's 'SchoolId' value."
+                );
             _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             _requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }

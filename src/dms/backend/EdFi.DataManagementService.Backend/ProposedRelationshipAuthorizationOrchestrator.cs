@@ -47,9 +47,9 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
                 case ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan invalid:
                     return new ProposedRelationshipAuthorizationBoundary(
                         mergeResult,
-                        RelationalWriteExecutorResults.BuildUnknownFailureResult(
+                        RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                             request.OperationKind,
-                            invalid.FailureMessage
+                            [invalid.FailureMessage]
                         )
                     );
 

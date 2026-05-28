@@ -89,7 +89,7 @@ public static class RelationshipAuthorizationFailureMapper
 
                         return MapSubject(
                             subjectIndex,
-                            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds,
+                            RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                             subject,
                             checkSpec.ValueSource,
                             subjectFailureMetadata?.Hint
@@ -133,18 +133,24 @@ public static class RelationshipAuthorizationFailureMapper
 
     public static bool TryMapAuth1Failure(
         RelationshipAuthorizationAuth1FailurePayload payload,
+        int expectedEmittedAuth1Index,
         IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
         IReadOnlyList<long> claimEducationOrganizationIds,
         out RelationshipAuthorizationFailure? relationshipFailure
     )
     {
         ArgumentNullException.ThrowIfNull(payload);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedEmittedAuth1Index);
         ArgumentNullException.ThrowIfNull(checkSpecs);
         ArgumentNullException.ThrowIfNull(claimEducationOrganizationIds);
 
         relationshipFailure = null;
 
-        if (checkSpecs.Count == 0 || HasDuplicateSubjectFailureOrdinals(payload.SubjectFailures))
+        if (
+            payload.EmittedAuth1Index != expectedEmittedAuth1Index
+            || checkSpecs.Count == 0
+            || HasDuplicateSubjectFailureOrdinals(payload.SubjectFailures)
+        )
         {
             return false;
         }
@@ -167,7 +173,7 @@ public static class RelationshipAuthorizationFailureMapper
 
             if (subjectFailures.Length == 0)
             {
-                continue;
+                return false;
             }
 
             var checkSpec = checkSpecs[strategyOrdinal];
@@ -181,7 +187,7 @@ public static class RelationshipAuthorizationFailureMapper
         }
 
         if (
-            failedStrategies.Count == 0
+            failedStrategies.Count != checkSpecs.Count
             || payload.SubjectFailures.Any(failure => failure.StrategyOrdinal >= checkSpecs.Count)
         )
         {
@@ -543,7 +549,7 @@ public static class RelationshipAuthorizationFailureMapper
                 AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility =>
                 AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-            _ => MapEdOrgStrategyKind(checkSpec.Direction),
+            _ => checkSpec.ConfiguredStrategy.StrategyName,
         };
 
     private static string MapEdOrgStrategyKind(RelationshipAuthorizationHierarchyDirection direction) =>
@@ -566,7 +572,8 @@ public static class RelationshipAuthorizationFailureMapper
         new(
             authObject.Name.ToString(),
             authObject.SubjectValueColumn.Value,
-            authObject.ClaimEducationOrganizationIdColumn.Value
+            authObject.ClaimEducationOrganizationIdColumn.Value,
+            authObject.FailureHint
         );
 
     private static string BuildSubjectHint(RelationshipAuthorizationAuth1SubjectFailureKind failureKind) =>

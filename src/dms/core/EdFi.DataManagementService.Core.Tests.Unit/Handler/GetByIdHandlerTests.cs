@@ -208,20 +208,10 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string[] ResponseErrors = ["No relationship exists."];
-            public static readonly string[] ResponseHints =
-            [
-                "Verify the caller's education organization claims.",
-            ];
-
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
                 return Task.FromResult<GetResult>(
-                    new GetFailureRelationshipNotAuthorized(
-                        ResponseErrors,
-                        CreateRelationshipFailure(),
-                        ResponseHints
-                    )
+                    new GetFailureRelationshipNotAuthorized(CreateRelationshipFailure())
                 );
             }
         }
@@ -242,19 +232,29 @@ public class GetByIdHandlerTests
         public void It_maps_the_relationship_failure_to_http_403()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
 
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .ToString()
+                .Should()
+                .Be("urn:ed-fi:api:security:authorization");
+            _requestInfo.FrontendResponse.Body!["title"]!.ToString().Should().Be("Authorization Denied");
+            _requestInfo.FrontendResponse.Body!["status"]!.GetValue<int>().Should().Be(403);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Be("Access to the requested data could not be authorized.");
+            _requestInfo.FrontendResponse.Body!["correlationId"]!.ToString().Should().Be(_traceId);
             _requestInfo.FrontendResponse.Body!["errors"]!
                 .AsArray()
                 .Select(static error => error!.ToString())
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be(Repository.ResponseErrors[0]);
-            _requestInfo.FrontendResponse.Body!["detail"]!
-                .ToString()
-                .Should()
-                .Contain(Repository.ResponseHints[0]);
+                .Be(
+                    "No relationships have been established between the caller's education organization id claim ('255901') and the resource item's 'SchoolId' value."
+                );
         }
     }
 
@@ -664,15 +664,6 @@ actual: {requestInfo.FrontendResponse.Body}
     [Parallelizable]
     public class Given_A_Relational_Get_Request_With_Empty_EdOrg_Claims : GetByIdHandlerTests
     {
-        private static readonly string[] _responseErrors =
-        [
-            "Relationship authorization required caller EducationOrganizationIds.",
-        ];
-        private static readonly string[] _responseHints =
-        [
-            "Verify the caller's education organization claims.",
-        ];
-
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
             public IRelationalGetRequest? CapturedRequest { get; private set; }
@@ -682,11 +673,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 CapturedRequest = getRequest as IRelationalGetRequest;
 
                 return Task.FromResult<GetResult>(
-                    new GetFailureRelationshipNotAuthorized(
-                        _responseErrors,
-                        CreateEmptyClaimsRelationshipFailure(),
-                        _responseHints
-                    )
+                    new GetFailureRelationshipNotAuthorized(CreateEmptyClaimsRelationshipFailure())
                 );
             }
 
@@ -792,15 +779,29 @@ actual: {requestInfo.FrontendResponse.Body}
         public void It_maps_the_empty_claims_relationship_denial_to_http_403()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .ToString()
+                .Should()
+                .Be("urn:ed-fi:api:security:authorization");
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Be("Access to the requested data could not be authorized.");
+            _requestInfo.FrontendResponse.Body!["correlationId"]!
+                .ToString()
+                .Should()
+                .Be("empty-claims-get-by-id");
             _requestInfo.FrontendResponse.Body!["errors"]!
                 .AsArray()
                 .Select(static error => error!.ToString())
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be(_responseErrors[0]);
-            _requestInfo.FrontendResponse.Body!["detail"]!.ToString().Should().Contain(_responseHints[0]);
+                .Be(
+                    "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'SchoolId' value."
+                );
         }
     }
 

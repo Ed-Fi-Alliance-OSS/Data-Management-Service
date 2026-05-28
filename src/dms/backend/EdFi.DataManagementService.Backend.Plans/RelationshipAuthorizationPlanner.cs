@@ -1382,21 +1382,12 @@ public sealed class RelationshipAuthorizationPlanner
     ) =>
         MergeSelectedStrategyPersonAuthViews(
             strategySubjects.SelectMany(strategySubject =>
-                strategySubject
-                    .Subjects.Where(static subject => subject.PersonMetadata is not null)
-                    .Select(subject =>
-                    {
-                        var personMetadata = subject.PersonMetadata!;
-                        return new SelectedStrategyPersonAuthView(
-                            strategySubject.Strategy.ConfiguredStrategy,
-                            strategySubject.Strategy.RelationshipLocalOrder,
-                            valueSource,
-                            SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
-                            personMetadata.PersonKind,
-                            subject.AuthObject,
-                            subject.Contributors
-                        );
-                    })
+                SelectStrategyPersonAuthViews(
+                    strategySubject.Subjects,
+                    strategySubject.Strategy.ConfiguredStrategy,
+                    strategySubject.Strategy.RelationshipLocalOrder,
+                    valueSource
+                )
             )
         );
 
@@ -1405,23 +1396,53 @@ public sealed class RelationshipAuthorizationPlanner
     ) =>
         MergeSelectedStrategyPersonAuthViews(
             checkSpecs.SelectMany(checkSpec =>
-                checkSpec
-                    .Subjects.Where(static subject => subject.PersonMetadata is not null)
-                    .Select(subject =>
-                    {
-                        var personMetadata = subject.PersonMetadata!;
-                        return new SelectedStrategyPersonAuthView(
-                            checkSpec.ConfiguredStrategy,
-                            checkSpec.RelationshipLocalOrder,
-                            checkSpec.ValueSource,
-                            SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
-                            personMetadata.PersonKind,
-                            subject.AuthObject,
-                            subject.Contributors
-                        );
-                    })
+                SelectStrategyPersonAuthViews(
+                    checkSpec.Subjects,
+                    checkSpec.ConfiguredStrategy,
+                    checkSpec.RelationshipLocalOrder,
+                    checkSpec.ValueSource
+                )
             )
         );
+
+    private static IEnumerable<SelectedStrategyPersonAuthView> SelectStrategyPersonAuthViews(
+        IEnumerable<RelationshipAuthorizationSubject> subjects,
+        ConfiguredAuthorizationStrategy configuredStrategy,
+        int relationshipLocalOrder,
+        RelationshipAuthorizationValueSource? valueSource
+    ) =>
+        subjects
+            .Where(static subject => subject.PersonMetadata is not null)
+            .Select(subject =>
+                CreateSelectedStrategyPersonAuthView(
+                    subject,
+                    configuredStrategy,
+                    relationshipLocalOrder,
+                    valueSource
+                )
+            );
+
+    private static SelectedStrategyPersonAuthView CreateSelectedStrategyPersonAuthView(
+        RelationshipAuthorizationSubject subject,
+        ConfiguredAuthorizationStrategy configuredStrategy,
+        int relationshipLocalOrder,
+        RelationshipAuthorizationValueSource? valueSource
+    )
+    {
+        var personMetadata =
+            subject.PersonMetadata
+            ?? throw new ArgumentException("Subject must include person metadata.", nameof(subject));
+
+        return new SelectedStrategyPersonAuthView(
+            configuredStrategy,
+            relationshipLocalOrder,
+            valueSource,
+            SelectPersonSecurableElementKind(subject, personMetadata.PersonKind),
+            personMetadata.PersonKind,
+            subject.AuthObject,
+            subject.Contributors
+        );
+    }
 
     private static IReadOnlyList<SelectedStrategyPersonAuthView> MergeSelectedStrategyPersonAuthViews(
         IEnumerable<SelectedStrategyPersonAuthView> selectedPeopleAuthViews

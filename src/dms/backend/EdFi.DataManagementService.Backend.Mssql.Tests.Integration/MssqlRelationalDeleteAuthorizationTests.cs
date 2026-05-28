@@ -303,7 +303,14 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
             RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
         );
 
-        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        var failure = AssertRelationshipDenied(
+            result,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+        );
+        RelationshipAuthorizationBackendFailureAssertions.AssertStoredRootSchoolNoRelationshipFailure(
+            failure.RelationshipFailure,
+            ClaimEducationOrganizationId
+        );
         await AssertRowsAsync(
             RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName,
             seed.DocumentUuid,
@@ -481,7 +488,7 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
 
         var failure = AssertRelationshipDenied(
             result,
-            RelationshipAuthorizationSubjectFailureKind.NoClaimEducationOrganizationIds
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
         );
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
         await AssertRowsAsync(
@@ -548,7 +555,14 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
             RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
         );
 
-        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.StoredValueNull);
+        var failure = AssertRelationshipDenied(
+            result,
+            RelationshipAuthorizationSubjectFailureKind.StoredValueNull
+        );
+        RelationshipAuthorizationBackendFailureAssertions.AssertStoredNullableSchoolNullFailure(
+            failure.RelationshipFailure,
+            ClaimEducationOrganizationId
+        );
         await AssertRowsAsync(
             RelationshipAuthorizationCrudTestSupport.NullableRootEdOrgResourceName,
             _authorizationNullableSeed.DocumentUuid,

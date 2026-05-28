@@ -37,34 +37,16 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
         SupportedRelationshipAuthorizationStrategy supportedStrategy
     )
     {
-        ArgumentNullException.ThrowIfNull(supportedStrategy);
-
-        return Select(
-            mappingSet,
-            resource,
-            [
-                new SupportedRelationshipAuthorizationStrategySelection(
-                    supportedStrategy.ConfiguredStrategy,
-                    supportedStrategy.RelationshipLocalOrder,
-                    RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(supportedStrategy.Direction)
-                ),
-            ]
-        );
-    }
-
-    private RelationalEdOrgAuthorizationSubjectSelection Select(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies
-    )
-    {
         ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(supportedStrategies);
+        ArgumentNullException.ThrowIfNull(supportedStrategy);
 
         var concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource);
         var elementResolutions = _elementResolutionCache.GetOrResolveAll(mappingSet, resource);
         var tableModelsByName = concreteResourceModel.RelationalModel.TablesInDependencyOrder.ToDictionary(
             static table => table.Table
+        );
+        var authObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            supportedStrategy.Direction
         );
 
         List<SelectedRootSubjectCandidate> selectedRootSubjectCandidates = [];
@@ -90,8 +72,8 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
 
             if (elementResolution.ResolvedCandidates.Count == 0)
             {
-                securityConfigurationFailures.AddRange(
-                    CreateUnresolvedFailures(resource, supportedStrategies, elementResolution.Element)
+                securityConfigurationFailures.Add(
+                    CreateUnresolvedFailure(resource, supportedStrategy, elementResolution.Element)
                 );
 
                 continue;
@@ -109,11 +91,7 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
         if (selectedRootSubjectCandidates.Count == 0)
         {
             securityConfigurationFailures.AddRange(
-                CreateNoApplicableRootSubjectFailures(
-                    resource,
-                    supportedStrategies,
-                    nonRootResolvedCandidates
-                )
+                CreateNoApplicableRootSubjectFailures(resource, supportedStrategy, nonRootResolvedCandidates)
             );
         }
 
@@ -128,7 +106,7 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
 
         return new RelationalEdOrgAuthorizationSubjectSelection(
             RelationalEdOrgAuthorizationSubjectSelectionOutcome.Success,
-            [.. GroupRootSubjects(resource, supportedStrategies, selectedRootSubjectCandidates)],
+            [.. GroupRootSubjects(resource, authObject, selectedRootSubjectCandidates)],
             []
         );
     }
@@ -148,13 +126,12 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
             .FirstOrDefault();
     }
 
-    private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateUnresolvedFailures(
+    private static RelationshipAuthorizationFailureMetadata CreateUnresolvedFailure(
         QualifiedResourceName resource,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies,
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
         EdOrgSecurableElement unresolvedElement
-    )
-    {
-        return supportedStrategies.Select(supportedStrategy => new RelationshipAuthorizationFailureMetadata(
+    ) =>
+        new(
             RelationshipAuthorizationFailureKind.UnresolvedSecurableElement,
             resource,
             supportedStrategy.ConfiguredStrategy,
@@ -165,19 +142,19 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
                 ReadableName: unresolvedElement.MetaEdName
             ),
             Hint: "EducationOrganization securable element did not resolve to a relational column."
-        ));
-    }
+        );
 
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> CreateNoApplicableRootSubjectFailures(
         QualifiedResourceName resource,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies,
+        SupportedRelationshipAuthorizationStrategy supportedStrategy,
         IReadOnlyList<NonRootResolvedCandidate> nonRootResolvedCandidates
     )
     {
         if (nonRootResolvedCandidates.Count == 0)
         {
-            return supportedStrategies.Select(
-                supportedStrategy => new RelationshipAuthorizationFailureMetadata(
+            return
+            [
+                new RelationshipAuthorizationFailureMetadata(
                     RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
                     resource,
                     supportedStrategy.ConfiguredStrategy,
@@ -186,12 +163,12 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
                         Kind: SecurableElementKind.EducationOrganization
                     ),
                     Hint: "No EducationOrganization securable elements are configured for this resource."
-                )
-            );
+                ),
+            ];
         }
 
-        return supportedStrategies.SelectMany(supportedStrategy =>
-            nonRootResolvedCandidates.Select(nonRootCandidate => new RelationshipAuthorizationFailureMetadata(
+        return nonRootResolvedCandidates.Select(
+            nonRootCandidate => new RelationshipAuthorizationFailureMetadata(
                 RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
                 resource,
                 supportedStrategy.ConfiguredStrategy,
@@ -204,13 +181,13 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
                     Column: nonRootCandidate.Candidate.Step.SourceColumnName
                 ),
                 Hint: $"Resolved to non-root table kind '{nonRootCandidate.TableKind}' instead of '{DbTableKind.Root}'."
-            ))
+            )
         );
     }
 
     private static IEnumerable<RelationshipAuthorizationSubject> GroupRootSubjects(
         QualifiedResourceName resource,
-        IReadOnlyList<SupportedRelationshipAuthorizationStrategySelection> supportedStrategies,
+        RelationshipAuthorizationAuthObject authObject,
         IReadOnlyList<SelectedRootSubjectCandidate> selectedRootSubjectCandidates
     )
     {
@@ -223,25 +200,23 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
             .ThenBy(static group => group.Key.SourceColumnName.Value, StringComparer.Ordinal)
             .ToArray();
 
-        return supportedStrategies.SelectMany(supportedStrategy =>
-            groupedCandidates.Select(group => new RelationshipAuthorizationSubject(
-                resource,
-                group.Key.SourceTable,
-                group.Key.SourceColumnName,
-                supportedStrategy.AuthObject,
-                [
-                    .. group
-                        .OrderBy(static candidate => candidate.ConfiguredElementIndex)
-                        .ThenBy(static candidate => candidate.Candidate.JsonPath, StringComparer.Ordinal)
-                        .ThenBy(static candidate => candidate.Candidate.ReadableName, StringComparer.Ordinal)
-                        .Select(static candidate => new RelationshipAuthorizationSubjectContributor(
-                            SecurableElementKind.EducationOrganization,
-                            candidate.Candidate.JsonPath,
-                            candidate.Candidate.ReadableName
-                        )),
-                ]
-            ))
-        );
+        return groupedCandidates.Select(group => new RelationshipAuthorizationSubject(
+            resource,
+            group.Key.SourceTable,
+            group.Key.SourceColumnName,
+            authObject,
+            [
+                .. group
+                    .OrderBy(static candidate => candidate.ConfiguredElementIndex)
+                    .ThenBy(static candidate => candidate.Candidate.JsonPath, StringComparer.Ordinal)
+                    .ThenBy(static candidate => candidate.Candidate.ReadableName, StringComparer.Ordinal)
+                    .Select(static candidate => new RelationshipAuthorizationSubjectContributor(
+                        SecurableElementKind.EducationOrganization,
+                        candidate.Candidate.JsonPath,
+                        candidate.Candidate.ReadableName
+                    )),
+            ]
+        ));
     }
 
     private static IEnumerable<RelationshipAuthorizationFailureMetadata> OrderFailures(
@@ -273,12 +248,6 @@ public sealed class RelationalEdOrgAuthorizationSubjectSelector
     private sealed record SelectedRootSubjectCandidate(
         int ConfiguredElementIndex,
         ResolvedEdOrgSecurableElementCandidate Candidate
-    );
-
-    private sealed record SupportedRelationshipAuthorizationStrategySelection(
-        ConfiguredAuthorizationStrategy ConfiguredStrategy,
-        int RelationshipLocalOrder,
-        RelationshipAuthorizationAuthObject AuthObject
     );
 
     private sealed record NonRootResolvedCandidate(
