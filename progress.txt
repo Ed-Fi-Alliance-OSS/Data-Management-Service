@@ -77,3 +77,8 @@ Task completed: backend-contracts omitted AUTH1 failed OR strategy validation fo
 Key decisions: relationship AUTH1 mapper now requires every active OR check spec to have at least one failed subject in provider payload; omitted strategy ordinals fail closed as invalid payload/security configuration, while generated all-strategy payloads still map in deterministic order.
 Files changed: RelationshipAuthorizationFailureMapper.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, tasks.json, progress.txt.
 Blockers/notes: none. Verified CSharpier on changed C# files, plans AUTH1 payload tests, and focused SingleRecordRelationshipAuthorizationExecutor backend tests passed.
+
+Task completed: backend-contracts proposed invalid-plan security configuration for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: proposed relationship invalid authorization plan extraction now uses BuildSecurityConfigurationFailureResult for POST/PUT, preserving the extractor failure message and avoiding generic UnknownFailure.
+Files changed: ProposedRelationshipAuthorizationOrchestrator.cs, DefaultRelationalWriteExecutorTests.cs, tasks.json, progress.txt.
+Blockers/notes: none. Verified CSharpier on changed C# files, focused backend invalid proposed-plan/auth1 tests, and Upsert/Update handler security-configuration tests passed.

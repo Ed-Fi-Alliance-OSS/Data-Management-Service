@@ -4384,6 +4384,60 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_returns_security_configuration_failure_for_invalid_proposed_relationship_authorization_plans(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateRequest(operationKind);
+        var authorization = CreateProposedSchoolIdRelationshipAuthorization(request) with
+        {
+            ClaimEducationOrganizationIdParameterization = null,
+        };
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = authorization,
+            }
+        );
+
+        const string expectedFailureMessage =
+            "Proposed relationship authorization produced executable checks without claim EducationOrganizationId parameterization.";
+
+        switch (operationKind)
+        {
+            case RelationalWriteOperationKind.Post:
+                result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Upsert>()
+                    .Which.Result.Should()
+                    .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+                    .Which.Errors.Should()
+                    .Equal(expectedFailureMessage);
+                break;
+
+            case RelationalWriteOperationKind.Put:
+                result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Update>()
+                    .Which.Result.Should()
+                    .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+                    .Which.Errors.Should()
+                    .Equal(expectedFailureMessage);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+        }
+
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
     [Test]
     public async Task It_returns_mixed_missing_and_no_relationship_failure_metadata_from_authorization_sql()
     {

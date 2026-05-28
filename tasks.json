@@ -324,7 +324,7 @@
       "Run affected backend unit tests for proposed relationship authorization invalid-plan extraction and write executor result mapping.",
       "Run affected core handler unit tests for `UpsertFailureSecurityConfiguration` and `UpdateFailureSecurityConfiguration`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "cleanup",
