@@ -276,7 +276,7 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "detail": "Access to the requested data could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -363,7 +363,7 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "detail": "Access to the requested data could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -409,7 +409,7 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. Hint: Relationship authorization requires at least one claim EducationOrganizationId.",
+                      "detail": "Access to the requested data could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -470,7 +470,7 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. The 'ParentEducationOrganization' value is required for authorization purposes. Hint: Proposed relationship authorization subject value is missing.",
+                      "detail": "Access to the requested data could not be authorized. The 'ParentEducationOrganization' value is required for authorization purposes.",
                       "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -919,7 +919,7 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "detail": "Access to the requested data could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,

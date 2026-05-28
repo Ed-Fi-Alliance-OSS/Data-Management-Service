@@ -572,7 +572,8 @@ public static class RelationshipAuthorizationFailureMapper
         new(
             authObject.Name.ToString(),
             authObject.SubjectValueColumn.Value,
-            authObject.ClaimEducationOrganizationIdColumn.Value
+            authObject.ClaimEducationOrganizationIdColumn.Value,
+            authObject.FailureHint
         );
 
     private static string BuildSubjectHint(RelationshipAuthorizationAuth1SubjectFailureKind failureKind) =>

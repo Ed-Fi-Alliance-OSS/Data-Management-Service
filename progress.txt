@@ -57,3 +57,8 @@ Task completed: backend-contracts emitted AUTH1 check index validation for refer
 Key decisions: make expected emitted AUTH1 index an explicit provider mapping input; mismatch fails closed through invalid-payload security configuration, while matching payloads still map to relationship 403 DTOs.
 Files changed: RelationshipAuthorizationFailureMapper.cs, RelationshipAuthorizationProviderFailureMapper.cs, SingleRecordRelationshipAuthorizationExecutor.cs, RelationalWriteNoProfilePersister.cs, relationship authorization backend/plans unit tests, tasks.json, progress.txt.
 Blockers/notes: none. Verified plans AUTH1 payload tests, single-record/repository backend tests, and proposed-write persister tests passed.
+
+Task completed: core-response configured auth-object hints for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: carry configured auth-object FailureHint on relationship auth object DTO; formatter reads only that configured hint, ignoring strategy/subject/person diagnostic Hint fields so EdOrg-only failures emit no wire Hint.
+Files changed: RelationshipAuthorizationFailure.cs, RelationshipAuthorizationFailureMapper.cs, RelationshipAuthorizationProblemDetails.cs, relationship formatter/plans unit tests, API integration expectations, relational E2E expectations, tasks.json, progress.txt.
+Blockers/notes: none. Verified core formatter tests, plans AUTH1 payload tests, PostgreSQL/MSSQL API relationship ProblemDetails fixtures, and 5 affected relational E2E scenarios after relational stack rebuild/provision.

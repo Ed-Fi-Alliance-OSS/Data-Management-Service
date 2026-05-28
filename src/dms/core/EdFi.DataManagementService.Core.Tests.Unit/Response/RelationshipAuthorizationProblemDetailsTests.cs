@@ -75,6 +75,40 @@ public abstract class RelationshipAuthorizationProblemDetailsTestBase
             hint
         );
 
+    protected static RelationshipAuthorizationFailedSubject SubjectWithAuthObjectFailureHint(
+        int index,
+        RelationshipAuthorizationSubjectFailureKind failureKind,
+        string failureHint,
+        params RelationshipAuthorizationSecurableElement[] securableElements
+    ) =>
+        SubjectWithAuthObjectFailureHintAndInternalHint(
+            index,
+            failureKind,
+            failureHint,
+            internalHint: null,
+            securableElements: securableElements
+        );
+
+    protected static RelationshipAuthorizationFailedSubject SubjectWithAuthObjectFailureHintAndInternalHint(
+        int index,
+        RelationshipAuthorizationSubjectFailureKind failureKind,
+        string failureHint,
+        string? internalHint,
+        params RelationshipAuthorizationSecurableElement[] securableElements
+    ) =>
+        new(
+            index,
+            failureKind,
+            new RelationshipAuthorizationRootBinding(
+                "Ed-Fi.StudentSchoolAssociation",
+                "edfi.StudentSchoolAssociation",
+                "SchoolId"
+            ),
+            AuthObject(failureHint),
+            securableElements,
+            internalHint
+        );
+
     protected static RelationshipAuthorizationFailedSubject SubjectWithPersonHint(
         int index,
         RelationshipAuthorizationSubjectFailureKind failureKind,
@@ -98,7 +132,7 @@ public abstract class RelationshipAuthorizationProblemDetailsTestBase
         string personHint,
         params RelationshipAuthorizationSecurableElement[] securableElements
     ) =>
-        Subject(index, failureKind, securableElements) with
+        SubjectWithAuthObjectFailureHint(index, failureKind, personHint, securableElements) with
         {
             PersonSubject = new RelationshipAuthorizationPersonSubjectInfo(
                 PersonKind: personKind,
@@ -126,11 +160,12 @@ public abstract class RelationshipAuthorizationProblemDetailsTestBase
         string jsonPath
     ) => new("EducationOrganization", jsonPath, readableName);
 
-    private static RelationshipAuthorizationAuthObjectInfo AuthObject() =>
+    private static RelationshipAuthorizationAuthObjectInfo AuthObject(string? failureHint = null) =>
         new(
             "auth.EducationOrganizationIdToEducationOrganizationId",
             "TargetEducationOrganizationId",
-            "SourceEducationOrganizationId"
+            "SourceEducationOrganizationId",
+            failureHint
         );
 }
 
@@ -192,7 +227,7 @@ public class Given_RelationshipAuthorizationProblemDetails_For_People_No_Claims_
             .ToString()
             .Should()
             .Be(
-                "Access to the requested data could not be authorized. Hint: Strategy 'RelationshipsWithPeopleOnly' uses People auth views. Create a StudentSchoolAssociation auth-view row. Create a ContactStudentSchoolAuthorization auth-view row."
+                "Access to the requested data could not be authorized. Hint: Create a StudentSchoolAssociation auth-view row. Create a ContactStudentSchoolAuthorization auth-view row."
             );
     }
 }
@@ -650,7 +685,7 @@ public class Given_RelationshipAuthorizationProblemDetails_For_Authorization_Hin
     : RelationshipAuthorizationProblemDetailsTestBase
 {
     [Test]
-    public void It_appends_distinct_hints_for_no_relationship_failures_in_configured_order()
+    public void It_appends_distinct_configured_auth_object_hints_for_no_relationship_failures_in_configured_order()
     {
         var relationshipFailure = Failure(
             RelationshipAuthorizationFailureValueSource.Stored,
@@ -658,11 +693,12 @@ public class Given_RelationshipAuthorizationProblemDetails_For_Authorization_Hin
             StrategyWithHint(
                 0,
                 "RelationshipsWithPeopleOnly",
-                "You may need a configured relationship.",
-                SubjectWithHint(
+                "Strategy diagnostic should not be emitted.",
+                SubjectWithAuthObjectFailureHintAndInternalHint(
                     0,
                     RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                     "You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                    "No matching relationship authorization row was found.",
                     SecurableElement("StudentUniqueId", "$.studentReference.studentUniqueId")
                 ),
                 SubjectWithPersonHint(
@@ -693,8 +729,35 @@ public class Given_RelationshipAuthorizationProblemDetails_For_Authorization_Hin
             .ToString()
             .Should()
             .Be(
-                "Access to the requested data could not be authorized. Hint: You may need a configured relationship. You may need to create a corresponding 'StudentSchoolAssociation' item. You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
+                "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item. You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
             );
+    }
+
+    [Test]
+    public void It_ignores_internal_relationship_failure_diagnostics_when_no_configured_auth_object_hint_exists()
+    {
+        var relationshipFailure = Failure(
+            RelationshipAuthorizationFailureValueSource.Stored,
+            ClaimIds(255901),
+            StrategyWithHint(
+                0,
+                "RelationshipsWithEdOrgsOnly",
+                "Relationship authorization requires at least one claim EducationOrganizationId.",
+                SubjectWithHint(
+                    0,
+                    RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+                    "No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                    SecurableElement("SchoolId", "$.schoolReference.schoolId")
+                )
+            )
+        );
+
+        var response = FailureResponse.ForRelationshipAuthorization(
+            new TraceId("internal-diagnostics-hint-trace"),
+            relationshipFailure
+        );
+
+        response["detail"]!.ToString().Should().Be("Access to the requested data could not be authorized.");
     }
 
     [Test]
@@ -706,26 +769,29 @@ public class Given_RelationshipAuthorizationProblemDetails_For_Authorization_Hin
             Strategy(
                 0,
                 "RelationshipsWithPeopleOnly",
-                SubjectWithHint(
+                SubjectWithAuthObjectFailureHintAndInternalHint(
                     0,
                     RelationshipAuthorizationSubjectFailureKind.NoRelationship,
                     "This lower precedence hint should not be emitted.",
+                    "This lower precedence diagnostic should not be emitted.",
                     SecurableElement("StudentUniqueId", "$.studentReference.studentUniqueId")
                 )
             ),
             Strategy(
                 1,
                 "RelationshipsWithEdOrgsOnly",
-                SubjectWithHint(
+                SubjectWithAuthObjectFailureHintAndInternalHint(
                     0,
                     RelationshipAuthorizationSubjectFailureKind.StoredValueNull,
                     "You may need to repair the stored SchoolId.",
+                    "Stored relationship authorization subject value is null.",
                     SecurableElement("SchoolId", "$.schoolReference.schoolId")
                 ),
-                SubjectWithHint(
+                SubjectWithAuthObjectFailureHintAndInternalHint(
                     1,
                     RelationshipAuthorizationSubjectFailureKind.StoredValueNull,
                     "Hint: You may need to repair the stored SchoolId.",
+                    "Stored relationship authorization subject value is null.",
                     SecurableElement(
                         "LocalEducationAgencyId",
                         "$.localEducationAgencyReference.localEducationAgencyId"
@@ -756,10 +822,11 @@ public class Given_RelationshipAuthorizationProblemDetails_For_Authorization_Hin
             Strategy(
                 0,
                 "RelationshipsWithEdOrgsOnly",
-                SubjectWithHint(
+                SubjectWithAuthObjectFailureHintAndInternalHint(
                     0,
                     RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
                     "You may need to include the SchoolId.",
+                    "Proposed relationship authorization subject value is missing.",
                     SecurableElement("SchoolId", "$.schoolReference.schoolId")
                 )
             )

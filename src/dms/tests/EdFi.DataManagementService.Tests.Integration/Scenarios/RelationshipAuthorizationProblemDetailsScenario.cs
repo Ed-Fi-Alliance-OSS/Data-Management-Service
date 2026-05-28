@@ -112,7 +112,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
             response,
             new RelationshipProblemDetailsExpectation(
                 StoredNullType,
-                "Access to the requested data could not be authorized. The existing 'NullableSchoolId' value is required for authorization purposes. Hint: Stored relationship authorization subject value is null.",
+                "Access to the requested data could not be authorized. The existing 'NullableSchoolId' value is required for authorization purposes.",
                 [
                     "The existing resource item is inaccessible to clients using the 'RelationshipsWithEdOrgsOnly' authorization strategy.",
                 ]
@@ -141,7 +141,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
             response,
             new RelationshipProblemDetailsExpectation(
                 ProposedMissingType,
-                "Access to the requested data could not be authorized. The 'NullableSchoolId' value is required for authorization purposes. Hint: Proposed relationship authorization subject value is missing.",
+                "Access to the requested data could not be authorized. The 'NullableSchoolId' value is required for authorization purposes.",
                 []
             )
         );
@@ -178,7 +178,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
             response,
             new RelationshipProblemDetailsExpectation(
                 ProposedMissingType,
-                "Access to the requested data could not be authorized. The 'NullableSchoolId' value is required for authorization purposes. Hint: Proposed relationship authorization subject value is missing.",
+                "Access to the requested data could not be authorized. The 'NullableSchoolId' value is required for authorization purposes.",
                 []
             )
         );
@@ -198,7 +198,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
             response,
             new RelationshipProblemDetailsExpectation(
                 AuthorizationType,
-                "Access to the requested data could not be authorized. Hint: Relationship authorization requires at least one claim EducationOrganizationId.",
+                "Access to the requested data could not be authorized.",
                 [
                     "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'SchoolId' value.",
                 ]
@@ -403,7 +403,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
             response,
             new RelationshipProblemDetailsExpectation(
                 AuthorizationType,
-                "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                "Access to the requested data could not be authorized.",
                 [
                     $"No relationships have been established between the caller's education organization id claim ({expectedClaimDisplay}) and the resource item's 'SchoolId' value.",
                 ]

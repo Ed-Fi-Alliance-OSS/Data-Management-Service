@@ -223,7 +223,7 @@
       "Run the relevant PostgreSQL and SQL Server API integration response-shape tests for relationship authorization ProblemDetails.",
       "Run the focused relational-backend E2E scenarios after setting up the relational dms-local stack."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "backend-contracts",

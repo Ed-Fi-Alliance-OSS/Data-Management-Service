@@ -234,9 +234,7 @@ internal static class RelationshipAuthorizationProblemDetails
 
     private static IEnumerable<string?> SelectHints(SelectedRelationshipAuthorizationFailure failure)
     {
-        yield return failure.Strategy.Hint;
-        yield return failure.Subject.Hint;
-        yield return failure.Subject.PersonSubject?.Hint;
+        yield return failure.Subject.AuthObject.FailureHint;
     }
 
     private static string NormalizeHint(string? hint)

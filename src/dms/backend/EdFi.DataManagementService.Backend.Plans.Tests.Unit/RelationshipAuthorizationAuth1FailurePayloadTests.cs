@@ -508,6 +508,13 @@ public class Given_RelationshipAuthorizationFailureMapper
             .StrategyKind.Should()
             .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
         failedStrategy.AuthObject!.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedStrategy
+            .AuthObject.FailureHint.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject
+                    .CreatePerson(RelationshipAuthorizationPersonAuthViewKind.Student)
+                    .FailureHint
+            );
         failedStrategy.FailedSubjects.Should().ContainSingle();
 
         var failedSubject = failedStrategy.FailedSubjects[0];
@@ -519,6 +526,13 @@ public class Given_RelationshipAuthorizationFailureMapper
         failedSubject.SecurableElements[0].JsonPath.Should().Be("$.studentReference.studentUniqueId");
         failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
         failedSubject.AuthObject.SubjectValueColumn.Should().Be("Student_DocumentId");
+        failedSubject
+            .AuthObject.FailureHint.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject
+                    .CreatePerson(RelationshipAuthorizationPersonAuthViewKind.Student)
+                    .FailureHint
+            );
         failedSubject.PersonSubject.Should().NotBeNull();
         failedSubject.PersonSubject!.PersonKind.Should().Be("Student");
         failedSubject.PersonSubject.PathKind.Should().Be("DirectRootColumn");
