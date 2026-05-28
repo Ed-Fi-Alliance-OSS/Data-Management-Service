@@ -1084,6 +1084,130 @@ public class Given_PageDocumentIdSqlCompiler
         plan.TotalCountSql.Should().Contain(ExpectedCustomHierarchyFragment);
     }
 
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Student,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId",
+        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Contact,
+        RelationshipAuthorizationPersonKind.Contact,
+        "Contact_DocumentId",
+        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Contact_DocumentId\" IN (SELECT t1.\"Contact_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Staff,
+        RelationshipAuthorizationPersonKind.Staff,
+        "Staff_DocumentId",
+        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Staff_DocumentId\" IN (SELECT t1.\"Staff_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStaffDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Student,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId",
+        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 WHERE t0.[Student_DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Contact,
+        RelationshipAuthorizationPersonKind.Contact,
+        "Contact_DocumentId",
+        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 WHERE t0.[Contact_DocumentId] IN (SELECT t1.[Contact_DocumentId] FROM [auth].[EducationOrganizationIdToContactDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Staff,
+        RelationshipAuthorizationPersonKind.Staff,
+        "Staff_DocumentId",
+        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 WHERE t0.[Staff_DocumentId] IN (SELECT t1.[Staff_DocumentId] FROM [auth].[EducationOrganizationIdToStaffDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+    )]
+    public void It_should_emit_direct_root_column_people_authorization_sql_for_page_and_total_count_queries(
+        SqlDialect dialect,
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        string rootPersonDocumentIdColumnName,
+        string expectedPredicateFragment
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    dialect,
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        CreatePersonAuthorizationSubject(
+                            authViewKind,
+                            personKind,
+                            new DbColumnName(rootPersonDocumentIdColumnName),
+                            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn
+                        )
+                    )
+                )
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(expectedPredicateFragment);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(expectedPredicateFragment);
+        plan.PageDocumentIdSql.Should().NotContain("UniqueId");
+        plan.PageDocumentIdSql.Should().NotContain("USI");
+        plan.PageDocumentIdSql.Should().NotContain("JOIN \"auth\"");
+        plan.PageDocumentIdSql.Should().NotContain("JOIN [auth]");
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"Student\" t0 WHERE t0.\"DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[Student] t0 WHERE t0.[DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+    )]
+    public void It_should_emit_student_self_authorization_sql_from_root_document_id_without_unique_id_or_usi(
+        SqlDialect dialect,
+        string expectedPredicateFragment
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    dialect,
+                    CreateAuthorizationStrategy(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+                        CreatePersonAuthorizationSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Student,
+                            RelationshipAuthorizationPersonKind.Student,
+                            new DbColumnName("DocumentId"),
+                            RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId,
+                            rootTable
+                        )
+                    )
+                ),
+                rootTable: rootTable
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(expectedPredicateFragment);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(expectedPredicateFragment);
+        plan.PageDocumentIdSql.Should().NotContain("UniqueId");
+        plan.PageDocumentIdSql.Should().NotContain("USI");
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_or_multiple_authorization_strategies(SqlDialect dialect)
@@ -1603,6 +1727,65 @@ public class Given_PageDocumentIdSqlCompiler
             ]
         );
     }
+
+    private static PageDocumentIdAuthorizationSubject CreatePersonAuthorizationSubject(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        DbColumnName rootBindingColumn,
+        RelationshipAuthorizationPersonSubjectPathKind pathKind,
+        DbTableName? rootTable = null
+    )
+    {
+        var resolvedRootTable =
+            rootTable ?? new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        IReadOnlyList<ColumnPathStep> pathSteps = pathKind switch
+        {
+            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn =>
+            [
+                new ColumnPathStep(
+                    resolvedRootTable,
+                    rootBindingColumn,
+                    new DbTableName(new DbSchemaName("edfi"), personKind.ToString()),
+                    documentIdColumn
+                ),
+            ],
+            RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId => [],
+            _ => throw new ArgumentOutOfRangeException(nameof(pathKind), pathKind, "Unsupported path kind."),
+        };
+
+        return new PageDocumentIdAuthorizationPersonSubject(
+            resolvedRootTable,
+            rootBindingColumn,
+            RelationshipAuthorizationAuthObject.CreatePerson(authViewKind),
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    MapPersonKind(personKind),
+                    $"$.{personKind.ToString().ToLowerInvariant()}Reference.{personKind.ToString().ToLowerInvariant()}UniqueId",
+                    $"{personKind}UniqueId"
+                ),
+            ],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                personKind,
+                new RelationshipAuthorizationPersonSubjectPath(pathKind, pathSteps),
+                new RelationshipAuthorizationPersonStoredAnchor(resolvedRootTable, documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+    }
+
+    private static SecurableElementKind MapPersonKind(RelationshipAuthorizationPersonKind personKind) =>
+        personKind switch
+        {
+            RelationshipAuthorizationPersonKind.Student => SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Contact => SecurableElementKind.Contact,
+            RelationshipAuthorizationPersonKind.Staff => SecurableElementKind.Staff,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(personKind),
+                personKind,
+                "Unsupported person kind."
+            ),
+        };
 
     private static string MapStrategyName(PageDocumentIdAuthorizationStrategyKind kind) =>
         kind switch

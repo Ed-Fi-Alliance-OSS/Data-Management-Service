@@ -9,3 +9,9 @@ Decisions: hierarchy subquery now uses RelationshipAuthorizationAuthObject table
 Files changed: PageDocumentIdSqlCompiler.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
 Verification: csharpier on changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 66.
 Notes: next SQL compiler tasks still need root DocumentId IN People predicates for self/direct and transitive subjects.
+
+DMS-1095 06b people relationship auth get-many - completed PageDocumentIdSqlCompiler direct/self People root DocumentId IN predicate task.
+Decisions: direct and self People subjects now emit root DocumentId IN subqueries with a second root-table alias and nested auth-view DocumentId IN filter; use DMS-1056 auth object columns/table and existing ClaimEducationOrganizationIds parameterization; leave transitive People paths explicitly staged for next SQL compiler task.
+Files changed: PageDocumentIdSqlCompiler.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
+Verification: csharpier on changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 74.
+Notes: transitive CourseTranscript -> StudentAcademicRecord -> Student SQL still not implemented.

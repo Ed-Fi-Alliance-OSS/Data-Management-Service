@@ -47,7 +47,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
       "Inspect generated SQL assertions for the root DocumentId IN (SELECT r2.DocumentId FROM ...) shape and absence of UniqueId or USI authorization joins."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
