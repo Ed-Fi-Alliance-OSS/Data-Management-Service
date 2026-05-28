@@ -81,7 +81,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
       "Run a targeted repository unit test proving GET-many no longer returns QueryFailureNotImplemented for RelationshipsWithStudentsOnly while GET-by-id still stages People CRUD execution."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
