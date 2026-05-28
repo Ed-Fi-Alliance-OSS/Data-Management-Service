@@ -149,7 +149,7 @@
       "Inspect SQL expectations for both PostgreSQL and SQL Server variants.",
       "Confirm test fixtures include page SQL and total-count SQL assertions for every People predicate shape."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",

@@ -45,3 +45,9 @@ Decisions: added stored GET-many planner matrix over all five People relationshi
 Files changed: RelationshipAuthorizationPlannerTests.cs, tasks.json, progress.txt.
 Verification: csharpier on RelationshipAuthorizationPlannerTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector|FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter" passed 92.
 Notes: SQL compiler/repository/integration/E2E coverage tasks remain.
+
+DMS-1095 06b people relationship auth get-many - completed focused SQL compiler People GET-many coverage task.
+Decisions: added compiler regressions for StudentsOnlyThroughResponsibility auth-view selection, mixed EdOrg+People subject AND semantics, EdOrg-only OR People strategy composition, root DocumentId IN subqueries, no outer auth joins, authorization-before-paging, and page/total-count parity; existing tests already covered direct/self/transitive Student/Contact/Staff and parameterization shapes.
+Files changed: PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
+Verification: csharpier on PageDocumentIdSqlCompilerTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 88.
+Notes: repository-level unit coverage remains next likely task.
