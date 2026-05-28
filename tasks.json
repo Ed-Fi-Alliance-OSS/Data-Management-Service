@@ -168,7 +168,7 @@
       "Review the tests around QueryFailureNotImplemented and TryCreatePeopleEndpointStagingFailures for GET-many versus single-record operations.",
       "Confirm QuerySuccess empty-page assertions cover both totalCount=true and totalCount=false behavior."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",

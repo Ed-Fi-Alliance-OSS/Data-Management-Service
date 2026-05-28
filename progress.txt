@@ -51,3 +51,9 @@ Decisions: added compiler regressions for StudentsOnlyThroughResponsibility auth
 Files changed: PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
 Verification: csharpier on PageDocumentIdSqlCompilerTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 88.
 Notes: repository-level unit coverage remains next likely task.
+
+DMS-1095 06b people relationship auth get-many - completed repository-level GET-many runtime coverage task.
+Decisions: existing repository tests already covered People page planning, OR composition, empty claims, and canonical security ProblemDetails via handler/FailureResponse; added explicit NoFurtherAuthorizationRequired no-op query coverage, OwnershipBased 501 coverage, valid custom-view 501 coverage, and unknown custom-view-basis security-configuration coverage.
+Files changed: RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
+Verification: csharpier on RelationalDocumentStoreRepositoryTests.cs; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepositoryTests" passed 188.
+Notes: next tasks are PostgreSQL/SQL Server integration coverage for People GET-many.
