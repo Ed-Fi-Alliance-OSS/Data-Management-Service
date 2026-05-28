@@ -31,7 +31,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
       "Compare existing EdOrg-only SQL expectations in src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs against the generated page and total-count SQL."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",

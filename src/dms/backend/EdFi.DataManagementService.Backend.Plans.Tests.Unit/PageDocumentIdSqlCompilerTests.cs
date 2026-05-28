@@ -1018,6 +1018,72 @@ public class Given_PageDocumentIdSqlCompiler
         plan.TotalCountSql.Should().Contain(expectedHierarchyFragment);
     }
 
+    [Test]
+    public void It_should_use_edorg_subject_auth_object_metadata_instead_of_strategy_kind_for_people_involved_strategies()
+    {
+        var normalAuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Normal
+        );
+
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    SqlDialect.Pgsql,
+                    CreateAuthorizationStrategyPreservingSubjectAuthObjects(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
+                        CreateAuthorizationSubject("SchoolId", authObject: normalAuthObject)
+                    )
+                )
+            )
+        );
+
+        const string ExpectedNormalHierarchyFragment =
+            "r.\"SchoolId\" IN (SELECT t0.\"TargetEducationOrganizationId\" FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))";
+        const string UnexpectedInvertedHierarchyFragment =
+            "r.\"SchoolId\" IN (SELECT t0.\"SourceEducationOrganizationId\" FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" t0 WHERE t0.\"TargetEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))";
+
+        plan.PageDocumentIdSql.Should().Contain(ExpectedNormalHierarchyFragment);
+        plan.PageDocumentIdSql.Should().NotContain(UnexpectedInvertedHierarchyFragment);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(ExpectedNormalHierarchyFragment);
+        plan.TotalCountSql.Should().NotContain(UnexpectedInvertedHierarchyFragment);
+    }
+
+    [Test]
+    public void It_should_use_custom_edorg_auth_object_table_and_columns_for_hierarchy_sql()
+    {
+        var authObject = new RelationshipAuthorizationAuthObject(
+            new DbTableName(new DbSchemaName("auth"), "CustomEducationOrganizationAuthorization"),
+            new DbColumnName("ResourceEducationOrganizationId"),
+            new DbColumnName("ClaimEducationOrganizationId")
+        );
+
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    SqlDialect.Pgsql,
+                    CreateAuthorizationStrategyPreservingSubjectAuthObjects(
+                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        CreateAuthorizationSubject("SchoolId", authObject: authObject)
+                    )
+                )
+            )
+        );
+
+        const string ExpectedCustomHierarchyFragment =
+            "r.\"SchoolId\" IN (SELECT t0.\"ResourceEducationOrganizationId\" FROM \"auth\".\"CustomEducationOrganizationAuthorization\" t0 WHERE t0.\"ClaimEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))";
+
+        plan.PageDocumentIdSql.Should().Contain(ExpectedCustomHierarchyFragment);
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain(ExpectedCustomHierarchyFragment);
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_or_multiple_authorization_strategies(SqlDialect dialect)
@@ -1501,17 +1567,33 @@ public class Given_PageDocumentIdSqlCompiler
         params PageDocumentIdAuthorizationSubject[] subjects
     ) => CreateAuthorizationStrategy(kind, false, subjects);
 
+    private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategyPreservingSubjectAuthObjects(
+        PageDocumentIdAuthorizationStrategyKind kind,
+        params PageDocumentIdAuthorizationSubject[] subjects
+    )
+    {
+        return new PageDocumentIdAuthorizationStrategy(
+            kind,
+            new ConfiguredAuthorizationStrategy(MapStrategyName(kind), RawConfiguredIndex: 0),
+            RelationshipLocalOrder: 0,
+            subjects,
+            []
+        );
+    }
+
     private static PageDocumentIdAuthorizationSubject CreateAuthorizationSubject(
         string columnName,
-        DbTableName? table = null
+        DbTableName? table = null,
+        RelationshipAuthorizationAuthObject? authObject = null
     )
     {
         return new PageDocumentIdAuthorizationEdOrgSubject(
             table ?? new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             new DbColumnName(columnName),
-            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
-                RelationshipAuthorizationHierarchyDirection.Normal
-            ),
+            authObject
+                ?? RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                    RelationshipAuthorizationHierarchyDirection.Normal
+                ),
             [
                 new RelationshipAuthorizationSubjectContributor(
                     SecurableElementKind.EducationOrganization,

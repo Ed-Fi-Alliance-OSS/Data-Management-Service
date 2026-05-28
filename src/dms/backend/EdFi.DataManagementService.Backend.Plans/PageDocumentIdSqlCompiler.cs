@@ -707,8 +707,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             AppendRootSubjectHierarchyMatchSql(
                 writer,
                 subject,
-                subject.AuthObject.SubjectValueColumn,
-                subject.AuthObject.ClaimEducationOrganizationIdColumn,
+                subject.AuthObject,
                 authorizationClaimParameterization,
                 authAlias
             );
@@ -719,8 +718,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         AppendRootSubjectHierarchyMatchSql(
             writer,
             subject,
-            subject.AuthObject.SubjectValueColumn,
-            subject.AuthObject.ClaimEducationOrganizationIdColumn,
+            subject.AuthObject,
             authorizationClaimParameterization,
             authAlias
         );
@@ -743,8 +741,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static void AppendRootSubjectHierarchyMatchSql(
         SqlWriter writer,
         PageDocumentIdAuthorizationEdOrgSubject subject,
-        DbColumnName resourceEdOrgColumn,
-        DbColumnName claimFilterColumn,
+        RelationshipAuthorizationAuthObject authObject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
@@ -753,11 +750,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer.AppendQuoted(subject.Column.Value);
         writer.Append(" IN (SELECT ");
         writer.Append($"{authAlias}.");
-        writer.AppendQuoted(resourceEdOrgColumn.Value);
+        writer.AppendQuoted(authObject.SubjectValueColumn.Value);
         writer.Append(" FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(AuthNames.EdOrgIdToEdOrgId));
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(authObject.Name));
         writer.Append($" {authAlias} WHERE {authAlias}.");
-        writer.AppendQuoted(claimFilterColumn.Value);
+        writer.AppendQuoted(authObject.ClaimEducationOrganizationIdColumn.Value);
         AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
             writer,
             authorizationClaimParameterization

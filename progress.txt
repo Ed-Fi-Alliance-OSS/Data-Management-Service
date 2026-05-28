@@ -3,3 +3,9 @@ Decisions: model page auth subjects as EdOrg vs Person records in ordered strate
 Files changed: PageDocumentIdQueryModels.cs, PageDocumentIdAuthorizationSpecAdapter.cs, RelationshipAuthorizationEndpointExecutionBoundary.cs, PageDocumentIdSqlCompiler.cs, PageDocumentIdAuthorizationSpecAdapterTests.cs, RelationshipAuthorizationEndpointExecutionBoundaryTests.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
 Verification: csharpier on changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter" passed 11; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationEndpointExecutionBoundary" passed 2; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 64.
 Notes: People subject SQL emission still intentionally throws in compiler until the SQL compiler tasks implement DMS-1095 People predicates.
+
+DMS-1095 06b people relationship auth get-many - completed PageDocumentIdSqlCompiler auth-object metadata generalization task.
+Decisions: hierarchy subquery now uses RelationshipAuthorizationAuthObject table, subject value column, and claim EdOrg column instead of fixed auth table/column arguments; kept direct-claim behavior from auth object; left People subject predicate emission staged for direct/transitive SQL tasks.
+Files changed: PageDocumentIdSqlCompiler.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
+Verification: csharpier on changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 66.
+Notes: next SQL compiler tasks still need root DocumentId IN People predicates for self/direct and transitive subjects.
