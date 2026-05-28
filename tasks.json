@@ -132,7 +132,7 @@
       "Review new test names for Given_ fixture style and It_ test method prefixes.",
       "Confirm no test relies on People GET-by-id, POST, PUT, or DELETE execution."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",

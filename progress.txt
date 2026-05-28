@@ -39,3 +39,9 @@ Decisions: production compiler already routes People auth-view predicates throug
 Files changed: PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
 Verification: csharpier on PageDocumentIdSqlCompilerTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~AuthorizationClaimEducationOrganizationIdParameterizationFactory" passed 6; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 82.
 Notes: next task likely adapter/planner unit matrix for all five People relationship strategies.
+
+DMS-1095 06b people relationship auth get-many - completed adapter/planner People strategy matrix task.
+Decisions: added stored GET-many planner matrix over all five People relationship strategies using existing mixed EdOrg/Student/Contact/Staff synthetic mapping; assert selected subject columns separately from auth-view output columns so through-responsibility proves auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility while local subject column remains path-specific.
+Files changed: RelationshipAuthorizationPlannerTests.cs, tasks.json, progress.txt.
+Verification: csharpier on RelationshipAuthorizationPlannerTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector|FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter" passed 92.
+Notes: SQL compiler/repository/integration/E2E coverage tasks remain.

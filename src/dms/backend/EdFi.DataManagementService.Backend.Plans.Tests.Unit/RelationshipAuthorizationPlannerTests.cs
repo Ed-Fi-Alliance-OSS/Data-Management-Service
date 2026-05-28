@@ -1344,6 +1344,73 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Be(RelationshipAuthorizationPersonKind.Student);
     }
 
+    [TestCaseSource(nameof(PeopleStoredGetManyStrategyCases))]
+    public void It_should_plan_stored_get_many_people_strategies_with_selected_subjects(
+        string strategyName,
+        RelationshipAuthorizationHierarchyDirection expectedDirection,
+        IReadOnlyList<ExpectedStoredPeopleSubject> expectedSubjects
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StoredPeopleStrategyMatrixResource");
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMixedRootEdOrgAndPeopleSubjectMappingSet(resource),
+            resource,
+            CreateConfiguredAuthorizationStrategies(strategyName),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+
+        checkSpec.ConfiguredStrategy.Should().Be(new ConfiguredAuthorizationStrategy(strategyName, 0));
+        checkSpec.RelationshipLocalOrder.Should().Be(0);
+        checkSpec.Direction.Should().Be(expectedDirection);
+        checkSpec.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Stored);
+        checkSpec.CheckTarget.Should().BeOfType<RelationshipAuthorizationCheckTarget.Stored>();
+        checkSpec
+            .Subjects.Select(static subject =>
+                (
+                    subject.Contributors.Single().Kind,
+                    subject.Column.Value,
+                    subject.AuthObject,
+                    subject.IsPersonSubject
+                )
+            )
+            .Should()
+            .Equal(
+                expectedSubjects.Select(static subject =>
+                    (
+                        subject.Kind,
+                        subject.Column.Value,
+                        subject.AuthObject,
+                        subject.Kind
+                            is SecurableElementKind.Student
+                                or SecurableElementKind.Contact
+                                or SecurableElementKind.Staff
+                    )
+                )
+            );
+
+        foreach (var subject in checkSpec.Subjects.Where(static subject => subject.IsPersonSubject))
+        {
+            subject.PersonMetadata.Should().NotBeNull();
+            subject.AuthObject.AllowsDirectClaimMatch.Should().BeFalse();
+            subject.AuthObject.ClaimEducationOrganizationIdColumn.Should().Be(AuthNames.SourceEdOrgId);
+        }
+
+        var edOrgSubjects = checkSpec.Subjects.Where(static subject => !subject.IsPersonSubject).ToArray();
+        if (edOrgSubjects.Length > 0)
+        {
+            edOrgSubjects.Should().OnlyContain(static subject => subject.AuthObject.AllowsDirectClaimMatch);
+        }
+    }
+
     [Test]
     public void It_should_plan_create_new_people_proposed_specs_with_root_row_anchors()
     {
@@ -3544,6 +3611,87 @@ public class Given_RelationshipAuthorizationPlannerTests
     private static RelationalEdOrgAuthorizationSubjectSelector CreateSelector() =>
         new(new RelationalEdOrgAuthorizationElementResolutionCache());
 
+    private static IEnumerable<TestCaseData> PeopleStoredGetManyStrategyCases()
+    {
+        var edOrgNormal = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Normal
+        );
+        var edOrgInverted = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+            RelationshipAuthorizationHierarchyDirection.Inverted
+        );
+        var student = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Student
+        );
+        var contact = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Contact
+        );
+        var staff = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.Staff
+        );
+        var studentThroughResponsibility = RelationshipAuthorizationAuthObject.CreatePerson(
+            RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility
+        );
+
+        ExpectedStoredPeopleSubject[] mixedNormalSubjects =
+        [
+            new(SecurableElementKind.EducationOrganization, Col("SchoolReference_SchoolId"), edOrgNormal),
+            new(SecurableElementKind.Student, Col("ZStudent_DocumentId"), student),
+            new(SecurableElementKind.Contact, Col("AContact_DocumentId"), contact),
+            new(SecurableElementKind.Staff, Col("BStaff_DocumentId"), staff),
+        ];
+        ExpectedStoredPeopleSubject[] mixedInvertedSubjects =
+        [
+            new(SecurableElementKind.EducationOrganization, Col("SchoolReference_SchoolId"), edOrgInverted),
+            new(SecurableElementKind.Student, Col("ZStudent_DocumentId"), student),
+            new(SecurableElementKind.Contact, Col("AContact_DocumentId"), contact),
+            new(SecurableElementKind.Staff, Col("BStaff_DocumentId"), staff),
+        ];
+        ExpectedStoredPeopleSubject[] peopleOnlySubjects =
+        [
+            new(SecurableElementKind.Student, Col("ZStudent_DocumentId"), student),
+            new(SecurableElementKind.Contact, Col("AContact_DocumentId"), contact),
+            new(SecurableElementKind.Staff, Col("BStaff_DocumentId"), staff),
+        ];
+        ExpectedStoredPeopleSubject[] studentsOnlySubjects =
+        [
+            new(SecurableElementKind.Student, Col("ZStudent_DocumentId"), student),
+        ];
+        ExpectedStoredPeopleSubject[] studentsOnlyThroughResponsibilitySubjects =
+        [
+            new(SecurableElementKind.Student, Col("ZStudent_DocumentId"), studentThroughResponsibility),
+        ];
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            mixedNormalSubjects
+        ).SetName("RelationshipsWithEdOrgsAndPeople");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+            RelationshipAuthorizationHierarchyDirection.Inverted,
+            mixedInvertedSubjects
+        ).SetName("RelationshipsWithEdOrgsAndPeopleInverted");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            peopleOnlySubjects
+        ).SetName("RelationshipsWithPeopleOnly");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            studentsOnlySubjects
+        ).SetName("RelationshipsWithStudentsOnly");
+
+        yield return new TestCaseData(
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            studentsOnlyThroughResponsibilitySubjects
+        ).SetName("RelationshipsWithStudentsOnlyThroughResponsibility");
+    }
+
     private static IEnumerable<TestCaseData> PeopleAuthViewSelectionCases()
     {
         yield return new TestCaseData(
@@ -3680,4 +3828,10 @@ public class Given_RelationshipAuthorizationPlannerTests
                 "Unsupported people relationship authorization securable element kind."
             ),
         };
+
+    public sealed record ExpectedStoredPeopleSubject(
+        SecurableElementKind Kind,
+        DbColumnName Column,
+        RelationshipAuthorizationAuthObject AuthObject
+    );
 }
