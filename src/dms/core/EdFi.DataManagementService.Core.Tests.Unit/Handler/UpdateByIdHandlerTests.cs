@@ -744,21 +744,10 @@ public class UpdateByIdHandlerTests
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Relationship_Not_Authorized : UpdateByIdHandlerTests
     {
-        private static readonly string[] _responseErrors =
-        [
-            "The caller is not authorized to update the existing resource.",
-        ];
-        private static readonly string[] _responseHints =
-        [
-            "Verify the caller has an education organization relationship to the stored values.",
-        ];
-
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly UpdateFailureRelationshipNotAuthorized Response = new(
-                _responseErrors,
-                CreateStoredRelationshipFailure(),
-                _responseHints
+                CreateStoredRelationshipFailure()
             );
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)

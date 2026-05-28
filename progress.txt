@@ -67,3 +67,8 @@ Task completed: e2e-tests backend mode alignment for reference/design/backend-re
 Key decisions: keep untagged RelationshipsWithEdOrgsOnly scenarios on legacy non-relational ForForbidden body; leave relational ProblemDetails assertions only on @relational-backend scenarios with shard tags; focused relational scenarios still assert content-type and non-empty correlationId.
 Files changed: RelationshipsWithEdOrgsOnly.feature, tasks.json, progress.txt.
 Blockers/notes: none. Verified default stack UseRelationalBackend=false scenarios 05/06 passed; relational stack UseRelationalBackend=true required provision-relational-e2e-database plus UseRelationalBackend=true and DmsInstanceDatabaseName=edfi_datamanagementservice_relational for focused 2-scenario ProblemDetails run, passed.
+
+Task completed: cleanup relationship auth transitional wire text for reference/design/backend-redesign/epics/14-authorization/07-relationship-auth-crud/06-relationship-auth-problemdetails-hardening.md
+Key decisions: relationship backend result variants now carry only RelationshipAuthorizationFailure; handlers already render wire ProblemDetails from DTO, so removed duplicate ErrorMessages/Hints and deleted backend-only RelationshipAuthorizationErrorMessageFormatter.
+Files changed: relationship backend result records, RelationalWriteExecutorResults, RelationalDocumentStoreRepository, focused backend/core handler unit tests, tasks.json, progress.txt.
+Blockers/notes: none. Verified CSharpier on changed C# files, focused core handler tests, and focused backend repository/executor unit tests passed.

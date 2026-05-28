@@ -38,11 +38,8 @@ public abstract record DeleteResult
     /// <summary>
     /// A failure because stored relationship authorization denied deletion of the document.
     /// </summary>
-    public record DeleteFailureRelationshipNotAuthorized(
-        string[] ErrorMessages,
-        RelationshipAuthorizationFailure RelationshipFailure,
-        string[]? Hints = null
-    ) : DeleteResult();
+    public record DeleteFailureRelationshipNotAuthorized(RelationshipAuthorizationFailure RelationshipFailure)
+        : DeleteResult();
 
     /// <summary>
     /// A failure because the requested delete operation is intentionally not implemented.

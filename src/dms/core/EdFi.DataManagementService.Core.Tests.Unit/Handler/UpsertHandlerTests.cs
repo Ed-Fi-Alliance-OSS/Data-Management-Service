@@ -782,21 +782,10 @@ public class UpsertHandlerTests
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Relationship_Not_Authorized : UpsertHandlerTests
     {
-        private static readonly string[] _responseErrors =
-        [
-            "The caller is not authorized to create the proposed resource.",
-        ];
-        private static readonly string[] _responseHints =
-        [
-            "Verify the caller has an education organization relationship to the proposed values.",
-        ];
-
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly UpsertFailureRelationshipNotAuthorized Response = new(
-                _responseErrors,
-                CreateProposedRelationshipFailure(),
-                _responseHints
+                CreateProposedRelationshipFailure()
             );
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)

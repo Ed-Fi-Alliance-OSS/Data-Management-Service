@@ -257,7 +257,7 @@
       "Review all references to `RelationshipAuthorizationErrorMessageFormatter` and remove or narrow any dead formatting path.",
       "Run affected backend and core handler unit tests for relationship authorization failures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e-tests",

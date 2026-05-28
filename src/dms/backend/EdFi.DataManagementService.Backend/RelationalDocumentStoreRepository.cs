@@ -772,11 +772,9 @@ public sealed class RelationalDocumentStoreRepository(
         };
     }
 
-    // TODO: Aggregate failed strategy and subject hints into Hints when relationship
-    // authorization ProblemDetails owns hint rendering.
     private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
+    ) => new(relationshipFailure);
 
     private static RelationalCommand BuildDocumentDeleteByDocumentIdCommand(
         SqlDialect dialect,
@@ -1873,15 +1871,13 @@ public sealed class RelationalDocumentStoreRepository(
             out relationshipFailure
         );
 
-    // TODO: Aggregate failed strategy and subject hints into Hints when relationship
-    // authorization ProblemDetails owns hint rendering.
     private static GetResult.GetFailureRelationshipNotAuthorized CreateGetRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
+    ) => new(relationshipFailure);
 
     private static UpsertResult.UpsertFailureRelationshipNotAuthorized CreateUpsertRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
-    ) => new(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure), relationshipFailure);
+    ) => new(relationshipFailure);
 
     private sealed record GetAuthorizationOutcome(
         GetResult? FailureResult,

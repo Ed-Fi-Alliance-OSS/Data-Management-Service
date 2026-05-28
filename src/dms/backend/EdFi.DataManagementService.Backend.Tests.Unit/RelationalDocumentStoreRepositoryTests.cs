@@ -47,8 +47,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private static readonly ResourceInfo _studentResourceInfo = CreateResourceInfo("Student");
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
-    private const string RelationshipAuthorizationSchoolIdErrorMessage =
-        "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's SchoolId value.";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),
@@ -744,11 +742,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.GetDocumentById(getRequest);
 
         var failure = result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>().Subject;
-        failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
-        failure.Hints.Should().BeNull();
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
@@ -3906,9 +3899,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
         failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(failure.RelationshipFailure));
-        failure
             .RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Proposed);
         failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
@@ -4262,7 +4252,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
                         new UpdateResult.UpdateFailureRelationshipNotAuthorized(
-                            ["stored relationship denied"],
                             CreateNoClaimsStoredRelationshipFailure()
                         )
                     )
@@ -5589,11 +5578,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
-        failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        failure.ErrorMessages.Should().Equal(RelationshipAuthorizationSchoolIdErrorMessage);
-        failure.Hints.Should().BeNull();
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -5669,16 +5653,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
         failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
         failure
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        failure
-            .ErrorMessages.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("'SchoolId'")
-            .And.Contain("'StudentUniqueId'")
-            .And.NotContain("auth.EducationOrganizationIdToStudentDocumentId")
-            .And.NotContain("auth.EducationOrganizationIdToEducationOrganizationId");
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .SelectMany(static subject => subject.SecurableElements)
+            .Select(static element => element.ReadableName)
+            .Should()
+            .Equal("SchoolId", "StudentUniqueId");
         var failedStrategy = failure.RelationshipFailure.FailedStrategies.Should().ContainSingle().Which;
         failedStrategy.AuthObject.Should().BeNull();
         failedStrategy

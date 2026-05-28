@@ -27,9 +27,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Default_Relational_Write_Executor
 {
-    private const string ProposedRelationshipAuthorizationSchoolIdErrorMessage =
-        "No relationships have been established between the caller's education organization id claims ('1234') and the resource item's SchoolId value.";
-
     private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
     private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
@@ -4486,10 +4483,6 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
             .Subject;
         notAuthorized.RelationshipFailure.Should().BeSameAs(relationshipFailure);
-        notAuthorized
-            .ErrorMessages.Should()
-            .Equal(RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure));
-        notAuthorized.ErrorMessages.Should().Equal(ProposedRelationshipAuthorizationSchoolIdErrorMessage);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);

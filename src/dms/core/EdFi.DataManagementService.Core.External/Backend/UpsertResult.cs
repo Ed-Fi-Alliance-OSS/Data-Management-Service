@@ -82,11 +82,8 @@ public record UpsertResult
     /// <summary>
     /// A failure because proposed-value or existing-target relationship authorization denied the upsert.
     /// </summary>
-    public record UpsertFailureRelationshipNotAuthorized(
-        string[] ErrorMessages,
-        RelationshipAuthorizationFailure RelationshipFailure,
-        string[]? Hints = null
-    ) : UpsertResult();
+    public record UpsertFailureRelationshipNotAuthorized(RelationshipAuthorizationFailure RelationshipFailure)
+        : UpsertResult();
 
     /// <summary>
     /// A failure because the requested POST/upsert operation is intentionally not implemented.

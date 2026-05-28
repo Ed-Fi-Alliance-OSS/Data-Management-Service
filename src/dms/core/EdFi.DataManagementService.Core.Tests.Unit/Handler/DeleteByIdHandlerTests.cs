@@ -269,20 +269,10 @@ public class DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string[] ResponseErrors = ["No relationship exists."];
-            public static readonly string[] ResponseHints =
-            [
-                "Verify the caller's education organization claims.",
-            ];
-
             public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
             {
                 return Task.FromResult<DeleteResult>(
-                    new DeleteFailureRelationshipNotAuthorized(
-                        ResponseErrors,
-                        CreateRelationshipFailure(),
-                        ResponseHints
-                    )
+                    new DeleteFailureRelationshipNotAuthorized(CreateRelationshipFailure())
                 );
             }
         }

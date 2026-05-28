@@ -208,20 +208,10 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string[] ResponseErrors = ["No relationship exists."];
-            public static readonly string[] ResponseHints =
-            [
-                "Verify the caller's education organization claims.",
-            ];
-
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
                 return Task.FromResult<GetResult>(
-                    new GetFailureRelationshipNotAuthorized(
-                        ResponseErrors,
-                        CreateRelationshipFailure(),
-                        ResponseHints
-                    )
+                    new GetFailureRelationshipNotAuthorized(CreateRelationshipFailure())
                 );
             }
         }
@@ -674,15 +664,6 @@ actual: {requestInfo.FrontendResponse.Body}
     [Parallelizable]
     public class Given_A_Relational_Get_Request_With_Empty_EdOrg_Claims : GetByIdHandlerTests
     {
-        private static readonly string[] _responseErrors =
-        [
-            "Relationship authorization required caller EducationOrganizationIds.",
-        ];
-        private static readonly string[] _responseHints =
-        [
-            "Verify the caller's education organization claims.",
-        ];
-
         private sealed class Repository : NotImplementedDocumentStoreRepository
         {
             public IRelationalGetRequest? CapturedRequest { get; private set; }
@@ -692,11 +673,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 CapturedRequest = getRequest as IRelationalGetRequest;
 
                 return Task.FromResult<GetResult>(
-                    new GetFailureRelationshipNotAuthorized(
-                        _responseErrors,
-                        CreateEmptyClaimsRelationshipFailure(),
-                        _responseHints
-                    )
+                    new GetFailureRelationshipNotAuthorized(CreateEmptyClaimsRelationshipFailure())
                 );
             }
 

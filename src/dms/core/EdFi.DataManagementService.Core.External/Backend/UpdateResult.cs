@@ -85,11 +85,8 @@ public record UpdateResult
     /// <summary>
     /// A failure because stored or proposed relationship authorization denied the update.
     /// </summary>
-    public record UpdateFailureRelationshipNotAuthorized(
-        string[] ErrorMessages,
-        RelationshipAuthorizationFailure RelationshipFailure,
-        string[]? Hints = null
-    ) : UpdateResult();
+    public record UpdateFailureRelationshipNotAuthorized(RelationshipAuthorizationFailure RelationshipFailure)
+        : UpdateResult();
 
     /// <summary>
     /// A failure because the requested PUT/update operation is intentionally not implemented.

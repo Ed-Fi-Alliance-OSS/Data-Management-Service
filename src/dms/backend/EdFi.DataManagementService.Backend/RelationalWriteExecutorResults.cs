@@ -41,16 +41,10 @@ internal static class RelationalWriteExecutorResults
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureRelationshipNotAuthorized(
-                    RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure),
-                    relationshipFailure
-                )
+                new UpsertResult.UpsertFailureRelationshipNotAuthorized(relationshipFailure)
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateFailureRelationshipNotAuthorized(
-                    RelationshipAuthorizationErrorMessageFormatter.Format(relationshipFailure),
-                    relationshipFailure
-                )
+                new UpdateResult.UpdateFailureRelationshipNotAuthorized(relationshipFailure)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
