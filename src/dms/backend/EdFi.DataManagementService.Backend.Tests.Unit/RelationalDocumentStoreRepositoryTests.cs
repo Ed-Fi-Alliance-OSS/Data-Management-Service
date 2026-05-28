@@ -3093,6 +3093,87 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustHaveHappenedOnceExactly();
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_short_circuits_supported_people_query_authorization_with_empty_edorg_claims(
+        bool totalCount
+    )
+    {
+        var resourceInfo = _studentResourceInfo;
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(resourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [],
+            resourceInfo: resourceInfo
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_validates_people_auth_views_before_short_circuiting_empty_edorg_claims(
+        bool totalCount
+    )
+    {
+        var resourceInfo = _studentResourceInfo;
+        var queryRequest = CreateQueryRequest(
+            CreateAuthorizationAwareMappingSetWithSelfStudentSubject(resourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [],
+            resourceInfo: resourceInfo
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure
+            .Errors[0]
+            .Should()
+            .Contain("people auth views were not emitted")
+            .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
+            .And.Contain(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
     [Test]
     public async Task It_combines_edorg_only_and_people_query_relationship_strategies_as_or_branches()
     {

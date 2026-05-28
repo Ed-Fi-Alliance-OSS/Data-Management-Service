@@ -27,3 +27,9 @@ Decisions: removed query-only People endpoint staging gate after stored-value re
 Files changed: RelationalDocumentStoreRepository.cs, RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
 Verification: csharpier on changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository" passed 180.
 Notes: planner short-circuit/security ordering, parameterization-specific coverage, and broader adapter/planner/repository matrix remain for later tasks.
+
+DMS-1095 06b people relationship auth get-many - completed planner/security ordering for People GET-many empty claims.
+Decisions: existing planner already classifies/resolves People subjects and validates selected auth views before NoClaims; added repository regressions proving valid People no-claim queries return empty page without reference resolution/hydration, while missing People auth views return security configuration before empty-claim short-circuit.
+Files changed: RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
+Verification: csharpier on RelationalDocumentStoreRepositoryTests.cs; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner" passed 54; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepositoryTests" passed 184.
+Notes: parameterization-specific People SQL coverage remains for next task.
