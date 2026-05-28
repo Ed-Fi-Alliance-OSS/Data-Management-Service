@@ -276,13 +276,14 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
+                      "correlationId": null,
                       "validationErrors": {},
                       "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901222') and the resource item's SchoolId value."
+                          "No relationships have been established between the caller's education organization id claim ('255901222') and the resource item's 'SchoolId' value."
                       ]
                   }
                   """
@@ -362,13 +363,14 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
+                      "correlationId": null,
                       "validationErrors": {},
                       "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('999999') and the resource item's LocalEducationAgencyId value."
+                          "No relationships have been established between the caller's education organization id claim ('999999') and the resource item's 'LocalEducationAgencyId' value."
                       ]
                   }
                   """
@@ -407,13 +409,14 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: Relationship authorization requires at least one claim EducationOrganizationId.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
+                      "correlationId": null,
                       "validationErrors": {},
                       "errors": [
-                          "No relationships have been established between the caller's education organization id claims () and the resource item's LocalEducationAgencyId value."
+                          "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'LocalEducationAgencyId' value."
                       ]
                   }
                   """
@@ -429,6 +432,52 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   []
+                  """
+
+    Rule: Proposed-value relationship ProblemDetails formatting
+
+        @relational-backend
+        @relational-ci-shard-3
+        @ResetClaimsetsAfterScenario
+        Scenario: POST OrganizationDepartment returns proposed element-required ProblemDetails when parent education organization is missing
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                                  |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department |
+              And a claim set is uploaded to CMS that grants "OrganizationDepartment" access to "E2E-RelationshipProblemDetailsOrgDepartmentClaimSet" using authorization strategy "RelationshipsWithEdOrgsOnly"
+              And the claim set upload to CMS should be successful
+              And the claimSet "E2E-RelationshipProblemDetailsOrgDepartmentClaimSet" is authorized with educationOrganizationIds "255901"
+             When a POST request is made to "/ed-fi/organizationDepartments" with
+                  """
+                  {
+                      "organizationDepartmentId": 255901777,
+                      "nameOfInstitution": "Missing Parent Department",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department"
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 403
+              And the response headers include
+                  """
+                  {
+                      "Content-Type": "application/problem+json"
+                  }
+                  """
+              And the response body has a non-empty correlationId
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized. The 'ParentEducationOrganization' value is required for authorization purposes. Hint: Proposed relationship authorization subject value is missing.",
+                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
                   """
 
     Rule: Existing-target updates use stored and proposed relationship authorization
@@ -860,6 +909,27 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901222"
              When a GET request is made to "/ed-fi/academicWeeks/{id}"
              Then it should respond with 403
+              And the response headers include
+                  """
+                  {
+                      "Content-Type": "application/problem+json"
+                  }
+                  """
+              And the response body has a non-empty correlationId
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "type": "urn:ed-fi:api:security:authorization",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "No relationships have been established between the caller's education organization id claim ('255901222') and the resource item's 'SchoolId' value."
+                      ]
+                  }
+                  """
 
         @relational-backend
         @relational-ci-shard-3

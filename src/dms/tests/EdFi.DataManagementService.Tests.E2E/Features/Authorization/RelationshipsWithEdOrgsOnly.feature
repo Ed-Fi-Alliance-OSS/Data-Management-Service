@@ -166,13 +166,13 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: Relationship authorization requires at least one claim EducationOrganizationId.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims () and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'SchoolId' value."
                       ]
                   }
                   """
@@ -245,13 +245,13 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: Relationship authorization requires at least one claim EducationOrganizationId.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims () and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'SchoolId' value."
                       ]
                   }
                   """
@@ -298,13 +298,13 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901001') and the resource item's 'SchoolId' value."
                       ]
                     }
                   """
@@ -362,13 +362,13 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901001') and the resource item's 'SchoolId' value."
                       ]
                   }
                   """
@@ -518,13 +518,13 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
+                   "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                   "type": "urn:ed-fi:api:security:authorization",
                    "title": "Authorization Denied",
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901222') and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901222') and the resource item's 'SchoolId' value."
                     ]
                   }
                   """
@@ -559,13 +559,13 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
+                   "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                   "type": "urn:ed-fi:api:security:authorization",
                    "title": "Authorization Denied",
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901223') and the resource item's SchoolId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901223') and the resource item's 'SchoolId' value."
                     ]
                   }
                   """
@@ -690,13 +690,13 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('3') and the resource item's SchoolId value."
+                          "No relationships have been established between the caller's education organization id claim ('3') and the resource item's 'SchoolId' value."
                        ]
                       }
                   """
@@ -822,14 +822,14 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's LocalEducationAgencyId value."
+                      "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
@@ -842,14 +842,14 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's LocalEducationAgencyId value."
+                      "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """
@@ -878,14 +878,14 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: No matching relationship authorization row was found for the subject value and claim EducationOrganizationIds.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's LocalEducationAgencyId value."
+                      "No relationships have been established between the caller's education organization id claim ('20101') and the resource item's 'LocalEducationAgencyId' value."
                     ]
                   }
                   """

@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
@@ -849,67 +850,79 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string claimSetName
         )
         {
-            var claimsJson = $$"""
+            await UploadClaimSetToCms(
+                endpointName,
+                claimSetName,
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+            );
+        }
+
+        [Given(
+            "a claim set is uploaded to CMS that grants {string} access to {string} using authorization strategy {string}"
+        )]
+        public async Task GivenAClaimSetIsUploadedToCMSThatGrantsEndpointAccessUsingAuthorizationStrategy(
+            string endpointName,
+            string claimSetName,
+            string authorizationStrategyName
+        )
+        {
+            await UploadClaimSetToCms(endpointName, claimSetName, authorizationStrategyName);
+        }
+
+        private async Task UploadClaimSetToCms(
+            string endpointName,
+            string claimSetName,
+            string authorizationStrategyName
+        )
+        {
+            JsonObject BuildAction(string actionName) =>
+                new()
                 {
-                    "claims": {
-                        "claimSets": [
-                            {
-                                "claimSetName": "{{claimSetName}}",
-                                "isSystemReserved": false
-                            }
-                        ],
-                        "claimsHierarchy": [
-                            {
-                                "name": "http://ed-fi.org/identity/claims/domains/edFi",
-                                "claims": [
-                                    {
-                                        "name": "http://ed-fi.org/identity/claims/ed-fi/{{endpointName}}",
-                                        "claimSets": [
-                                            {
-                                                "name": "{{claimSetName}}",
-                                                "actions": [
-                                                    {
-                                                        "name": "Create",
-                                                        "authorizationStrategyOverrides": [
-                                                            {
-                                                                "name": "NoFurtherAuthorizationRequired"
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        "name": "Read",
-                                                        "authorizationStrategyOverrides": [
-                                                            {
-                                                                "name": "NoFurtherAuthorizationRequired"
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        "name": "Update",
-                                                        "authorizationStrategyOverrides": [
-                                                            {
-                                                                "name": "NoFurtherAuthorizationRequired"
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        "name": "Delete",
-                                                        "authorizationStrategyOverrides": [
-                                                            {
-                                                                "name": "NoFurtherAuthorizationRequired"
-                                                            }
-                                                        ]
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
+                    ["name"] = actionName,
+                    ["authorizationStrategyOverrides"] = new JsonArray(
+                        new JsonObject { ["name"] = authorizationStrategyName }
+                    ),
+                };
+
+            string claimName = endpointName.StartsWith("domains/", StringComparison.Ordinal)
+                ? $"http://ed-fi.org/identity/claims/{endpointName}"
+                : $"http://ed-fi.org/identity/claims/ed-fi/{endpointName}";
+
+            JsonObject claimNode = new()
+            {
+                ["name"] = claimName,
+                ["claimSets"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["name"] = claimSetName,
+                        ["actions"] = new JsonArray(
+                            BuildAction("Create"),
+                            BuildAction("Read"),
+                            BuildAction("Update"),
+                            BuildAction("Delete")
+                        ),
                     }
-                }
-                """;
+                ),
+            };
+
+            JsonObject claimsHierarchyNode = endpointName.StartsWith("domains/", StringComparison.Ordinal)
+                ? claimNode
+                : new JsonObject
+                {
+                    ["name"] = "http://ed-fi.org/identity/claims/domains/edFi",
+                    ["claims"] = new JsonArray(claimNode),
+                };
+
+            string claimsJson = new JsonObject
+            {
+                ["claims"] = new JsonObject
+                {
+                    ["claimSets"] = new JsonArray(
+                        new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = false }
+                    ),
+                    ["claimsHierarchy"] = new JsonArray(claimsHierarchyNode),
+                },
+            }.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
             // Call the CMS endpoint to upload the claim set
             var httpClient = new HttpClient();
@@ -1338,6 +1351,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             correlationId.Should().BeEquivalentTo(value);
 
             AreEqual(expectedBodyJson, responseJson).Should().BeTrue();
+        }
+
+        [Then("the response body has a non-empty correlationId")]
+        public async Task ThenTheResponseBodyHasANonEmptyCorrelationId()
+        {
+            string body = await _apiResponse.TextAsync();
+            JsonNode responseJson = JsonNode.Parse(body)!;
+
+            CorrelationIdValue(responseJson).Should().NotBeNullOrWhiteSpace();
         }
 
         [Then("the response body should not contain {string}")]
