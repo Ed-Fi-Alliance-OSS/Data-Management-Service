@@ -36,7 +36,7 @@ This slice should refine response mapping and tests. It should not introduce new
 This slice owns final formatting for relationship authorization cases from `auth.md`:
 
 - Relationship-based no relationships established with EdOrg claims.
-- Relationship-based no relationships established without EdOrg claims where applicable to a relationship/custom-view-style check.
+- Relationship-based no relationships established with an empty normalized EdOrg claim list, rendered through the EdOrg-claims wording with `none`.
 - Required relationship securable element uninitialized in existing data.
 - Required relationship securable element missing from proposed data.
 - Mixed failed relationship OR groups, using failure-kind precedence: existing stored-value invalid data, proposed-value element required, then no relationship established.
@@ -139,3 +139,13 @@ Reviewers should focus on wire compatibility with `auth.md`, not on authorizatio
 3. Assert `correlationId` as present, non-empty, and matching the DMS correlation-id format. Do not make integration or E2E tests inject a fixed correlation id just to compare the entire body byte-for-byte. Response-shape tests should compare all stable ProblemDetails members exactly and treat `correlationId` as a validated dynamic field.
 4. Yes. Slice 6 should avoid adding dedicated tests for `auth.md` §2.4 custom-view/no-EdOrg-claims wording, because custom view ProblemDetails are outside this story. If a shared formatter already has narrow unit coverage that must be preserved while changing relationship code, keep that coverage; leave CRUD custom-view wire assertions to the view-based authorization story.
 5. Emit a single aggregated no-relationship `errors` entry. Aggregate the selected failed OR-strategy/subject readable securable names in deterministic configured strategy/subject/contributor order, de-duplicate by displayed readable name, and format the EdOrg claim text once. Preserve per-strategy and per-subject identity internally for DTO assertions and hint ordering; do not emit one no-relationship error per failed strategy or subject.
+
+### Questions 3
+
+1. For the empty normalized EdOrg-claims short-circuit where no `AUTH1` SQL is composed, should the synthetic relationship failure DTO include all executable relationship OR strategies/subjects in configured order so no-relationship names and distinct hints aggregate exactly like an evaluated failed OR group?
+2. What exact deterministic security-configuration `errors` entry should be emitted when the relationship `AUTH1` failure-set payload is missing, malformed, unknown-version, truncated, or maps to invalid plan-relative ordinals?
+
+### Answers 3
+
+1. Yes. Build the synthetic no-claims relationship failure DTO from the operation-applicable relationship plan after security-configuration and operation-eligibility filtering. Include every executable relationship OR strategy and subject in deterministic configured strategy/subject/contributor order, mark each selected entry as no relationship established, carry the normalized empty EdOrg-claim context, and preserve each subject's readable names and hint metadata. Do not compose `AUTH1` SQL for this path. The Slice 6 formatter should then aggregate readable names and distinct hints exactly as it does for an evaluated failed OR group, with claims rendered as `(none)`.
+2. Use this single stable `errors` entry for all invalid relationship `AUTH1` failure-set payload cases: `The relationship authorization failure payload returned by the authorization provider is invalid and cannot be mapped to the configured relationship authorization plan.` Keep provider-specific text, malformed payload fragments, parser reasons, and invalid ordinal/version details in logs only.
