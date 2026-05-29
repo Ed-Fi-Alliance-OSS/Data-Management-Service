@@ -278,6 +278,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
+        if (TryResolveMirrorNamedDefault(table, column, out var mirrorConstraintName, out var mirrorDefault))
+        {
+            return _dialect.RenderColumnDefinitionWithNamedDefault(
+                column.ColumnName,
+                type,
+                column.IsNullable,
+                mirrorConstraintName,
+                mirrorDefault
+            );
+        }
+
         var defaultExpression = ResolveDefaultExpression(table, column);
 
         return _dialect.RenderColumnDefinition(column.ColumnName, type, column.IsNullable, defaultExpression);
@@ -291,6 +302,55 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 DmsTableNames.CollectionItemIdSequence
             )
             : null;
+    }
+
+    /// <summary>
+    /// Resolves the named default constraint for a synthesized change-version mirror column:
+    /// <c>ContentVersion</c> defaults to the next <c>dms.ChangeVersionSequence</c> value and
+    /// <c>ContentLastModifiedAt</c> defaults to the current UTC timestamp. Both use a
+    /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by PostgreSQL),
+    /// matching the <c>dms.Document</c> convention. The trigger overwrites these defaults at write time.
+    /// </summary>
+    private bool TryResolveMirrorNamedDefault(
+        DbTableModel table,
+        DbColumnModel column,
+        out string constraintName,
+        out string defaultExpression
+    )
+    {
+        switch (column.Kind)
+        {
+            case ColumnKind.MirroredContentVersion:
+                constraintName = BuildMirrorDefaultConstraintName(table, column);
+                defaultExpression = _dialect.RenderSequenceDefaultExpression(
+                    DmsTableNames.DmsSchema,
+                    DmsTableNames.ChangeVersionSequence
+                );
+                return true;
+            case ColumnKind.MirroredContentLastModifiedAt:
+                constraintName = BuildMirrorDefaultConstraintName(table, column);
+                defaultExpression = _dialect.CurrentTimestampDefaultExpression;
+                return true;
+            default:
+                constraintName = string.Empty;
+                defaultExpression = string.Empty;
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Builds the <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> default constraint name for a mirror column, applying
+    /// the dialect identifier length limit. Resource-root table names can already sit at the dialect limit
+    /// after identifier shortening, so the generated default-constraint name must be shortened too (SQL
+    /// Server enforces a 128-character identifier limit on the named <c>CONSTRAINT</c>).
+    /// </summary>
+    private string BuildMirrorDefaultConstraintName(DbTableModel table, DbColumnModel column)
+    {
+        return SqlIdentifierShortening.ApplyDialectLimit(
+            $"DF_{table.Table.Name}_{column.ColumnName.Value}",
+            $"Default|{table.Table}|{column.ColumnName.Value}",
+            _dialect.Rules
+        );
     }
 
     private static bool UsesCollectionItemSequenceDefault(DbTableModel table, DbColumnModel column)
@@ -2273,8 +2333,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string triggerName
     )
     {
+        // Exclude the synthesized change-version mirror columns: they are stamp targets, not client
+        // content, so a stamp-only mirror update must not be treated as a representation change. This
+        // matches change-queries.md invariant #5 (affectedDocs excludes rows differing only in stamp
+        // columns) and keeps mirror columns out of the no-op diff predicate.
         var storedColumns = tableModel
-            .Columns.Where(column => column.Storage is ColumnStorage.Stored)
+            .Columns.Where(column =>
+                column.Storage is ColumnStorage.Stored
+                && column.Kind
+                    is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+            )
             .Select(column => column.ColumnName)
             .ToArray();
 

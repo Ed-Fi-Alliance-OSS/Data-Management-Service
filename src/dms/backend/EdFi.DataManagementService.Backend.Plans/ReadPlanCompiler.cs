@@ -74,18 +74,24 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// </summary>
     private ResourceReadPlan CompileCore(RelationalResourceModel resourceModel)
     {
+        // Hydration reads exclude the synthesized change-version mirror columns: they are not read for
+        // reconstitution (read metadata stays sourced from dms.Document). Building all hydration artifacts
+        // from this filtered model keeps the read SELECT and every read-plan ordinal unaffected by the
+        // mirror columns. The full model is retained on ResourceReadPlan.Model below for query planning.
+        var hydrationModel = ToHydrationProjectionModel(resourceModel);
+
         var rootScopeTableModel = RelationalResourceModelCompileValidator.ResolveRootScopeTableModelOrThrow(
-            resourceModel,
+            hydrationModel,
             "read plan"
         );
-        var hydrationPlanMetadata = BuildHydrationPlanMetadata(resourceModel);
+        var hydrationPlanMetadata = BuildHydrationPlanMetadata(hydrationModel);
 
         var keysetTable = KeysetTableConventions.GetKeysetTableContract(_dialect);
-        var tablePlans = new TableReadPlan[resourceModel.TablesInDependencyOrder.Count];
+        var tablePlans = new TableReadPlan[hydrationModel.TablesInDependencyOrder.Count];
 
-        for (var index = 0; index < resourceModel.TablesInDependencyOrder.Count; index++)
+        for (var index = 0; index < hydrationModel.TablesInDependencyOrder.Count; index++)
         {
-            var tableModel = resourceModel.TablesInDependencyOrder[index];
+            var tableModel = hydrationModel.TablesInDependencyOrder[index];
             var tableAlias = tableModel.Equals(rootScopeTableModel)
                 ? PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root)
                 : PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table);
@@ -97,17 +103,17 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         }
 
         var referenceIdentityProjectionPlans = ReferenceIdentityProjectionPlanCompiler.Compile(
-            resourceModel,
+            hydrationModel,
             hydrationPlanMetadata.ColumnOrdinalsByTable
         );
         var descriptorProjectionPlans = _descriptorProjectionPlanCompiler.Compile(
-            resourceModel,
+            hydrationModel,
             keysetTable,
             hydrationPlanMetadata.TablesByName,
             hydrationPlanMetadata.ColumnOrdinalsByTable
         );
         var documentReferenceLookupPlan = _documentReferenceLookupPlanCompiler.Compile(
-            resourceModel,
+            hydrationModel,
             keysetTable,
             hydrationPlanMetadata.TablesByName
         );
@@ -130,6 +136,25 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         );
 
         return readPlan;
+    }
+
+    /// <summary>
+    /// Projects the resource model down to its hydration (read) column set by excluding the synthesized
+    /// change-version mirror columns from every table. Tables without mirror columns are returned by
+    /// reference, so only the resource root is rebuilt.
+    /// </summary>
+    private static RelationalResourceModel ToHydrationProjectionModel(RelationalResourceModel resourceModel)
+    {
+        return resourceModel with
+        {
+            Root = ProjectionMetadataResolver.ToHydrationProjectionTableModel(resourceModel.Root),
+            TablesInDependencyOrder =
+            [
+                .. resourceModel.TablesInDependencyOrder.Select(
+                    ProjectionMetadataResolver.ToHydrationProjectionTableModel
+                ),
+            ],
+        };
     }
 
     /// <summary>

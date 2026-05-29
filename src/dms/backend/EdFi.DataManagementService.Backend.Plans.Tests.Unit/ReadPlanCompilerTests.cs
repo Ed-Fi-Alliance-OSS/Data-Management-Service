@@ -59,6 +59,110 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_retain_content_version_mirror_columns_on_the_read_plan_model()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            WithContentVersionMirrorColumns(_projectionResourceModel)
+        );
+
+        readPlan
+            .Model.Root.Columns.Select(static column => column.Kind)
+            .Should()
+            .Contain(ColumnKind.MirroredContentVersion)
+            .And.Contain(ColumnKind.MirroredContentLastModifiedAt);
+    }
+
+    [Test]
+    public void It_should_exclude_content_version_mirror_columns_from_the_hydration_projection()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            WithContentVersionMirrorColumns(_projectionResourceModel)
+        );
+        var rootPlan = readPlan.TablePlansInDependencyOrder.Single();
+
+        rootPlan
+            .TableModel.Columns.Where(static column =>
+                column.Kind is ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt
+            )
+            .Should()
+            .BeEmpty();
+
+        rootPlan
+            .SelectByKeysetSql.Should()
+            .NotContain("ContentVersion")
+            .And.NotContain("ContentLastModifiedAt");
+    }
+
+    [Test]
+    public void It_should_keep_reference_and_descriptor_hydration_ordinals_unchanged_by_mirror_columns()
+    {
+        // The mirror columns are inserted ahead of the FK and descriptor columns (mimicking canonical
+        // ordering). Without hydration exclusion their presence would shift every read-plan ordinal; the
+        // exclusion keeps the ordinals identical to the model compiled without mirror columns.
+        var withMirrors = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            WithContentVersionMirrorColumns(_projectionResourceModel)
+        );
+
+        ReferenceFkOrdinals(withMirrors).Should().Equal(ReferenceFkOrdinals(_pgsqlProjectionReadPlan));
+        DescriptorIdOrdinals(withMirrors).Should().Equal(DescriptorIdOrdinals(_pgsqlProjectionReadPlan));
+    }
+
+    private static RelationalResourceModel WithContentVersionMirrorColumns(RelationalResourceModel model)
+    {
+        var existing = model.Root.Columns;
+        DbColumnModel[] mirrorColumns =
+        [
+            new DbColumnModel(
+                ColumnName: new DbColumnName("ContentVersion"),
+                Kind: ColumnKind.MirroredContentVersion,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                ColumnName: new DbColumnName("ContentLastModifiedAt"),
+                Kind: ColumnKind.MirroredContentLastModifiedAt,
+                ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+        ];
+
+        // Insert after the DocumentId key column to mimic canonical ordering placing the mirror columns
+        // ahead of the FK/descriptor columns; an un-excluded projection would then shift their ordinals.
+        DbColumnModel[] rebuilt = [existing[0], .. mirrorColumns, .. existing.Skip(1)];
+        var rootTable = model.Root with { Columns = rebuilt };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static IEnumerable<int> ReferenceFkOrdinals(ResourceReadPlan readPlan)
+    {
+        return readPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder.SelectMany(plan => plan.BindingsInOrder)
+            .Select(binding => binding.FkColumnOrdinal);
+    }
+
+    private static IEnumerable<int> DescriptorIdOrdinals(ResourceReadPlan readPlan)
+    {
+        return readPlan
+            .DescriptorProjectionPlansInOrder.SelectMany(plan => plan.SourcesInOrder)
+            .Select(source => source.DescriptorIdColumnOrdinal);
+    }
+
+    [Test]
     public void It_should_preserve_the_keyset_contract_and_emit_no_projection_plans_when_model_has_no_projection_metadata()
     {
         _pgsqlReadPlan.Model.Should().Be(_resourceModel);

@@ -310,6 +310,12 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 $"{_dialect.RenderColumnDefinition(Col("Discriminator"), StringType(128), false)},"
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Uri"), StringType(306), false)},");
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", SequenceDefault)},"
+            );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentLastModifiedAt"), DateTimeType, false, "DF_Descriptor_ContentLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
+            );
             writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Descriptor", [Col("DocumentId")]));
         }
         writer.AppendLine(");");

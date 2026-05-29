@@ -605,18 +605,30 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // to EmitDescriptorTable adds or renames a column without updating that list,
         // real value changes to the new column will silently fail to bump stamps.
         // This test re-derives the column set from the emitted Descriptor table and
-        // asserts each non-PK column appears as an IS DISTINCT FROM predicate.
+        // asserts each non-PK, non-stamp column appears as an IS DISTINCT FROM predicate.
+        // The change-version mirror columns are stamp targets, not client content, so they are
+        // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
+        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns.Should().Contain("DocumentId", "sanity check the extractor found PK column");
 
-        foreach (var column in columns.Where(c => c != "DocumentId"))
+        foreach (var column in columns.Where(c => c != "DocumentId" && !stampColumns.Contains(c)))
         {
             _ddl.Should()
                 .Contain(
                     $"OLD.\"{column}\" IS DISTINCT FROM NEW.\"{column}\"",
                     $"descriptor stamping trigger must compare {column}; "
                         + "update _descriptorStoredColumns in CoreDdlEmitter when adding columns"
+                );
+        }
+
+        foreach (var stampColumn in stampColumns)
+        {
+            _ddl.Should()
+                .NotContain(
+                    $"OLD.\"{stampColumn}\" IS DISTINCT FROM NEW.\"{stampColumn}\"",
+                    "change-version mirror columns are stamp targets and must not appear in the no-op diff"
                 );
         }
     }
@@ -1137,6 +1149,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // CAST(... AS varbinary(max)) so case-only / trailing-space-only changes are
         // detected under default CI collation; non-string columns use plain <>. If a
         // future column addition forgets to wire the right comparator, this test fails.
+        // The change-version mirror columns are stamp targets, not client content, so they are
+        // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
+        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns
@@ -1144,7 +1159,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Should()
             .Contain("DocumentId", "sanity check the extractor found PK column");
 
-        foreach (var (name, type) in columns.Where(c => c.Name != "DocumentId"))
+        foreach (
+            var (name, type) in columns.Where(c => c.Name != "DocumentId" && !stampColumns.Contains(c.Name))
+        )
         {
             var isStringType = type.Contains("char", StringComparison.OrdinalIgnoreCase);
             var expected = isStringType
@@ -1155,6 +1172,15 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                     expected,
                     $"descriptor stamping trigger must compare {name} ({type}); "
                         + "update _descriptorStoredColumns in CoreDdlEmitter when adding columns"
+                );
+        }
+
+        foreach (var stampColumn in stampColumns)
+        {
+            _ddl.Should()
+                .NotContain(
+                    $"i.[{stampColumn}] <> del.[{stampColumn}]",
+                    "change-version mirror columns are stamp targets and must not appear in the no-op diff"
                 );
         }
     }
@@ -1298,6 +1324,16 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     public void It_should_emit_exactly_one_descriptor_stamping_trigger()
     {
         CountOccurrences(_pgsqlDdl, "CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"").Should().Be(1);
+    }
+
+    [Test]
+    public void It_should_not_emit_the_derived_descriptor_change_version_index()
+    {
+        // IX_Descriptor_Discriminator_ContentVersion is derived-inventory-owned and rendered once by the
+        // relational DDL emitter; the core emitter must not also emit it (which would duplicate it in the
+        // full DDL). The core emitter still owns IX_Descriptor_Uri_Discriminator.
+        _pgsqlDdl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
+        _pgsqlDdl.Should().Contain("IX_Descriptor_Uri_Discriminator");
     }
 
     private static int CountOccurrences(string haystack, string needle)
