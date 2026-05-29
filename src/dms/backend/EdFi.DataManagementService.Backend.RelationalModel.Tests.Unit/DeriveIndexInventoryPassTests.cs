@@ -276,6 +276,112 @@ public class Given_Descriptor_Resources_For_Index_Derivation
 }
 
 /// <summary>
+/// Test fixture for content-version mirror index derivation on concrete resource roots and collections.
+/// </summary>
+[TestFixture]
+public class Given_Concrete_Resource_Roots_For_ContentVersion_Index_Derivation
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildNestedArrayUniquenessProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            IndexInventoryTestSchemaBuilder.BuildPassesThroughStableKeyContentVersionMirrorIndexDerivation()
+        );
+
+        _indexes = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should derive a single-column ContentVersion index for the resource root table.
+    /// </summary>
+    [Test]
+    public void It_should_derive_single_column_ContentVersion_index_for_root()
+    {
+        var index = _indexes.Single(i =>
+            i.Table.Name == "BusRoute" && i.Name.Value == "IX_BusRoute_ContentVersion"
+        );
+
+        index.KeyColumns.Select(c => c.Value).Should().Equal("ContentVersion");
+        index.IsUnique.Should().BeFalse();
+        index.Kind.Should().Be(DbIndexKind.Explicit);
+    }
+
+    /// <summary>
+    /// It should not derive ContentVersion indexes for collection tables.
+    /// </summary>
+    [Test]
+    public void It_should_not_derive_ContentVersion_index_for_collection_tables()
+    {
+        _indexes
+            .Where(i =>
+                i.Table.Name is "BusRouteAddress" or "BusRouteAddressPeriod"
+                && i.KeyColumns.Select(c => c.Value).SequenceEqual(["ContentVersion"])
+            )
+            .Should()
+            .BeEmpty();
+    }
+}
+
+/// <summary>
+/// Test fixture for the shared descriptor composite ContentVersion index when the mirror feature is active.
+/// </summary>
+[TestFixture]
+public class Given_Descriptor_Resources_With_Mirror_Active_For_Index_Derivation
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = CommonInventoryTestSchemaBuilder.BuildDescriptorOnlyProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            IndexInventoryTestSchemaBuilder.BuildPassesThroughContentVersionMirrorIndexDerivation()
+        );
+
+        _indexes = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should derive exactly one shared descriptor composite ContentVersion index.
+    /// </summary>
+    [Test]
+    public void It_should_derive_single_descriptor_composite_ContentVersion_index()
+    {
+        var descriptorIndexes = _indexes
+            .Where(i => i.Name.Value == "IX_Descriptor_Discriminator_ContentVersion")
+            .ToArray();
+
+        descriptorIndexes.Should().ContainSingle();
+        var index = descriptorIndexes.Single();
+        index.Table.Schema.Value.Should().Be("dms");
+        index.Table.Name.Should().Be("Descriptor");
+        index.KeyColumns.Select(c => c.Value).Should().Equal("Discriminator", "ContentVersion");
+        index.IsUnique.Should().BeFalse();
+        index.Kind.Should().Be(DbIndexKind.Explicit);
+    }
+}
+
+/// <summary>
 /// Test fixture for extension table index derivation.
 /// </summary>
 [TestFixture]
@@ -1475,6 +1581,57 @@ internal static class IndexInventoryTestSchemaBuilder
             new DescriptorForeignKeyConstraintPass(),
             new ApplyConstraintDialectHashingPass(),
             new ValidateForeignKeyStorageInvariantPass(),
+            new DeriveIndexInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build the standard pass list through index derivation with content-version mirror derivation run
+    /// first, so root content-version indexes and the shared descriptor composite index are produced.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughContentVersionMirrorIndexDerivation()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new DeriveContentVersionMirrorPass(),
+            new DeriveIndexInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build the stable-key pass list through index derivation with content-version mirror derivation run
+    /// first, for collection-bearing resources.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughStableKeyContentVersionMirrorIndexDerivation()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new ValidateUnifiedAliasMetadataPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new SemanticIdentityCompilationPass(),
+            new ValidateCollectionSemanticIdentityPass(),
+            new ArrayUniquenessConstraintPass(),
+            new StableCollectionConstraintPass(),
+            new DescriptorForeignKeyConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+            new DeriveContentVersionMirrorPass(),
             new DeriveIndexInventoryPass(),
         ];
     }

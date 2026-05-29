@@ -24,6 +24,10 @@ public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // Mark the feature active so downstream passes (index inventory) derive change-version support
+        // indexes, including the shared descriptor composite index for descriptor-only schemas.
+        context.ContentVersionMirrorDerivationHasRun = true;
+
         for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
         {
             var resource = context.ConcreteResourcesInNameOrder[index];

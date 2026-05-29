@@ -153,6 +153,14 @@ public sealed class RelationalModelSetBuilderContext
     public List<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder { get; } = [];
 
     /// <summary>
+    /// Set to <see langword="true"/> once <see cref="SetPasses.DeriveContentVersionMirrorPass"/> has run.
+    /// Gates derivation of change-version support indexes (including the shared <c>dms.Descriptor</c>
+    /// composite index) so they are produced only when the content-version mirror feature is active in the
+    /// pass pipeline, regardless of whether the schema contains any relational-table resources.
+    /// </summary>
+    public bool ContentVersionMirrorDerivationHasRun { get; set; }
+
+    /// <summary>
     /// Derived index inventory. BuildResult canonicalizes ordering by schema, table, and name; passes must not
     /// rely on insertion order.
     /// </summary>
