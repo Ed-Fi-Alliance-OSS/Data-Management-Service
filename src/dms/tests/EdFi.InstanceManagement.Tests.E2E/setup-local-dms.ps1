@@ -88,12 +88,44 @@ try {
 
     Write-Output "Using DLL-backed schema packages for E2E. Bootstrap loose-file runtime loading is Story 04."
 
-    # Run the start script - NO instance creation
-    if ($SkipDockerBuild) {
-        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+    $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
+    $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
+    $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
+    try {
+        # .env.routeContext.e2e carries the Story 04 loose-file schema settings, but this
+        # transitional E2E setup still runs from DLL-backed SCHEMA_PACKAGES. Process env
+        # values win over docker compose --env-file entries, so clear stale overrides
+        # left by teardown and force the Story 04 path off.
+        $env:USE_API_SCHEMA_PATH = "false"
+        $env:API_SCHEMA_PATH = ""
+        $env:SCHEMA_PACKAGES = $null
+
+        # Run the start script - NO instance creation
+        if ($SkipDockerBuild) {
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+        }
+        else {
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+        }
     }
-    else {
-        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+    finally {
+        if ($null -eq $previousUseApiSchemaPath) {
+            $env:USE_API_SCHEMA_PATH = $null
+        } else {
+            $env:USE_API_SCHEMA_PATH = $previousUseApiSchemaPath
+        }
+
+        if ($null -eq $previousApiSchemaPath) {
+            $env:API_SCHEMA_PATH = $null
+        } else {
+            $env:API_SCHEMA_PATH = $previousApiSchemaPath
+        }
+
+        if ($null -eq $previousSchemaPackages) {
+            $env:SCHEMA_PACKAGES = $null
+        } else {
+            $env:SCHEMA_PACKAGES = $previousSchemaPackages
+        }
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -114,6 +146,37 @@ try {
         docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE $db;" 2>&1 | Out-Null
         Write-Host "  Created database: $db" -ForegroundColor Green
     }
+
+    # Deploy the DMS schema into the main database so it can seed the per-instance test
+    # databases below. DMS-1151 ("Bootstrap Schema Deployment Safety") moved schema
+    # provisioning out of the DMS container entrypoint: start-local-dms.ps1 now forces
+    # NEED_DATABASE_SETUP=false for every direct start path, so the legacy Backend.Installer
+    # no longer runs on container startup and the main database comes up empty. This E2E
+    # harness is the non-bootstrap transitional path and does not go through provision-dms-schema.ps1,
+    # so it provisions the (legacy/relational-disabled) schema itself by running the same
+    # Backend.Installer as a one-shot container on the shared 'dms' network - mirroring what the
+    # container entrypoint used to do on startup. Without this, every per-instance request 500s
+    # with "relation \"dms.document\" does not exist".
+    Write-Host "`nDeploying DMS schema to main database..." -ForegroundColor Cyan
+
+    Import-Module ./env-utility.psm1 -Force
+    $routeContextEnvValues = ReadValuesFromEnvFile "./.env.routeContext.e2e"
+    $postgresPassword = Get-EnvValue -EnvValues $routeContextEnvValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
+    $adminConnectionString = "host=dms-postgresql;port=5432;username=postgres;password=$postgresPassword;database=edfi_datamanagementservice;"
+
+    # Resolve the locally-built DMS image from the running service container so the installer
+    # runs the exact binaries (including /app/Installer) that the DMS container ships.
+    $dmsImage = docker ps -a --filter "name=dms-local-dms-1" --format "{{.Image}}" | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($dmsImage)) {
+        throw "Unable to resolve the DMS image from container 'dms-local-dms-1'. Ensure the DMS stack started successfully."
+    }
+
+    docker run --rm --network dms --entrypoint dotnet $dmsImage `
+        Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c $adminConnectionString
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to deploy DMS schema to the main database. Installer exited with code $LASTEXITCODE."
+    }
+    Write-Host "  Schema deployed to main database" -ForegroundColor Green
 
     # Export schema from main database
     Write-Host "`nExporting schema from main database..." -ForegroundColor Cyan
