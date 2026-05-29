@@ -18,11 +18,17 @@ namespace EdFi.DataManagementService.Tests.Integration;
 /// </summary>
 public sealed class ApiIntegrationHarness : IAsyncDisposable
 {
-    public ApiIntegrationHarness(HttpClient httpClient, DbConnection dbConnection, FixtureContext fixture)
+    public ApiIntegrationHarness(
+        HttpClient httpClient,
+        DbConnection dbConnection,
+        FixtureContext fixture,
+        ApiIntegrationQueryRecorder? queryRecorder = null
+    )
     {
         HttpClient = httpClient;
         DbConnection = dbConnection;
         Fixture = fixture;
+        QueryRecorder = queryRecorder;
 
         HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -33,6 +39,7 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
     public HttpClient HttpClient { get; }
     public DbConnection DbConnection { get; }
     public FixtureContext Fixture { get; }
+    public ApiIntegrationQueryRecorder? QueryRecorder { get; }
 
     public async ValueTask DisposeAsync()
     {

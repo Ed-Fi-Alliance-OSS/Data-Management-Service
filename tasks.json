@@ -220,7 +220,7 @@
       "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~Relationship\"",
       "Inspect captured SQL or query parameter metadata assertions for SQL Server scalar and TVP branches."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e-tests",

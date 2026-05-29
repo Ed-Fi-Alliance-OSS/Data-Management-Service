@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Tests.Integration;
 
@@ -28,6 +29,7 @@ public abstract class ApiIntegrationTestBase
     private DbConnection? _assertionConnection;
     private FixtureContext? _fixtureContext;
     private string? _startupStatusFilePath;
+    private ApiIntegrationQueryRecorder? _queryRecorder;
 
     protected ApiIntegrationHarness Harness { get; private set; } = null!;
 
@@ -50,6 +52,12 @@ public abstract class ApiIntegrationTestBase
     /// EducationOrganizationIds returned from the fake JWT validation service.
     /// </summary>
     protected virtual IReadOnlyList<long> ClientEducationOrganizationIds => [];
+
+    /// <summary>
+    /// Captures compiled page keysets passed into the document hydrator for assertions
+    /// that need SQL plan parameter metadata.
+    /// </summary>
+    protected virtual bool CaptureQueryPlans => false;
 
     /// <summary>
     /// Builds the claim set provider used by the in-process host.
@@ -76,10 +84,12 @@ public abstract class ApiIntegrationTestBase
         _fixtureContext = FixtureContextLoader.Load(Fixture);
         _leasedConnectionString = await LeaseDatabaseAsync(_fixtureContext);
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), $"api-int-startup-{Guid.NewGuid():N}.json");
+        _queryRecorder = CaptureQueryPlans ? new ApiIntegrationQueryRecorder() : null;
 
         var fixtureContext = _fixtureContext;
         var leasedConnectionString = _leasedConnectionString;
         var startupStatusFilePath = _startupStatusFilePath;
+        var queryRecorder = _queryRecorder;
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -111,12 +121,23 @@ public abstract class ApiIntegrationTestBase
                     CreateClaimSetProvider(fixtureContext),
                     ClientEducationOrganizationIds
                 );
+
+                if (queryRecorder is not null)
+                {
+                    services.AddSingleton(queryRecorder);
+                    services.ReplaceDocumentHydratorWithRecorder();
+                }
             });
         });
 
         _assertionConnection = await OpenAssertionConnectionAsync(_leasedConnectionString);
         var httpClient = _factory.CreateClient();
-        Harness = new ApiIntegrationHarness(httpClient, _assertionConnection, _fixtureContext);
+        Harness = new ApiIntegrationHarness(
+            httpClient,
+            _assertionConnection,
+            _fixtureContext,
+            _queryRecorder
+        );
     }
 
     [TearDown]
@@ -149,6 +170,7 @@ public abstract class ApiIntegrationTestBase
         }
 
         _fixtureContext = null;
+        _queryRecorder = null;
 
         if (_startupStatusFilePath is not null && File.Exists(_startupStatusFilePath))
         {
