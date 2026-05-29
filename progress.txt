@@ -87,3 +87,9 @@ Decisions: added a dedicated relational People GET-many feature for Student self
 Files changed: RelationshipsWithPeopleRelational.feature, tasks.json, progress.txt.
 Verification: relational stack was already rebuilt with setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational and provision-relational-e2e-database.ps1; verified dms-local-dms-1 env UseRelationalBackend=true, Datastore=postgresql, QueryHandler=postgresql. Focused RelationshipsWithPeopleRelational filter passed 4/4. Full env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter "Category=relational-backend" passed 491/491 in 1h30m with AppSettings__DmsInstanceDatabaseName/DmsInstanceDatabaseName=edfi_datamanagementservice_relational so test-created DMS instances target the provisioned relational database.
 Notes: no C# changes; no csharpier run needed.
+
+DMS-1095 06b people relationship auth get-many - completed final verification task.
+Decisions: no implementation changes needed; final verification ran against existing relational stack and temporary SQL Server container; kept DMS E2E pointed at edfi_datamanagementservice_relational via AppSettings__DmsInstanceDatabaseName/DmsInstanceDatabaseName.
+Files changed: tasks.json, progress.txt.
+Verification: dotnet csharpier format src/dms/backend src/dms/tests/EdFi.DataManagementService.Tests.Integration src/dms/tests/EdFi.DataManagementService.Tests.E2E formatted 973 files with no git diff; Plans.Tests.Unit full suite passed 1091; Backend.Tests.Unit RelationalDocumentStoreRepository filter passed 188; API integration FullyQualifiedName~Relationship passed 33 with PostgreSQL localhost:5435 and SQL Server localhost:1434; relational E2E Category=relational-backend passed 491/491 in 1h45m.
+Notes: stopped temporary dms-codex-mssql after verification; no PROBLEMS.md created.

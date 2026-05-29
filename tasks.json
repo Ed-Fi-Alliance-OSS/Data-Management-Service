@@ -274,6 +274,6 @@
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Relationship\"",
       "Run env -u NODE_OPTIONS dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\""
     ],
-    "completed": false
+    "completed": true
   }
 ]
