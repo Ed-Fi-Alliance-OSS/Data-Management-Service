@@ -2126,12 +2126,7 @@ public class Given_PageDocumentIdSqlCompiler
             )
             .ToArray();
 
-        return new PageDocumentIdAuthorizationStrategy(
-            new ConfiguredAuthorizationStrategy(strategyName, RawConfiguredIndex: 0),
-            RelationshipLocalOrder: 0,
-            strategySubjects,
-            []
-        );
+        return new PageDocumentIdAuthorizationStrategy(strategyName, strategySubjects);
     }
 
     private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
@@ -2144,12 +2139,7 @@ public class Given_PageDocumentIdSqlCompiler
         params PageDocumentIdAuthorizationSubject[] subjects
     )
     {
-        return new PageDocumentIdAuthorizationStrategy(
-            new ConfiguredAuthorizationStrategy(strategyName, RawConfiguredIndex: 0),
-            RelationshipLocalOrder: 0,
-            subjects,
-            []
-        );
+        return new PageDocumentIdAuthorizationStrategy(strategyName, subjects);
     }
 
     private static RelationshipAuthorizationHierarchyDirection DefaultEdOrgAuthDirection(

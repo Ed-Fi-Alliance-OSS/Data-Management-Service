@@ -100,21 +100,14 @@ public sealed record PageDocumentIdAuthorizationPersonSubject(
 /// <summary>
 /// One relationship-based authorization strategy with its participating subjects.
 /// </summary>
-/// <param name="ConfiguredStrategy">The configured strategy identity and raw configured index.</param>
-/// <param name="RelationshipLocalOrder">The strategy's relationship-local order after no-op strategies are removed.</param>
+/// <param name="StrategyName">The configured strategy name used for diagnostics.</param>
 /// <param name="Subjects">
 /// The participating authorization subjects. Multiple subjects are combined with AND in this order.
 /// </param>
-/// <param name="SkippedContributors">Ineligible contributor diagnostics retained for failure payloads and tracing.</param>
 public sealed record PageDocumentIdAuthorizationStrategy(
-    ConfiguredAuthorizationStrategy ConfiguredStrategy,
-    int RelationshipLocalOrder,
-    IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects,
-    IReadOnlyList<RelationshipAuthorizationSkippedSubjectContributor> SkippedContributors
-)
-{
-    public int RawConfiguredIndex => ConfiguredStrategy.RawConfiguredIndex;
-}
+    string StrategyName,
+    IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects
+);
 
 /// <summary>
 /// Optional DMS-1055 authorization inputs for page-<c>DocumentId</c> query compilation.

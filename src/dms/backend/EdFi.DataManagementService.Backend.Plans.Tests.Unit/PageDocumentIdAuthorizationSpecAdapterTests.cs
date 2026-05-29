@@ -20,7 +20,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
     private static readonly QualifiedResourceName _resource = new("Ed-Fi", "School");
 
     [Test]
-    public void It_should_adapt_shared_stored_specs_into_page_query_strategies_without_losing_duplicate_identity()
+    public void It_should_adapt_shared_stored_specs_into_page_query_strategies_preserving_effective_order()
     {
         var authorizationResult = new RelationshipAuthorizationResult.Authorized(
             [
@@ -49,25 +49,11 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         authorizationSpec.Strategies.Should().HaveCount(2);
         authorizationSpec
-            .Strategies.Select(static strategy => strategy.RawConfiguredIndex)
-            .Should()
-            .Equal(4, 7);
-        authorizationSpec
-            .Strategies.Select(static strategy => strategy.RelationshipLocalOrder)
-            .Should()
-            .Equal(0, 1);
-        authorizationSpec
-            .Strategies.Select(static strategy => strategy.ConfiguredStrategy)
+            .Strategies.Select(static strategy => strategy.StrategyName)
             .Should()
             .Equal(
-                new ConfiguredAuthorizationStrategy(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                    4
-                ),
-                new ConfiguredAuthorizationStrategy(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                    7
-                )
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
             );
         authorizationSpec
             .Strategies.Select(static strategy => strategy.Subjects)
@@ -114,10 +100,8 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         authorizationSpec.Strategies.Should().ContainSingle();
         var strategy = authorizationSpec.Strategies[0];
         strategy
-            .ConfiguredStrategy.StrategyName.Should()
+            .StrategyName.Should()
             .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
-        strategy.RawConfiguredIndex.Should().Be(4);
-        strategy.RelationshipLocalOrder.Should().Be(0);
         strategy.Subjects.Should().ContainSingle();
 
         var subject = strategy
@@ -259,9 +243,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         authorizationSpec.Strategies.Should().ContainSingle();
         var strategy = authorizationSpec.Strategies[0];
-        strategy.ConfiguredStrategy.Should().Be(new ConfiguredAuthorizationStrategy(strategyName, 12));
-        strategy.RawConfiguredIndex.Should().Be(12);
-        strategy.RelationshipLocalOrder.Should().Be(3);
+        strategy.StrategyName.Should().Be(strategyName);
 
         var subject = strategy
             .Subjects[0]
@@ -284,7 +266,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
     }
 
     [Test]
-    public void It_should_adapt_edorg_and_people_subjects_in_the_same_strategy_without_losing_diagnostics()
+    public void It_should_adapt_edorg_and_people_subjects_in_the_same_strategy_without_carrying_planner_diagnostics()
     {
         var skippedContributor = new RelationshipAuthorizationSkippedSubjectContributor(
             SecurableElementKind.Student,
@@ -340,10 +322,8 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         authorizationSpec.Strategies.Should().ContainSingle();
         var strategy = authorizationSpec.Strategies[0];
         strategy
-            .ConfiguredStrategy.StrategyName.Should()
+            .StrategyName.Should()
             .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted);
-        strategy.RawConfiguredIndex.Should().Be(9);
-        strategy.RelationshipLocalOrder.Should().Be(2);
         strategy
             .Subjects.Select(static subject => subject.GetType())
             .Should()
@@ -360,7 +340,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                     .CreatePerson(RelationshipAuthorizationPersonAuthViewKind.Student)
                     .Name
             );
-        strategy.SkippedContributors.Should().Equal(skippedContributor);
     }
 
     [Test]

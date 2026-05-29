@@ -50,10 +50,8 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
         RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForPageDocumentId(checkSpec);
 
         return new PageDocumentIdAuthorizationStrategy(
-            checkSpec.ConfiguredStrategy,
-            checkSpec.RelationshipLocalOrder,
-            [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
-            checkSpec.SkippedContributors
+            checkSpec.ConfiguredStrategy.StrategyName,
+            [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))]
         );
     }
 

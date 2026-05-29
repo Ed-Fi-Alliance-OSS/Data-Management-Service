@@ -111,3 +111,9 @@ Decisions: ClaimSetManagementHooks now resets data for @reset-data-before-scenar
 Files changed: ClaimSetManagementHooks.cs, RelationshipsWithEdOrgsAndPeople.feature, RelationshipsWithEdOrgsAndStaffs.feature, tasks.json, progress.txt.
 Verification: dotnet csharpier format ClaimSetManagementHooks.cs; git diff --check; env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter "FullyQualifiedName~NoSuchE2ETestForResetHookCompile" passed build/discovery with no selected tests.
 Notes: no E2E stack run needed for this tag/hook task; two cleanup tasks remain.
+
+People relationship GET-many authorization - completed PageDocumentIdAuthorizationStrategy trim cleanup task.
+Decisions: reduced page authorization strategy to StrategyName + Subjects; stopped copying RawConfiguredIndex, RelationshipLocalOrder, and SkippedContributors into page-query model; compiler keeps StrategyName only for empty-subject diagnostics.
+Files changed: PageDocumentIdQueryModels.cs, PageDocumentIdAuthorizationSpecAdapter.cs, PageDocumentIdSqlCompiler.cs, PageDocumentIdAuthorizationSpecAdapterTests.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format Plans and Plans.Tests.Unit; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter|FullyQualifiedName~PageDocumentIdSqlCompiler" passed 99.
+Notes: one cleanup task remains for extracting People auth-view membership SQL helper.

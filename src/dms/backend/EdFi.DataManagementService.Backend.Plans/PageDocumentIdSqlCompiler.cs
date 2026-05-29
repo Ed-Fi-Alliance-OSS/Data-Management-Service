@@ -399,9 +399,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         foreach (var strategy in normalizedStrategies)
         {
-            ArgumentNullException.ThrowIfNull(strategy.ConfiguredStrategy);
+            ArgumentException.ThrowIfNullOrWhiteSpace(strategy.StrategyName);
             ArgumentNullException.ThrowIfNull(strategy.Subjects);
-            ArgumentNullException.ThrowIfNull(strategy.SkippedContributors);
 
             if (strategy.Subjects.Any(static subject => subject is null))
             {
@@ -414,7 +413,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             if (strategy.Subjects.Count == 0)
             {
                 throw new ArgumentException(
-                    $"Authorization strategy '{strategy.ConfiguredStrategy.StrategyName}' requires at least one authorization subject.",
+                    $"Authorization strategy '{strategy.StrategyName}' requires at least one authorization subject.",
                     nameof(authorization)
                 );
             }
