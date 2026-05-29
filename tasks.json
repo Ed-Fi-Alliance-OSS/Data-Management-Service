@@ -308,5 +308,21 @@
       "Run dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios"
     ],
     "completed": true
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Low: Audit the DMS-1095 feature-level E2E data-reset tags so scenarios outside the required GET-many retag list are not unintentionally changed.",
+    "acceptance-criteria": [
+      "RelationshipsWithEdOrgsAndPeople.feature and RelationshipsWithEdOrgsAndStaffs.feature no longer apply @reset-data-before-scenario at the Feature level solely for DMS-1095 GET-many coverage.",
+      "If a feature-level reset remains, an adjacent comment explains why scenarios outside the DMS-1095 GET-many retag list also require per-scenario data reset.",
+      "The DMS-1095 retagged GET-many scenarios remain isolated with scenario-level @reset-data-before-scenario tags when isolation is needed.",
+      "People CRUD or mutation-cascade scenarios that are deferred to DMS-1158 are not otherwise changed by DMS-1095-specific test isolation."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature for Feature-level versus scenario-level @reset-data-before-scenario usage.",
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature for Feature-level versus scenario-level @reset-data-before-scenario usage.",
+      "Confirm only the DMS-1095 GET-many scenarios listed in reference/design/backend-redesign/epics/14-authorization/06b-people-relationship-auth-get-many.md received DMS-1095-specific isolation changes unless a broader reset is documented."
+    ],
+    "completed": false
   }
 ]
