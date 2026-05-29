@@ -376,12 +376,19 @@ public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnNam
 /// trigger recomputation. Empty for child/extension table stamping triggers.
 /// </param>
 /// <param name="Parameters">The trigger-kind-specific parameters.</param>
+/// <param name="MirrorStampTargetTable">
+/// The table whose <c>ContentVersion</c> / <c>ContentLastModifiedAt</c> mirror columns this trigger
+/// stamps. Non-null for every <see cref="TriggerKindParameters.DocumentStamping"/> entry: the owning
+/// resource root table (the source table itself for root-table triggers; the owning resource root for
+/// child / collection / <c>_ext</c> triggers). Null for non-stamping trigger kinds.
+/// </param>
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
     DbTableName Table,
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
-    TriggerKindParameters Parameters
+    TriggerKindParameters Parameters,
+    DbTableName? MirrorStampTargetTable = null
 );
 
 /// <summary>

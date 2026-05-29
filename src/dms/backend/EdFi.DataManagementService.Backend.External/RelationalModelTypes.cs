@@ -87,6 +87,21 @@ public enum ColumnKind
     /// A key-part column inherited from an ancestor scope (e.g., root document id and parent ordinals).
     /// </summary>
     ParentKeyPart,
+
+    /// <summary>
+    /// A synthesized root-table column that mirrors <c>dms.Document.ContentVersion</c> for the row,
+    /// enabling row-local change-version range filters without joining <c>dms.Document</c>. Has no
+    /// source JSONPath and no target resource; maintained only by document-stamping triggers and
+    /// excluded from client-writable projections.
+    /// </summary>
+    MirroredContentVersion,
+
+    /// <summary>
+    /// A synthesized root-table column that mirrors <c>dms.Document.ContentLastModifiedAt</c> for the
+    /// row. Has no source JSONPath and no target resource; maintained only by document-stamping
+    /// triggers and excluded from client-writable projections.
+    /// </summary>
+    MirroredContentLastModifiedAt,
 }
 
 /// <summary>
