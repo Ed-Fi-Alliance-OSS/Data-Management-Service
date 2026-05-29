@@ -848,7 +848,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId")
                     )
                 )
@@ -925,7 +925,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         true,
                         CreateAuthorizationSubject("SchoolId")
                     )
@@ -965,7 +965,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
                         CreateAuthorizationSubject("SchoolId")
                     )
                 )
@@ -1003,7 +1003,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
                         true,
                         CreateAuthorizationSubject("SchoolId")
                     )
@@ -1019,7 +1019,7 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    public void It_should_use_edorg_subject_auth_object_metadata_instead_of_strategy_kind_for_people_involved_strategies()
+    public void It_should_use_edorg_subject_auth_object_metadata_instead_of_configured_strategy_name_for_people_involved_strategies()
     {
         var normalAuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
             RelationshipAuthorizationHierarchyDirection.Normal
@@ -1033,7 +1033,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     SqlDialect.Pgsql,
                     CreateAuthorizationStrategyPreservingSubjectAuthObjects(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
                         CreateAuthorizationSubject("SchoolId", authObject: normalAuthObject)
                     )
                 )
@@ -1069,7 +1069,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     SqlDialect.Pgsql,
                     CreateAuthorizationStrategyPreservingSubjectAuthObjects(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId", authObject: authObject)
                     )
                 )
@@ -1143,7 +1143,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                         CreatePersonAuthorizationSubject(
                             authViewKind,
                             personKind,
@@ -1175,7 +1175,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     SqlDialect.Pgsql,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1219,7 +1219,7 @@ public class Given_PageDocumentIdSqlCompiler
                     SqlDialect.Mssql,
                     CreateClaimEducationOrganizationIds(1999),
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1277,7 +1277,7 @@ public class Given_PageDocumentIdSqlCompiler
                     SqlDialect.Mssql,
                     CreateClaimEducationOrganizationIds(2000),
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1329,7 +1329,7 @@ public class Given_PageDocumentIdSqlCompiler
                     SqlDialect.Mssql,
                     claimEducationOrganizationIds,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1377,7 +1377,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1423,7 +1423,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
                         CreateTransitivePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1483,7 +1483,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                         CreateTransitivePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Contact,
                             RelationshipAuthorizationPersonKind.Contact,
@@ -1540,7 +1540,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1581,7 +1581,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
                         CreateAuthorizationSubject("SchoolId"),
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
@@ -1630,11 +1630,11 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId")
                     ),
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
                         CreatePersonAuthorizationSubject(
                             RelationshipAuthorizationPersonAuthViewKind.Student,
                             RelationshipAuthorizationPersonKind.Student,
@@ -1673,11 +1673,11 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId")
                     ),
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
                         CreateAuthorizationSubject("LocalEducationAgencyId")
                     )
                 )
@@ -1705,7 +1705,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId"),
                         CreateAuthorizationSubject("LocalEducationAgencyId")
                     )
@@ -1746,7 +1746,7 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     dialect,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject(
                             "StudentAcademicRecord_EducationOrganizationId",
                             new DbTableName(new DbSchemaName("edfi"), "CourseTranscript")
@@ -1800,7 +1800,7 @@ public class Given_PageDocumentIdSqlCompiler
                     SqlDialect.Mssql,
                     CreateClaimEducationOrganizationIds(2000),
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         CreateAuthorizationSubject("SchoolId")
                     )
                 )
@@ -1845,7 +1845,7 @@ public class Given_PageDocumentIdSqlCompiler
                     SqlDialect.Mssql,
                     CreateClaimEducationOrganizationIds(2000),
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         true,
                         CreateAuthorizationSubject("SchoolId")
                     )
@@ -1883,12 +1883,12 @@ public class Given_PageDocumentIdSqlCompiler
                 authorization: CreateAuthorizationSpec(
                     SqlDialect.Pgsql,
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         true,
                         CreateAuthorizationSubject("SchoolId")
                     ),
                     CreateAuthorizationStrategy(
-                        PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         true,
                         CreateAuthorizationSubject("SchoolId")
                     )
@@ -2105,15 +2105,12 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
-        PageDocumentIdAuthorizationStrategyKind kind,
+        string strategyName,
         bool allowsDirectClaimMatch,
         params PageDocumentIdAuthorizationSubject[] subjects
     )
     {
-        var direction =
-            kind is PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted
-                ? RelationshipAuthorizationHierarchyDirection.Inverted
-                : RelationshipAuthorizationHierarchyDirection.Normal;
+        var direction = DefaultEdOrgAuthDirection(strategyName);
         var authObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(direction) with
         {
             AllowsDirectClaimMatch = allowsDirectClaimMatch,
@@ -2130,8 +2127,7 @@ public class Given_PageDocumentIdSqlCompiler
             .ToArray();
 
         return new PageDocumentIdAuthorizationStrategy(
-            kind,
-            new ConfiguredAuthorizationStrategy(MapStrategyName(kind), RawConfiguredIndex: 0),
+            new ConfiguredAuthorizationStrategy(strategyName, RawConfiguredIndex: 0),
             RelationshipLocalOrder: 0,
             strategySubjects,
             []
@@ -2139,23 +2135,31 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategy(
-        PageDocumentIdAuthorizationStrategyKind kind,
+        string strategyName,
         params PageDocumentIdAuthorizationSubject[] subjects
-    ) => CreateAuthorizationStrategy(kind, false, subjects);
+    ) => CreateAuthorizationStrategy(strategyName, false, subjects);
 
     private static PageDocumentIdAuthorizationStrategy CreateAuthorizationStrategyPreservingSubjectAuthObjects(
-        PageDocumentIdAuthorizationStrategyKind kind,
+        string strategyName,
         params PageDocumentIdAuthorizationSubject[] subjects
     )
     {
         return new PageDocumentIdAuthorizationStrategy(
-            kind,
-            new ConfiguredAuthorizationStrategy(MapStrategyName(kind), RawConfiguredIndex: 0),
+            new ConfiguredAuthorizationStrategy(strategyName, RawConfiguredIndex: 0),
             RelationshipLocalOrder: 0,
             subjects,
             []
         );
     }
+
+    private static RelationshipAuthorizationHierarchyDirection DefaultEdOrgAuthDirection(
+        string strategyName
+    ) =>
+        strategyName
+            is AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted
+                or AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted
+            ? RelationshipAuthorizationHierarchyDirection.Inverted
+            : RelationshipAuthorizationHierarchyDirection.Normal;
 
     private static PageDocumentIdAuthorizationSubject CreateAuthorizationSubject(
         string columnName,
@@ -2284,26 +2288,6 @@ public class Given_PageDocumentIdSqlCompiler
         secondIndex.Should().BeGreaterThanOrEqualTo(0);
         firstIndex.Should().BeLessThan(secondIndex);
     }
-
-    private static string MapStrategyName(PageDocumentIdAuthorizationStrategyKind kind) =>
-        kind switch
-        {
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly =>
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted =>
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople =>
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted =>
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly =>
-                AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly =>
-                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility =>
-                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported strategy kind."),
-        };
 
     private static KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias> CreateUnifiedAliasMapping(
         DbColumnName aliasColumn,

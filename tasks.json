@@ -275,5 +275,38 @@
       "Run env -u NODE_OPTIONS dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\""
     ],
     "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Remove the unused PageDocumentIdAuthorizationStrategyKind contract and adapter mapping now that page authorization SQL emission is driven by per-subject auth-object metadata.",
+    "acceptance-criteria": [
+      "PageDocumentIdAuthorizationStrategy no longer carries a Kind value that is unused by PageDocumentIdSqlCompiler.",
+      "PageDocumentIdAuthorizationSpecAdapter no longer maps configured strategy names to PageDocumentIdAuthorizationStrategyKind values solely for test assertions.",
+      "PageDocumentIdSqlCompiler tests construct page authorization strategies from configured strategy identity and subject metadata without duplicating strategy-kind state.",
+      "The retained model still preserves ConfiguredStrategy, RawConfiguredIndex, RelationshipLocalOrder, subject ordering, skipped contributor diagnostics, and all auth-object metadata needed by GET-many authorization."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs and PageDocumentIdAuthorizationSpecAdapter.cs for removal of PageDocumentIdAuthorizationStrategyKind and MapKind.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter|FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit"
+    ],
+    "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Extract shared People relationship GET-many integration-test setup helpers to remove duplication across Student, Contact/Staff, and composition scenarios.",
+    "acceptance-criteria": [
+      "Shared helpers cover common descriptor creation, school creation, JSON POST/send operations, Total-Count JSON GET assertions, auth edge insert/delete, nonquery execution, parameter creation, SQL Server detection, and relationship read resource key formatting.",
+      "PeopleRelationshipGetManyStudentScenario, PeopleRelationshipGetManyContactStaffScenario, and PeopleRelationshipGetManyCompositionScenario keep only scenario-specific data setup and assertions.",
+      "The refactor preserves existing PostgreSQL and SQL Server scenario behavior, including direct database setup paths used to avoid People CRUD authorization dependencies.",
+      "The extracted helper names make the API integration test setup intent clear without adding a new production dependency."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/PeopleRelationshipGetManyStudentScenario.cs, PeopleRelationshipGetManyContactStaffScenario.cs, and PeopleRelationshipGetManyCompositionScenario.cs for removal of duplicated helpers.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration&FullyQualifiedName~PeopleRelationshipGetMany\"",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~PeopleRelationshipGetMany\"",
+      "Run dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios"
+    ],
+    "completed": false
   }
 ]

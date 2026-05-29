@@ -62,47 +62,6 @@ public sealed record QueryValuePredicate(
 }
 
 /// <summary>
-/// Supported DMS-1055 authorization strategy kinds for page-<c>DocumentId</c> query compilation.
-/// </summary>
-public enum PageDocumentIdAuthorizationStrategyKind
-{
-    /// <summary>
-    /// Filters the auth hierarchy from source token EdOrg ids down to target resource EdOrg ids.
-    /// </summary>
-    RelationshipsWithEdOrgsOnly,
-
-    /// <summary>
-    /// Filters the auth hierarchy from target token EdOrg ids up to source resource EdOrg ids.
-    /// </summary>
-    RelationshipsWithEdOrgsOnlyInverted,
-
-    /// <summary>
-    /// Filters by EducationOrganization and People relationship subjects.
-    /// </summary>
-    RelationshipsWithEdOrgsAndPeople,
-
-    /// <summary>
-    /// Filters by EducationOrganization and People relationship subjects with inverted EdOrg hierarchy matching.
-    /// </summary>
-    RelationshipsWithEdOrgsAndPeopleInverted,
-
-    /// <summary>
-    /// Filters by Student, Contact, and Staff relationship subjects.
-    /// </summary>
-    RelationshipsWithPeopleOnly,
-
-    /// <summary>
-    /// Filters by Student relationship subjects.
-    /// </summary>
-    RelationshipsWithStudentsOnly,
-
-    /// <summary>
-    /// Filters by Student relationship subjects through responsibility associations.
-    /// </summary>
-    RelationshipsWithStudentsOnlyThroughResponsibility,
-}
-
-/// <summary>
 /// One authorization subject used by page-<c>DocumentId</c> relationship authorization.
 /// </summary>
 /// <param name="Table">The table owning the authorization subject column.</param>
@@ -141,7 +100,6 @@ public sealed record PageDocumentIdAuthorizationPersonSubject(
 /// <summary>
 /// One relationship-based authorization strategy with its participating subjects.
 /// </summary>
-/// <param name="Kind">The supported relationship authorization kind.</param>
 /// <param name="ConfiguredStrategy">The configured strategy identity and raw configured index.</param>
 /// <param name="RelationshipLocalOrder">The strategy's relationship-local order after no-op strategies are removed.</param>
 /// <param name="Subjects">
@@ -149,7 +107,6 @@ public sealed record PageDocumentIdAuthorizationPersonSubject(
 /// </param>
 /// <param name="SkippedContributors">Ineligible contributor diagnostics retained for failure payloads and tracing.</param>
 public sealed record PageDocumentIdAuthorizationStrategy(
-    PageDocumentIdAuthorizationStrategyKind Kind,
     ConfiguredAuthorizationStrategy ConfiguredStrategy,
     int RelationshipLocalOrder,
     IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects,

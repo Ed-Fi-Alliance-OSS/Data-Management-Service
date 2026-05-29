@@ -70,13 +70,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                 )
             );
         authorizationSpec
-            .Strategies.Select(static strategy => strategy.Kind)
-            .Should()
-            .Equal(
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly
-            );
-        authorizationSpec
             .Strategies.Select(static strategy => strategy.Subjects)
             .Should()
             .OnlyContain(static subjects =>
@@ -120,9 +113,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         authorizationSpec.Strategies.Should().ContainSingle();
         var strategy = authorizationSpec.Strategies[0];
-        strategy
-            .Kind.Should()
-            .Be(PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted);
         strategy
             .ConfiguredStrategy.StrategyName.Should()
             .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
@@ -240,7 +230,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
     [TestCaseSource(nameof(PeopleRelationshipStrategyCases))]
     public void It_should_adapt_stored_people_relationship_specs_for_get_many(
         string strategyName,
-        PageDocumentIdAuthorizationStrategyKind expectedKind,
         RelationshipAuthorizationHierarchyDirection direction,
         RelationshipAuthorizationPersonAuthViewKind authViewKind,
         RelationshipAuthorizationPersonKind personKind,
@@ -270,7 +259,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         authorizationSpec.Strategies.Should().ContainSingle();
         var strategy = authorizationSpec.Strategies[0];
-        strategy.Kind.Should().Be(expectedKind);
         strategy.ConfiguredStrategy.Should().Be(new ConfiguredAuthorizationStrategy(strategyName, 12));
         strategy.RawConfiguredIndex.Should().Be(12);
         strategy.RelationshipLocalOrder.Should().Be(3);
@@ -352,9 +340,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
         authorizationSpec.Strategies.Should().ContainSingle();
         var strategy = authorizationSpec.Strategies[0];
         strategy
-            .Kind.Should()
-            .Be(PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted);
-        strategy
             .ConfiguredStrategy.StrategyName.Should()
             .Be(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted);
         strategy.RawConfiguredIndex.Should().Be(9);
@@ -408,7 +393,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
     {
         yield return new TestCaseData(
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationPersonAuthViewKind.Student,
             RelationshipAuthorizationPersonKind.Student,
@@ -417,7 +401,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         yield return new TestCaseData(
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
             RelationshipAuthorizationHierarchyDirection.Inverted,
             RelationshipAuthorizationPersonAuthViewKind.Staff,
             RelationshipAuthorizationPersonKind.Staff,
@@ -426,7 +409,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         yield return new TestCaseData(
             AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationPersonAuthViewKind.Contact,
             RelationshipAuthorizationPersonKind.Contact,
@@ -435,7 +417,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         yield return new TestCaseData(
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationPersonAuthViewKind.Student,
             RelationshipAuthorizationPersonKind.Student,
@@ -444,7 +425,6 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
 
         yield return new TestCaseData(
             AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
             RelationshipAuthorizationHierarchyDirection.Normal,
             RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility,
             RelationshipAuthorizationPersonKind.Student,

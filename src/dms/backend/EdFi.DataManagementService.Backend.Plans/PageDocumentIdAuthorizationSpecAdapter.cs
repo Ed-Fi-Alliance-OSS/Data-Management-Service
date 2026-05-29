@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Security;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -51,7 +50,6 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
         RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForPageDocumentId(checkSpec);
 
         return new PageDocumentIdAuthorizationStrategy(
-            MapKind(checkSpec.ConfiguredStrategy.StrategyName, checkSpec.Direction),
             checkSpec.ConfiguredStrategy,
             checkSpec.RelationshipLocalOrder,
             [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
@@ -108,43 +106,4 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
             personMetadata
         );
     }
-
-    private static PageDocumentIdAuthorizationStrategyKind MapKind(
-        string strategyName,
-        RelationshipAuthorizationHierarchyDirection direction
-    ) =>
-        strategyName switch
-        {
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeople,
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsAndPeopleInverted,
-            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithPeopleOnly,
-            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnly,
-            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithStudentsOnlyThroughResponsibility,
-            _ => MapLegacyEdOrgKind(direction),
-        };
-
-    private static PageDocumentIdAuthorizationStrategyKind MapLegacyEdOrgKind(
-        RelationshipAuthorizationHierarchyDirection direction
-    ) =>
-        direction switch
-        {
-            RelationshipAuthorizationHierarchyDirection.Normal =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-            RelationshipAuthorizationHierarchyDirection.Inverted =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(direction),
-                direction,
-                "Unsupported page-query authorization direction."
-            ),
-        };
 }

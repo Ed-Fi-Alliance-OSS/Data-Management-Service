@@ -93,3 +93,9 @@ Decisions: no implementation changes needed; final verification ran against exis
 Files changed: tasks.json, progress.txt.
 Verification: dotnet csharpier format src/dms/backend src/dms/tests/EdFi.DataManagementService.Tests.Integration src/dms/tests/EdFi.DataManagementService.Tests.E2E formatted 973 files with no git diff; Plans.Tests.Unit full suite passed 1091; Backend.Tests.Unit RelationalDocumentStoreRepository filter passed 188; API integration FullyQualifiedName~Relationship passed 33 with PostgreSQL localhost:5435 and SQL Server localhost:1434; relational E2E Category=relational-backend passed 491/491 in 1h45m.
 Notes: stopped temporary dms-codex-mssql after verification; no PROBLEMS.md created.
+
+DMS-1095 06b people relationship auth get-many - completed PageDocumentIdAuthorizationStrategyKind cleanup task.
+Decisions: removed unused page-query strategy Kind enum/contract and adapter MapKind; keep configured strategy identity plus per-subject auth-object metadata as the only SQL authorization inputs.
+Files changed: PageDocumentIdQueryModels.cs, PageDocumentIdAuthorizationSpecAdapter.cs, PageDocumentIdAuthorizationSpecAdapterTests.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
+Verification: csharpier on Plans and Plans.Tests.Unit; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter|FullyQualifiedName~PageDocumentIdSqlCompiler" passed 99.
+Notes: one cleanup task remains for integration-test helper extraction.
