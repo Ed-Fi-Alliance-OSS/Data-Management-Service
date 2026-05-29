@@ -50,13 +50,13 @@ Feature: RelationshipsWithPeople relational GET-many authorization
                   | 9255901001 | Authorized staff school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
                   | 9255901002 | Unrelated staff school  | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
               And the system has these "Staffs"
-                  | staffUniqueId | firstName        | lastSurname |
-                  | dms1095-s1    | Authorized staff | staff-ln    |
-                  | dms1095-s2    | Unrelated staff  | staff-ln    |
+                  | staffUniqueId             | firstName        | lastSurname |
+                  | staff-get-many-authorized | Authorized staff | staff-ln    |
+                  | staff-get-many-unrelated  | Unrelated staff  | staff-ln    |
               And the system has these "staffEducationOrganizationAssignmentAssociations"
-                  | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference                | staffReference                         |
-                  | 2020-10-10 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 9255901001 }     | { "staffUniqueId": "dms1095-s1" }     |
-                  | 2020-10-10 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 9255901002 }     | { "staffUniqueId": "dms1095-s2" }     |
+                  | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference                | staffReference                                      |
+                  | 2020-10-10 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 9255901001 }     | { "staffUniqueId": "staff-get-many-authorized" } |
+                  | 2020-10-10 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 9255901002 }     | { "staffUniqueId": "staff-get-many-unrelated" }  |
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "9255901001"
              When a GET request is made to "/ed-fi/Staffs?totalCount=true"
              Then it should respond with 200
@@ -73,7 +73,7 @@ Feature: RelationshipsWithPeople relational GET-many authorization
                           "id": "{id}",
                           "firstName": "Authorized staff",
                           "lastSurname": "staff-ln",
-                          "staffUniqueId": "dms1095-s1"
+                          "staffUniqueId": "staff-get-many-authorized"
                       }
                   ]
                   """
@@ -126,9 +126,9 @@ Feature: RelationshipsWithPeople relational GET-many authorization
                   | studentReference                 | schoolReference            | entryGradeLevelDescriptor                          | entryDate  |
                   | { "studentUniqueId": "945501" } | { "schoolId": 9455901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
                   | { "studentUniqueId": "945502" } | { "schoolId": 9455901002 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
-            Given a claim set is uploaded to CMS that grants "studentEducationOrganizationResponsibilityAssociation" access to "DMS1095-NoFurtherResponsibilitySetup"
+            Given a claim set is uploaded to CMS that grants "studentEducationOrganizationResponsibilityAssociation" access to "PeopleGetMany-NoFurtherResponsibilitySetup"
               And the claim set upload to CMS should be successful
-            Given the claimSet "DMS1095-NoFurtherResponsibilitySetup" is authorized with educationOrganizationIds "9455901001, 9455901002"
+            Given the claimSet "PeopleGetMany-NoFurtherResponsibilitySetup" is authorized with educationOrganizationIds "9455901001, 9455901002"
               And a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
                   {
@@ -155,9 +155,9 @@ Feature: RelationshipsWithPeople relational GET-many authorization
                       "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#Accountability"
                   }
                   """
-            Given a claim set is uploaded to CMS that grants "student" access to "DMS1095-StudentsOnlyThroughResponsibility" using authorization strategy "RelationshipsWithStudentsOnlyThroughResponsibility"
+            Given a claim set is uploaded to CMS that grants "student" access to "PeopleGetMany-StudentsOnlyThroughResponsibility" using authorization strategy "RelationshipsWithStudentsOnlyThroughResponsibility"
               And the claim set upload to CMS should be successful
-            Given the claimSet "DMS1095-StudentsOnlyThroughResponsibility" is authorized with educationOrganizationIds "9455901001"
+            Given the claimSet "PeopleGetMany-StudentsOnlyThroughResponsibility" is authorized with educationOrganizationIds "9455901001"
              When a GET request is made to "/ed-fi/students?totalCount=true"
              Then it should respond with 200
               And the response headers include

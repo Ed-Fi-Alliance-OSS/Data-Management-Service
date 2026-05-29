@@ -54,7 +54,7 @@
     "description": "Implement GET-many SQL emission for transitive People subjects by walking the shared DocumentId path metadata from the root table through intermediate tables to the terminal person DocumentId column.",
     "acceptance-criteria": [
       "Transitive Student, Contact, and Staff subjects emit a root DocumentId IN subquery anchored at a second root alias and joined through the ordered path supplied by RelationshipAuthorizationPersonSubjectMetadata.",
-      "A CourseTranscript to StudentAcademicRecord to Student subject emits the canonical root DocumentId IN shape described by DMS-1095.",
+      "A CourseTranscript to StudentAcademicRecord to Student subject emits the canonical People GET-many root DocumentId IN shape.",
       "Broken or null stored transitive path values naturally filter out as nonmatching rows for GET-many and do not create per-row invalid-data failures.",
       "Table aliases are deterministic and do not collide with outer query, descriptor, document, or sibling authorization aliases."
     ],
@@ -85,7 +85,7 @@
   },
   {
     "category": "implementation",
-    "description": "Enforce DMS-1095 planning and short-circuit order for People relationship GET-many: classify strategies, resolve People subjects, validate selected auth views, then short-circuit empty EdOrg claims only for a valid supported plan.",
+    "description": "Enforce People relationship GET-many planning and short-circuit order: classify strategies, resolve People subjects, validate selected auth views, then short-circuit empty EdOrg claims only for a valid supported plan.",
     "acceptance-criteria": [
       "Unresolved operation-applicable People subjects return a security-configuration failure before empty-claim short-circuiting.",
       "Selected People subjects that require missing auth views return a security-configuration failure before empty-claim short-circuiting.",
@@ -136,7 +136,7 @@
   },
   {
     "category": "unit-tests",
-    "description": "Add focused SQL compiler unit coverage for DMS-1095 People GET-many page and total-count predicates across direct, self, transitive, mixed, and duplicate-avoidance cases.",
+    "description": "Add focused SQL compiler unit coverage for People relationship GET-many page and total-count predicates across direct, self, transitive, mixed, and duplicate-avoidance cases.",
     "acceptance-criteria": [
       "Tests cover Student self resource, direct Student reference, transitive Student path, direct Contact reference, direct Staff reference, and StudentsOnlyThroughResponsibility.",
       "Tests prove mixed EdOrg-and-People strategy subjects are ANDed within one strategy.",
@@ -153,7 +153,7 @@
   },
   {
     "category": "unit-tests",
-    "description": "Add repository-level unit coverage for DMS-1095 GET-many runtime composition and failure surfaces.",
+    "description": "Add repository-level unit coverage for People relationship GET-many runtime composition and failure surfaces.",
     "acceptance-criteria": [
       "Tests prove GET-many with a People relationship strategy executes page planning instead of returning the old 501 staging response.",
       "Tests prove NoFurtherAuthorizationRequired remains a no-op when combined with People relationship strategies.",
@@ -224,7 +224,7 @@
   },
   {
     "category": "e2e-tests",
-    "description": "Retag the existing GET-many-only People relationship E2E scenarios required by DMS-1095 for relational backend execution without enabling scenarios that depend on People CRUD authorization.",
+    "description": "Retag the existing GET-many-only People relationship E2E scenarios required for relational backend execution without enabling scenarios that depend on People CRUD authorization.",
     "acceptance-criteria": [
       "RelationshipsWithEdOrgsAndPeople.feature scenarios 05, 14, 46, 47, and 54 have @relational-backend and an appropriate @relational-ci-shard-* tag.",
       "RelationshipsWithEdOrgsAndStaffs.feature scenarios 04, 11, 16, and 23 have @relational-backend and an appropriate @relational-ci-shard-* tag.",
@@ -240,13 +240,13 @@
   },
   {
     "category": "e2e-tests",
-    "description": "Add focused relational E2E scenarios for DMS-1095 People GET-many gaps that are not covered by safe retagging, especially empty EdOrg claims and through-responsibility Student GET-many.",
+    "description": "Add focused relational E2E scenarios for People relationship GET-many gaps that are not covered by safe retagging, especially empty EdOrg claims and through-responsibility Student GET-many.",
     "acceptance-criteria": [
       "A focused Student GET-many E2E scenario verifies real token and claim-set wiring for a People relationship strategy.",
       "A focused Staff GET-many E2E scenario verifies real token and claim-set wiring for staff assignment or employment relationships.",
       "A focused empty EdOrg claims E2E scenario verifies a valid People relationship plan returns an empty page and totalCount 0.",
       "A focused through-responsibility Student GET-many scenario is added if no existing scenario can be safely retagged without relying on People CRUD setup.",
-      "Contact E2E is added only if setup can avoid People CRUD authorization; otherwise Contact remains covered at PostgreSQL and SQL Server integration level for DMS-1095."
+      "Contact E2E is added only if setup can avoid People CRUD authorization; otherwise Contact remains covered at PostgreSQL and SQL Server integration level for this People GET-many slice."
     ],
     "steps-to-verify": [
       "Run pwsh ./teardown-local-dms.ps1 from src/dms/tests/EdFi.DataManagementService.Tests.E2E.",
@@ -258,14 +258,14 @@
   },
   {
     "category": "verification",
-    "description": "Run focused formatting and verification for the DMS-1095 implementation scope after code and tests are updated.",
+    "description": "Run focused formatting and verification for the People relationship GET-many implementation scope after code and tests are updated.",
     "acceptance-criteria": [
       "Changed C# files are formatted with csharpier.",
       "Backend plan unit tests pass.",
-      "Backend repository unit tests pass for DMS-1095 query authorization coverage.",
+      "Backend repository unit tests pass for People relationship GET-many query authorization coverage.",
       "PostgreSQL integration tests for People relationship GET-many pass.",
       "SQL Server integration tests for People relationship GET-many pass when ConnectionStrings__MssqlAdmin is configured.",
-      "Relational-backend E2E tests for retagged or newly added DMS-1095 scenarios pass against a relational dms-local stack."
+      "Relational-backend E2E tests for retagged or newly added People relationship GET-many scenarios pass against a relational dms-local stack."
     ],
     "steps-to-verify": [
       "Run dotnet csharpier format src/dms/backend src/dms/tests/EdFi.DataManagementService.Tests.Integration src/dms/tests/EdFi.DataManagementService.Tests.E2E",
@@ -311,17 +311,54 @@
   },
   {
     "category": "e2e-tests",
-    "description": "Low: Audit the DMS-1095 feature-level E2E data-reset tags so scenarios outside the required GET-many retag list are not unintentionally changed.",
+    "description": "Medium: Limit People relationship GET-many E2E data resets to the specific scenarios that need isolation by making the reset hook honor scenario tags.",
     "acceptance-criteria": [
-      "RelationshipsWithEdOrgsAndPeople.feature and RelationshipsWithEdOrgsAndStaffs.feature no longer apply @reset-data-before-scenario at the Feature level solely for DMS-1095 GET-many coverage.",
-      "If a feature-level reset remains, an adjacent comment explains why scenarios outside the DMS-1095 GET-many retag list also require per-scenario data reset.",
-      "The DMS-1095 retagged GET-many scenarios remain isolated with scenario-level @reset-data-before-scenario tags when isolation is needed.",
-      "People CRUD or mutation-cascade scenarios that are deferred to DMS-1158 are not otherwise changed by DMS-1095-specific test isolation."
+      "ClaimSetManagementHooks applies @reset-data-before-scenario when the tag is present on either the Feature or the Scenario.",
+      "RelationshipsWithEdOrgsAndPeople.feature no longer applies @reset-data-before-scenario at the Feature level for People GET-many coverage.",
+      "RelationshipsWithEdOrgsAndStaffs.feature no longer applies @reset-data-before-scenario at the Feature level for People GET-many coverage.",
+      "Only the People GET-many scenarios that require isolation carry scenario-level @reset-data-before-scenario tags.",
+      "People CRUD or mutation-cascade scenarios deferred to DMS-1158 are not reset by People GET-many-specific feature-level tagging."
     ],
     "steps-to-verify": [
-      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature for Feature-level versus scenario-level @reset-data-before-scenario usage.",
-      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature for Feature-level versus scenario-level @reset-data-before-scenario usage.",
-      "Confirm only the DMS-1095 GET-many scenarios listed in reference/design/backend-redesign/epics/14-authorization/06b-people-relationship-auth-get-many.md received DMS-1095-specific isolation changes unless a broader reset is documented."
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Hooks/ClaimSetManagementHooks.cs and confirm the reset condition checks ScenarioInfo.Tags as well as FeatureInfo.Tags.",
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature and confirm @reset-data-before-scenario is absent from the Feature tag block.",
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature and confirm @reset-data-before-scenario is absent from the Feature tag block.",
+      "Confirm only People GET-many scenarios listed in reference/design/backend-redesign/epics/14-authorization/06b-people-relationship-auth-get-many.md carry scenario-level @reset-data-before-scenario when isolation is needed.",
+      "Run dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.E2E/Hooks/ClaimSetManagementHooks.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Trim PageDocumentIdAuthorizationStrategy to the data needed by page SQL compilation.",
+    "acceptance-criteria": [
+      "PageDocumentIdAuthorizationStrategy no longer exposes RelationshipLocalOrder, SkippedContributors, or RawConfiguredIndex for the page SQL path.",
+      "PageDocumentIdAuthorizationStrategy retains only the subject list and a simple strategy name or diagnostic label needed for compiler error messages.",
+      "PageDocumentIdAuthorizationSpecAdapter no longer copies planner-only diagnostics into the page-query authorization model.",
+      "PageDocumentIdSqlCompiler emits the same page and total-count authorization SQL after the model trim.",
+      "Unit tests no longer assert preservation of planner diagnostics on PageDocumentIdAuthorizationStrategy."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs for the reduced PageDocumentIdAuthorizationStrategy shape.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdAuthorizationSpecAdapter.cs and confirm it maps only data used by page SQL compilation.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter|FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit"
+    ],
+    "completed": false
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Extract a shared PageDocumentIdSqlCompiler helper for People auth-view membership SQL.",
+    "acceptance-criteria": [
+      "Direct, self, and transitive People authorization paths call one helper to emit the auth-view membership subquery.",
+      "The shared helper emits the auth view table, person DocumentId output column, claim EducationOrganizationId column, and claim filter from the supplied auth object and parameterization.",
+      "Generated page and total-count SQL remains unchanged for existing People GET-many unit test expectations.",
+      "The refactor does not change EdOrg authorization SQL emission."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs and confirm the People auth-view IN subquery is emitted by one helper.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit"
     ],
     "completed": false
   }
