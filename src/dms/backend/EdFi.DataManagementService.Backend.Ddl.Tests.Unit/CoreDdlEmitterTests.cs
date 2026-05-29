@@ -1262,3 +1262,55 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("seq.name = 'ChangeVersionSequence' AND sch.name = 'dms'");
     }
 }
+
+/// <summary>
+/// Test fixture for the core-owned descriptor stamping trigger metadata. The descriptor trigger is
+/// hand-emitted by <see cref="CoreDdlEmitter"/> (not derived into the trigger inventory); the metadata
+/// gives downstream consumers the trigger's mirror-stamp target.
+/// </summary>
+[TestFixture]
+public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
+{
+    private string _pgsqlDdl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _pgsqlDdl = new CoreDdlEmitter(new PgsqlDialect(new PgsqlDialectRules())).Emit();
+    }
+
+    [Test]
+    public void It_should_expose_descriptor_stamping_trigger_metadata_targeting_dms_Descriptor()
+    {
+        var info = CoreDdlEmitter.DescriptorStampingTriggerInfo;
+
+        info.Name.Value.Should().Be("TR_Descriptor_Stamp_Document");
+        info.Table.Schema.Value.Should().Be("dms");
+        info.Table.Name.Should().Be("Descriptor");
+        info.KeyColumns.Select(c => c.Value).Should().Equal("DocumentId");
+        info.Parameters.Should().BeOfType<TriggerKindParameters.DocumentStamping>();
+        info.MirrorStampTargetTable.Should().NotBeNull();
+        info.MirrorStampTargetTable!.Value.Schema.Value.Should().Be("dms");
+        info.MirrorStampTargetTable.Value.Name.Should().Be("Descriptor");
+    }
+
+    [Test]
+    public void It_should_emit_exactly_one_descriptor_stamping_trigger()
+    {
+        CountOccurrences(_pgsqlDdl, "CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"").Should().Be(1);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
+    }
+}

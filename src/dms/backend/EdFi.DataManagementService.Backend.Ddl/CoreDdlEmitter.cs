@@ -33,6 +33,8 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
+    private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
+
     private static readonly DbTableName _descriptorTable = DmsTableNames.Descriptor;
     private static readonly DbTableName _documentTable = DmsTableNames.Document;
     private static readonly DbTableName _documentCacheTable = DmsTableNames.DocumentCache;
@@ -51,6 +53,23 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _referentialIdentityTable = DmsTableNames.ReferentialIdentity;
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
+
+    /// <summary>
+    /// Core-owned trigger metadata for the hand-emitted descriptor stamping trigger
+    /// (<c>TR_Descriptor_Stamp_Document</c>). The descriptor trigger is rendered by this emitter, not derived
+    /// into <c>DerivedRelationalModelSet.TriggersInCreateOrder</c>; this metadata exposes the same
+    /// <see cref="DbTriggerInfo"/> shape for downstream mirror-stamping consumers, with the mirror-stamp
+    /// target set to the shared <c>dms.Descriptor</c> table.
+    /// </summary>
+    public static DbTriggerInfo DescriptorStampingTriggerInfo { get; } =
+        new(
+            new DbTriggerName(DescriptorStampingTriggerName),
+            DmsTableNames.Descriptor,
+            [new DbColumnName("DocumentId")],
+            [],
+            new TriggerKindParameters.DocumentStamping(),
+            MirrorStampTargetTable: DmsTableNames.Descriptor
+        );
 
     /// <summary>
     /// Creates a column-name value object for use in core DDL emission.
@@ -862,8 +881,8 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("$func$ LANGUAGE plpgsql;");
         writer.AppendLine();
 
-        writer.AppendLine(_dialect.DropTriggerIfExists(_descriptorTable, "TR_Descriptor_Stamp_Document"));
-        writer.AppendLine($"CREATE TRIGGER {Quote("TR_Descriptor_Stamp_Document")}");
+        writer.AppendLine(_dialect.DropTriggerIfExists(_descriptorTable, DescriptorStampingTriggerName));
+        writer.AppendLine($"CREATE TRIGGER {Quote(DescriptorStampingTriggerName)}");
         using (writer.Indent())
         {
             writer.AppendLine($"AFTER UPDATE ON {descriptorTable}");
@@ -887,7 +906,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         var documentTable = _dialect.QualifyTable(_documentTable);
         var sequenceName =
             $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
-        var triggerName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TR_Descriptor_Stamp_Document")}";
+        var triggerName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DescriptorStampingTriggerName)}";
         var quotedKeyColumn = Quote("DocumentId");
 
         // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
