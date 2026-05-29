@@ -14,9 +14,9 @@
 
     Direct invocation is supported for diagnostics and partial-phase orchestration
     (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
-    script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: schema
-    provisioning will NOT happen here. Callers are responsible for ensuring provisioning
-    has occurred (or accepting an unprovisioned DMS).
+    script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
+    schema provisioning will NOT happen here. Legacy direct-start database provisioning
+    remains controlled by the supplied environment file's NEED_DATABASE_SETUP value.
 
     See command-boundaries.md Section 3 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -110,6 +110,7 @@ $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 Push-Location $PSScriptRoot
 try {
 Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
+$bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
 
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
@@ -238,6 +239,10 @@ else {
 
     if ($DmsOnly) {
         Write-Output "Starting published DMS service only with startup database provisioning disabled..."
+        $dmsServices = @("dms")
+        if ($EnableSwaggerUI) {
+            $dmsServices += "swagger-ui"
+        }
         $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
         $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
         $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
@@ -245,7 +250,7 @@ else {
             $env:NEED_DATABASE_SETUP = "false"
             $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
             $env:AppSettings__DeployDatabaseOnStartup = "false"
-            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs dms
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs $dmsServices
         }
         finally {
             [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
@@ -287,6 +292,7 @@ else {
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
     }
+    Start-Sleep 20
 
     if ($InfraOnly) {
         if($IdentityProvider -eq "self-contained")
@@ -321,30 +327,45 @@ else {
         Write-Output "Running connector setup..."
         ./setup-connectors.ps1 $EnvironmentFile
 
+        if ($EnableKafkaUI) {
+            Write-Output "Starting Kafka UI..."
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka-ui
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
+            }
+        }
+
         Write-Output "Infrastructure phase complete. DMS service was not started."
         return
     }
 
 
     Write-Output "Starting published DMS"
-    # DMS-1151: schema provisioning is owned by provision-dms-schema.ps1 in the story-aligned
-    # bootstrap flow. Force the legacy Backend.Installer entrypoint off for every direct start
-    # path so a stale NEED_DATABASE_SETUP=true value in the env file or process environment
-    # cannot reactivate it. The DmsOnly branch above already does this; this block matches it for
-    # the regular up.
-    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
-    $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
-    $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
-    try {
-        $env:NEED_DATABASE_SETUP = "false"
-        $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
-        $env:AppSettings__DeployDatabaseOnStartup = "false"
-        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
+    if ($bootstrapManifestPresent) {
+        # DMS-1151: schema provisioning is owned by provision-dms-schema.ps1 in the
+        # story-aligned bootstrap flow. Force the legacy Backend.Installer entrypoint off
+        # when a bootstrap manifest is present so a stale NEED_DATABASE_SETUP=true value
+        # in the env file or process environment cannot reactivate it. Direct, non-bootstrap
+        # startup remains backward compatible with the env-file NEED_DATABASE_SETUP value.
+        Write-Output "Bootstrap manifest detected; starting published DMS with startup database provisioning disabled."
+        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
+        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
+        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
+        try {
+            $env:NEED_DATABASE_SETUP = "false"
+            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+            $env:AppSettings__DeployDatabaseOnStartup = "false"
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
+            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
+            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+        }
     }
-    finally {
-        [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
-        [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
-        [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+    else {
+        Write-Output "No bootstrap manifest detected; starting published DMS with database startup provisioning controlled by the environment file."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
     }
 
     if ($LASTEXITCODE -ne 0) {

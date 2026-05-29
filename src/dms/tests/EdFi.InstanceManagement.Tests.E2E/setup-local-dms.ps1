@@ -91,14 +91,17 @@ try {
     $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
     $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
     $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
+    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
     try {
         # .env.routeContext.e2e carries the Story 04 loose-file schema settings, but this
         # transitional E2E setup still runs from DLL-backed SCHEMA_PACKAGES. Process env
         # values win over docker compose --env-file entries, so clear stale overrides
-        # left by teardown and force the Story 04 path off.
+        # left by teardown, force the Story 04 path off, and keep the DMS entrypoint
+        # installer off because this harness provisions the main database explicitly below.
         $env:USE_API_SCHEMA_PATH = "false"
         $env:API_SCHEMA_PATH = ""
         $env:SCHEMA_PACKAGES = $null
+        $env:NEED_DATABASE_SETUP = "false"
 
         # Run the start script - NO instance creation
         if ($SkipDockerBuild) {
@@ -126,6 +129,12 @@ try {
         } else {
             $env:SCHEMA_PACKAGES = $previousSchemaPackages
         }
+
+        if ($null -eq $previousNeedDatabaseSetup) {
+            $env:NEED_DATABASE_SETUP = $null
+        } else {
+            $env:NEED_DATABASE_SETUP = $previousNeedDatabaseSetup
+        }
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -148,15 +157,11 @@ try {
     }
 
     # Deploy the DMS schema into the main database so it can seed the per-instance test
-    # databases below. DMS-1151 ("Bootstrap Schema Deployment Safety") moved schema
-    # provisioning out of the DMS container entrypoint: start-local-dms.ps1 now forces
-    # NEED_DATABASE_SETUP=false for every direct start path, so the legacy Backend.Installer
-    # no longer runs on container startup and the main database comes up empty. This E2E
-    # harness is the non-bootstrap transitional path and does not go through provision-dms-schema.ps1,
-    # so it provisions the (legacy/relational-disabled) schema itself by running the same
-    # Backend.Installer as a one-shot container on the shared 'dms' network - mirroring what the
-    # container entrypoint used to do on startup. Without this, every per-instance request 500s
-    # with "relation \"dms.document\" does not exist".
+    # databases below. This E2E harness is the non-bootstrap transitional path and uses
+    # DLL-backed schema packages, so it disables the DMS container entrypoint installer above
+    # and provisions the (legacy/relational-disabled) schema itself by running the same
+    # Backend.Installer as a one-shot container on the shared 'dms' network. Without this,
+    # every per-instance request 500s with "relation \"dms.document\" does not exist".
     Write-Host "`nDeploying DMS schema to main database..." -ForegroundColor Cyan
 
     Import-Module ./env-utility.psm1 -Force

@@ -300,6 +300,13 @@ function Invoke-ConfigureLocalDmsInstance {
         Write-Information "Selecting existing route-unqualified DMS instance from CMS." -InformationAction Continue
         $instances = @(Get-DmsInstances -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
         $selectedInstance = Get-ExistingCompatibleInstance -Instances $instances -Tenant $tenant
+        if ($AddSmokeTestCredentials) {
+            Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
+            Write-Information "Creating smoke test credentials." -InformationAction Continue
+            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DmsInstanceIds @([long]$selectedInstance.id) -Tenant $tenant | Out-Null
+            Write-Information "Smoke test credentials created." -InformationAction Continue
+        }
+
         return ConvertTo-ConfigureResult `
             -InstanceIds @([long]$selectedInstance.id) `
             -Tenant $tenant `
@@ -332,7 +339,7 @@ function Invoke-ConfigureLocalDmsInstance {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl | Out-Null
+            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DmsInstanceIds $instanceIds -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -358,7 +365,7 @@ function Invoke-ConfigureLocalDmsInstance {
     if ($AddSmokeTestCredentials) {
         Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
         Write-Information "Creating smoke test credentials." -InformationAction Continue
-        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl | Out-Null
+        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DmsInstanceIds @([long]$instanceId) -Tenant $tenant | Out-Null
         Write-Information "Smoke test credentials created." -InformationAction Continue
     }
 

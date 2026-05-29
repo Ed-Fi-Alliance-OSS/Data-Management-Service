@@ -92,7 +92,13 @@ function Get-SmokeTestCredentials {
         $ClaimSetName = "EdFiSandbox",
 
         [long[]]
-        $EducationOrganizationIds = @(255901, 19255901, 100000, 200000, 300000)
+        $EducationOrganizationIds = @(255901, 19255901, 100000, 200000, 300000),
+
+        [long[]]
+        $DmsInstanceIds = @(),
+
+        [string]
+        $Tenant = ""
     )
 
     Write-Host "Creating smoke test credentials via Configuration Service..."
@@ -107,27 +113,33 @@ function Get-SmokeTestCredentials {
         $configToken = Get-CmsToken -CmsUrl $ConfigServiceUrl -ClientId $SysAdminId -ClientSecret $SysAdminSecret
 
         # Step 3: Get available DMS instances
-        Write-Host "Retrieving available DMS instances..."
-        $dmsInstances = Get-DmsInstances -CmsUrl $ConfigServiceUrl -AccessToken $configToken
-
-        if ($dmsInstances -and $dmsInstances.Count -gt 0) {
-            $dmsInstanceIds = @($dmsInstances[0].id)
-            Write-Host "Found DMS instance with ID: $($dmsInstanceIds[0])"
+        if ($DmsInstanceIds.Count -gt 0) {
+            $dmsInstanceIds = [long[]]@($DmsInstanceIds)
+            Write-Host "Using supplied DMS instance IDs: $($dmsInstanceIds -join ', ')"
         }
         else {
-            Write-Warning "No DMS instances found. Application will be created without DMS instance association."
-            $dmsInstanceIds = @()
+            Write-Host "Retrieving available DMS instances..."
+            $dmsInstances = Get-DmsInstances -CmsUrl $ConfigServiceUrl -AccessToken $configToken -Tenant $Tenant
+
+            if ($dmsInstances -and $dmsInstances.Count -gt 0) {
+                $dmsInstanceIds = @($dmsInstances[0].id)
+                Write-Host "Found DMS instance with ID: $($dmsInstanceIds[0])"
+            }
+            else {
+                Write-Warning "No DMS instances found. Application will be created without DMS instance association."
+                $dmsInstanceIds = @()
+            }
         }
 
         # Step 4: Create vendor using Dms-Management module
         Write-Host "Creating vendor..."
-        $vendorId = Add-Vendor -CmsUrl $ConfigServiceUrl -Company $VendorName -ContactName "Smoke Test Contact" -ContactEmailAddress "smoketest@example.com" -NamespacePrefixes "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org" -AccessToken $configToken
+        $vendorId = Add-Vendor -CmsUrl $ConfigServiceUrl -Company $VendorName -ContactName "Smoke Test Contact" -ContactEmailAddress "smoketest@example.com" -NamespacePrefixes "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org" -AccessToken $configToken -Tenant $Tenant
 
         Write-Host "Vendor created with ID: $vendorId"
 
         # Step 5: Create application using Dms-Management module
         Write-Host "Creating application..."
-        $credentials = Add-Application -CmsUrl $ConfigServiceUrl -ApplicationName $ApplicationName -ClaimSetName $ClaimSetName -VendorId $vendorId -AccessToken $configToken -EducationOrganizationIds $EducationOrganizationIds -DmsInstanceIds $dmsInstanceIds
+        $credentials = Add-Application -CmsUrl $ConfigServiceUrl -ApplicationName $ApplicationName -ClaimSetName $ClaimSetName -VendorId $vendorId -AccessToken $configToken -EducationOrganizationIds $EducationOrganizationIds -DmsInstanceIds $dmsInstanceIds -Tenant $Tenant
 
         $key = $credentials.Key
         $secret = $credentials.Secret

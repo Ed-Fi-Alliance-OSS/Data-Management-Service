@@ -192,6 +192,14 @@ function Resolve-BootstrapSchemaWorkspace {
 
     $effectiveSchemaHash = if ($schemaSection.ContainsKey("effectiveSchemaHash")) { [string]$schemaSection["effectiveSchemaHash"] } else { "" }
     $workspaceFingerprint = if ($schemaSection.ContainsKey("workspaceFingerprint")) { [string]$schemaSection["workspaceFingerprint"] } else { "" }
+    if ([string]::IsNullOrWhiteSpace($workspaceFingerprint)) {
+        throw "Bootstrap manifest field 'schema.workspaceFingerprint' must not be empty."
+    }
+
+    $currentWorkspaceFingerprint = Get-BootstrapWorkspaceFingerprint -Path $apiSchemaRoot
+    if ($currentWorkspaceFingerprint -ne $workspaceFingerprint) {
+        throw (Get-BootstrapWorkspaceMismatchMessage -Reason "staged schema workspace fingerprint mismatch")
+    }
 
     return [pscustomobject]@{
         BootstrapManifestPath = [System.IO.Path]::GetFullPath($BootstrapManifestPath)

@@ -124,13 +124,16 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $apiSchemaManifest | ConvertTo-Json -Depth 20 |
                 Set-Content -LiteralPath (Join-Path $apiSchemaRoot "bootstrap-api-schema-manifest.json") -Encoding utf8
 
+            Import-Module (Join-Path $DockerComposeRoot "bootstrap-manifest.psm1") -Force
+            $workspaceFingerprint = Get-BootstrapWorkspaceFingerprint -Path $apiSchemaRoot
+
             $rootManifest = [ordered]@{
                 version = 1
                 schema = [ordered]@{
                     selectionMode = "ApiSchemaPath"
                     selectedExtensions = @("sample")
                     effectiveSchemaHash = "abc123"
-                    workspaceFingerprint = "def456"
+                    workspaceFingerprint = $workspaceFingerprint
                     apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
                 }
                 claims = [ordered]@{
@@ -230,7 +233,7 @@ exit $ExitCode
 
     AfterEach {
         if ($null -ne $script:repo) {
-            Get-Module Dms-Management |
+            Get-Module Dms-Management, SmokeTest |
                 Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" } |
                 Remove-Module -Force -ErrorAction SilentlyContinue
         }
@@ -292,7 +295,10 @@ exit $ExitCode
             $workspace.ExtensionSchemaPaths.Count | Should -Be 1
             $workspace.ExtensionSchemaPaths[0] | Should -Match "schemas.Sample.ApiSchema.json"
             $workspace.EffectiveSchemaHash | Should -Be "abc123"
-            $workspace.WorkspaceFingerprint | Should -Be "def456"
+            $manifest = Get-Content -LiteralPath (Join-Path $script:repo.BootstrapRoot "bootstrap-manifest.json") -Raw |
+                ConvertFrom-Json -AsHashtable
+            $workspace.WorkspaceFingerprint | Should -Be $manifest["schema"]["workspaceFingerprint"]
+            $workspace.WorkspaceFingerprint | Should -Match '^[a-f0-9]{64}$'
         }
 
         It "rejects missing staged schema files and path traversal" {
@@ -731,6 +737,32 @@ exit $ExitCode
             $output | Should -Not -Match "dms-postgresql"
             $output | Should -Not -Match "password="
         }
+
+        It "rejects staged schema workspace drift before invoking SchemaTools" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            Set-Content -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") -Value '{"changed":true}' -Encoding utf8
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 5
+                        instanceName = "A"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=drift_guard;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(5) } |
+                Should -Throw -ExpectedMessage "*staged schema workspace fingerprint mismatch*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse
+        }
     }
 
     Context "instance configuration" {
@@ -773,6 +805,72 @@ exit $ExitCode
 
             { Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -NoDmsInstance } |
                 Should -Throw -ExpectedMessage "*route-qualified*"
+        }
+
+        It "creates smoke credentials for the selected NoDmsInstance target and tenant" {
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
+            Get-Content -LiteralPath $script:repo.EnvFile |
+                Set-Content -LiteralPath $envFile -Encoding utf8
+            Add-Content -LiteralPath $envFile -Value "CONFIG_SERVICE_TENANT=tenant-a"
+
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-capture.txt"
+            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
+            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
+            @"
+function Get-SmokeTestCredentials {
+    param([string] `$ConfigServiceUrl, [long[]] `$DmsInstanceIds, [string] `$Tenant)
+    Add-Content -LiteralPath '$capturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DmsInstanceIds -join ',') tenant=`$Tenant`"
+}
+Export-ModuleMember -Function Get-SmokeTestCredentials
+"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                param([string] $Tenant)
+                $Tenant | Should -Be "tenant-a"
+                return @(
+                    [pscustomobject]@{
+                        id = 77
+                        instanceName = "Existing"
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ConfigureLocalDmsInstance -EnvironmentFile $envFile -NoDmsInstance -AddSmokeTestCredentials | Out-Null
+
+            @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke url=http://localhost:18081 ids=77 tenant=tenant-a"
+        }
+
+        It "creates smoke credentials for all selected school-year instances" {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-schoolyear-capture.txt"
+            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
+            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
+            @"
+function Get-SmokeTestCredentials {
+    param([string] `$ConfigServiceUrl, [long[]] `$DmsInstanceIds, [string] `$Tenant)
+    Add-Content -LiteralPath '$capturePath' -Value `"smoke ids=`$(`$DmsInstanceIds -join ',') tenant=`$Tenant`"
+}
+Export-ModuleMember -Function Get-SmokeTestCredentials
+"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DmsSchoolYearInstances {
+                return @(
+                    @{ InstanceId = [long]101; Year = 2024 },
+                    @{ InstanceId = [long]102; Year = 2025 }
+                )
+            }
+
+            Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials | Out-Null
+
+            @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke ids=101,102 tenant="
         }
     }
 
@@ -957,21 +1055,18 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $envExample | Should -Not -Match '(?m)^NEED_DATABASE_SETUP=true\s*$'
         }
 
-        It "start-local-dms.ps1 forces NEED_DATABASE_SETUP=false in the normal up path" {
+        It "start-local-dms.ps1 keeps direct startup provisioning controlled by the env file when no bootstrap manifest is present" {
             $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
 
-            # The normal `docker compose ... up` (not -DmsOnly) must wrap the call in a try/finally
-            # that forces NEED_DATABASE_SETUP=false. The -DmsOnly branch already did this; the
-            # remediation extends the guard to the main up path.
-            $envForceMatches = [regex]::Matches($startScript, '\$env:NEED_DATABASE_SETUP\s*=\s*"false"')
-            $envForceMatches.Count | Should -BeGreaterOrEqual 2
+            $startScript | Should -Match 'if \(\$bootstrapManifestPresent\)'
+            $startScript | Should -Match 'No bootstrap manifest detected; starting DMS with database startup provisioning controlled by the environment file\.'
         }
 
-        It "start-published-dms.ps1 forces NEED_DATABASE_SETUP=false in the normal up path" {
+        It "start-published-dms.ps1 keeps direct startup provisioning controlled by the env file when no bootstrap manifest is present" {
             $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
 
-            $envForceMatches = [regex]::Matches($startScript, '\$env:NEED_DATABASE_SETUP\s*=\s*"false"')
-            $envForceMatches.Count | Should -BeGreaterOrEqual 2
+            $startScript | Should -Match 'if \(\$bootstrapManifestPresent\)'
+            $startScript | Should -Match 'No bootstrap manifest detected; starting published DMS with database startup provisioning controlled by the environment file\.'
         }
     }
 
@@ -1691,8 +1786,8 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 stub. The extracted block is the production code, so any drift in the lockdown
                 semantics (env assignment removed, docker call moved before the assignment,
                 env var renamed) is caught at the behavioral level - not just the regex level.
-                When -DmsOnly is set, the helper targets the -DmsOnly branch's try block (the
-                one with a trailing `dms` service name) instead of the main up block.
+                When -DmsOnly is set, the helper targets the -DmsOnly branch's try block
+                instead of the main up block.
                 #>
                 param(
                     [Parameter(Mandatory)]
@@ -1719,10 +1814,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 # The outer try wraps the entire script body, so any docker call lives inside
                 # it. We want the innermost try whose body sets NEED_DATABASE_SETUP=false and
                 # immediately calls `docker compose ... up $upArgs` - main up path when -DmsOnly
-                # is false (regex rejects a trailing word like `dms`); -DmsOnly branch when
-                # -DmsOnly is true (regex requires a trailing `dms` service name).
+                # is false (regex rejects a trailing service argument); -DmsOnly branch when
+                # -DmsOnly is true (regex requires the service array used by that branch).
                 if ($DmsOnly) {
-                    $dockerRegex = 'docker compose .* up \$upArgs\s+dms\b'
+                    $dockerRegex = 'docker compose .* up \$upArgs\s+\$dmsServices\b'
                     $branchLabel = "-DmsOnly"
                 } else {
                     $dockerRegex = 'docker compose .* up \$upArgs(?!\s*\w)'
@@ -1749,6 +1844,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 `$files = @('-f', 'local-dms.yml')
 `$EnvironmentFile = '.env'
 `$upArgs = @('-d')
+`$dmsServices = @('dms')
 function docker {
     Add-Content -LiteralPath '$escapedCapture' -Value "NEED_DATABASE_SETUP=`$env:NEED_DATABASE_SETUP"
     Add-Content -LiteralPath '$escapedCapture' -Value "DMS_DEPLOY_DATABASE_ON_STARTUP=`$env:DMS_DEPLOY_DATABASE_ON_STARTUP"
@@ -1761,7 +1857,7 @@ $extracted
             }
         }
 
-        It "start-local-dms.ps1 main up path captures NEED_DATABASE_SETUP=false at docker call time" {
+        It "start-local-dms.ps1 bootstrap main up path captures NEED_DATABASE_SETUP=false at docker call time" {
             $capturePath = Join-Path $script:repo.RepoRoot "docker-up-capture-local.txt"
             $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
 
@@ -1773,7 +1869,7 @@ $extracted
             $captured | Should -Contain "AppSettings__DeployDatabaseOnStartup=false"
         }
 
-        It "start-published-dms.ps1 main up path captures NEED_DATABASE_SETUP=false at docker call time" {
+        It "start-published-dms.ps1 bootstrap main up path captures NEED_DATABASE_SETUP=false at docker call time" {
             $capturePath = Join-Path $script:repo.RepoRoot "docker-up-capture-published.txt"
             $startScriptPath = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
 
@@ -1820,7 +1916,7 @@ $extracted
             $warnings.Count | Should -BeGreaterThan 0
             ($warnings | ForEach-Object Message) -join " " | Should -Match "No bootstrap manifest detected"
             ($warnings | ForEach-Object Message) -join " " | Should -Match "bootstrap-\(local\|published\)-dms.ps1 wrapper"
-            ($warnings | ForEach-Object Message) -join " " | Should -Match "Schemas will NOT be provisioned"
+            ($warnings | ForEach-Object Message) -join " " | Should -Match "Bootstrap schema provisioning will NOT be run"
         }
 
         It "stays silent when a .bootstrap workspace is present" {
