@@ -832,18 +832,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         writer.Append($" WHERE {currentSourceAlias}.");
         writer.AppendQuoted(terminalStep.SourceColumnName.Value);
-        writer.Append(" IN (SELECT ");
-        writer.Append($"{authAlias}.");
-        writer.AppendQuoted(subject.AuthObject.SubjectValueColumn.Value);
-        writer.Append(" FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(subject.AuthObject.Name));
-        writer.Append($" {authAlias} WHERE {authAlias}.");
-        writer.AppendQuoted(subject.AuthObject.ClaimEducationOrganizationIdColumn.Value);
-        AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
+        AppendPersonAuthViewMembershipSubquerySql(
             writer,
-            authorizationClaimParameterization
+            subject.AuthObject,
+            authorizationClaimParameterization,
+            authAlias
         );
-        writer.Append("))");
+        writer.Append(")");
     }
 
     private static void ValidateTransitivePersonPath(
@@ -921,6 +916,22 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
         writer.Append($" {rootSubqueryAlias} WHERE {rootSubqueryAlias}.");
         writer.AppendQuoted(rootPersonDocumentIdColumn.Value);
+        AppendPersonAuthViewMembershipSubquerySql(
+            writer,
+            authObject,
+            authorizationClaimParameterization,
+            authAlias
+        );
+        writer.Append(")");
+    }
+
+    private static void AppendPersonAuthViewMembershipSubquerySql(
+        SqlWriter writer,
+        RelationshipAuthorizationAuthObject authObject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias
+    )
+    {
         writer.Append(" IN (SELECT ");
         writer.Append($"{authAlias}.");
         writer.AppendQuoted(authObject.SubjectValueColumn.Value);
@@ -932,7 +943,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             writer,
             authorizationClaimParameterization
         );
-        writer.Append("))");
+        writer.Append(")");
     }
 
     private static void AppendAuthorizationEdOrgSubjectSql(

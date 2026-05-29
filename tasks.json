@@ -360,6 +360,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler\"",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit"
     ],
-    "completed": false
+    "completed": true
   }
 ]
