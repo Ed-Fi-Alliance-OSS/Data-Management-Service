@@ -186,7 +186,7 @@
       "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~Relationship\"",
       "Review integration test setup to ensure seeded data uses backend setup helpers or direct database writes rather than People CRUD authorization paths."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",
