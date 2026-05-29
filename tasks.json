@@ -307,6 +307,6 @@
       "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~PeopleRelationshipGetMany\"",
       "Run dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios"
     ],
-    "completed": false
+    "completed": true
   }
 ]

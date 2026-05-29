@@ -6,13 +6,12 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Net;
-using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using FluentAssertions;
+using static EdFi.DataManagementService.Tests.Integration.Scenarios.PeopleRelationshipGetManyScenarioHelpers;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
@@ -62,11 +61,6 @@ internal static class PeopleRelationshipGetManyStudentScenario
     private const string TermDescriptor = $"{TermNamespace}#Fall Semester";
     private const string ResponsibilityDescriptor = $"{ResponsibilityNamespace}#Accountability";
 
-    private static readonly string[] _noFurtherAuthorizationRequiredStrategy =
-    [
-        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
-    ];
-
     public static IClaimSetProvider CreateStudentsOnlyReadClaimSetProvider(FixtureContext fixture) =>
         CreateClaimSetProvider(
             fixture,
@@ -99,12 +93,16 @@ internal static class PeopleRelationshipGetManyStudentScenario
     {
         await SeedStudentSchoolAssociationDataAsync(harness);
 
-        JsonArray students = await GetJsonArrayAsync(harness, $"{StudentsEndpoint}?totalCount=true", 1);
+        JsonArray students = await GetJsonArrayWithTotalCountAsync(
+            harness,
+            $"{StudentsEndpoint}?totalCount=true",
+            1
+        );
         ExtractValues(students, static item => item["studentUniqueId"]!.GetValue<string>())
             .Should()
             .Equal(AuthorizedStudentUniqueId);
 
-        JsonArray studentSchoolAssociations = await GetJsonArrayAsync(
+        JsonArray studentSchoolAssociations = await GetJsonArrayWithTotalCountAsync(
             harness,
             $"{StudentSchoolAssociationsEndpoint}?totalCount=true",
             1
@@ -123,7 +121,11 @@ internal static class PeopleRelationshipGetManyStudentScenario
     {
         await SeedThroughResponsibilityDataAsync(harness);
 
-        JsonArray students = await GetJsonArrayAsync(harness, $"{StudentsEndpoint}?totalCount=true", 1);
+        JsonArray students = await GetJsonArrayWithTotalCountAsync(
+            harness,
+            $"{StudentsEndpoint}?totalCount=true",
+            1
+        );
         ExtractValues(students, static item => item["studentUniqueId"]!.GetValue<string>())
             .Should()
             .Equal(AuthorizedStudentUniqueId);
@@ -136,7 +138,7 @@ internal static class PeopleRelationshipGetManyStudentScenario
         await SeedTransitiveStudentAcademicRecordDataAsync(harness);
         await InsertBrokenStudentAcademicRecordPathAsync(harness);
 
-        JsonArray resources = await GetJsonArrayAsync(
+        JsonArray resources = await GetJsonArrayWithTotalCountAsync(
             harness,
             $"{AuthorizationStudentAcademicRecordResourcesEndpoint}?totalCount=true",
             1
@@ -149,52 +151,32 @@ internal static class PeopleRelationshipGetManyStudentScenario
             .Equal(AuthorizedStudentUniqueId);
     }
 
-    private static IClaimSetProvider CreateClaimSetProvider(
-        FixtureContext fixture,
-        IReadOnlyList<RelationshipReadResource> readRelationshipResources,
-        string readRelationshipStrategy
-    )
-    {
-        var relationshipReadResourceKeys = new HashSet<string>(
-            readRelationshipResources.Select(static resource =>
-                CreateRelationshipReadResourceKey(resource.ProjectName, resource.ResourceName)
-            ),
-            StringComparer.OrdinalIgnoreCase
-        );
-
-        return new ConfigurableClaimSetProvider(
-            fixture,
-            (resource, action) =>
-            {
-                if (
-                    string.Equals(action, "Read", StringComparison.Ordinal)
-                    && relationshipReadResourceKeys.Contains(
-                        CreateRelationshipReadResourceKey(resource.ProjectName, resource.ResourceName)
-                    )
-                )
-                {
-                    return [readRelationshipStrategy];
-                }
-
-                return _noFurtherAuthorizationRequiredStrategy;
-            }
-        );
-    }
-
     private static async Task SeedStudentSchoolAssociationDataAsync(ApiIntegrationHarness harness)
     {
         await SeedCommonReferenceDataAsync(harness);
-        await CreateStudentAsync(harness, AuthorizedStudentUniqueId, "Auth");
-        await CreateStudentAsync(harness, UnauthorizedStudentUniqueId, "Denied");
-        await CreateStudentSchoolAssociationAsync(harness, AuthorizedStudentUniqueId, AuthorizedSchoolId);
-        await CreateStudentSchoolAssociationAsync(harness, UnauthorizedStudentUniqueId, UnauthorizedSchoolId);
+        await CreateStudentAsync(harness, StudentsEndpoint, AuthorizedStudentUniqueId, "Auth");
+        await CreateStudentAsync(harness, StudentsEndpoint, UnauthorizedStudentUniqueId, "Denied");
+        await CreateStudentSchoolAssociationAsync(
+            harness,
+            StudentSchoolAssociationsEndpoint,
+            AuthorizedStudentUniqueId,
+            AuthorizedSchoolId,
+            GradeLevelDescriptor
+        );
+        await CreateStudentSchoolAssociationAsync(
+            harness,
+            StudentSchoolAssociationsEndpoint,
+            UnauthorizedStudentUniqueId,
+            UnauthorizedSchoolId,
+            GradeLevelDescriptor
+        );
     }
 
     private static async Task SeedThroughResponsibilityDataAsync(ApiIntegrationHarness harness)
     {
         await SeedCommonReferenceDataAsync(harness);
-        await CreateStudentAsync(harness, AuthorizedStudentUniqueId, "Auth");
-        await CreateStudentAsync(harness, UnauthorizedStudentUniqueId, "Denied");
+        await CreateStudentAsync(harness, StudentsEndpoint, AuthorizedStudentUniqueId, "Auth");
+        await CreateStudentAsync(harness, StudentsEndpoint, UnauthorizedStudentUniqueId, "Denied");
         await CreateStudentEducationOrganizationResponsibilityAssociationAsync(
             harness,
             AuthorizedStudentUniqueId,
@@ -210,9 +192,23 @@ internal static class PeopleRelationshipGetManyStudentScenario
     private static async Task SeedTransitiveStudentAcademicRecordDataAsync(ApiIntegrationHarness harness)
     {
         await SeedStudentSchoolAssociationDataAsync(harness);
-        await CreateSchoolYearTypeAsync(harness);
-        await CreateStudentAcademicRecordAsync(harness, AuthorizedStudentUniqueId, AuthorizedSchoolId);
-        await CreateStudentAcademicRecordAsync(harness, UnauthorizedStudentUniqueId, UnauthorizedSchoolId);
+        await CreateSchoolYearTypeAsync(harness, SchoolYearTypesEndpoint, SchoolYear);
+        await CreateStudentAcademicRecordAsync(
+            harness,
+            StudentAcademicRecordsEndpoint,
+            AuthorizedStudentUniqueId,
+            AuthorizedSchoolId,
+            SchoolYear,
+            TermDescriptor
+        );
+        await CreateStudentAcademicRecordAsync(
+            harness,
+            StudentAcademicRecordsEndpoint,
+            UnauthorizedStudentUniqueId,
+            UnauthorizedSchoolId,
+            SchoolYear,
+            TermDescriptor
+        );
         await InsertAuthorizationStudentAcademicRecordResourceAsync(
             harness,
             1,
@@ -250,117 +246,25 @@ internal static class PeopleRelationshipGetManyStudentScenario
             ResponsibilityNamespace,
             "Accountability"
         );
-        await CreateSchoolAsync(harness, AuthorizedSchoolId, "Authorized School");
-        await CreateSchoolAsync(harness, UnauthorizedSchoolId, "Unauthorized School");
+        await CreateSchoolAsync(
+            harness,
+            SchoolsEndpoint,
+            AuthorizedSchoolId,
+            "Authorized School",
+            SchoolCategoryDescriptor,
+            GradeLevelDescriptor
+        );
+        await CreateSchoolAsync(
+            harness,
+            SchoolsEndpoint,
+            UnauthorizedSchoolId,
+            "Unauthorized School",
+            SchoolCategoryDescriptor,
+            GradeLevelDescriptor
+        );
         await InsertAuthEdgeAsync(harness, ClaimEducationOrganizationId, AuthorizedSchoolId);
         await DeleteAuthEdgeAsync(harness, ClaimEducationOrganizationId, UnauthorizedSchoolId);
         await DeleteAuthEdgeAsync(harness, ClaimEducationOrganizationId, ClaimEducationOrganizationId);
-    }
-
-    private static async Task CreateDescriptorAsync(
-        ApiIntegrationHarness harness,
-        string endpoint,
-        string @namespace,
-        string codeValue
-    )
-    {
-        using HttpResponseMessage response = await PostJsonAsync(
-            harness,
-            endpoint,
-            new JsonObject
-            {
-                ["codeValue"] = codeValue,
-                ["description"] = codeValue,
-                ["namespace"] = @namespace,
-                ["shortDescription"] = codeValue,
-            }
-        );
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-    }
-
-    private static async Task CreateSchoolAsync(ApiIntegrationHarness harness, long schoolId, string name)
-    {
-        using HttpResponseMessage response = await PostJsonAsync(
-            harness,
-            SchoolsEndpoint,
-            new JsonObject
-            {
-                ["schoolId"] = schoolId,
-                ["nameOfInstitution"] = name,
-                ["educationOrganizationCategories"] = new JsonArray(
-                    new JsonObject { ["educationOrganizationCategoryDescriptor"] = SchoolCategoryDescriptor }
-                ),
-                ["gradeLevels"] = new JsonArray(
-                    new JsonObject { ["gradeLevelDescriptor"] = GradeLevelDescriptor }
-                ),
-            }
-        );
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-    }
-
-    private static async Task CreateSchoolYearTypeAsync(ApiIntegrationHarness harness)
-    {
-        using HttpResponseMessage response = await PostJsonAsync(
-            harness,
-            SchoolYearTypesEndpoint,
-            new JsonObject
-            {
-                ["schoolYear"] = SchoolYear,
-                ["schoolYearDescription"] = SchoolYear.ToString(CultureInfo.InvariantCulture),
-                ["currentSchoolYear"] = true,
-            }
-        );
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-    }
-
-    private static async Task CreateStudentAsync(
-        ApiIntegrationHarness harness,
-        string studentUniqueId,
-        string nameSuffix
-    )
-    {
-        using HttpResponseMessage response = await PostJsonAsync(
-            harness,
-            StudentsEndpoint,
-            new JsonObject
-            {
-                ["studentUniqueId"] = studentUniqueId,
-                ["firstName"] = $"Student-{nameSuffix}",
-                ["lastSurname"] = "Relationship",
-                ["birthDate"] = "2010-01-01",
-            }
-        );
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-    }
-
-    private static async Task CreateStudentSchoolAssociationAsync(
-        ApiIntegrationHarness harness,
-        string studentUniqueId,
-        long schoolId
-    )
-    {
-        using HttpResponseMessage response = await PostJsonAsync(
-            harness,
-            StudentSchoolAssociationsEndpoint,
-            new JsonObject
-            {
-                ["studentReference"] = new JsonObject { ["studentUniqueId"] = studentUniqueId },
-                ["schoolReference"] = new JsonObject { ["schoolId"] = schoolId },
-                ["entryDate"] = "2025-08-01",
-                ["entryGradeLevelDescriptor"] = GradeLevelDescriptor,
-            }
-        );
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
     }
 
     private static async Task CreateStudentEducationOrganizationResponsibilityAssociationAsync(
@@ -381,31 +285,6 @@ internal static class PeopleRelationshipGetManyStudentScenario
                 },
                 ["responsibilityDescriptor"] = ResponsibilityDescriptor,
                 ["beginDate"] = "2025-08-01",
-            }
-        );
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-    }
-
-    private static async Task CreateStudentAcademicRecordAsync(
-        ApiIntegrationHarness harness,
-        string studentUniqueId,
-        long educationOrganizationId
-    )
-    {
-        using HttpResponseMessage response = await PostJsonAsync(
-            harness,
-            StudentAcademicRecordsEndpoint,
-            new JsonObject
-            {
-                ["studentReference"] = new JsonObject { ["studentUniqueId"] = studentUniqueId },
-                ["educationOrganizationReference"] = new JsonObject
-                {
-                    ["educationOrganizationId"] = educationOrganizationId,
-                },
-                ["schoolYearTypeReference"] = new JsonObject { ["schoolYear"] = SchoolYear },
-                ["termDescriptor"] = TermDescriptor,
             }
         );
         string body = await response.Content.ReadAsStringAsync();
@@ -436,28 +315,6 @@ internal static class PeopleRelationshipGetManyStudentScenario
             studentAcademicRecordDocumentId
         );
     }
-
-    private static async Task<JsonArray> GetJsonArrayAsync(
-        ApiIntegrationHarness harness,
-        string endpoint,
-        int expectedTotalCount
-    )
-    {
-        using HttpResponseMessage response = await harness.HttpClient.GetAsync(endpoint);
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        response
-            .Headers.TryGetValues("Total-Count", out IEnumerable<string>? totalCountHeader)
-            .Should()
-            .BeTrue("totalCount=true must emit the Total-Count response header");
-        totalCountHeader!.Single().Should().Be(expectedTotalCount.ToString(CultureInfo.InvariantCulture));
-
-        return JsonNode.Parse(body)!.AsArray();
-    }
-
-    private static string[] ExtractValues(JsonArray array, Func<JsonObject, string> selector) =>
-        [.. array.Select(node => selector(node!.AsObject()))];
 
     private static async Task InsertBrokenStudentAcademicRecordPathAsync(ApiIntegrationHarness harness)
     {
@@ -666,141 +523,4 @@ internal static class PeopleRelationshipGetManyStudentScenario
             ("@resourceKeyId", resourceKeyId)
         );
     }
-
-    private static async Task<long> ReadInt64Async(
-        DbConnection connection,
-        string sql,
-        params (string Name, object Value)[] parameters
-    )
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = sql;
-        AddParameters(command, parameters);
-
-        object? result = await command.ExecuteScalarAsync();
-        result.Should().NotBeNull($"query must return a scalar value: {sql}");
-
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
-    }
-
-    private static async Task<HttpResponseMessage> PostJsonAsync(
-        ApiIntegrationHarness harness,
-        string endpoint,
-        JsonObject body
-    ) => await SendJsonAsync(harness, HttpMethod.Post, endpoint, body);
-
-    private static async Task<HttpResponseMessage> SendJsonAsync(
-        ApiIntegrationHarness harness,
-        HttpMethod method,
-        string endpoint,
-        JsonObject body
-    )
-    {
-        using var request = new HttpRequestMessage(method, endpoint)
-        {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
-        };
-
-        return await harness.HttpClient.SendAsync(request);
-    }
-
-    private static async Task InsertAuthEdgeAsync(
-        ApiIntegrationHarness harness,
-        long sourceEducationOrganizationId,
-        long targetEducationOrganizationId
-    )
-    {
-        string sql = IsMssql(harness.DbConnection)
-            ? """
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM [auth].[EducationOrganizationIdToEducationOrganizationId]
-                    WHERE [SourceEducationOrganizationId] = @sourceEducationOrganizationId
-                      AND [TargetEducationOrganizationId] = @targetEducationOrganizationId
-                )
-                BEGIN
-                    INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] (
-                        [SourceEducationOrganizationId],
-                        [TargetEducationOrganizationId]
-                    )
-                    VALUES (@sourceEducationOrganizationId, @targetEducationOrganizationId);
-                END
-                """
-            : """
-                INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" (
-                    "SourceEducationOrganizationId",
-                    "TargetEducationOrganizationId"
-                )
-                VALUES (@sourceEducationOrganizationId, @targetEducationOrganizationId)
-                ON CONFLICT DO NOTHING;
-                """;
-
-        await ExecuteNonQueryAsync(
-            harness.DbConnection,
-            sql,
-            ("@sourceEducationOrganizationId", sourceEducationOrganizationId),
-            ("@targetEducationOrganizationId", targetEducationOrganizationId)
-        );
-    }
-
-    private static async Task DeleteAuthEdgeAsync(
-        ApiIntegrationHarness harness,
-        long sourceEducationOrganizationId,
-        long targetEducationOrganizationId
-    )
-    {
-        string sql = IsMssql(harness.DbConnection)
-            ? """
-                DELETE FROM [auth].[EducationOrganizationIdToEducationOrganizationId]
-                WHERE [SourceEducationOrganizationId] = @sourceEducationOrganizationId
-                  AND [TargetEducationOrganizationId] = @targetEducationOrganizationId;
-                """
-            : """
-                DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
-                WHERE "SourceEducationOrganizationId" = @sourceEducationOrganizationId
-                  AND "TargetEducationOrganizationId" = @targetEducationOrganizationId;
-                """;
-
-        await ExecuteNonQueryAsync(
-            harness.DbConnection,
-            sql,
-            ("@sourceEducationOrganizationId", sourceEducationOrganizationId),
-            ("@targetEducationOrganizationId", targetEducationOrganizationId)
-        );
-    }
-
-    private static async Task ExecuteNonQueryAsync(
-        DbConnection connection,
-        string sql,
-        params (string Name, object Value)[] parameters
-    )
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = sql;
-        AddParameters(command, parameters);
-
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private static void AddParameters(DbCommand command, params (string Name, object Value)[] parameters)
-    {
-        foreach ((string name, object value) in parameters)
-        {
-            DbParameter parameter = command.CreateParameter();
-            parameter.ParameterName = name;
-            parameter.Value = value;
-            command.Parameters.Add(parameter);
-        }
-    }
-
-    private static bool IsMssql(DbConnection connection)
-    {
-        string? fullName = connection.GetType().FullName;
-        return fullName is not null && fullName.Contains("SqlClient", StringComparison.Ordinal);
-    }
-
-    private static string CreateRelationshipReadResourceKey(string projectName, string resourceName) =>
-        $"{projectName}:{resourceName}";
-
-    private sealed record RelationshipReadResource(string ProjectName, string ResourceName);
 }

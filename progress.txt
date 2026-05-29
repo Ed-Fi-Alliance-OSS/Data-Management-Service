@@ -99,3 +99,9 @@ Decisions: removed unused page-query strategy Kind enum/contract and adapter Map
 Files changed: PageDocumentIdQueryModels.cs, PageDocumentIdAuthorizationSpecAdapter.cs, PageDocumentIdAuthorizationSpecAdapterTests.cs, PageDocumentIdSqlCompilerTests.cs, tasks.json, progress.txt.
 Verification: csharpier on Plans and Plans.Tests.Unit; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter|FullyQualifiedName~PageDocumentIdSqlCompiler" passed 99.
 Notes: one cleanup task remains for integration-test helper extraction.
+
+DMS-1095 06b people relationship auth get-many - completed People GET-many integration-test helper extraction cleanup task.
+Decisions: added scenario-local helper for claim-set read resources, common Ed-Fi setup POSTs, Total-Count GET assertions, auth edge SQL, DB command parameterization, SQL Server detection, and relationship resource key formatting; kept authz transitive direct-write setup in Student scenario because it is scenario-specific.
+Files changed: PeopleRelationshipGetManyScenarioHelpers.cs, PeopleRelationshipGetManyStudentScenario.cs, PeopleRelationshipGetManyContactStaffScenario.cs, PeopleRelationshipGetManyCompositionScenario.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios; PostgreSQL Category=PostgresqlIntegration&FullyQualifiedName~PeopleRelationshipGetMany passed 8; SQL Server Category=MssqlIntegration&FullyQualifiedName~PeopleRelationshipGetMany passed 11 against temporary localhost,1434 container.
+Notes: stopped temporary dms-codex-mssql after verification; all tasks in tasks.json now complete.
