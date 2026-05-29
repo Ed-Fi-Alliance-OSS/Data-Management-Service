@@ -236,7 +236,7 @@
       "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature for scenarios 04, 11, 16, and 23.",
       "Run env -u NODE_OPTIONS dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" after starting the relational E2E stack."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e-tests",
