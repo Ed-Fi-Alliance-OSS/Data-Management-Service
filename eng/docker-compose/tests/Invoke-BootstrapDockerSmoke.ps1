@@ -63,6 +63,8 @@
         -ApiSchemaPath "$HOME/edfi/ApiSchema"
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Manual smoke script intentionally writes operator progress and step banners to the console.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive: parameters are consumed inside nested script blocks and helper functions.')]
 [CmdletBinding()]
 param(
     [string]$EnvironmentFile,
@@ -264,7 +266,7 @@ try {
             -Description "provision-dms-schema.ps1 (first run)"
     }
 
-    # Step 5: idempotence — re-run provision
+    # Step 5: idempotence - re-run provision
     Invoke-SmokeStep -Name "provision-dms-schema-second-run-idempotence" -Body {
         Invoke-PhaseScript `
             -ScriptPath "$script:DockerComposeRoot/provision-dms-schema.ps1" `

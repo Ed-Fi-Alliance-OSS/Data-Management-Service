@@ -69,6 +69,7 @@ function Get-EnvValueOrDefault {
 }
 
 function Get-DmsInstanceRouteContexts {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns a collection of route contexts; the plural noun reflects the return shape.')]
     param(
         $Instance
     )
@@ -131,7 +132,7 @@ function Resolve-CmsReadOnlyAccessFromEnv {
     Builds the optional CMSReadOnlyAccess block included in the configure result. Returns
     $null when none of CONFIG_SERVICE_CLIENT_ID, CONFIG_SERVICE_CLIENT_SCOPE, or
     CONFIG_SERVICE_CLIENT_SECRET are explicitly present in the env file. Per
-    command-boundaries.md §3.4, "may include" means "include when actually populated"; a
+    command-boundaries.md Section 3.4, "may include" means "include when actually populated"; a
     default-derived client id alone does not satisfy that contract. The client id/scope/secret
     come from the local environment file (start-local-dms.ps1's provider-specific local
     identity setup writes them); this helper does not contact CMS.

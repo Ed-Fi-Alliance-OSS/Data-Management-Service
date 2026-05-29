@@ -1690,7 +1690,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 or start-published-dms.ps1 and execute it in an isolated scope with a docker
                 stub. The extracted block is the production code, so any drift in the lockdown
                 semantics (env assignment removed, docker call moved before the assignment,
-                env var renamed) is caught at the behavioral level — not just the regex level.
+                env var renamed) is caught at the behavioral level - not just the regex level.
                 When -DmsOnly is set, the helper targets the -DmsOnly branch's try block (the
                 one with a trailing `dms` service name) instead of the main up block.
                 #>
@@ -1718,7 +1718,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                     $true)
                 # The outer try wraps the entire script body, so any docker call lives inside
                 # it. We want the innermost try whose body sets NEED_DATABASE_SETUP=false and
-                # immediately calls `docker compose ... up $upArgs` — main up path when -DmsOnly
+                # immediately calls `docker compose ... up $upArgs` - main up path when -DmsOnly
                 # is false (regex rejects a trailing word like `dms`); -DmsOnly branch when
                 # -DmsOnly is true (regex requires a trailing `dms` service name).
                 if ($DmsOnly) {

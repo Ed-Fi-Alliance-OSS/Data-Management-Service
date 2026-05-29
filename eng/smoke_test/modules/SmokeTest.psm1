@@ -69,6 +69,7 @@ function Invoke-SmokeTestUtility {
 }
 
 function Get-SmokeTestCredentials {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Operator-facing smoke-test helper intentionally writes progress to the console.')]
     [CmdletBinding()]
     param (
         [string]

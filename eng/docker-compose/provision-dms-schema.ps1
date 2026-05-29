@@ -105,6 +105,7 @@ function Get-ProvisionProperty {
 }
 
 function Get-ProvisionRouteContexts {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns a collection of route contexts; the plural noun reflects the return shape.')]
     param(
         $Instance
     )
@@ -118,6 +119,7 @@ function Get-ProvisionRouteContexts {
 }
 
 function Resolve-EnvPlaceholdersInText {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive: $EnvValues is consumed inside the nested regex replacement script block.')]
     param(
         [string]
         $Text,
@@ -285,7 +287,7 @@ function Convert-CmsConnectionStringToHostSideTarget {
 
     # TargetKey identifies an effective provisioning target. Two instances pointing at the
     # same physical database (same dialect, translated host, port, database, and user) share
-    # a provisioning invocation. Differing on any field — including username — produces a
+    # a provisioning invocation. Differing on any field - including username - produces a
     # separate target so we never collapse instances that happen to share a database name on
     # different hosts or under different roles.
     $targetKey = ("{0}|{1}|{2}|{3}|{4}" -f
@@ -386,6 +388,7 @@ function Resolve-CmsInstanceConnectionString {
 
 
 function Resolve-ProvisionTargetInstances {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the collection of selected target instances; the plural noun reflects the return shape.')]
     param(
         [object[]]
         $Instances,
@@ -407,12 +410,12 @@ function Resolve-ProvisionTargetInstances {
     if ($InstanceId.Count -gt 0) {
         $selected = [System.Collections.ArrayList]::new()
         foreach ($id in $InstanceId) {
-            $matches = @($Instances | Where-Object { [long](Get-ProvisionProperty -Object $_ -Names @("id", "Id")) -eq [long]$id })
-            if ($matches.Count -eq 0) {
+            $matchedInstances = @($Instances | Where-Object { [long](Get-ProvisionProperty -Object $_ -Names @("id", "Id")) -eq [long]$id })
+            if ($matchedInstances.Count -eq 0) {
                 throw "DMS instance $(Format-LogSafeText $id) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'."
             }
 
-            $null = $selected.Add($matches[0])
+            $null = $selected.Add($matchedInstances[0])
         }
 
         return @($selected)
@@ -421,7 +424,7 @@ function Resolve-ProvisionTargetInstances {
     if ($SchoolYear.Count -gt 0) {
         $selected = [System.Collections.ArrayList]::new()
         foreach ($year in $SchoolYear) {
-            $matches = @($Instances | Where-Object {
+            $matchedInstances = @($Instances | Where-Object {
                 $matched = $false
                 foreach ($routeContext in Get-ProvisionRouteContexts -Instance $_) {
                     $contextKey = [string](Get-ProvisionProperty -Object $routeContext -Names @("contextKey", "ContextKey"))
@@ -434,16 +437,16 @@ function Resolve-ProvisionTargetInstances {
                 $matched
             })
 
-            if ($matches.Count -eq 0) {
+            if ($matchedInstances.Count -eq 0) {
                 throw "No DMS instance found with route context schoolYear=$(Format-LogSafeText $year) for tenant '$(Format-LogSafeText $Tenant)'."
             }
 
-            if ($matches.Count -gt 1) {
-                $ids = ($matches | ForEach-Object { Get-ProvisionProperty -Object $_ -Names @("id", "Id") }) -join ", "
+            if ($matchedInstances.Count -gt 1) {
+                $ids = ($matchedInstances | ForEach-Object { Get-ProvisionProperty -Object $_ -Names @("id", "Id") }) -join ", "
                 throw "Multiple DMS instances found with route context schoolYear=$(Format-LogSafeText $year) (instance ids: $(Format-LogSafeText $ids)). Clean up duplicate CMS state before provisioning."
             }
 
-            $null = $selected.Add($matches[0])
+            $null = $selected.Add($matchedInstances[0])
         }
 
         return @($selected)
@@ -464,6 +467,7 @@ function Resolve-ProvisionTargetInstances {
 }
 
 function New-ProvisionTarget {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory provisioning target object; no system state changes and no -WhatIf surface.')]
     param(
         $Instance,
 
@@ -627,7 +631,7 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
     .SYNOPSIS
     Produces optional CMSReadOnlyAccess guidance lines for IDE-hosted launch. Returns an empty
     array when none of the three CONFIG_SERVICE_CLIENT_* keys are explicitly present in the
-    env file. Per command-boundaries.md §3.4, "may include" means "include when actually
+    env file. Per command-boundaries.md Section 3.4, "may include" means "include when actually
     populated"; a default-derived client id alone does not satisfy that contract.
     #>
     param(
@@ -712,7 +716,7 @@ function Invoke-ProvisionDmsSchema {
     $schemaPaths = [string[]]@($schemaWorkspace.CoreSchemaPath) + [string[]]@($schemaWorkspace.ExtensionSchemaPaths)
     Write-Information "Schema workspace ready. Core schema: $(Format-LogSafeText $schemaWorkspace.CoreSchemaPath). Extensions: $($schemaWorkspace.ExtensionSchemaPaths.Count)." -InformationAction Continue
 
-    # DMS-1151: bootstrap admin token acquisition. Per command-boundaries.md §3.4/§3.5,
+    # DMS-1151: bootstrap admin token acquisition. Per command-boundaries.md Section 3.4/Section 3.5,
     # configure-local-dms-instance.ps1 owns the /connect/register side effect for the bootstrap
     # admin client; this phase is auth-consumer only. Client id/secret are resolved through the
     # shared -EnvironmentFile helper so configure and provision always agree on the admin client

@@ -58,6 +58,16 @@ function Get-DmsSchemaToolCandidateDirectory {
 }
 
 function Resolve-DmsSchemaTool {
+    <#
+    .SYNOPSIS
+    Resolves the absolute path to the dms-schema executable used by the bootstrap schema phase.
+    .DESCRIPTION
+    Honors an explicit -RequestedPath when supplied, otherwise probes the in-repo build output
+    directories. PATH-resolved fallback is opt-in via DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true;
+    when nothing resolves, throws with build/configuration guidance.
+    .PARAMETER RequestedPath
+    Optional explicit path to the dms-schema executable. When set, it must exist or resolution throws.
+    #>
     param(
         [string]
         $RequestedPath
@@ -101,6 +111,19 @@ function Resolve-DmsSchemaTool {
 }
 
 function Invoke-DmsSchemaHash {
+    <#
+    .SYNOPSIS
+    Runs 'dms-schema hash' and returns the lowercased effective schema hash.
+    .DESCRIPTION
+    Invokes the resolved dms-schema tool against the supplied core and extension schema paths,
+    throwing on a non-zero exit code or when the tool does not report an effective schema hash.
+    .PARAMETER ToolPath
+    Path to the dms-schema executable (or .ps1 wrapper) returned by Resolve-DmsSchemaTool.
+    .PARAMETER CoreSchemaPath
+    Path to the core ApiSchema content to hash.
+    .PARAMETER ExtensionSchemaPath
+    Optional extension ApiSchema paths to include in the hash.
+    #>
     param(
         [Parameter(Mandatory)]
         [string]

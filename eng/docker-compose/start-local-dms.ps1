@@ -396,7 +396,7 @@ else {
     {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
-        $credentials = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
+        $null = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
 
         Write-Output "Smoke test credentials created successfully!"
         Write-Output "Credential values were returned to the caller and were not written to logs."

@@ -113,6 +113,9 @@ if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
     }
 
     function New-BootstrapManifest {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory manifest object; no system state changes and no -WhatIf surface.')]
+        param()
+
         return @{
             version = 1
         }
@@ -189,6 +192,7 @@ if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
     }
 
     function Set-BootstrapManifestSection {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mutates an in-memory manifest hashtable; no system state changes and no -WhatIf surface.')]
         param(
             [Parameter(Mandatory)]
             [ValidateSet("schema", "claims", "seed")]
