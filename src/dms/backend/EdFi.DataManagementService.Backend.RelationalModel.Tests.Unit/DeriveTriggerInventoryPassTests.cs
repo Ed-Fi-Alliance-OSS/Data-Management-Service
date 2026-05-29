@@ -112,6 +112,46 @@ public class Given_Trigger_Set_Composition
     }
 
     /// <summary>
+    /// It should set the root table as the mirror stamp target for the root stamping trigger.
+    /// </summary>
+    [Test]
+    public void It_should_set_root_table_as_mirror_stamp_target_for_root_trigger()
+    {
+        var rootStamp = _triggers.Single(t =>
+            t.Table.Name == "School" && t.Parameters is TriggerKindParameters.DocumentStamping
+        );
+
+        rootStamp.MirrorStampTargetTable.Should().NotBeNull();
+        rootStamp.MirrorStampTargetTable!.Value.Name.Should().Be("School");
+    }
+
+    /// <summary>
+    /// It should set the owning resource root as the mirror stamp target for the child stamping trigger.
+    /// </summary>
+    [Test]
+    public void It_should_set_owning_root_as_mirror_stamp_target_for_child_trigger()
+    {
+        var childStamp = _triggers.Single(t =>
+            t.Table.Name == "SchoolAddress" && t.Parameters is TriggerKindParameters.DocumentStamping
+        );
+
+        childStamp.MirrorStampTargetTable.Should().NotBeNull();
+        childStamp.MirrorStampTargetTable!.Value.Name.Should().Be("School");
+    }
+
+    /// <summary>
+    /// It should set a non-null mirror stamp target for every DocumentStamping trigger.
+    /// </summary>
+    [Test]
+    public void It_should_set_non_null_mirror_stamp_target_for_every_DocumentStamping_trigger()
+    {
+        _triggers
+            .Where(t => t.Parameters is TriggerKindParameters.DocumentStamping)
+            .Should()
+            .OnlyContain(t => t.MirrorStampTargetTable.HasValue);
+    }
+
+    /// <summary>
     /// It should create ReferentialIdentityMaintenance trigger on root table.
     /// </summary>
     [Test]
@@ -218,6 +258,20 @@ public class Given_Extension_Table_Triggers
 
         extensionStamp.KeyColumns.Should().ContainSingle();
         extensionStamp.KeyColumns[0].Value.Should().Be("DocumentId");
+    }
+
+    /// <summary>
+    /// It should set the owning resource root as the mirror stamp target for the extension stamping trigger.
+    /// </summary>
+    [Test]
+    public void It_should_set_owning_root_as_mirror_stamp_target_for_extension_trigger()
+    {
+        var extensionStamp = _triggers.Single(t =>
+            t.Table.Name == "ContactExtension" && t.Parameters is TriggerKindParameters.DocumentStamping
+        );
+
+        extensionStamp.MirrorStampTargetTable.Should().NotBeNull();
+        extensionStamp.MirrorStampTargetTable!.Value.Name.Should().Be("Contact");
     }
 }
 
