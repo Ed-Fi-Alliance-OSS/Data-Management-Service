@@ -254,7 +254,7 @@
       "Verify docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore|QueryHandler' includes AppSettings__UseRelationalBackend=true, AppSettings__Datastore=postgresql, and AppSettings__QueryHandler=postgresql.",
       "Run env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" from src/dms/tests/EdFi.DataManagementService.Tests.E2E."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "verification",
