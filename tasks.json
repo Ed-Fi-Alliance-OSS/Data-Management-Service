@@ -326,7 +326,7 @@
       "Confirm only People GET-many scenarios listed in reference/design/backend-redesign/epics/14-authorization/06b-people-relationship-auth-get-many.md carry scenario-level @reset-data-before-scenario when isolation is needed.",
       "Run dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.E2E/Hooks/ClaimSetManagementHooks.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "cleanup",

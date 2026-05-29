@@ -1,4 +1,3 @@
-@reset-data-before-scenario
 Feature: RelationshipsWithEdOrgsAndPeople Authorization
 
         Background:
@@ -100,6 +99,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/studentSchoolAssociations/{id}"
              Then it should respond with 403
 
+        @reset-data-before-scenario
         @relational-backend
         @relational-ci-shard-3
         Scenario: 05 Ensure client can only query authorized StudentSchoolAssociation
@@ -320,6 +320,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/students/{UnassociatedStudentId}"
              Then it should respond with 403
 
+        @reset-data-before-scenario
         @relational-backend
         @relational-ci-shard-3
         Scenario: 14 Ensure client can only query authorized Students
@@ -1736,6 +1737,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | StudentASchool1AssociationId | { "studentUniqueId": "111" } | { "schoolId": 1155901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
                   | StudentASchool2AssociationId | { "studentUniqueId": "111" } | { "schoolId": 1155902001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
 
+        @reset-data-before-scenario
         @relational-backend
         @relational-ci-shard-3
         Scenario: 46 Ensure client with access to both schools can query multiple student school associations
@@ -1768,6 +1770,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                      }
                   ]
                   """
+        @reset-data-before-scenario
         @relational-backend
         @relational-ci-shard-3
         Scenario: 47 Ensure client with access to one school can query one student school associations
@@ -2326,6 +2329,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                     }
                   ]
                   """
+        @reset-data-before-scenario
         @relational-backend
         @relational-ci-shard-3
         Scenario: 54 Ensure client can query a Student associated to a School with a long ID

@@ -105,3 +105,9 @@ Decisions: added scenario-local helper for claim-set read resources, common Ed-F
 Files changed: PeopleRelationshipGetManyScenarioHelpers.cs, PeopleRelationshipGetManyStudentScenario.cs, PeopleRelationshipGetManyContactStaffScenario.cs, PeopleRelationshipGetManyCompositionScenario.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios; PostgreSQL Category=PostgresqlIntegration&FullyQualifiedName~PeopleRelationshipGetMany passed 8; SQL Server Category=MssqlIntegration&FullyQualifiedName~PeopleRelationshipGetMany passed 11 against temporary localhost,1434 container.
 Notes: stopped temporary dms-codex-mssql after verification; all tasks in tasks.json now complete.
+
+People relationship GET-many authorization - completed E2E reset hook scenario-tag task.
+Decisions: ClaimSetManagementHooks now resets data for @reset-data-before-scenario on either feature or scenario tags; removed broad feature-level reset tags from mixed People/Staff authorization features and tagged only the existing story-listed GET-many scenarios needing isolation, so DMS-1158 CRUD/mutation scenarios are not reset through People GET-many tagging.
+Files changed: ClaimSetManagementHooks.cs, RelationshipsWithEdOrgsAndPeople.feature, RelationshipsWithEdOrgsAndStaffs.feature, tasks.json, progress.txt.
+Verification: dotnet csharpier format ClaimSetManagementHooks.cs; git diff --check; env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter "FullyQualifiedName~NoSuchE2ETestForResetHookCompile" passed build/discovery with no selected tests.
+Notes: no E2E stack run needed for this tag/hook task; two cleanup tasks remain.
