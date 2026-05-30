@@ -306,29 +306,5 @@
       "Run env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" from src/dms/tests/EdFi.DataManagementService.Tests.E2E."
     ],
     "completed": true
-  },
-  {
-    "category": "verification",
-    "description": "Run final formatting and focused verification for the People relationship CRUD implementation after code, tests, metadata, and E2E tags are updated.",
-    "acceptance-criteria": [
-      "Changed C# files are formatted with csharpier.",
-      "Backend plan unit tests pass for relationship authorization planner, SQL compiler, AUTH1 payload, and People subject selector coverage.",
-      "Backend repository and write-executor unit tests pass for People CRUD authorization flow coverage.",
-      "PostgreSQL backend/provider integration tests pass for People CRUD authorization and ProblemDetails coverage.",
-      "SQL Server backend/provider integration tests pass for People CRUD authorization and ProblemDetails coverage when ConnectionStrings__MssqlAdmin is configured.",
-      "API-level integration tests pass for PostgreSQL and SQL Server People relationship CRUD scenarios.",
-      "Relational-backend E2E tests pass against a dms-local stack started with USE_RELATIONAL_BACKEND=true.",
-      "No production or test source file outside DMS-1158 scope is changed for unrelated cleanup."
-    ],
-    "steps-to-verify": [
-      "Run dotnet csharpier format src/dms/backend src/dms/tests/EdFi.DataManagementService.Tests.Integration src/dms/tests/EdFi.DataManagementService.Tests.E2E",
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~SingleRecordRelationshipAuthorization\"",
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~RelationalWrite\"",
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~PeopleRelationship\"",
-      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~PeopleRelationship\"",
-      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails|FullyQualifiedName~PeopleRelationship\"",
-      "Run env -u NODE_OPTIONS dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" after starting the relational E2E stack."
-    ],
-    "completed": false
   }
 ]
