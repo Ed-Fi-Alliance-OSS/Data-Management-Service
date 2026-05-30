@@ -52,3 +52,10 @@ Decisions: runtime write executor already runs stored relationship auth first an
 Files changed: PostgreSQL relational query authorization test context, PostgreSQL PUT authorization integration tests, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor" passed 188; dotnet test PostgreSQL integration --filter "FullyQualifiedName~RelationalPutAuthorization" passed 17.
 Notes: no production code changes; command recorder assertion proves stored and proposed People auth both execute for unchanged PUT and POST-as-update before guarded no-op success.
+
+People relationship CRUD authorization - completed relational metadata and fixture audit task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: embedded CMS Claims.json already projects ODS-effective person create NoFurtherAuthorizationRequired, primary StudentSchoolAssociation create EdOrg-only, StudentContactAssociation StudentsOnly override, and SEORA relationshipBasedData defaults; DS 5.2 ApiSchema planner inputs already carry direct, mixed, and through-responsibility People auth-view metadata. Added executable audit coverage rather than changing authoritative schema inputs.
+Files changed: Given_Embedded_Claims_Json.cs, PeopleCrudMetadataAuditTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed audit test files; dotnet test config backend unit --filter "FullyQualifiedName~Given_Embedded_Claims_Json" passed 38; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~Given_Ds52_People_Crud_Authorization_Metadata|FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector" passed 86.
+Notes: no production metadata or authoritative ApiSchema input changes needed; E2E retag/revalidation remains a later task.

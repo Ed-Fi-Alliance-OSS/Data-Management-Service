@@ -175,7 +175,7 @@
       "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndContacts.feature, RelationshipsWithEdOrgsAndPeople.feature, RelationshipsWithEdOrgsAndStaffs.feature, and RelationshipsWithStudentsOnlyThroughResponsibility.feature for fixture assumptions.",
       "Run targeted metadata/planner unit tests with claim-set combinations that select NoFurtherAuthorizationRequired, EdOrg-only, StudentsOnly, StudentsOnlyThroughResponsibility, and mixed EdOrg-and-People strategies."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",
