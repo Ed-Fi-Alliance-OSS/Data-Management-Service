@@ -347,35 +347,46 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
     }
 
     [Test]
-    public async Task It_rejects_staged_people_relationship_specs_before_executing_sql()
+    public async Task It_executes_direct_people_relationship_specs()
     {
-        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        var commandExecutor = new RecordingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        CreateRow(("AuthorizationResult", 1), ("ContentVersion", 93L))
+                    ),
+                ]),
+            ]
+        );
         var sut = new SingleRecordRelationshipAuthorizationExecutor(commandExecutor);
 
-        Func<Task> execute = async () =>
-            await sut.ExecuteAsync(
-                new SingleRecordRelationshipAuthorizationExecutionRequest(
-                    CreateMappingSet(SqlDialect.Pgsql),
-                    DocumentId: 349L,
-                    [CreatePeopleStoredCheckSpec()],
-                    AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
-                        SqlDialect.Pgsql,
-                        [100L],
-                        "ClaimEducationOrganizationIds"
-                    ),
-                    EmittedAuth1Index: 0
-                )
-            );
+        var result = await sut.ExecuteAsync(
+            new SingleRecordRelationshipAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 349L,
+                [CreatePeopleStoredCheckSpec()],
+                AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    [100L],
+                    "ClaimEducationOrganizationIds"
+                ),
+                EmittedAuth1Index: 0
+            )
+        );
 
-        await execute
+        result
             .Should()
-            .ThrowAsync<ArgumentException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*People relationship CRUD execution*");
-        commandExecutor.Commands.Should().BeEmpty();
+            .BeEquivalentTo(new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(93L));
+        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("EducationOrganizationIdToStudentDocumentId");
     }
 
     [Test]
-    public async Task It_rejects_staged_transitive_people_proposed_specs_before_same_column_validation()
+    public async Task It_rejects_transitive_people_proposed_specs_at_current_proposed_binding_validation()
     {
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sut = new SingleRecordRelationshipAuthorizationExecutor(commandExecutor);
@@ -398,7 +409,9 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
         await execute
             .Should()
             .ThrowAsync<ArgumentException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*People relationship CRUD execution*");
+            .WithMessage(
+                "*targets column 'StudentSchoolAssociation_DocumentId', but the subject targets column 'Student_DocumentId'*"
+            );
         commandExecutor.Commands.Should().BeEmpty();
     }
 

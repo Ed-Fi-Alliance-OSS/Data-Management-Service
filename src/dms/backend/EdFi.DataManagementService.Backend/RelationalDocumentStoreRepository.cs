@@ -46,6 +46,16 @@ public sealed class RelationalDocumentStoreRepository(
     internal const int PostRelationshipAuthorizationAuth1Index = 0;
     internal const int PutRelationshipAuthorizationAuth1Index = 0;
     private const int GetByIdReadBoundaryAttemptCount = 2;
+    private static readonly IReadOnlyList<string> _supportedSingleRecordRelationshipStrategyNames =
+    [
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+    ];
 
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
@@ -695,26 +705,6 @@ public sealed class RelationalDocumentStoreRepository(
             nonNamespaceConfiguredStrategies,
             authorizationContext
         );
-
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                nonNamespaceConfiguredStrategies,
-                relationshipAuthorizationResult,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new DeleteResult.DeleteFailureNotImplemented(
-                BuildKnownButNotEnabledDeleteAuthorizationMessage(
-                    resource,
-                    CombinePeopleEndpointStagingFailures(
-                        peopleStagingFailures,
-                        relationshipAuthorizationResult
-                    )
-                )
-            );
-        }
 
         switch (relationshipAuthorizationResult)
         {
@@ -1597,35 +1587,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
 
-        if (
-            securityConfigurationFailures.Count > 0
-            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
-        )
+        if (securityConfigurationFailures.Count > 0)
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
                 BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
-            );
-        }
-
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                nonNamespaceConfiguredStrategies,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                new UpsertResult.UpsertFailureNotImplemented(
-                    BuildKnownButNotEnabledPostAuthorizationMessage(
-                        resource,
-                        CombinePeopleEndpointStagingFailures(
-                            peopleStagingFailures,
-                            relationshipAuthorizationPlan
-                        )
-                    ),
-                    UpsertFailureNotImplementedReason.StrategyNotEnabled
-                )
             );
         }
 
@@ -1829,35 +1794,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
 
-        if (
-            securityConfigurationFailures.Count > 0
-            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
-        )
+        if (securityConfigurationFailures.Count > 0)
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
                 BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
-            );
-        }
-
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                nonNamespaceConfiguredStrategies,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                new UpdateResult.UpdateFailureNotImplemented(
-                    BuildKnownButNotEnabledPutAuthorizationMessage(
-                        resource,
-                        CombinePeopleEndpointStagingFailures(
-                            peopleStagingFailures,
-                            relationshipAuthorizationPlan
-                        )
-                    ),
-                    UpdateFailureNotImplementedReason.StrategyNotEnabled
-                )
             );
         }
 
@@ -2618,30 +2558,6 @@ public sealed class RelationalDocumentStoreRepository(
             authorizationContext
         );
 
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                configuredAuthorizationStrategies,
-                relationshipAuthorizationResult,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new GetAuthorizationOutcome(
-                new GetResult.GetFailureNotImplemented(
-                    BuildKnownButNotEnabledGetAuthorizationMessage(
-                        resource,
-                        CombinePeopleEndpointStagingFailures(
-                            peopleStagingFailures,
-                            relationshipAuthorizationResult
-                        )
-                    )
-                ),
-                null,
-                false
-            );
-        }
-
         switch (relationshipAuthorizationResult)
         {
             case RelationshipAuthorizationResult.NoAuthorizationRequired:
@@ -2920,13 +2836,9 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "GET-by-id",
             effectiveAuthorizationLabel: "GET",
-            executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "single-record EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "single-record relationship execution boundary",
+            supportedStrategySetName: "single-record relationship",
+            supportedStrategyNames: _supportedSingleRecordRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledDeleteAuthorizationMessage(
@@ -2938,13 +2850,9 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "DELETE",
             effectiveAuthorizationLabel: "DELETE",
-            executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "single-record EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "single-record relationship execution boundary",
+            supportedStrategySetName: "single-record relationship",
+            supportedStrategyNames: _supportedSingleRecordRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledPostAuthorizationMessage(
@@ -2956,13 +2864,9 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "POST",
             effectiveAuthorizationLabel: "POST",
-            executionBoundaryName: "POST create-new EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "POST create-new EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "POST create-new relationship execution boundary",
+            supportedStrategySetName: "POST create-new relationship",
+            supportedStrategyNames: _supportedSingleRecordRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledPutAuthorizationMessage(
@@ -2974,134 +2878,10 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "PUT",
             effectiveAuthorizationLabel: "PUT",
-            executionBoundaryName: "PUT EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "PUT EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "PUT relationship execution boundary",
+            supportedStrategySetName: "PUT relationship",
+            supportedStrategyNames: _supportedSingleRecordRelationshipStrategyNames
         );
-
-    private static bool TryCreatePeopleEndpointStagingFailures(
-        QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
-        RelationshipAuthorizationResult relationshipAuthorizationResult,
-        out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
-    )
-    {
-        if (
-            relationshipAuthorizationResult
-                is RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError
-            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationError.Failures)
-        )
-        {
-            failures = [];
-            return false;
-        }
-
-        return TryCreatePeopleEndpointStagingFailures(
-            resource,
-            configuredAuthorizationStrategies,
-            out failures
-        );
-    }
-
-    internal static bool TryCreatePeopleEndpointStagingFailures(
-        QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
-        out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
-    )
-    {
-        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
-
-        failures =
-        [
-            .. RelationshipAuthorizationStrategyClassifier
-                .SelectPeopleRelationshipStrategies(configuredAuthorizationStrategies)
-                .Select(strategy => new RelationshipAuthorizationFailureMetadata(
-                    RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy,
-                    resource,
-                    strategy.ConfiguredStrategy,
-                    strategy.RelationshipLocalOrder,
-                    Hint: "People relationship single-record endpoint execution is staged until CRUD People relationship authorization execution is enabled."
-                )),
-        ];
-
-        return failures.Count > 0;
-    }
-
-    private static bool HasOnlyPeopleEndpointStagingCompatibleFailures(
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
-    ) =>
-        failures.Count > 0
-        && failures.All(static failure =>
-            failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
-            || IsPeopleCorePlanningFailure(failure)
-        );
-
-    private static bool IsPeopleCorePlanningFailure(RelationshipAuthorizationFailureMetadata failure) =>
-        failure.FailureKind
-            is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
-                or RelationshipAuthorizationFailureKind.NoExecutableSubjects
-                or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
-                or RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
-                or RelationshipAuthorizationFailureKind.MissingProposedRootBinding
-        && (
-            failure.PersonMetadata is not null
-            || failure.Location?.Kind
-                is SecurableElementKind.Student
-                    or SecurableElementKind.Contact
-                    or SecurableElementKind.Staff
-            || failure.Contributors.Any(static contributor =>
-                contributor.Kind
-                    is SecurableElementKind.Student
-                        or SecurableElementKind.Contact
-                        or SecurableElementKind.Staff
-            )
-            || failure.IneligibleSubjects.Any(static ineligibleSubject =>
-                ineligibleSubject.Subject.PersonMetadata is not null
-            )
-        );
-
-    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
-        RelationshipAuthorizationResult relationshipAuthorizationResult
-    ) =>
-        relationshipAuthorizationResult switch
-        {
-            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
-            [
-                .. peopleEndpointStagingFailures,
-                .. knownButNotEnabled.Failures,
-            ],
-            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
-            [
-                .. peopleEndpointStagingFailures,
-                .. securityConfigurationError.Failures.Where(static failure =>
-                    failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
-                ),
-            ],
-            _ => peopleEndpointStagingFailures,
-        };
-
-    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
-        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
-    )
-    {
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures =
-        [
-            .. relationshipAuthorizationPlan.KnownButNotEnabledFailures,
-            .. relationshipAuthorizationPlan.SecurityConfigurationFailures.Where(static failure =>
-                failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
-            ),
-        ];
-
-        return knownButNotEnabledFailures.Count > 0
-            ? [.. peopleEndpointStagingFailures, .. knownButNotEnabledFailures]
-            : peopleEndpointStagingFailures;
-    }
 
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
         MappingSet mappingSet,
@@ -3132,7 +2912,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "GET-by-id",
                     effectiveAuthorizationLabel: "GET",
-                    executionBoundaryName: "single-record EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "single-record relationship execution boundary"
                 )
             ),
         ]);
@@ -3167,7 +2947,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "DELETE",
                     effectiveAuthorizationLabel: "DELETE",
-                    executionBoundaryName: "single-record EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "single-record relationship execution boundary"
                 )
             ),
         ]);
@@ -3188,7 +2968,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "POST",
                     effectiveAuthorizationLabel: "POST",
-                    executionBoundaryName: "POST create-new EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "POST create-new relationship execution boundary"
                 )
             ),
         ]);
@@ -3209,7 +2989,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "PUT",
                     effectiveAuthorizationLabel: "PUT",
-                    executionBoundaryName: "PUT EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "PUT relationship execution boundary"
                 )
             ),
         ]);

@@ -33,9 +33,33 @@ public class Given_RelationshipAuthorizationEndpointExecutionBoundary
     }
 
     [Test]
-    public void It_should_keep_people_relationship_specs_staged_for_single_record_sql_execution()
+    public void It_should_allow_people_relationship_specs_for_single_record_sql_execution()
     {
         var checkSpec = CreatePeopleCheckSpec();
+
+        var enforceBoundary = () =>
+            RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForSingleRecordSql([
+                checkSpec,
+            ]);
+
+        enforceBoundary.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_reject_single_record_people_specs_with_invalid_people_auth_objects()
+    {
+        var checkSpec = CreatePeopleCheckSpec() with
+        {
+            Subjects =
+            [
+                CreatePeopleCheckSpec().Subjects[0] with
+                {
+                    AuthObject = RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                        RelationshipAuthorizationHierarchyDirection.Normal
+                    ),
+                },
+            ],
+        };
 
         var enforceBoundary = () =>
             RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForSingleRecordSql([
@@ -45,7 +69,41 @@ public class Given_RelationshipAuthorizationEndpointExecutionBoundary
         enforceBoundary
             .Should()
             .Throw<ArgumentException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*People relationship CRUD execution*");
+            .WithMessage(
+                "*Auth object 'auth.EducationOrganizationIdToEducationOrganizationId' is not supported*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_single_record_people_specs_with_non_person_contributors()
+    {
+        var checkSpec = CreatePeopleCheckSpec() with
+        {
+            Subjects =
+            [
+                CreatePeopleCheckSpec().Subjects[0] with
+                {
+                    Contributors =
+                    [
+                        new RelationshipAuthorizationSubjectContributor(
+                            SecurableElementKind.EducationOrganization,
+                            "$.schoolReference.schoolId",
+                            "SchoolId"
+                        ),
+                    ],
+                },
+            ],
+        };
+
+        var enforceBoundary = () =>
+            RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForSingleRecordSql([
+                checkSpec,
+            ]);
+
+        enforceBoundary
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*Subject column 'Student_DocumentId' is not a People subject*");
     }
 
     private static RelationshipAuthorizationCheckSpec CreatePeopleCheckSpec() =>

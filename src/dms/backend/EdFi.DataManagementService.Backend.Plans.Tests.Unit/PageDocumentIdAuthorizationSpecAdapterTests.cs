@@ -343,7 +343,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
     }
 
     [Test]
-    public void It_should_keep_people_relationship_specs_staged_for_single_record_sql_execution()
+    public void It_should_allow_people_relationship_specs_for_single_record_sql_execution()
     {
         var checkSpec = new RelationshipAuthorizationCheckSpec(
             new ConfiguredAuthorizationStrategy(
@@ -362,10 +362,7 @@ public class Given_PageDocumentIdAuthorizationSpecAdapter
                 checkSpec,
             ]);
 
-        enforceBoundary
-            .Should()
-            .Throw<ArgumentException>()
-            .WithMessage("*RelationshipsWithStudentsOnly*People relationship CRUD execution*");
+        enforceBoundary.Should().NotThrow();
     }
 
     private static IEnumerable<TestCaseData> PeopleRelationshipStrategyCases()

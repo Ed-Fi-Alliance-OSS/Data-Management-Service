@@ -33,23 +33,11 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
     {
         ArgumentNullException.ThrowIfNull(checkSpecs);
 
-        var peopleStrategy = checkSpecs.FirstOrDefault(checkSpec =>
-            IsPeopleRelationshipStrategy(checkSpec.ConfiguredStrategy.StrategyName)
-        );
-
-        if (peopleStrategy is not null)
-        {
-            throw new ArgumentException(
-                $"Single-record relationship authorization SQL does not support People relationship strategy '{peopleStrategy.ConfiguredStrategy.StrategyName}' until People relationship CRUD execution is enabled.",
-                nameof(checkSpecs)
-            );
-        }
-
         foreach (var checkSpec in checkSpecs)
         {
-            var errorMessage = GetNonEdOrgHierarchyErrorMessage(
+            var errorMessage = GetUnsupportedPageDocumentIdErrorMessage(
                 checkSpec,
-                "Single-record relationship authorization SQL only supports the EdOrg hierarchy auth object."
+                "Single-record relationship authorization SQL supports only EdOrg hierarchy or People relationship checks."
             );
 
             if (errorMessage is not null)
@@ -57,36 +45,6 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
                 throw new ArgumentException(errorMessage, nameof(checkSpecs));
             }
         }
-    }
-
-    private static string? GetNonEdOrgHierarchyErrorMessage(
-        RelationshipAuthorizationCheckSpec checkSpec,
-        string messagePrefix
-    )
-    {
-        var unsupportedSubject = checkSpec.Subjects.FirstOrDefault(static subject =>
-            !UsesEdOrgHierarchyAuthObject(subject.AuthObject)
-        );
-
-        if (unsupportedSubject is not null)
-        {
-            return $"{messagePrefix} Auth object '{unsupportedSubject.AuthObject.Name}' is not supported.";
-        }
-
-        var nonEdOrgSubject = checkSpec.Subjects.FirstOrDefault(static subject =>
-            subject.IsPersonSubject
-            || subject.Contributors.Count == 0
-            || subject.Contributors.Any(static contributor =>
-                contributor.Kind is not SecurableElementKind.EducationOrganization
-            )
-        );
-
-        if (nonEdOrgSubject is not null)
-        {
-            return $"{messagePrefix} Subject column '{nonEdOrgSubject.Column.Value}' is not an EducationOrganization subject.";
-        }
-
-        return null;
     }
 
     private static string? GetUnsupportedPageDocumentIdErrorMessage(

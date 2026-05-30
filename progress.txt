@@ -3,3 +3,10 @@ Decisions: existing RelationshipAuthorizationPlanner and RelationalPeopleAuthori
 Files changed: tasks.json, progress.txt.
 Verification: dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector" passed 81.
 Notes: progress.txt was absent in the worktree at loop start, so this file restarts progress tracking for the CRUD task list.
+
+People relationship CRUD authorization - completed single-record endpoint staging removal task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: removed People endpoint staging 501 conversion for GET-by-id, POST, PUT, DELETE; People planning failures now surface as security-configuration failures; single-record boundary now validates EdOrg or People auth objects/subjects instead of rejecting People categorically; known non-relationship strategies still use explicit not-implemented result with supported single-record relationship strategy list.
+Files changed: RelationalDocumentStoreRepository.cs, RelationshipAuthorizationEndpointExecutionBoundary.cs, repository/executor/boundary unit tests, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationEndpointExecutionBoundary|FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter" passed 15; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor" passed 194.
+Notes: direct/transitive proposed People SQL generation remains for next SQL compiler/proposed-value tasks; current executor unit proves direct stored People specs are no longer blocked at staging boundary.

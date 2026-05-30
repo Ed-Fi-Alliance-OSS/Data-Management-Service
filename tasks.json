@@ -33,7 +33,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationEndpointExecutionBoundary.cs for People-aware single-record validation.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
