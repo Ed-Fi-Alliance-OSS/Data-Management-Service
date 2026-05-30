@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -426,6 +428,8 @@ CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE TABLE IF NOT EXISTS "edfi"."Person"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "PersonId" integer NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Person_NK" UNIQUE ("PersonId")
@@ -447,6 +451,8 @@ BEGIN
         ON UPDATE NO ACTION;
     END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS "IX_Person_ContentVersion" ON "edfi"."Person" ("ContentVersion");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

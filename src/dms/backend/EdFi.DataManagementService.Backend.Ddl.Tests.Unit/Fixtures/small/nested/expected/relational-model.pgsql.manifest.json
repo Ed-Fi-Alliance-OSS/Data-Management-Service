@@ -29,6 +29,31 @@
   "abstract_union_views": [],
   "indexes": [
     {
+      "name": "IX_Descriptor_Discriminator_ContentVersion",
+      "table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "Discriminator",
+        "ContentVersion"
+      ]
+    },
+    {
+      "name": "IX_School_ContentVersion",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "ContentVersion"
+      ]
+    },
+    {
       "name": "PK_School",
       "table": {
         "schema": "edfi",
@@ -165,7 +190,11 @@
       ],
       "identity_projection_columns": [
         "SchoolId"
-      ]
+      ],
+      "mirror_stamp_target_table": {
+        "schema": "edfi",
+        "name": "School"
+      }
     },
     {
       "name": "TR_SchoolAddress_Stamp",
@@ -177,7 +206,11 @@
       "key_columns": [
         "School_DocumentId"
       ],
-      "identity_projection_columns": []
+      "identity_projection_columns": [],
+      "mirror_stamp_target_table": {
+        "schema": "edfi",
+        "name": "School"
+      }
     },
     {
       "name": "TR_SchoolAddressPhoneNumber_Stamp",
@@ -189,7 +222,11 @@
       "key_columns": [
         "School_DocumentId"
       ],
-      "identity_projection_columns": []
+      "identity_projection_columns": [],
+      "mirror_stamp_target_table": {
+        "schema": "edfi",
+        "name": "School"
+      }
     }
   ],
   "resource_details": [
@@ -234,6 +271,30 @@
             {
               "name": "DocumentId",
               "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentLastModifiedAt",
+              "kind": "MirroredContentLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentVersion",
+              "kind": "MirroredContentVersion",
               "type": {
                 "kind": "Int64"
               },

@@ -23,6 +23,18 @@
   "abstract_union_views": [],
   "indexes": [
     {
+      "name": "IX_Person_ContentVersion",
+      "table": {
+        "schema": "edfi",
+        "name": "Person"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "ContentVersion"
+      ]
+    },
+    {
       "name": "PK_Person",
       "table": {
         "schema": "edfi",
@@ -83,7 +95,11 @@
       ],
       "identity_projection_columns": [
         "PersonId"
-      ]
+      ],
+      "mirror_stamp_target_table": {
+        "schema": "edfi",
+        "name": "Person"
+      }
     }
   ],
   "resource_details": [
@@ -109,6 +125,30 @@
             {
               "name": "DocumentId",
               "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentLastModifiedAt",
+              "kind": "MirroredContentLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentVersion",
+              "kind": "MirroredContentVersion",
               "type": {
                 "kind": "Int64"
               },

@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -427,6 +429,8 @@ CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE TABLE IF NOT EXISTS "edfi"."ParentResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ParentResourceId" integer NOT NULL,
     CONSTRAINT "PK_ParentResource" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ParentResource_NK" UNIQUE ("ParentResourceId")
@@ -570,6 +574,8 @@ END $$;
 CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParentChildren_BaseCollect_984953c4a5" ON "aligned"."ParentResourceExtensionParentChildren" ("BaseCollectionItemId", "ParentResource_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParentChildrenExtensionChi_372c0cacd4" ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren" ("ParentCollectionItemId", "ParentResource_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
 
 CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"()
 RETURNS TRIGGER AS $func$

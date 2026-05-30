@@ -142,6 +142,8 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -411,6 +413,8 @@ IF OBJECT_ID(N'edfi.Person', N'U') IS NULL
 CREATE TABLE [edfi].[Person]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Person_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [PersonId] int NOT NULL,
     CONSTRAINT [PK_Person] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Person_NK] UNIQUE ([PersonId])
@@ -426,6 +430,14 @@ FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Person' AND i.name = N'IX_Person_ContentVersion'
+)
+CREATE INDEX [IX_Person_ContentVersion] ON [edfi].[Person] ([ContentVersion]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_Person_ReferentialIdentity]

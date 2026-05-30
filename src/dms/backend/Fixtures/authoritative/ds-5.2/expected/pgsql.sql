@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -427,6 +429,8 @@ CREATE SCHEMA IF NOT EXISTS "auth";
 CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
@@ -442,6 +446,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
 CREATE TABLE IF NOT EXISTS "edfi"."AccountabilityRating"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NOT NULL,
@@ -460,6 +466,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AccountabilityRating"
 CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NULL,
     "EducationOrganization_EducationOrganizationId" bigint NULL,
     "MandatingEducationOrganization_DocumentId" bigint NULL,
@@ -636,6 +644,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentSection"
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
@@ -679,6 +689,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
     "AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
@@ -712,6 +724,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipationAdminist
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPart"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
@@ -740,6 +754,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPartObjectiveAssessment"
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
@@ -786,6 +802,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandard"
 (
     "DocumentId" bigint NOT NULL,
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "Assessment_DocumentId" IS NULL THEN NULL ELSE "AssessmentIdentifier_Unified" END) STORED,
@@ -820,6 +838,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandardLearningS
 CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -842,6 +862,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "AlternateDayName" varchar(20) NULL,
@@ -893,6 +915,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -920,6 +944,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Calendar_DocumentId" bigint NOT NULL,
     "Calendar_CalendarCode" varchar(60) NOT NULL,
     "Calendar_SchoolId" bigint NOT NULL,
@@ -945,6 +971,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDateCalendarEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "FiscalYear_Unified" integer NOT NULL,
     "BalanceSheetBalanceSheetDimension_DocumentId" bigint NULL,
     "BalanceSheetBalanceSheetDimension_Code" varchar(16) NULL,
@@ -1005,6 +1033,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccountReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "ClassPeriodName" varchar(60) NOT NULL,
@@ -1030,6 +1060,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriodMeetingTime"
 CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
@@ -1061,6 +1093,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CohortProgram"
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "CommunityOrganizationId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
@@ -1196,6 +1230,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CommunityOrganization_DocumentId" bigint NULL,
     "CommunityOrganization_CommunityOrganizationId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
@@ -1339,6 +1375,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "CommunityProvider_CommunityProviderId" bigint NOT NULL,
     "LicenseStatusDescriptor_DescriptorId" bigint NULL,
@@ -1359,6 +1397,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
 CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ObjectiveGradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -1375,6 +1415,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
 CREATE TABLE IF NOT EXISTS "edfi"."Contact"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
     "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
@@ -1544,6 +1586,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguageUs"
 CREATE TABLE IF NOT EXISTS "edfi"."Course"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "CareerPathwayDescriptor_DescriptorId" bigint NULL,
@@ -1643,6 +1687,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferedGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Course_CourseCode" varchar(60) NOT NULL,
@@ -1700,6 +1746,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingOfferedGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CourseCourse_DocumentId" bigint NOT NULL,
     "CourseCourse_CourseCode" varchar(60) NOT NULL,
     "CourseCourse_EducationOrganizationId" bigint NOT NULL,
@@ -1835,6 +1883,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptSection"
 CREATE TABLE IF NOT EXISTS "edfi"."Credential"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CredentialFieldDescriptor_DescriptorId" bigint NULL,
     "CredentialTypeDescriptor_DescriptorId" bigint NOT NULL,
     "StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -1886,6 +1936,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CredentialGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CrisisTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CrisisDescription" varchar(1024) NULL,
     "CrisisEndDate" date NULL,
@@ -1899,6 +1951,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMapping"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "MappedNamespace" varchar(255) NOT NULL,
     "MappedValue" varchar(50) NOT NULL,
     "Namespace" varchar(255) NOT NULL,
@@ -1921,6 +1975,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMappingModelEntity"
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "AssignmentSchool_DocumentId" bigint NULL,
     "AssignmentSchool_SchoolId" bigint NULL,
     "ResponsibilitySchool_DocumentId" bigint NOT NULL,
@@ -1984,6 +2040,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBeha
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "IncidentLocationDescriptor_DescriptorId" bigint NULL,
@@ -2041,6 +2099,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentWeapon"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" bigint NULL,
     "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" varchar(60) NULL,
     "ContentClassDescriptor_DescriptorId" bigint NULL,
@@ -2147,6 +2207,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentLanguage"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NOT NULL,
@@ -2163,6 +2225,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescription
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "NetworkPurposeDescriptor_DescriptorId" bigint NOT NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "EducationOrganizationNetworkId" bigint NOT NULL,
@@ -2299,6 +2363,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "EducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NOT NULL,
     "MemberEducationOrganization_DocumentId" bigint NOT NULL,
@@ -2314,6 +2380,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationPeerAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "PeerEducationOrganization_DocumentId" bigint NOT NULL,
@@ -2327,6 +2395,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationPeerAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "StateEducationAgency_DocumentId" bigint NULL,
     "StateEducationAgency_StateEducationAgencyId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
@@ -2465,6 +2535,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
     "ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NOT NULL,
@@ -2485,6 +2557,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
 CREATE TABLE IF NOT EXISTS "edfi"."FeederSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "FeederSchool_DocumentId" bigint NOT NULL,
     "FeederSchool_SchoolId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -2501,6 +2575,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."FeederSchoolAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -2523,6 +2599,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."FundDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -2545,6 +2623,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."Grade"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
@@ -2595,6 +2675,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
 CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NULL,
     "SchoolYear_Unified" integer NULL,
     "GradingPeriod_DocumentId" bigint NULL,
@@ -2641,6 +2723,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntryLearningStandard"
 CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -2661,6 +2745,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GraduationSchoolYear_DocumentId" bigint NOT NULL,
@@ -2775,6 +2861,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessmentScore"
 CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -2912,6 +3000,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionUri"
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -3008,6 +3098,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionUri"
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NOT NULL,
@@ -3120,6 +3212,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyUri"
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "MandatingEducationOrganization_DocumentId" bigint NULL,
     "MandatingEducationOrganization_EducationOrganizationId" bigint NULL,
     "ParentLearningStandard_DocumentId" bigint NULL,
@@ -3196,6 +3290,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardIdentificationCode"
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SourceLearningStandard_DocumentId" bigint NOT NULL,
     "SourceLearningStandard_LearningStandardId" varchar(60) NOT NULL,
     "TargetLearningStandard_DocumentId" bigint NOT NULL,
@@ -3213,6 +3309,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "FiscalYear_Unified" integer NOT NULL,
     "ChartOfAccountChartOfAccount_DocumentId" bigint NOT NULL,
     "ChartOfAccountChartOfAccount_AccountIdentifier" varchar(50) NOT NULL,
@@ -3245,6 +3343,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccountReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3260,6 +3360,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3275,6 +3377,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3293,6 +3397,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationServiceCenter_DocumentId" bigint NULL,
     "EducationServiceCenter_EducationServiceCenterId" bigint NULL,
     "ParentLocalEducationAgency_DocumentId" bigint NULL,
@@ -3473,6 +3579,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3488,6 +3596,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
@@ -3506,6 +3616,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
 CREATE TABLE IF NOT EXISTS "edfi"."Location"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
     "ClassroomIdentificationCode" varchar(60) NOT NULL,
@@ -3520,6 +3632,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Location"
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -3543,6 +3657,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
 (
     "DocumentId" bigint NOT NULL,
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "Assessment_DocumentId" IS NULL THEN NULL ELSE "AssessmentIdentifier_Unified" END) STORED,
@@ -3625,6 +3741,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentScore"
 CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "EmploymentStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -3665,6 +3783,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionInstructionalGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -3687,6 +3807,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ParentEducationOrganization_DocumentId" bigint NULL,
     "ParentEducationOrganization_EducationOrganizationId" bigint NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
@@ -3825,6 +3947,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."Person"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SourceSystemDescriptor_DescriptorId" bigint NOT NULL,
     "PersonId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
@@ -3835,6 +3959,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "PostSecondaryInstitution_DocumentId" bigint NULL,
     "PostSecondaryInstitution_PostSecondaryInstitutionId" bigint NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -3850,6 +3976,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "AdministrativeFundingControlDescriptor_DescriptorId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "PostSecondaryInstitutionLevelDescriptor_DescriptorId" bigint NULL,
@@ -3998,6 +4126,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."Program"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4047,6 +4177,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramSponsor"
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -4069,6 +4201,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
@@ -4101,6 +4235,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ProgramEducationOrganizationId_Unified" bigint NOT NULL,
     "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" bigint NOT NULL,
     "ProgramEvaluationTitle_Unified" varchar(50) NOT NULL,
@@ -4150,6 +4286,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElementProgramEvaluationLeve
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
     "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
@@ -4184,6 +4322,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjectiveProgramEvaluationLe
 CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -4206,6 +4346,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
@@ -4288,6 +4430,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
 CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
@@ -4335,6 +4479,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventReason"
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CharterApprovalSchoolYear_DocumentId" bigint NULL,
     "CharterApprovalSchoolYear_CharterApprovalSchoolYear" integer NULL,
     "LocalEducationAgency_DocumentId" bigint NULL,
@@ -4505,6 +4651,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CurrentSchoolYear" boolean NOT NULL,
     "SchoolYear" integer NOT NULL,
     "SchoolYearDescription" varchar(50) NOT NULL,
@@ -4516,6 +4664,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
 CREATE TABLE IF NOT EXISTS "edfi"."Section"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_U35501e03_Unified" bigint NULL,
     "SchoolId_Unified" bigint NOT NULL,
     "CourseOffering_DocumentId" bigint NOT NULL,
@@ -4614,6 +4764,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
 CREATE TABLE IF NOT EXISTS "edfi"."SectionAttendanceTakenEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "CalendarDate_DocumentId" bigint NOT NULL,
@@ -4640,6 +4792,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionAttendanceTakenEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."Session"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -4689,6 +4843,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionGradingPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."SourceDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Code" varchar(16) NOT NULL,
     "CodeName" varchar(100) NULL,
     "FiscalYear" integer NOT NULL,
@@ -4711,6 +4867,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SourceDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."Staff"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
     "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
@@ -4997,6 +5155,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguageUs"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "AbsenceEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -5011,6 +5171,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffCohortAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Cohort_DocumentId" bigint NOT NULL,
     "Cohort_CohortIdentifier" varchar(36) NOT NULL,
     "Cohort_EducationOrganizationId" bigint NOT NULL,
@@ -5028,6 +5190,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCohortAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
     "DisciplineIncident_SchoolId" bigint NOT NULL,
@@ -5053,6 +5217,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociationDisciplineI
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "StaffUniqueId_Unified" varchar(32) NOT NULL,
     "Credential_DocumentId" bigint NULL,
     "Credential_CredentialIdentifier" varchar(60) NULL,
@@ -5083,6 +5249,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociati
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
@@ -5140,6 +5308,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationT
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Credential_DocumentId" bigint NULL,
     "Credential_CredentialIdentifier" varchar(60) NULL,
     "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
@@ -5168,6 +5338,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociati
 CREATE TABLE IF NOT EXISTS "edfi"."StaffLeave"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "StaffLeaveEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -5183,6 +5355,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLeave"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
@@ -5201,6 +5375,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NULL,
     "Calendar_DocumentId" bigint NULL,
@@ -5247,6 +5423,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
     "Section_SchoolId" bigint NOT NULL,
@@ -5270,6 +5448,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -5431,6 +5611,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
     "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
@@ -5522,6 +5704,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentVisa"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NOT NULL,
@@ -5660,6 +5844,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
@@ -5804,6 +5990,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentSc
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NULL,
@@ -5824,6 +6012,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssocia
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "StudentUniqueId_Unified" varchar(32) NOT NULL,
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
@@ -5884,6 +6074,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
 (
     "DocumentId" bigint NOT NULL,
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "AssessmentBatteryPart_DocumentId" bigint NOT NULL,
     "AssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NOT NULL,
@@ -5916,6 +6108,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -5970,6 +6164,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationProgramParticipat
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Cohort_DocumentId" bigint NOT NULL,
     "Cohort_CohortIdentifier" varchar(36) NOT NULL,
     "Cohort_EducationOrganizationId" bigint NOT NULL,
@@ -6003,6 +6199,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociationSection"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
@@ -6064,6 +6262,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveStudentSectionAssoc
 CREATE TABLE IF NOT EXISTS "edfi"."StudentContactAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Contact_ContactUniqueId" varchar(32) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6084,6 +6284,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentContactAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
     "DisciplineIncident_SchoolId" bigint NOT NULL,
@@ -6123,6 +6325,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationW
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
     "DisciplineIncident_SchoolId" bigint NOT NULL,
@@ -6148,6 +6352,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociati
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommodation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6173,6 +6379,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6471,6 +6679,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6487,6 +6697,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAss
 CREATE TABLE IF NOT EXISTS "edfi"."StudentGradebookEntry"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "GradebookEntry_DocumentId" bigint NOT NULL,
     "GradebookEntry_GradebookEntryIdentifier" varchar(60) NOT NULL,
     "GradebookEntry_Namespace" varchar(255) NOT NULL,
@@ -6510,6 +6722,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentGradebookEntry"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6576,6 +6790,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunizationDate"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6629,6 +6845,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationProgramParti
 CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "CohortCohort_DocumentId" bigint NULL,
     "CohortCohort_CohortIdentifier" varchar(36) NULL,
     "CohortCohort_EducationOrganizationId" bigint NULL,
@@ -6664,6 +6882,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociationInterventionEff
 CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Intervention_EducationOrganizationId" bigint NOT NULL,
     "Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
@@ -6684,6 +6904,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6753,6 +6975,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationP
 CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6812,6 +7036,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationProg
 CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6865,6 +7091,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6915,6 +7143,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationService"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6939,6 +7169,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NULL,
     "EducationOrganization_EducationOrganizationId" bigint NULL,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
@@ -7021,6 +7253,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObje
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NULL,
     "Calendar_DocumentId" bigint NULL,
@@ -7099,6 +7333,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationEducationPlan"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId_Unified" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
@@ -7126,6 +7362,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7177,6 +7415,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationSch
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7218,6 +7458,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociationProgramPar
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "DualCreditEducationOrganization_DocumentId" bigint NULL,
     "DualCreditEducationOrganization_EducationOrganizationId" bigint NULL,
     "Section_DocumentId" bigint NOT NULL,
@@ -7264,6 +7506,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociationProgram"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
     "Section_SchoolId" bigint NOT NULL,
@@ -7303,6 +7547,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEventClassPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7425,6 +7671,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpec
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7459,6 +7707,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAsso
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -7510,6 +7760,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationTitleIPar
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "TransportationEducationOrganization_DocumentId" bigint NOT NULL,
@@ -7551,6 +7803,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDirection"
 CREATE TABLE IF NOT EXISTS "edfi"."Survey"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolYear_Unified" integer NOT NULL,
     "EducationOrganization_DocumentId" bigint NULL,
     "EducationOrganization_EducationOrganizationId" bigint NULL,
@@ -7576,6 +7830,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Survey"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyCourseAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Course_CourseCode" varchar(60) NOT NULL,
     "Course_EducationOrganizationId" bigint NOT NULL,
@@ -7591,6 +7847,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyCourseAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Program_DocumentId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
@@ -7607,6 +7865,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "SurveySection_DocumentId" bigint NULL,
@@ -7655,6 +7915,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseChoice"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponse"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "SurveyQuestion_DocumentId" bigint NOT NULL,
@@ -7705,6 +7967,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseValue"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponse"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SurveyResponderChoiceContact_DocumentId" bigint NOT NULL,
     "SurveyResponderChoiceContact_ContactUniqueId" varchar(32) NOT NULL,
     "SurveyResponderChoiceStaff_DocumentId" bigint NOT NULL,
@@ -7743,6 +8007,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseSurveyLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
@@ -7758,6 +8024,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseEducationOrganizationTargetAsso
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseStaffTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
@@ -7773,6 +8041,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseStaffTargetAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySection"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Survey_DocumentId" bigint NOT NULL,
     "Survey_Namespace" varchar(255) NOT NULL,
     "Survey_SurveyIdentifier" varchar(60) NOT NULL,
@@ -7786,6 +8056,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySection"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
     "Section_SchoolId" bigint NOT NULL,
@@ -7804,6 +8076,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponse"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
@@ -7825,6 +8099,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponse"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -7845,6 +8121,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseEducationOrganizationTar
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseStaffTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
@@ -31339,11 +31617,17 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"."Descriptor" ("Discriminator", "ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Namespace_Auth" ON "dms"."Descriptor" ("Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_ContentVersion" ON "edfi"."AcademicWeek" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_DocumentId_School_SchoolId" ON "edfi"."AcademicWeek" ("School_DocumentId", "School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_SchoolId_Auth" ON "edfi"."AcademicWeek" ("School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_ContentVersion" ON "edfi"."AccountabilityRating" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Docume_948ccf647c" ON "edfi"."AccountabilityRating" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -31354,6 +31638,8 @@ CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_SchoolYear_DocumentId_School
 CREATE INDEX IF NOT EXISTS "IX_Assessment_AssessmentCategoryDescriptor_DescriptorId" ON "edfi"."Assessment" ("AssessmentCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_ContentStandardPublicationStatusDescri_2220b2b562" ON "edfi"."Assessment" ("ContentStandardPublicationStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_Assessment_ContentVersion" ON "edfi"."Assessment" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_EducationOrganization_DocumentId_Educa_2a8c4d7686" ON "edfi"."Assessment" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -31369,6 +31655,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_Assessment_Namespace_Aut
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_AssigningEducationOrgani_740e019634" ON "edfi"."AssessmentAdministration" ("AssigningEducationOrganization_DocumentId", "AssigningEducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_ContentVersion" ON "edfi"."AssessmentAdministration" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_6a08acacdc" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_eb3b6a414e" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace");
@@ -31376,6 +31664,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_be9dd67666" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_ebc64f959a" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_ContentVersion" ON "edfi"."AssessmentAdministrationParticipation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_Participati_ea634484fb" ON "edfi"."AssessmentAdministrationParticipation" ("ParticipatingEducationOrganization_DocumentId", "ParticipatingEducationOrganization_EducationOrganizationId");
 
@@ -31386,6 +31676,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAssessedGradeLevel_GradeLevelDescriptor
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_DocumentId_Asses_8c70afe1cb" ON "edfi"."AssessmentBatteryPart" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_Namespace_Auth" ON "edfi"."AssessmentBatteryPart" ("Assessment_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_ContentVersion" ON "edfi"."AssessmentBatteryPart" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_7aa71ac21f" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_DocumentId", "ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode");
 
@@ -31398,6 +31690,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_AssessmentItemCategoryDescriptor_D
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_DocumentId_Assessment_A_842a748556" ON "edfi"."AssessmentItem" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_Namespace_Auth" ON "edfi"."AssessmentItem" ("Assessment_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_ContentVersion" ON "edfi"."AssessmentItem" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItemLearningStandard_LearningStandard_D_c452f3d7ad" ON "edfi"."AssessmentItemLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
 
@@ -31425,6 +31719,8 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_AssessmentRe
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_Assessment_D_6670461100" ON "edfi"."AssessmentScoreRangeLearningStandard" ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_ContentVersion" ON "edfi"."AssessmentScoreRangeLearningStandard" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth" ON "edfi"."AssessmentScoreRangeLearningStandard" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_ObjectiveAss_7be51e2999" ON "edfi"."AssessmentScoreRangeLearningStandard" ("ObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ObjectiveAssessment_IdentificationCode");
@@ -31433,7 +31729,11 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandardLearningStand
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentSection_SectionOrProgramChoiceSection_D_40be3cec4c" ON "edfi"."AssessmentSection" ("SectionOrProgramChoiceSection_DocumentId", "SectionOrProgramChoiceSection_LocalCourseCode", "SectionOrProgramChoiceSection_SchoolId", "SectionOrProgramChoiceSection_SchoolYear", "SectionOrProgramChoiceSection_SessionName", "SectionOrProgramChoiceSection_SectionIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimension_ContentVersion" ON "edfi"."BalanceSheetDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimensionReportingTag_ReportingTagDes_4acd49a94e" ON "edfi"."BalanceSheetDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_BellSchedule_ContentVersion" ON "edfi"."BellSchedule" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_BellSchedule_School_DocumentId_School_SchoolId" ON "edfi"."BellSchedule" ("School_DocumentId", "School_SchoolId");
 
@@ -31445,6 +31745,8 @@ CREATE INDEX IF NOT EXISTS "IX_BellScheduleGradeLevel_GradeLevelDescriptor_Descr
 
 CREATE INDEX IF NOT EXISTS "IX_Calendar_CalendarTypeDescriptor_DescriptorId" ON "edfi"."Calendar" ("CalendarTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Calendar_ContentVersion" ON "edfi"."Calendar" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Calendar_SchoolYear_DocumentId_SchoolYear_SchoolYear" ON "edfi"."Calendar" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
 
 CREATE INDEX IF NOT EXISTS "IX_Calendar_School_DocumentId_School_SchoolId" ON "edfi"."Calendar" ("School_DocumentId", "School_SchoolId");
@@ -31455,6 +31757,8 @@ CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_DocumentId_Calendar_Calenda
 
 CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_SchoolId_Auth" ON "edfi"."CalendarDate" ("Calendar_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_CalendarDate_ContentVersion" ON "edfi"."CalendarDate" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_CalendarDateCalendarEvent_CalendarEventDescriptor_af9d32ea95" ON "edfi"."CalendarDateCalendarEvent" ("CalendarEventDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CalendarGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."CalendarGradeLevel" ("GradeLevelDescriptor_DescriptorId");
@@ -31462,6 +31766,8 @@ CREATE INDEX IF NOT EXISTS "IX_CalendarGradeLevel_GradeLevelDescriptor_Descripto
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_AccountTypeDescriptor_DescriptorId" ON "edfi"."ChartOfAccount" ("AccountTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_BalanceSheetBalanceSheetDimension__77028b2a34" ON "edfi"."ChartOfAccount" ("BalanceSheetBalanceSheetDimension_DocumentId", "BalanceSheetBalanceSheetDimension_Code", "FiscalYear_Unified");
+
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ContentVersion" ON "edfi"."ChartOfAccount" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_EducationOrganization_DocumentId_E_6fdf282990" ON "edfi"."ChartOfAccount" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -31483,6 +31789,8 @@ CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_SourceSourceDimension_DocumentId_S
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccountReportingTag_ReportingTagDescriptor_4887981369" ON "edfi"."ChartOfAccountReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_ContentVersion" ON "edfi"."ClassPeriod" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_DocumentId_School_SchoolId" ON "edfi"."ClassPeriod" ("School_DocumentId", "School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_SchoolId_Auth" ON "edfi"."ClassPeriod" ("School_SchoolId");
@@ -31493,6 +31801,8 @@ CREATE INDEX IF NOT EXISTS "IX_Cohort_CohortScopeDescriptor_DescriptorId" ON "ed
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_CohortTypeDescriptor_DescriptorId" ON "edfi"."Cohort" ("CohortTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Cohort_ContentVersion" ON "edfi"."Cohort" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_DocumentId_Education_ba449af31d" ON "edfi"."Cohort" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Cohort" ("EducationOrganization_EducationOrganizationId");
@@ -31500,6 +31810,8 @@ CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_EducationOrganizatio
 CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_DocumentId_ProgramPr_8646255645" ON "edfi"."CohortProgram" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_ProgramTypeDescripto_e0981001db" ON "edfi"."CohortProgram" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityOrganization_ContentVersion" ON "edfi"."CommunityOrganization" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganization_OperationalStatusDescriptor_38236c5b77" ON "edfi"."CommunityOrganization" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -31530,6 +31842,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInternationalAddress_Address
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInternationalAddress_Country_2e04d851f0" ON "edfi"."CommunityOrganizationInternationalAddress" ("CountryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_CommunityOrganization_DocumentI_6439e110f4" ON "edfi"."CommunityProvider" ("CommunityOrganization_DocumentId", "CommunityOrganization_CommunityOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_ContentVersion" ON "edfi"."CommunityProvider" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_OperationalStatusDescriptor_DescriptorId" ON "edfi"."CommunityProvider" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -31569,15 +31883,21 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Commun
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Docume_951744ac2d" ON "edfi"."CommunityProviderLicense" ("CommunityProvider_DocumentId", "CommunityProvider_CommunityProviderId");
 
+CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_ContentVersion" ON "edfi"."CommunityProviderLicense" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseStatusDescriptor__6e90582275" ON "edfi"."CommunityProviderLicense" ("LicenseStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseTypeDescriptor_DescriptorId" ON "edfi"."CommunityProviderLicense" ("LicenseTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_ContentVersion" ON "edfi"."CompetencyObjective" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Documen_48a1eb7053" ON "edfi"."CompetencyObjective" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Educati_a28fdc9a3d" ON "edfi"."CompetencyObjective" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_73996cb9eb" ON "edfi"."CompetencyObjective" ("ObjectiveGradeLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_Contact_ContentVersion" ON "edfi"."Contact" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_Contact_HighestCompletedLevelOfEducationDescripto_6ea90ad0b5" ON "edfi"."Contact" ("HighestCompletedLevelOfEducationDescriptor_DescriptorId");
 
@@ -31619,6 +31939,8 @@ CREATE INDEX IF NOT EXISTS "IX_ContactTelephone_TelephoneNumberTypeDescriptor_De
 
 CREATE INDEX IF NOT EXISTS "IX_Course_CareerPathwayDescriptor_DescriptorId" ON "edfi"."Course" ("CareerPathwayDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Course_ContentVersion" ON "edfi"."Course" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Course_CourseDefinedByDescriptor_DescriptorId" ON "edfi"."Course" ("CourseDefinedByDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Course_CourseGPAApplicabilityDescriptor_DescriptorId" ON "edfi"."Course" ("CourseGPAApplicabilityDescriptor_DescriptorId");
@@ -31643,6 +31965,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseLevelCharacteristic_CourseLevelCharacterist
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOfferedGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."CourseOfferedGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_CourseOffering_ContentVersion" ON "edfi"."CourseOffering" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_Course_DocumentId_Course_CourseCod_641d77edbe" ON "edfi"."CourseOffering" ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_SchoolId_Unified_Auth" ON "edfi"."CourseOffering" ("SchoolId_Unified");
@@ -31658,6 +31982,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseOfferingCurriculumUsed_CurriculumUsedDescri
 CREATE INDEX IF NOT EXISTS "IX_CourseOfferingOfferedGradeLevel_GradeLevelDescrip_ac688c1003" ON "edfi"."CourseOfferingOfferedGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_AttemptedCreditTypeDescriptor_DescriptorId" ON "edfi"."CourseTranscript" ("AttemptedCreditTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ContentVersion" ON "edfi"."CourseTranscript" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_CourseCourse_DocumentId_CourseCo_e5bd6cced5" ON "edfi"."CourseTranscript" ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId");
 
@@ -31697,6 +32023,8 @@ CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptPartialCourseTranscriptAwards_Met
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptSection_Section_DocumentId_Sectio_4c34e3a935" ON "edfi"."CourseTranscriptSection" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
+CREATE INDEX IF NOT EXISTS "IX_Credential_ContentVersion" ON "edfi"."Credential" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Credential_CredentialFieldDescriptor_DescriptorId" ON "edfi"."Credential" ("CredentialFieldDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Credential_CredentialTypeDescriptor_DescriptorId" ON "edfi"."Credential" ("CredentialTypeDescriptor_DescriptorId");
@@ -31713,13 +32041,19 @@ CREATE INDEX IF NOT EXISTS "IX_CredentialAcademicSubject_AcademicSubjectDescript
 
 CREATE INDEX IF NOT EXISTS "IX_CredentialGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."CredentialGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_CrisisEvent_ContentVersion" ON "edfi"."CrisisEvent" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_CrisisEvent_CrisisTypeDescriptor_DescriptorId" ON "edfi"."CrisisEvent" ("CrisisTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_DescriptorMapping_ContentVersion" ON "edfi"."DescriptorMapping" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_DescriptorMapping_Namespace_Auth" ON "edfi"."DescriptorMapping" ("Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_DescriptorMappingModelEntity_ModelEntityDescripto_40c48e26fb" ON "edfi"."DescriptorMappingModelEntity" ("ModelEntityDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_AssignmentSchool_DocumentId_Assi_94d4c1f5f0" ON "edfi"."DisciplineAction" ("AssignmentSchool_DocumentId", "AssignmentSchool_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ContentVersion" ON "edfi"."DisciplineAction" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_DisciplineActionLengthDifference_9e7f788653" ON "edfi"."DisciplineAction" ("DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId");
 
@@ -31739,6 +32073,8 @@ CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStudentDisciplineIncidentBehavior
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStudentDisciplineIncidentBehavior_ee3a8f3770" ON "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation" ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b");
 
+CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_ContentVersion" ON "edfi"."DisciplineIncident" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_IncidentLocationDescriptor_DescriptorId" ON "edfi"."DisciplineIncident" ("IncidentLocationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_ReporterDescriptionDescriptor__1e1979bf42" ON "edfi"."DisciplineIncident" ("ReporterDescriptionDescriptor_DescriptorId");
@@ -31754,6 +32090,8 @@ CREATE INDEX IF NOT EXISTS "IX_DisciplineIncidentExternalParticipant_DisciplineI
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncidentWeapon_WeaponDescriptor_DescriptorId" ON "edfi"."DisciplineIncidentWeapon" ("WeaponDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_ContentClassDescriptor_DescriptorId" ON "edfi"."EducationContent" ("ContentClassDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationContent_ContentVersion" ON "edfi"."EducationContent" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_CostRateDescriptor_DescriptorId" ON "edfi"."EducationContent" ("CostRateDescriptor_DescriptorId");
 
@@ -31777,6 +32115,10 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_d23e7089b6" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("EducationOrganization_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_faa726922d" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_ContentVersion" ON "edfi"."EducationOrganizationNetwork" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_NetworkPurposeDescri_3bf9370c0c" ON "edfi"."EducationOrganizationNetwork" ("NetworkPurposeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetwork_OperationalStatusDes_aaf642e29a" ON "edfi"."EducationOrganizationNetwork" ("OperationalStatusDescriptor_DescriptorId");
@@ -31788,6 +32130,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddress_LocaleDescrip
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddress_StateAbbrevia_d47eeda2a0" ON "edfi"."EducationOrganizationNetworkAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddressPeriod_ParentC_114960f234" ON "edfi"."EducationOrganizationNetworkAddressPeriod" ("ParentCollectionItemId", "EducationOrganizationNetwork_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_ContentVersion" ON "edfi"."EducationOrganizationNetworkAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_2f301c8099" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationNetwork_EducationOrganizationNetworkId");
 
@@ -31813,11 +32157,15 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkInternationalAddress_
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkInternationalAddress__f55610e972" ON "edfi"."EducationOrganizationNetworkInternationalAddress" ("CountryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_ContentVersion" ON "edfi"."EducationOrganizationPeerAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_3eda9f3368" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_7fd60fd311" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_PeerEducatio_ae8db528b6" ON "edfi"."EducationOrganizationPeerAssociation" ("PeerEducationOrganization_DocumentId", "PeerEducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_ContentVersion" ON "edfi"."EducationServiceCenter" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_OperationalStatusDescripto_dc50e6e0cc" ON "edfi"."EducationServiceCenter" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -31849,6 +32197,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterInternationalAddress_Addres
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterInternationalAddress_Countr_15d771906d" ON "edfi"."EducationServiceCenterInternationalAddress" ("CountryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ContentVersion" ON "edfi"."EvaluationRubricDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_EvaluationRubricRatingL_b9dfdd7a3d" ON "edfi"."EvaluationRubricDimension" ("EvaluationRubricRatingLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_6ba2152d07" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706");
@@ -31861,15 +32211,23 @@ CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_f215370769" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71");
 
+CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_ContentVersion" ON "edfi"."FeederSchoolAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_FeederSchool_DocumentId_F_4d61bd08fc" ON "edfi"."FeederSchoolAssociation" ("FeederSchool_DocumentId", "FeederSchool_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_DocumentId_School_SchoolId" ON "edfi"."FeederSchoolAssociation" ("School_DocumentId", "School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_SchoolId_Auth" ON "edfi"."FeederSchoolAssociation" ("School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_FunctionDimension_ContentVersion" ON "edfi"."FunctionDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_FunctionDimensionReportingTag_ReportingTagDescrip_8c091e28ad" ON "edfi"."FunctionDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_FundDimension_ContentVersion" ON "edfi"."FundDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_FundDimensionReportingTag_ReportingTagDescriptor__571cece1e9" ON "edfi"."FundDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_Grade_ContentVersion" ON "edfi"."Grade" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_GradingPeriodGradingPeriod_DocumentId_Gradi_05c399db25" ON "edfi"."Grade" ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified");
 
@@ -31887,6 +32245,8 @@ CREATE INDEX IF NOT EXISTS "IX_GradeLearningStandardGrade_LearningStandardGradeL
 
 CREATE INDEX IF NOT EXISTS "IX_GradeLearningStandardGrade_PerformanceBaseConvers_692aa5d2ba" ON "edfi"."GradeLearningStandardGrade" ("PerformanceBaseConversionDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_ContentVersion" ON "edfi"."GradebookEntry" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradebookEntryTypeDescriptor_DescriptorId" ON "edfi"."GradebookEntry" ("GradebookEntryTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradingPeriod_DocumentId_GradingPe_fab4126bc1" ON "edfi"."GradebookEntry" ("GradingPeriod_DocumentId", "GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified");
@@ -31899,11 +32259,15 @@ CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_Section_DocumentId_Section_LocalCo
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntryLearningStandard_LearningStandard_D_c894497c5d" ON "edfi"."GradebookEntryLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
 
+CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_ContentVersion" ON "edfi"."GradingPeriod" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_SchoolYear_DocumentId_SchoolYear_SchoolYear" ON "edfi"."GradingPeriod" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
 
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_DocumentId_School_SchoolId" ON "edfi"."GradingPeriod" ("School_DocumentId", "School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_SchoolId_Auth" ON "edfi"."GradingPeriod" ("School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_ContentVersion" ON "edfi"."GraduationPlan" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_EducationOrganization_DocumentId_E_c2d8f843e2" ON "edfi"."GraduationPlan" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -31947,6 +32311,8 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_ParentColle
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_ResultDatat_34d8007272" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("ResultDatatypeTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Intervention_ContentVersion" ON "edfi"."Intervention" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Intervention_DeliveryMethodDescriptor_DescriptorId" ON "edfi"."Intervention" ("DeliveryMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Intervention_EducationOrganization_DocumentId_Edu_7a3f88dfbc" ON "edfi"."Intervention" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
@@ -31967,6 +32333,8 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionInterventionPrescription_Intervention
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPopulationServed_PopulationServedDesc_3c90c865e3" ON "edfi"."InterventionPopulationServed" ("PopulationServedDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_ContentVersion" ON "edfi"."InterventionPrescription" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_DeliveryMethodDescriptor_dea82e8205" ON "edfi"."InterventionPrescription" ("DeliveryMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_EducationOrganization_Do_0fbaa8a390" ON "edfi"."InterventionPrescription" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
@@ -31986,6 +32354,8 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionEducationContent_Educatio
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionPopulationServed_Populati_fe46988cfd" ON "edfi"."InterventionPrescriptionPopulationServed" ("PopulationServedDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStaff_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."InterventionStaff" ("Staff_DocumentId", "Staff_StaffUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_ContentVersion" ON "edfi"."InterventionStudy" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_DeliveryMethodDescriptor_DescriptorId" ON "edfi"."InterventionStudy" ("DeliveryMethodDescriptor_DescriptorId");
 
@@ -32017,6 +32387,8 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionStudyStateAbbreviation_StateAbbreviat
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ContentStandardPublicationStatus_56fe6647a2" ON "edfi"."LearningStandard" ("ContentStandardPublicationStatusDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ContentVersion" ON "edfi"."LearningStandard" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_LearningStandardCategoryDescript_3410267b85" ON "edfi"."LearningStandard" ("LearningStandardCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_LearningStandardScopeDescriptor__91a8efe8f7" ON "edfi"."LearningStandard" ("LearningStandardScopeDescriptor_DescriptorId");
@@ -32029,6 +32401,8 @@ CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ParentLearningStandard_DocumentI
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardAcademicSubject_AcademicSubjectDe_d763d1c41a" ON "edfi"."LearningStandardAcademicSubject" ("AcademicSubjectDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_ContentVersion" ON "edfi"."LearningStandardEquivalenceAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_LearningSt_dfff6c8d02" ON "edfi"."LearningStandardEquivalenceAssociation" ("LearningStandardEquivalenceStrengthDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_SourceLear_2d9d604a28" ON "edfi"."LearningStandardEquivalenceAssociation" ("SourceLearningStandard_DocumentId", "SourceLearningStandard_LearningStandardId");
@@ -32039,11 +32413,15 @@ CREATE INDEX IF NOT EXISTS "IX_LearningStandardGradeLevel_GradeLevelDescriptor_D
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ChartOfAccountChartOfAccount_Documen_101e8d676f" ON "edfi"."LocalAccount" ("ChartOfAccountChartOfAccount_DocumentId", "ChartOfAccountChartOfAccount_AccountIdentifier", "ChartOfAccountChartOfAccount_EducationOrganizationId", "FiscalYear_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ContentVersion" ON "edfi"."LocalAccount" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_DocumentId_Edu_7b240f9edd" ON "edfi"."LocalAccount" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_EducationOrgan_8d61178531" ON "edfi"."LocalAccount" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccountReportingTag_ReportingTagDescriptor_DescriptorId" ON "edfi"."LocalAccountReportingTag" ("ReportingTagDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalActual_ContentVersion" ON "edfi"."LocalActual" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalActual" ("FinancialCollectionDescriptor_DescriptorId");
 
@@ -32051,11 +32429,15 @@ CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_DocumentId_LocalAccount_
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalActual" ("LocalAccount_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalBudget_ContentVersion" ON "edfi"."LocalBudget" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalBudget" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_DocumentId_LocalAccount__abe7a4425d" ON "edfi"."LocalBudget" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalBudget" ("LocalAccount_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_ContentVersion" ON "edfi"."LocalContractedStaff" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_FinancialCollectionDescripto_76ed6e7e39" ON "edfi"."LocalContractedStaff" ("FinancialCollectionDescriptor_DescriptorId");
 
@@ -32068,6 +32450,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_Staff_DocumentId_Auth" ON "e
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."LocalContractedStaff" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_CharterStatusDescriptor_DescriptorId" ON "edfi"."LocalEducationAgency" ("CharterStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ContentVersion" ON "edfi"."LocalEducationAgency" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_EducationServiceCenter_Docum_7437dee437" ON "edfi"."LocalEducationAgency" ("EducationServiceCenter_DocumentId", "EducationServiceCenter_EducationServiceCenterId");
 
@@ -32111,11 +32495,15 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyInternationalAddress_AddressT
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyInternationalAddress_CountryD_1a1b0bcaab" ON "edfi"."LocalEducationAgencyInternationalAddress" ("CountryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_ContentVersion" ON "edfi"."LocalEncumbrance" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalEncumbrance" ("FinancialCollectionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_DocumentId_LocalAcc_c1aff8f74e" ON "edfi"."LocalEncumbrance" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalEncumbrance" ("LocalAccount_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_ContentVersion" ON "edfi"."LocalPayroll" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalPayroll" ("FinancialCollectionDescriptor_DescriptorId");
 
@@ -32127,15 +32515,21 @@ CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_Staff_DocumentId_Auth" ON "edfi"."Lo
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."LocalPayroll" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
+CREATE INDEX IF NOT EXISTS "IX_Location_ContentVersion" ON "edfi"."Location" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Location_School_DocumentId_School_SchoolId" ON "edfi"."Location" ("School_DocumentId", "School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_Location_School_SchoolId_Auth" ON "edfi"."Location" ("School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_ObjectDimension_ContentVersion" ON "edfi"."ObjectDimension" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectDimensionReportingTag_ReportingTagDescripto_0c90e3a14c" ON "edfi"."ObjectDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AcademicSubjectDescriptor_DescriptorId" ON "edfi"."ObjectiveAssessment" ("AcademicSubjectDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Assessment_DocumentId_Assessm_c6ab434586" ON "edfi"."ObjectiveAssessment" ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified");
+
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_ContentVersion" ON "edfi"."ObjectiveAssessment" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Namespace_Unified_Auth" ON "edfi"."ObjectiveAssessment" ("Namespace_Unified");
 
@@ -32157,6 +32551,8 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentScore_AssessmentReportingMetho
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentScore_ResultDatatypeTypeDescri_302aff09d8" ON "edfi"."ObjectiveAssessmentScore" ("ResultDatatypeTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_ContentVersion" ON "edfi"."OpenStaffPosition" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_DocumentI_8fad36d297" ON "edfi"."OpenStaffPosition" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_Education_36b4b22ff8" ON "edfi"."OpenStaffPosition" ("EducationOrganization_EducationOrganizationId");
@@ -32173,9 +32569,13 @@ CREATE INDEX IF NOT EXISTS "IX_OpenStaffPositionAcademicSubject_AcademicSubjectD
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPositionInstructionalGradeLevel_GradeLev_17b0258131" ON "edfi"."OpenStaffPositionInstructionalGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_OperationalUnitDimension_ContentVersion" ON "edfi"."OperationalUnitDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_OperationalUnitDimensionReportingTag_ReportingTag_d598c00e12" ON "edfi"."OperationalUnitDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_AcademicSubjectDescriptor__3a211a66fb" ON "edfi"."OrganizationDepartment" ("AcademicSubjectDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ContentVersion" ON "edfi"."OrganizationDepartment" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_OperationalStatusDescripto_d9b294e2d3" ON "edfi"."OrganizationDepartment" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -32209,7 +32609,11 @@ CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentInternationalAddress_Addres
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentInternationalAddress_Countr_b565e1482c" ON "edfi"."OrganizationDepartmentInternationalAddress" ("CountryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Person_ContentVersion" ON "edfi"."Person" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Person" ("SourceSystemDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_ContentVersion" ON "edfi"."PostSecondaryEvent" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_PostSecondaryEventCategoryDesc_e674e7d53f" ON "edfi"."PostSecondaryEvent" ("PostSecondaryEventCategoryDescriptor_DescriptorId");
 
@@ -32220,6 +32624,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_Student_DocumentId_Auth" ON "e
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_Student_DocumentId_Student_Stu_000e544a9f" ON "edfi"."PostSecondaryEvent" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_AdministrativeFundingCon_00a0c3d7a3" ON "edfi"."PostSecondaryInstitution" ("AdministrativeFundingControlDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_ContentVersion" ON "edfi"."PostSecondaryInstitution" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_OperationalStatusDescrip_d282b12817" ON "edfi"."PostSecondaryInstitution" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -32253,6 +32659,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionInternationalAddress_Coun
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionMediumOfInstruction_Mediu_7f5521229a" ON "edfi"."PostSecondaryInstitutionMediumOfInstruction" ("MediumOfInstructionDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_DocumentId_Educatio_38e40120fe" ON "edfi"."Program" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Program" ("EducationOrganization_EducationOrganizationId");
@@ -32261,7 +32669,11 @@ CREATE INDEX IF NOT EXISTS "IX_Program_ProgramTypeDescriptor_DescriptorId" ON "e
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramCharacteristic_ProgramCharacteristicDescri_8ad3536e83" ON "edfi"."ProgramCharacteristic" ("ProgramCharacteristicDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_ProgramDimension_ContentVersion" ON "edfi"."ProgramDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_ProgramDimensionReportingTag_ReportingTagDescript_2aa4a9eab7" ON "edfi"."ProgramDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ContentVersion" ON "edfi"."ProgramEvaluation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramEvaluationTypeDescriptor_86cf40c548" ON "edfi"."ProgramEvaluation" ("ProgramEvaluationTypeDescriptor_DescriptorId");
 
@@ -32270,6 +32682,8 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_DocumentId_Progr
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_EducationOrganiz_10ea1f2b12" ON "edfi"."ProgramEvaluation" ("ProgramProgram_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_ProgramTypeDescr_16081c538e" ON "edfi"."ProgramEvaluation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ContentVersion" ON "edfi"."ProgramEvaluationElement" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEducationOrganiza_4723285757" ON "edfi"."ProgramEvaluationElement" ("ProgramEducationOrganizationId_Unified");
 
@@ -32287,6 +32701,8 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElementProgramEvaluationLevel_Ra
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationLevel_RatingLevelDescriptor_DescriptorId" ON "edfi"."ProgramEvaluationLevel" ("RatingLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ContentVersion" ON "edfi"."ProgramEvaluationObjective" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Docu_c20b8f0419" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_43d0a0b880" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId");
@@ -32303,7 +32719,11 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramLearningStandard_LearningStandard_Document
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramSponsor_ProgramSponsorDescriptor_DescriptorId" ON "edfi"."ProgramSponsor" ("ProgramSponsorDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_ProjectDimension_ContentVersion" ON "edfi"."ProjectDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_ProjectDimensionReportingTag_ReportingTagDescript_8001d885c1" ON "edfi"."ProjectDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_ReportCard_ContentVersion" ON "edfi"."ReportCard" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCard_EducationOrganization_DocumentId_Educa_ab5c49cad0" ON "edfi"."ReportCard" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -32331,6 +32751,8 @@ CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe_f272bf933b" ON "edfi"."ReportCardStudentCompetencyObjective" ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId");
 
+CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_ContentVersion" ON "edfi"."RestraintEvent" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_DisciplineIncident_DocumentId_Disc_efed62b7ac" ON "edfi"."RestraintEvent" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_EducationalEnvironmentDescriptor_DescriptorId" ON "edfi"."RestraintEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
@@ -32356,6 +32778,8 @@ CREATE INDEX IF NOT EXISTS "IX_School_CharterApprovalAgencyTypeDescriptor_Descri
 CREATE INDEX IF NOT EXISTS "IX_School_CharterApprovalSchoolYear_DocumentId_Chart_8878b20f6c" ON "edfi"."School" ("CharterApprovalSchoolYear_DocumentId", "CharterApprovalSchoolYear_CharterApprovalSchoolYear");
 
 CREATE INDEX IF NOT EXISTS "IX_School_CharterStatusDescriptor_DescriptorId" ON "edfi"."School" ("CharterStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_School_InternetAccessDescriptor_DescriptorId" ON "edfi"."School" ("InternetAccessDescriptor_DescriptorId");
 
@@ -32399,7 +32823,11 @@ CREATE INDEX IF NOT EXISTS "IX_SchoolInternationalAddress_AddressTypeDescriptor_
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolInternationalAddress_CountryDescriptor_DescriptorId" ON "edfi"."SchoolInternationalAddress" ("CountryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_SchoolYearType_ContentVersion" ON "edfi"."SchoolYearType" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Section_AvailableCreditTypeDescriptor_DescriptorId" ON "edfi"."Section" ("AvailableCreditTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_Section_ContentVersion" ON "edfi"."Section" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_CourseOffering_DocumentId_CourseOffering__8f086abe11" ON "edfi"."Section" ("CourseOffering_DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName");
 
@@ -32421,6 +32849,8 @@ CREATE INDEX IF NOT EXISTS "IX_Section_SectionTypeDescriptor_DescriptorId" ON "e
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_CalendarDate_Document_d2f3bac1c1" ON "edfi"."SectionAttendanceTakenEvent" ("CalendarDate_DocumentId", "CalendarDate_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "CalendarDate_Date");
 
+CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_ContentVersion" ON "edfi"."SectionAttendanceTakenEvent" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_SchoolId_Unified_Auth" ON "edfi"."SectionAttendanceTakenEvent" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_Section_DocumentId_Se_4b118d84e8" ON "edfi"."SectionAttendanceTakenEvent" ("Section_DocumentId", "Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier");
@@ -32439,6 +32869,8 @@ CREATE INDEX IF NOT EXISTS "IX_SectionProgram_Program_DocumentId_Program_Educati
 
 CREATE INDEX IF NOT EXISTS "IX_SectionProgram_Program_ProgramTypeDescriptor_DescriptorId" ON "edfi"."SectionProgram" ("Program_ProgramTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Session_ContentVersion" ON "edfi"."Session" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Session_SchoolYear_DocumentId_SchoolYear_SchoolYear" ON "edfi"."Session" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
 
 CREATE INDEX IF NOT EXISTS "IX_Session_School_DocumentId_School_SchoolId" ON "edfi"."Session" ("School_DocumentId", "School_SchoolId");
@@ -32453,9 +32885,13 @@ CREATE INDEX IF NOT EXISTS "IX_SessionGradingPeriod_GradingPeriod_DocumentId_Gra
 
 CREATE INDEX IF NOT EXISTS "IX_SessionGradingPeriod_GradingPeriod_GradingPeriodD_63aba1616b" ON "edfi"."SessionGradingPeriod" ("GradingPeriod_GradingPeriodDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_SourceDimension_ContentVersion" ON "edfi"."SourceDimension" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SourceDimensionReportingTag_ReportingTagDescripto_bed807c34e" ON "edfi"."SourceDimensionReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_CitizenshipStatusDescriptor_DescriptorId" ON "edfi"."Staff" ("CitizenshipStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_Staff_ContentVersion" ON "edfi"."Staff" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_HighestCompletedLevelOfEducationDescriptor__484b34eed2" ON "edfi"."Staff" ("HighestCompletedLevelOfEducationDescriptor_DescriptorId");
 
@@ -32464,6 +32900,8 @@ CREATE INDEX IF NOT EXISTS "IX_Staff_Person_DocumentId_Person_PersonId_Person_So
 CREATE INDEX IF NOT EXISTS "IX_Staff_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Staff" ("Person_SourceSystemDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_SexDescriptor_DescriptorId" ON "edfi"."Staff" ("SexDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_ContentVersion" ON "edfi"."StaffAbsenceEvent" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_Staff_DocumentId_Auth" ON "edfi"."StaffAbsenceEvent" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
@@ -32483,6 +32921,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_DocumentId_Cohort_C
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_EducationOrganizationId_Auth" ON "edfi"."StaffCohortAssociation" ("Cohort_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_ContentVersion" ON "edfi"."StaffCohortAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_DocumentId_Auth" ON "edfi"."StaffCohortAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffCohortAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
@@ -32490,6 +32930,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_DocumentId_Staff_Sta
 CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_DocumentId_Credential__065939da61" ON "edfi"."StaffCredential" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_StateOfIssueStateAbbre_f0c3524f11" ON "edfi"."StaffCredential" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_ContentVersion" ON "edfi"."StaffDisciplineIncidentAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_DisciplineInci_33bd5cd4d2" ON "edfi"."StaffDisciplineIncidentAssociation" ("DisciplineIncident_SchoolId");
 
@@ -32502,6 +32944,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_Staff_Document
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociationDisciplineIncid_53415fc03f" ON "edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_14fdacf69a" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_498ab48fba" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_6ad7c207bc" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
@@ -32527,6 +32971,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Addr
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Cont_2652f9e856" ON "edfi"."StaffEducationOrganizationContactAssociation" ("ContactTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_ContentVersion" ON "edfi"."StaffEducationOrganizationContactAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_3da2c15194" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_ac57af64ae" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_EducationOrganizationId");
@@ -32538,6 +32984,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Staf
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociationTelep_38c9ca72f5" ON "edfi"."StaffEducationOrganizationContactAssociationTelephone" ("TelephoneNumberTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_4466800958" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_8988bf7c94" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_f6b201891e" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
@@ -32575,6 +33023,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffLanguageUs_LanguageUseDescriptor_DescriptorI
 
 CREATE INDEX IF NOT EXISTS "IX_StaffLanguageUs_ParentCollectionItemId_Staff_DocumentId" ON "edfi"."StaffLanguageUs" ("ParentCollectionItemId", "Staff_DocumentId");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffLeave_ContentVersion" ON "edfi"."StaffLeave" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_StaffLeaveEventCategoryDescriptor_DescriptorId" ON "edfi"."StaffLeave" ("StaffLeaveEventCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_Staff_DocumentId_Auth" ON "edfi"."StaffLeave" ("Staff_DocumentId") INCLUDE ("DocumentId");
@@ -32588,6 +33038,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffPersonalIdentificationDocument_Identificatio
 CREATE INDEX IF NOT EXISTS "IX_StaffPersonalIdentificationDocument_IssuerCountry_2bb82456d5" ON "edfi"."StaffPersonalIdentificationDocument" ("IssuerCountryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffPersonalIdentificationDocument_PersonalInfor_5d56c02119" ON "edfi"."StaffPersonalIdentificationDocument" ("PersonalInformationVerificationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ContentVersion" ON "edfi"."StaffProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ProgramProgram_DocumentId_da3311369f" ON "edfi"."StaffProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -32605,6 +33057,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffRecognition_RecognitionTypeDescriptor_Descri
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Calendar_DocumentId_Calend_7eb92b25de" ON "edfi"."StaffSchoolAssociation" ("Calendar_DocumentId", "Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_ContentVersion" ON "edfi"."StaffSchoolAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolId_Unified_Auth" ON "edfi"."StaffSchoolAssociation" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolYear_DocumentId_Scho_f08589e459" ON "edfi"."StaffSchoolAssociation" ("SchoolYear_DocumentId", "SchoolYear_Unified");
@@ -32621,6 +33075,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociationGradeLevel_GradeLevelDescri
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_ClassroomPositionDescript_766eb3fcbe" ON "edfi"."StaffSectionAssociation" ("ClassroomPositionDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_ContentVersion" ON "edfi"."StaffSectionAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_DocumentId_Sectio_ff7a9f1383" ON "edfi"."StaffSectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_SchoolId_Auth" ON "edfi"."StaffSectionAssociation" ("Section_SchoolId");
@@ -32634,6 +33090,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffTelephone_TelephoneNumberTypeDescriptor_Desc
 CREATE INDEX IF NOT EXISTS "IX_StaffTribalAffiliation_TribalAffiliationDescripto_7b6a10f27b" ON "edfi"."StaffTribalAffiliation" ("TribalAffiliationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffVisa_VisaDescriptor_DescriptorId" ON "edfi"."StaffVisa" ("VisaDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_ContentVersion" ON "edfi"."StateEducationAgency" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_OperationalStatusDescriptor__773cf45140" ON "edfi"."StateEducationAgency" ("OperationalStatusDescriptor_DescriptorId");
 
@@ -32673,9 +33131,13 @@ CREATE INDEX IF NOT EXISTS "IX_Student_BirthStateAbbreviationDescriptor_Descript
 
 CREATE INDEX IF NOT EXISTS "IX_Student_CitizenshipStatusDescriptor_DescriptorId" ON "edfi"."Student" ("CitizenshipStatusDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Student_Person_DocumentId_Person_PersonId_Person__d4a6890c8d" ON "edfi"."Student" ("Person_DocumentId", "Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Student_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Student" ("Person_SourceSystemDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_ContentVersion" ON "edfi"."StudentAcademicRecord" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_CumulativeAttemptedCreditTy_320bf549fc" ON "edfi"."StudentAcademicRecord" ("CumulativeAttemptedCreditTypeDescriptor_DescriptorId");
 
@@ -32725,6 +33187,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_DocumentId_Assessmen
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_Namespace_Auth" ON "edfi"."StudentAssessment" ("Assessment_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ContentVersion" ON "edfi"."StudentAssessment" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_EventCircumstanceDescriptor_DescriptorId" ON "edfi"."StudentAssessment" ("EventCircumstanceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_PeriodAssessmentPeriodDescripto_f4d2af6ce9" ON "edfi"."StudentAssessment" ("PeriodAssessmentPeriodDescriptor_DescriptorId");
@@ -32755,6 +33219,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_72df16a4d4" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_DocumentId") INCLUDE ("DocumentId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_87e18ac858" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_9c99996727" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_e3ece8a4e8" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_DocumentId", "StudentAssessment_AssessmentIdentifier", "StudentAssessment_Namespace", "StudentAssessment_StudentAssessmentIdentifier", "StudentAssessment_StudentUniqueId");
@@ -32779,6 +33245,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentAdministr
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentGradeLeve_1aa8eac80e" ON "edfi"."StudentAssessmentRegistration" ("AssessmentGradeLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ContentVersion" ON "edfi"."StudentAssessmentRegistration" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_PlatformTypeDescrip_cd62a7c323" ON "edfi"."StudentAssessmentRegistration" ("PlatformTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ReportingEducationO_e8544f247d" ON "edfi"."StudentAssessmentRegistration" ("ReportingEducationOrganization_DocumentId", "ReportingEducationOrganization_EducationOrganizationId");
@@ -32796,6 +33264,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentSchoolAssoci
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_TestingEducationOrg_3e3544bd26" ON "edfi"."StudentAssessmentRegistration" ("TestingEducationOrganization_DocumentId", "TestingEducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationAssessmentAccommodat_f949d07c01" ON "edfi"."StudentAssessmentRegistrationAssessmentAccommodation" ("AccommodationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_1d06a25070" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_61638c0cce" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("StudentAssessmentRegistration_DocumentId") INCLUDE ("DocumentId");
 
@@ -32829,6 +33299,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR_cef8b8adde" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult" ("ParentCollectionItemId", "StudentAssessment_DocumentId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ContentVersion" ON "edfi"."StudentCTEProgramAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_414d23dc2f" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_49d2cfb257" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
@@ -32853,6 +33325,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_DocumentId_Cohort
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_EducationOrganizationId_Auth" ON "edfi"."StudentCohortAssociation" ("Cohort_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_ContentVersion" ON "edfi"."StudentCohortAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_DocumentId_Auth" ON "edfi"."StudentCohortAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_DocumentId_Stude_ac5657b500" ON "edfi"."StudentCohortAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
@@ -32860,6 +33334,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_DocumentId_Stude
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociationSection_Section_DocumentI_55619c3e6f" ON "edfi"."StudentCohortAssociationSection" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_CompetencyLevelDescrip_660dc38c15" ON "edfi"."StudentCompetencyObjective" ("CompetencyLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_ContentVersion" ON "edfi"."StudentCompetencyObjective" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_GradingPeriodGradingPe_227e4a740c" ON "edfi"."StudentCompetencyObjective" ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear");
 
@@ -32883,11 +33359,15 @@ CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Contact_DocumentId_Auth
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Contact_DocumentId_Cont_80fcc64232" ON "edfi"."StudentContactAssociation" ("Contact_DocumentId", "Contact_ContactUniqueId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_ContentVersion" ON "edfi"."StudentContactAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_RelationDescriptor_DescriptorId" ON "edfi"."StudentContactAssociation" ("RelationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Auth" ON "edfi"."StudentContactAssociation" ("Student_DocumentId") INCLUDE ("Contact_DocumentId", "DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Stud_838ffe753b" ON "edfi"."StudentContactAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_ContentVersion" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_b4c3146661" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DisciplineIncident_SchoolId");
 
@@ -32901,6 +33381,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociationDisci
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociationWeapo_1b7c73665e" ON "edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon" ("WeaponDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_C_d84252cf33" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_D_5daa5ded4d" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_D_d657c697fd" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DisciplineIncident_SchoolId");
@@ -32913,6 +33395,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociationDi
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_5b35b66543" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("Student_DocumentId", "Student_StudentUniqueId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_880dfa419d" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_91f6cca983" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_93f786eb06" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_EducationOrganizationId");
@@ -32922,6 +33406,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_c631e6ce43" ON "edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462" ("AccommodationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_BarrierTo_9e67db587a" ON "edfi"."StudentEducationOrganizationAssociation" ("BarrierToInternetAccessInResidenceDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_ContentVersion" ON "edfi"."StudentEducationOrganizationAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Education_00fd67d573" ON "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33007,6 +33493,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_da830f781f" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_e48f0f455f" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_e68f41f803" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("ResponsibilityDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_e83f6d6aca" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("EducationOrganization_EducationOrganizationId") INCLUDE ("Student_DocumentId");
@@ -33014,6 +33502,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_AssignmentLateStatusDescrip_bb0713f47c" ON "edfi"."StudentGradebookEntry" ("AssignmentLateStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_CompetencyLevelDescriptor_DescriptorId" ON "edfi"."StudentGradebookEntry" ("CompetencyLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_ContentVersion" ON "edfi"."StudentGradebookEntry" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_GradebookEntry_DocumentId_G_58df77578a" ON "edfi"."StudentGradebookEntry" ("GradebookEntry_DocumentId", "GradebookEntry_GradebookEntryIdentifier", "GradebookEntry_Namespace");
 
@@ -33024,6 +33514,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_Student_DocumentId_Auth" ON
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_Student_DocumentId_Student__0e098f5049" ON "edfi"."StudentGradebookEntry" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_SubmissionStatusDescriptor__1eea51a13a" ON "edfi"."StudentGradebookEntry" ("SubmissionStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHealth_ContentVersion" ON "edfi"."StudentHealth" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_EducationOrganization_DocumentId_Ed_9e64691577" ON "edfi"."StudentHealth" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33040,6 +33532,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentHealthAdditionalImmunizationDate_ParentCol
 CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunization_ImmunizationTyp_47ef97afc9" ON "edfi"."StudentHealthRequiredImmunization" ("ImmunizationTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunizationDate_ParentColle_ba182f2b4a" ON "edfi"."StudentHealthRequiredImmunizationDate" ("ParentCollectionItemId", "StudentHealth_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_ContentVersion" ON "edfi"."StudentHomelessProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_7b484c73c2" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -33069,6 +33563,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentIdentificationDocument_PersonalInformation
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_CohortCohort_Docum_6fc3359d87" ON "edfi"."StudentInterventionAssociation" ("CohortCohort_DocumentId", "CohortCohort_CohortIdentifier", "CohortCohort_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_ContentVersion" ON "edfi"."StudentInterventionAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Docum_1dff4f206a" ON "edfi"."StudentInterventionAssociation" ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Educa_24864c0613" ON "edfi"."StudentInterventionAssociation" ("Intervention_EducationOrganizationId");
@@ -33085,6 +33581,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociationInterventionEffecti
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociationInterventionEffecti_bfe86e38e8" ON "edfi"."StudentInterventionAssociationInterventionEffectiveness" ("DiagnosisDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_ContentVersion" ON "edfi"."StudentInterventionAttendanceEvent" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_EducationalEnv_2ae994b350" ON "edfi"."StudentInterventionAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_D_99fe7b332d" ON "edfi"."StudentInterventionAttendanceEvent" ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode");
@@ -33094,6 +33592,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_E
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_Docume_ddfabea06d" ON "edfi"."StudentInterventionAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_DocumentId_Auth" ON "edfi"."StudentInterventionAttendanceEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_ContentVersion" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Educ_578ee18605" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33123,6 +33623,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationLangu
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationProgr_5999662788" ON "edfi"."StudentLanguageInstructionProgramAssociationProgramP_e14347f302" ("ParticipationStatusDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_ContentVersion" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Continu_8fc5e83374" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ContinuationOfServicesReasonDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_872cca59fd" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
@@ -33142,6 +33644,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Student
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociationMigrantE_9114a69b02" ON "edfi"."StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a" ("MigrantEducationProgramServiceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociationProgramP_b04d211a15" ON "edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2" ("ParticipationStatusDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Co_50ffb531ab" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_5772886723" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -33175,6 +33679,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentPersonalIdentificationDocument_IssuerCount
 
 CREATE INDEX IF NOT EXISTS "IX_StudentPersonalIdentificationDocument_PersonalInf_d070386f46" ON "edfi"."StudentPersonalIdentificationDocument" ("PersonalInformationVerificationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ContentVersion" ON "edfi"."StudentProgramAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_D_d08148dfb7" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_E_68167ca6f9" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
@@ -33193,6 +33699,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociationProgramParticipationStat
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociationService_ServiceDescripto_69eb554afa" ON "edfi"."StudentProgramAssociationService" ("ServiceDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_ContentVersion" ON "edfi"."StudentProgramAttendanceEvent" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_2f244ad2e5" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_9b81579ba6" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_EducationOrganizationId");
@@ -33206,6 +33714,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_ProgramProgram_Prog
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_Student_DocumentId_Auth" ON "edfi"."StudentProgramAttendanceEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_Student_DocumentId__0faa72a618" ON "edfi"."StudentProgramAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ContentVersion" ON "edfi"."StudentProgramEvaluation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_EducationOrganization_Do_03ada97b2b" ON "edfi"."StudentProgramEvaluation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33249,6 +33759,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_Calendar_DocumentId_Cale
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ClassOfSchoolYear_Docume_83bdfbb2b1" ON "edfi"."StudentSchoolAssociation" ("ClassOfSchoolYear_DocumentId", "ClassOfSchoolYear_ClassOfSchoolYear");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ContentVersion" ON "edfi"."StudentSchoolAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_EnrollmentTypeDescriptor_899f3172eb" ON "edfi"."StudentSchoolAssociation" ("EnrollmentTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_EntryGradeLevelDescripto_3810677a1b" ON "edfi"."StudentSchoolAssociation" ("EntryGradeLevelDescriptor_DescriptorId");
@@ -33287,6 +33799,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociationAlternativeGraduationPlan
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociationEducationPlan_EducationPl_b8dbf9ac78" ON "edfi"."StudentSchoolAssociationEducationPlan" ("EducationPlanDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_ContentVersion" ON "edfi"."StudentSchoolAttendanceEvent" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_EducationalEnvironme_4b728e9a05" ON "edfi"."StudentSchoolAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Auth" ON "edfi"."StudentSchoolAttendanceEvent" ("SchoolId_Unified");
@@ -33298,6 +33812,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Session_DocumentId_S
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_DocumentId_Auth" ON "edfi"."StudentSchoolAttendanceEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_DocumentId_S_9fa22ee653" ON "edfi"."StudentSchoolAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_ContentVersion" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Educat_82136641ed" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -33316,6 +33832,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Studen
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationProgram_ed9fa94eb3" ON "edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47" ("ParticipationStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationSchoolF_90f931a2b4" ON "edfi"."StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c" ("SchoolFoodServiceProgramServiceDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ContentVersion" ON "edfi"."StudentSection504ProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_EducationOrga_81d39b2484" ON "edfi"."StudentSection504ProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -33337,6 +33855,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociationProgramPartici
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_AttemptStatusDescriptor_70aa3e8198" ON "edfi"."StudentSectionAssociation" ("AttemptStatusDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_ContentVersion" ON "edfi"."StudentSectionAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditEducationOrga_48f44494f0" ON "edfi"."StudentSectionAssociation" ("DualCreditEducationOrganization_DocumentId", "DualCreditEducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditInstitutionDe_bc1a30fea4" ON "edfi"."StudentSectionAssociation" ("DualCreditInstitutionDescriptor_DescriptorId");
@@ -33357,6 +33877,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociationProgram_Program_Document
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociationProgram_Program_ProgramT_7330bf8f2c" ON "edfi"."StudentSectionAssociationProgram" ("Program_ProgramTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_ContentVersion" ON "edfi"."StudentSectionAttendanceEvent" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_EducationalEnvironm_9584d3d9fc" ON "edfi"."StudentSectionAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Section_DocumentId__f1a12b7e67" ON "edfi"."StudentSectionAttendanceEvent" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
@@ -33368,6 +33890,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Student_DocumentId_
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Student_DocumentId__6aa7c55c2a" ON "edfi"."StudentSectionAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEventClassPeriod_ClassPer_afbf2ce0ff" ON "edfi"."StudentSectionAttendanceEventClassPeriod" ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_ContentVersion" ON "edfi"."StudentSpecialEducationProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Educati_1ca44c4444" ON "edfi"."StudentSpecialEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -33415,6 +33939,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_738d5c87ea" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EvaluationDelayReasonDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_8a6cc64de0" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_938243b5f7" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_bcdcc5d691" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("IdeaPartDescriptor_DescriptorId");
@@ -33424,6 +33950,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_ecdbc6ce85" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_f2af1e91cd" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EligibilityDelayReasonDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_ContentVersion" ON "edfi"."StudentTitleIPartAProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_EducationOrg_07a40d1c98" ON "edfi"."StudentTitleIPartAProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -33445,6 +33973,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociationProgramPartic
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociationTitleIPartAPr_1dfab40647" ON "edfi"."StudentTitleIPartAProgramAssociationTitleIPartAProgramService" ("TitleIPartAProgramServiceDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_ContentVersion" ON "edfi"."StudentTransportation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_StudentBusDetailsBusRouteDe_4335be5ade" ON "edfi"."StudentTransportation" ("StudentBusDetailsBusRouteDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_Student_DocumentId_Auth" ON "edfi"."StudentTransportation" ("Student_DocumentId") INCLUDE ("DocumentId");
@@ -33463,6 +33993,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentTransportationTravelDirection_TravelDirect
 
 CREATE INDEX IF NOT EXISTS "IX_StudentVisa_VisaDescriptor_DescriptorId" ON "edfi"."StudentVisa" ("VisaDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Survey_ContentVersion" ON "edfi"."Survey" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_Survey_EducationOrganization_DocumentId_Education_4250a3f2a6" ON "edfi"."Survey" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_SchoolYear_DocumentId_SchoolYear_Unified" ON "edfi"."Survey" ("SchoolYear_DocumentId", "SchoolYear_Unified");
@@ -33471,6 +34003,8 @@ CREATE INDEX IF NOT EXISTS "IX_Survey_Session_DocumentId_Session_SchoolId_School
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_SurveyCategoryDescriptor_DescriptorId" ON "edfi"."Survey" ("SurveyCategoryDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_ContentVersion" ON "edfi"."SurveyCourseAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_DocumentId_Course__3c5614bf79" ON "edfi"."SurveyCourseAssociation" ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_EducationOrganizationId_Auth" ON "edfi"."SurveyCourseAssociation" ("Course_EducationOrganizationId");
@@ -33478,6 +34012,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_EducationOrganizat
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_DocumentId_Survey__8e8a2bf8db" ON "edfi"."SurveyCourseAssociation" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_Namespace_Auth" ON "edfi"."SurveyCourseAssociation" ("Survey_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_ContentVersion" ON "edfi"."SurveyProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_DocumentId_Progr_eab44214ed" ON "edfi"."SurveyProgramAssociation" ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId");
 
@@ -33489,6 +34025,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_DocumentId_Survey
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_Namespace_Auth" ON "edfi"."SurveyProgramAssociation" ("Survey_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_ContentVersion" ON "edfi"."SurveyQuestion" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Namespace_Unified_Auth" ON "edfi"."SurveyQuestion" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_QuestionFormDescriptor_DescriptorId" ON "edfi"."SurveyQuestion" ("QuestionFormDescriptor_DescriptorId");
@@ -33497,11 +34035,15 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_SurveySection_DocumentId_Namespace
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Survey_DocumentId_Namespace_Unifie_c282b98d87" ON "edfi"."SurveyQuestion" ("Survey_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_ContentVersion" ON "edfi"."SurveyQuestionResponse" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_Namespace_Unified_Auth" ON "edfi"."SurveyQuestionResponse" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_SurveyQuestion_DocumentId__d59e808f2a" ON "edfi"."SurveyQuestionResponse" ("SurveyQuestion_DocumentId", "SurveyQuestion_QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_SurveyResponse_DocumentId__e43813d341" ON "edfi"."SurveyQuestionResponse" ("SurveyResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_ContentVersion" ON "edfi"."SurveyResponse" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceContact_Docum_e1728e55b7" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceContact_DocumentId", "SurveyResponderChoiceContact_ContactUniqueId");
 
@@ -33513,6 +34055,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_Survey_DocumentId_Survey_Namespace
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_Survey_Namespace_Auth" ON "edfi"."SurveyResponse" ("Survey_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_38000b64ea" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_86d09c2f51" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_89ceea42ad" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("SurveyResponse_DocumentId", "SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier");
@@ -33520,6 +34064,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_961ac12205" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("SurveyResponse_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_f0bf597951" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_ContentVersion" ON "edfi"."SurveyResponseStaffTargetAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_Staff_Docume_b8780a2098" ON "edfi"."SurveyResponseStaffTargetAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
 
@@ -33531,9 +34077,13 @@ CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_SurveyRespon
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_DescriptorId" ON "edfi"."SurveyResponseSurveyLevel" ("SurveyLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySection_ContentVersion" ON "edfi"."SurveySection" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_DocumentId_Survey_Namespace__59924cfd5e" ON "edfi"."SurveySection" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_Namespace_Auth" ON "edfi"."SurveySection" ("Survey_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_ContentVersion" ON "edfi"."SurveySectionAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Section_DocumentId_Secti_d38e6a279f" ON "edfi"."SurveySectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
 
@@ -33543,6 +34093,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_DocumentId_Survey
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_Namespace_Auth" ON "edfi"."SurveySectionAssociation" ("Survey_Namespace");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_ContentVersion" ON "edfi"."SurveySectionResponse" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_Namespace_Unified_Auth" ON "edfi"."SurveySectionResponse" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_SurveyResponse_DocumentId_N_9e35c7c3fd" ON "edfi"."SurveySectionResponse" ("SurveyResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier");
@@ -33551,11 +34103,15 @@ CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_SurveySection_DocumentId_Na
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_38d6ca658a" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("SurveySectionResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_653199d4b1" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_73a1e7e0d2" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_afaa55b052" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_d589c9b11c" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("Namespace_Unified");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_ContentVersion" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Names_f9c6e98310" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Namespace_Unified");
 

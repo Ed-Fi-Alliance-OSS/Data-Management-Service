@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -427,6 +429,8 @@ CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE TABLE IF NOT EXISTS "edfi"."ParentResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ParentResourceId" integer NOT NULL,
     CONSTRAINT "PK_ParentResource" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ParentResource_NK" UNIQUE ("ParentResourceId")
@@ -458,6 +462,8 @@ CREATE TABLE IF NOT EXISTS "aligned"."ParentResourceExtensionParent"
 CREATE TABLE IF NOT EXISTS "edfi"."Sponsor"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SponsorName" varchar(30) NOT NULL,
     CONSTRAINT "PK_Sponsor" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Sponsor_NK" UNIQUE ("SponsorName"),
@@ -552,6 +558,10 @@ END $$;
 CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParent_BaseCollectionItemI_cb97dc7774" ON "aligned"."ParentResourceExtensionParent" ("BaseCollectionItemId", "ParentResource_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParent_Sponsor_DocumentId__1ec37ce0d8" ON "aligned"."ParentResourceExtensionParent" ("Sponsor_DocumentId", "Sponsor_SponsorName");
+
+CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Sponsor_ContentVersion" ON "edfi"."Sponsor" ("ContentVersion");
 
 CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"()
 RETURNS TRIGGER AS $func$

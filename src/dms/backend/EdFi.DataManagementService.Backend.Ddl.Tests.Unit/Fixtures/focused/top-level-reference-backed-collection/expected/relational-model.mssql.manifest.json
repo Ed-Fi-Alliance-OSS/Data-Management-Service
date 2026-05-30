@@ -29,6 +29,18 @@
   "abstract_union_views": [],
   "indexes": [
     {
+      "name": "IX_Program_ContentVersion",
+      "table": {
+        "schema": "edfi",
+        "name": "Program"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "ContentVersion"
+      ]
+    },
+    {
       "name": "PK_Program",
       "table": {
         "schema": "edfi",
@@ -65,6 +77,18 @@
         "DocumentId",
         "ProgramId",
         "ProgramName"
+      ]
+    },
+    {
+      "name": "IX_School_ContentVersion",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "ContentVersion"
       ]
     },
     {
@@ -186,7 +210,11 @@
       "identity_projection_columns": [
         "ProgramId",
         "ProgramName"
-      ]
+      ],
+      "mirror_stamp_target_table": {
+        "schema": "edfi",
+        "name": "Program"
+      }
     },
     {
       "name": "TR_School_ReferentialIdentity",
@@ -223,7 +251,11 @@
       ],
       "identity_projection_columns": [
         "SchoolId"
-      ]
+      ],
+      "mirror_stamp_target_table": {
+        "schema": "edfi",
+        "name": "School"
+      }
     },
     {
       "name": "TR_SchoolProgram_Stamp",
@@ -235,7 +267,11 @@
       "key_columns": [
         "School_DocumentId"
       ],
-      "identity_projection_columns": []
+      "identity_projection_columns": [],
+      "mirror_stamp_target_table": {
+        "schema": "edfi",
+        "name": "School"
+      }
     }
   ],
   "resource_details": [
@@ -261,6 +297,30 @@
             {
               "name": "DocumentId",
               "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentLastModifiedAt",
+              "kind": "MirroredContentLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentVersion",
+              "kind": "MirroredContentVersion",
               "type": {
                 "kind": "Int64"
               },
@@ -392,6 +452,30 @@
             {
               "name": "DocumentId",
               "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentLastModifiedAt",
+              "kind": "MirroredContentLastModifiedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ContentVersion",
+              "kind": "MirroredContentVersion",
               "type": {
                 "kind": "Int64"
               },
