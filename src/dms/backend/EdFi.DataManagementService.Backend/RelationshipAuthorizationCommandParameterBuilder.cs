@@ -16,38 +16,10 @@ internal static class RelationshipAuthorizationCommandParameterBuilder
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
     )
     {
-        ArgumentNullException.ThrowIfNull(parameterValues);
-        ArgumentNullException.ThrowIfNull(authorizationClaimParameterization);
-
-        switch (authorizationClaimParameterization.Kind)
-        {
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
-                parameterValues[authorizationClaimParameterization.BaseParameterName] =
-                    authorizationClaimParameterization.ClaimEducationOrganizationIds;
-                return;
-
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
-                for (
-                    var parameterIndex = 0;
-                    parameterIndex < authorizationClaimParameterization.ParameterNamesInOrder.Count;
-                    parameterIndex++
-                )
-                {
-                    parameterValues[
-                        authorizationClaimParameterization.ParameterNamesInOrder[parameterIndex]
-                    ] = authorizationClaimParameterization.ClaimEducationOrganizationIds[parameterIndex];
-                }
-
-                return;
-
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(authorizationClaimParameterization),
-                    authorizationClaimParameterization.Kind,
-                    "Unsupported authorization claim EdOrg parameterization kind."
-                );
-        }
+        AuthorizationClaimEducationOrganizationIdParameterValues.AddTo(
+            parameterValues,
+            authorizationClaimParameterization
+        );
     }
 
     public static RelationalParameter BuildParameter(

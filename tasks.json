@@ -361,5 +361,21 @@
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit"
     ],
     "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Consolidate duplicate authorization claim EdOrg parameter value expansion.",
+    "acceptance-criteria": [
+      "RelationalQueryPageKeysetPlanner and RelationshipAuthorizationCommandParameterBuilder no longer maintain separate switch statements for AuthorizationClaimEducationOrganizationIdParameterizationKind value expansion.",
+      "PostgreSQL array, SQL Server scalar, and SQL Server structured authorization parameter values are populated through one shared implementation.",
+      "The refactor preserves existing parameter names, parameter values, SQL Server scalar ordering, and structured value behavior for page and total-count query plans.",
+      "The shared helper still rejects unsupported parameterization kinds with a clear ArgumentOutOfRangeException or equivalent failure."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs and RelationshipAuthorizationCommandParameterBuilder.cs for one shared authorization parameter value expansion path.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalQueryPageKeysetPlanner|FullyQualifiedName~RelationshipAuthorizationCommandParameterBuilder\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend"
+    ],
+    "completed": true
   }
 ]

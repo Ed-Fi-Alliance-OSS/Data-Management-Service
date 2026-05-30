@@ -123,3 +123,9 @@ Decisions: extracted shared AppendPersonAuthViewMembershipSubquerySql for direct
 Files changed: PageDocumentIdSqlCompiler.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format Plans and Plans.Tests.Unit; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler" passed 88.
 Notes: all tasks in tasks.json now complete.
+
+People relationship GET-many authorization - completed authorization claim EdOrg parameter expansion cleanup task.
+Decisions: moved ClaimEducationOrganizationIds runtime value expansion into shared AuthorizationClaimEducationOrganizationIdParameterValues helper; page planner and relationship command builder now delegate to one switch; kept parameter names/ordering/value shapes unchanged.
+Files changed: AuthorizationClaimEducationOrganizationIdParameterValues.cs, RelationalQueryPageKeysetPlanner.cs, RelationshipAuthorizationCommandParameterBuilder.cs, RelationshipAuthorizationCommandParameterBuilderTests.cs, RelationalQueryPageKeysetPlannerTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format Backend and Backend.Tests.Unit changed files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalQueryPageKeysetPlanner|FullyQualifiedName~RelationshipAuthorizationCommandParameterBuilder" passed 14.
+Notes: all tasks in tasks.json now complete again.
