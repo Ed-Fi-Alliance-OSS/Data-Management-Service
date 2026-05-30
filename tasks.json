@@ -116,7 +116,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalDeleteAuthorization\"",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalDeleteAuthorization\" when SQL Server is available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
