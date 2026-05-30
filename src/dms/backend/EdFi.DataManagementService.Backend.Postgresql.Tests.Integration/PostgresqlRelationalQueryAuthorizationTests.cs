@@ -511,6 +511,28 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<UpdateResult> UpdateAuthorizationStudentAcademicRecordByIdAsync(
+        AuthorizationStudentAcademicRecordSeed seed,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            "authz",
+            "AuthorizationStudentAcademicRecordResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentAcademicRecordRequestBody(
+                seed
+            ),
+            documentUuid,
+            $"put-auth-student-academic-record-{seed.AuthorizationStudentAcademicRecordId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
     public async Task SeedTermDescriptorAsync(Guid documentUuid, string termDescriptor)
     {
         await SeedDescriptorAsync(
@@ -1013,6 +1035,27 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentAcademicRecordResource");
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "authz",
+                "AuthorizationStudentAcademicRecordResource",
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
     public void AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert()
     {
         var command = GetPostCreateRelationshipAuthorizationCommand();
@@ -1045,6 +1088,34 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
             .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+    }
+
+    public void AssertPeopleUpdateRunsStoredThenProposedRelationshipAuthorization()
+    {
+        var peopleAuthorizationCommands = _writeSessionRecorder
+            .Commands.Select((command, index) => (command, index))
+            .Where(static item =>
+                item.command.CommandText.Contains("AUTH1", StringComparison.Ordinal)
+                && item.command.CommandText.Contains(
+                    "\"auth\".\"EducationOrganizationIdToStudentDocumentId\"",
+                    StringComparison.Ordinal
+                )
+                && item.command.CommandText.Contains(
+                    "\"edfi\".\"StudentAcademicRecord\"",
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+
+        peopleAuthorizationCommands.Should().HaveCount(2);
+        peopleAuthorizationCommands
+            .Select(static item => item.command.SessionId)
+            .Distinct()
+            .Should()
+            .ContainSingle();
+        peopleAuthorizationCommands[0].command.CommandText.Should().Contain("@DocumentId");
+        peopleAuthorizationCommands[1].command.CommandText.Should().Contain("@relationshipAuthorization_");
+        peopleAuthorizationCommands[0].index.Should().BeLessThan(peopleAuthorizationCommands[1].index);
     }
 
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()

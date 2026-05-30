@@ -156,7 +156,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor\"",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalPutAuthorization\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
