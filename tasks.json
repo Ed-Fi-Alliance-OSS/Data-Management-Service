@@ -211,7 +211,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~RelationshipAuthorizationProviderFailureMapper\"",
       "Inspect generated SQL assertion names for both stored and proposed People path shapes."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",
