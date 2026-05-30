@@ -42,6 +42,47 @@ internal sealed record AuthorizationNullableSeed(
     int? NullableSchoolId = null
 );
 
+internal sealed record StudentSeed(
+    DocumentUuid DocumentUuid,
+    string StudentUniqueId,
+    string FirstName,
+    string LastSurname
+);
+
+internal sealed record SchoolYearTypeSeed(
+    DocumentUuid DocumentUuid,
+    int SchoolYear,
+    bool CurrentSchoolYear,
+    string SchoolYearDescription
+);
+
+internal sealed record StudentSchoolAssociationSeed(
+    DocumentUuid DocumentUuid,
+    string StudentUniqueId,
+    int SchoolId,
+    int SchoolYear,
+    string EntryGradeLevelDescriptor,
+    DateOnly EntryDate
+);
+
+internal sealed record StudentAcademicRecordSeed(
+    DocumentUuid DocumentUuid,
+    int EducationOrganizationId,
+    int SchoolYear,
+    string StudentUniqueId,
+    string TermDescriptor
+);
+
+internal sealed record AuthorizationStudentAcademicRecordSeed(
+    DocumentUuid DocumentUuid,
+    int AuthorizationStudentAcademicRecordId,
+    string Name,
+    int EducationOrganizationId,
+    int SchoolYear,
+    string StudentUniqueId,
+    string TermDescriptor
+);
+
 internal sealed record ClassPeriodReferenceSeed(string ClassPeriodName, int SchoolId);
 
 internal sealed class RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler
@@ -187,6 +228,21 @@ internal static class RelationalQueryAuthorizationAssertions
                             $"{failure.Path.Value}: {failure.Message}"
                         )
                     )
+            );
+        }
+
+        if (result is UpsertResult.UpsertFailureReference referenceFailure)
+        {
+            var documentFailures = referenceFailure.InvalidDocumentReferences.Select(static reference =>
+                $"{reference.Path.Value} -> {reference.TargetResource.ProjectName.Value}.{reference.TargetResource.ResourceName.Value} ({reference.Reason})"
+            );
+            var descriptorFailures = referenceFailure.InvalidDescriptorReferences.Select(static reference =>
+                $"{reference.Path.Value} -> {reference.TargetResource.ProjectName.Value}.{reference.TargetResource.ResourceName.Value} ({reference.Reason})"
+            );
+
+            Assert.Fail(
+                "Expected insert success but received reference failures: "
+                    + string.Join("; ", documentFailures.Concat(descriptorFailures))
             );
         }
 

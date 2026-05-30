@@ -97,7 +97,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalGetByIdAuthorization\"",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalGetByIdAuthorization\" when SQL Server is available."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
