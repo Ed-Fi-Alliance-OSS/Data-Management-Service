@@ -199,6 +199,18 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
     )
     {
         var columnExpression = $"{sourceAlias}.{QuoteIdentifier(identityElement.Column.Value)}";
+
+        if (identityElement.IsDescriptorReference)
+        {
+            return $"""
+                LOWER((
+                    SELECT descriptor.[Uri]
+                    FROM [dms].[Descriptor] descriptor
+                    WHERE descriptor.[DocumentId] = {columnExpression}
+                ))
+                """;
+        }
+
         return DialectIdentityTextFormatter.MssqlColumnToNvarchar(
             columnExpression,
             identityElement.ScalarType

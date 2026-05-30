@@ -389,6 +389,10 @@ internal static class RelationalAccessTestData
     );
     private static readonly QualifiedResourceName _meetingResource = new("Ed-Fi", "Meeting");
     private static readonly QualifiedResourceName _decimalKeyResource = new("Ed-Fi", "DecimalKeyResource");
+    private static readonly QualifiedResourceName _studentAcademicRecordResource = new(
+        "Ed-Fi",
+        "StudentAcademicRecord"
+    );
     private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
         "Ed-Fi",
         "SchoolTypeDescriptor"
@@ -403,13 +407,14 @@ internal static class RelationalAccessTestData
         var schoolTypeDescriptorKey = new ResourceKeyEntry(13, _schoolTypeDescriptorResource, "1.0", false);
         var meetingKey = new ResourceKeyEntry(14, _meetingResource, "1.0", false);
         var decimalKeyKey = new ResourceKeyEntry(15, _decimalKeyResource, "1.0", false);
+        var studentAcademicRecordKey = new ResourceKeyEntry(16, _studentAcademicRecordResource, "1.0", false);
         var educationOrganizationKey = new ResourceKeyEntry(30, _educationOrganizationResource, "1.0", true);
 
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 7,
+            ResourceKeyCount: 8,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
             ResourceKeysInIdOrder:
@@ -420,6 +425,7 @@ internal static class RelationalAccessTestData
                 schoolTypeDescriptorKey,
                 meetingKey,
                 decimalKeyKey,
+                studentAcademicRecordKey,
                 educationOrganizationKey,
             ]
         );
@@ -454,6 +460,11 @@ internal static class RelationalAccessTestData
                     decimalKeyKey,
                     ResourceStorageKind.RelationalTables,
                     CreateRelationalResourceModel(_decimalKeyResource, "DecimalKeyResource")
+                ),
+                new ConcreteResourceModel(
+                    studentAcademicRecordKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(_studentAcademicRecordResource, "StudentAcademicRecord")
                 ),
                 new ConcreteResourceModel(
                     schoolTypeDescriptorKey,
@@ -590,6 +601,25 @@ internal static class RelationalAccessTestData
             isDescriptor: false
         );
 
+    public static ReferenceLookupRequestEntry CreateStudentAcademicRecordLookup(
+        ReferentialId referentialId,
+        string termDescriptor = "uri://ed-fi.org/termdescriptor#fall"
+    ) =>
+        CreateLookup(
+            _studentAcademicRecordResource,
+            referentialId,
+            new DocumentIdentity([
+                new DocumentIdentityElement(
+                    new JsonPath("$.educationOrganizationReference.educationOrganizationId"),
+                    "255901"
+                ),
+                new DocumentIdentityElement(new JsonPath("$.schoolYearTypeReference.schoolYear"), "2026"),
+                new DocumentIdentityElement(new JsonPath("$.studentReference.studentUniqueId"), "10001"),
+                new DocumentIdentityElement(new JsonPath("$.termDescriptor"), termDescriptor),
+            ]),
+            isDescriptor: false
+        );
+
     public static DescriptorReference CreateDescriptorReference(
         ReferentialId referentialId,
         string uri,
@@ -686,6 +716,25 @@ internal static class RelationalAccessTestData
                     decimalPrecisionScale: (9, 2)
                 ),
             ],
+            "StudentAcademicRecord" =>
+            [
+                CreateIdentityColumn(
+                    "EducationOrganization_EducationOrganizationId",
+                    "$.educationOrganizationReference.educationOrganizationId",
+                    ScalarKind.Int64
+                ),
+                CreateIdentityColumn(
+                    "SchoolYear_SchoolYear",
+                    "$.schoolYearTypeReference.schoolYear",
+                    ScalarKind.Int32
+                ),
+                CreateIdentityColumn(
+                    "Student_StudentUniqueId",
+                    "$.studentReference.studentUniqueId",
+                    ScalarKind.String
+                ),
+                CreateDescriptorIdentityColumn("TermDescriptor_DescriptorId", "$.termDescriptor"),
+            ],
             _ => [],
         };
     }
@@ -703,6 +752,16 @@ internal static class RelationalAccessTestData
             IsNullable: false,
             SourceJsonPath: new JsonPathExpression(jsonPath, []),
             TargetResource: null
+        );
+
+    private static DbColumnModel CreateDescriptorIdentityColumn(string columnName, string jsonPath) =>
+        new(
+            new DbColumnName(columnName),
+            ColumnKind.DescriptorFk,
+            new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(jsonPath, []),
+            TargetResource: _schoolTypeDescriptorResource
         );
 
     private static AbstractUnionViewArm CreateAbstractUnionArm(

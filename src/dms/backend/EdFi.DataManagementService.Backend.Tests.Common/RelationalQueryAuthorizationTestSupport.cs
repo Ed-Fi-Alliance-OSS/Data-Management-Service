@@ -207,6 +207,24 @@ internal static class RelationalQueryAuthorizationRequestBodies
 
         return requestBody;
     }
+
+    public static JsonNode CreateAuthorizationStudentAcademicRecordRequestBody(
+        AuthorizationStudentAcademicRecordSeed seed
+    )
+    {
+        return new JsonObject
+        {
+            ["authorizationStudentAcademicRecordId"] = seed.AuthorizationStudentAcademicRecordId,
+            ["name"] = seed.Name,
+            ["studentAcademicRecordReference"] = new JsonObject
+            {
+                ["educationOrganizationId"] = seed.EducationOrganizationId,
+                ["schoolYear"] = seed.SchoolYear,
+                ["studentUniqueId"] = seed.StudentUniqueId,
+                ["termDescriptor"] = seed.TermDescriptor,
+            },
+        };
+    }
 }
 
 internal static class RelationalQueryAuthorizationAssertions

@@ -490,6 +490,27 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         return new UpsertResult.InsertSuccess(seed.DocumentUuid);
     }
 
+    public async Task<UpsertResult> UpsertAuthorizationStudentAcademicRecordAsync(
+        AuthorizationStudentAcademicRecordSeed seed,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationStudentAcademicRecordResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentAcademicRecordRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"post-auth-student-academic-record-{seed.AuthorizationStudentAcademicRecordId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
     public async Task SeedTermDescriptorAsync(Guid documentUuid, string termDescriptor)
     {
         await SeedDescriptorAsync(
@@ -1008,6 +1029,18 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
         command.Should().Contain("= ANY(@ClaimEducationOrganizationIds) OR EXISTS");
         command.Should().Contain("\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"");
+        command
+            .IndexOf("AUTH1", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+    }
+
+    public void AssertPostCreatePeopleAuthorizationBeforeDocumentInsert()
+    {
+        var command = GetPostCreateRelationshipAuthorizationCommand();
+
+        command.Should().Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentId\"");
+        command.Should().Contain("\"edfi\".\"StudentAcademicRecord\"");
         command
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
