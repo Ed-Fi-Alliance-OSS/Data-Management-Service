@@ -1,0 +1,334 @@
+[
+  {
+    "category": "implementation",
+    "description": "Close any People CRUD planning metadata gaps so stored and proposed single-record checks can consume the shared People relationship core without inventing endpoint-specific subject models.",
+    "acceptance-criteria": [
+      "RelationshipAuthorizationPlanner produces operation-applicable check specs for all five People relationship strategies for stored GET-by-id, DELETE, PUT, and POST-as-update checks.",
+      "RelationshipAuthorizationPlanner produces proposed-value check specs for POST create-new, PUT, and POST-as-update using direct person terminal DocumentIds, existing-target self-person DocumentIds, and transitive first-hop anchors from the finalized root row.",
+      "POST create-new omits self-person root DocumentId subjects as operation-ineligible and reports a no-executable-subject security-configuration failure when a selected relationship strategy has no executable subjects after eligibility filtering.",
+      "Person subjects whose resolved paths start in child collections remain ineligible for ODS-parity CRUD authorization and retain skipped contributor diagnostics.",
+      "Missing People auth views, unresolved People paths, missing proposed root bindings, and no-applicable-subject selections remain security-configuration failures rather than authorization denials.",
+      "No-claims planning metadata includes executable People subjects, auth-view names, output columns, readable securable names, value source, and hint metadata for synthetic CRUD 403 failures."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs and RelationalPeopleAuthorizationSubjectSelector.cs for stored/proposed People subject eligibility and anchor metadata.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector\"",
+      "Inspect tests for coverage of self, direct, transitive, child-collection, no-claims, missing auth-view, and no-executable-subject People cases."
+    ],
+    "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Remove the temporary People single-record endpoint staging block and let GET-by-id, POST, PUT, and DELETE compose People relationship checks with the existing relationship authorization result pipeline.",
+    "acceptance-criteria": [
+      "TryCreatePeopleEndpointStagingFailures no longer converts People relationship strategies for GET-by-id, POST, PUT, or DELETE into temporary 501 responses.",
+      "RelationshipAuthorizationEndpointExecutionBoundary no longer rejects supported People relationship check specs for single-record SQL execution while still rejecting invalid auth-object or subject metadata.",
+      "Security-configuration failures from People planning surface as canonical security-configuration failures before execution, not as staging responses.",
+      "NoFurtherAuthorizationRequired remains a no-op when combined with People relationship strategies.",
+      "Any NamespaceBased, OwnershipBased, or custom view-based CRUD strategy that is still unimplemented in the relational path continues to fail closed through the explicit temporary not-implemented result instead of being ignored.",
+      "Mixed relationship strategies are passed as one OR group, with EdOrg and People subjects inside each strategy combined with AND semantics."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs for removal of People-specific staging in GET-by-id, POST, PUT, and DELETE authorization paths.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationEndpointExecutionBoundary.cs for People-aware single-record validation.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Extend SingleRecordRelationshipAuthorizationSqlCompiler to emit stored-value People authorization checks for self, direct, and transitive person paths.",
+    "acceptance-criteria": [
+      "Stored self Student, Contact, and Staff subjects compare the target root DocumentId to the selected People auth view output column.",
+      "Stored direct person references compare the stored terminal person DocumentId column to the selected People auth view output column.",
+      "Stored transitive person paths anchor on the target root DocumentId, walk the ordered root-to-terminal DocumentId join path, and compare the terminal person DocumentId to the selected People auth view output column.",
+      "Null direct stored person values, missing intermediate rows, and null terminal values are encoded as stored-value invalid-data failures for the original person securable element.",
+      "No matching auth-view membership is encoded as no-relationship, not invalid data.",
+      "Each configured relationship strategy emits a parenthesized single-record EXISTS check group; executable subjects inside that strategy are combined with AND and relationship strategies are combined with OR.",
+      "EdOrg subjects in mixed EdOrg-and-People strategies keep concrete root-table scope, direct-claim-match behavior, normal hierarchy direction, and inverted Source/Target hierarchy direction where applicable.",
+      "The failed OR group still produces the versioned compact AUTH1 payload with emitted check index, plan-relative strategy ordinal, subject ordinal, and runtime failure kind for every failed subject in configured order.",
+      "PostgreSQL aborts unauthorized batches with the established dms.throw_error AUTH1 pattern, and SQL Server aborts with the established CAST('AUTH1 - ...' AS INT) pattern.",
+      "PostgreSQL and SQL Server SQL use the existing ClaimEducationOrganizationIds parameterization contract, including SQL Server scalar parameters below 2,000 IDs and dms.BigIntTable at 2,000 or more IDs."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs for People stored-value path rendering and failure-kind selection.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler\"",
+      "Inspect generated PostgreSQL and SQL Server expectations for self, direct Student, direct Contact, direct Staff, transitive Student, responsibility Student, and mixed EdOrg-and-People checks."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Extend proposed-value People authorization so POST create-new, PUT, and POST-as-update authorize finalized row values before insert, If-Match, guarded no-op, or update DML.",
+    "acceptance-criteria": [
+      "Proposed direct person subjects bind the finalized root-row terminal person DocumentId value that will be persisted.",
+      "Existing-resource self person subjects bind the locked existing target DocumentId for PUT and POST-as-update proposed checks.",
+      "POST create-new self person subjects are omitted as operation-ineligible and never self-bootstrap through a row that is not yet visible to People auth views.",
+      "Proposed transitive person subjects bind the finalized first-hop DocumentId anchor and resolve the terminal person DocumentId through the ordered path inside the authorization SQL.",
+      "Null proposed direct values, null first-hop anchors, missing intermediate rows, and null terminal values are encoded as proposed element-required failures for the original person securable element.",
+      "RelationalWriteNoProfilePersister no longer throws for TransitivePeopleFirstHopAnchorValue; the People-aware proposed authorization path resolves it before auth-view membership checks.",
+      "Proposed authorization uses the finalized profile-aware root row or merged rowset, including hidden stored values preserved by a writable profile, not raw JSON.",
+      "POST create-new composes proposed authorization and dms.Document insert in the same provider command or batch so AUTH1 denial leaves no persisted create artifacts."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs and RelationalWriteNoProfilePersister.cs for People proposed runtime value handling.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs for proposed People subquery rendering.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Wire People relationship authorization into GET-by-id while preserving not-found behavior, authorization-before-hydration, and the existing observed read-boundary guard.",
+    "acceptance-criteria": [
+      "GET-by-id for an existing target with a People relationship strategy authorizes stored values before hydration or readable-profile projection.",
+      "Unauthorized GET-by-id returns relationship-not-authorized 403 and does not execute reconstitution or materialization work.",
+      "A missing target still returns the existing not-found response before no-claims or relationship authorization denial.",
+      "If the relational GET-by-id flow already supports an If-None-Match or not-modified target-resolution short-circuit, that short-circuit is preserved without adding an authorization-only roundtrip afterward.",
+      "StoredDocument read mode remains an explicit internal authorization bypass; ExternalResponse mode cannot request that bypass.",
+      "GET-by-id authorization and hydration share the same observed target read boundary using the existing ContentVersion guard/retry or an equivalent mechanism.",
+      "Intermediate People path rows and auth-view membership are evaluated by the authorization statement under normal provider semantics; no additional post-authorization recheck is introduced.",
+      "No-claims GET-by-id for an existing target returns a synthetic relationship 403 with People readable names and hints."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs GET-by-id authorization flow and read-boundary retry handling.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalGetByIdAuthorization\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalGetByIdAuthorization\" when SQL Server is available."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Wire People relationship authorization into DELETE under the same locked write transaction or guard used for If-Match and delete execution.",
+    "acceptance-criteria": [
+      "DELETE authorizes stored People values after target existence is established and after the target Document row is locked or guarded.",
+      "Unauthorized DELETE returns relationship-not-authorized 403 before If-Match comparison, delete execution, delete constraint resolution, or use/conflict errors.",
+      "When stored authorization and If-Match would both fail for an existing target, the response is 403 rather than 412.",
+      "Unauthorized DELETE leaves dms.Document, resource rows, child rows, change-query journal rows, and referential identity rows unchanged.",
+      "No-claims DELETE for an existing target returns a synthetic relationship 403 with People readable names and hints.",
+      "Authorized DELETE preserves existing If-Match and delete conflict behavior."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs DELETE flow around target locking, authorization, If-Match, and delete execution.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~RelationalDelete\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalDeleteAuthorization\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalDeleteAuthorization\" when SQL Server is available."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Wire People relationship authorization into POST create-new so proposed People values are checked before any create artifact can persist.",
+    "acceptance-criteria": [
+      "POST create-new with People relationship strategies authorizes finalized proposed values before inserting dms.Document.",
+      "Unauthorized POST create-new returns relationship-not-authorized 403 and leaves no dms.Document, resource root, child, extension, ReferentialIdentity, change-query journal, or ownership-stamped document artifacts.",
+      "Empty normalized EdOrg claims return relationship-not-authorized 403 before reference resolution, descriptor resolution, or create-vs-existing target detection.",
+      "POST create-new with If-Match returns 403 when proposed authorization fails and 412 only after proposed authorization succeeds.",
+      "Reference-resolution failures remain reference-resolution failures when the request is not already denied by empty claims or security-configuration planning.",
+      "People same-row bootstrap is not hardcoded; association and person create behavior comes from effective security metadata such as NoFurtherAuthorizationRequired, EdOrg-only primary association authorization, or StudentsOnly overrides.",
+      "POST requests that resolve to an existing resource follow the stored-then-proposed update path and no longer expose a People staging result."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs POST preflight and src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs create flow.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs for inline proposed authorization before document insert.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~RelationalWrite\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalPostAuthorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Wire People relationship authorization into PUT and POST-as-update with stored-value authorization first and proposed-value authorization second.",
+    "acceptance-criteria": [
+      "Existing-target PUT and POST-as-update authorize stored People values before request-dependent reference resolution, profile merge work, guarded no-op success, If-Match comparison, or update DML.",
+      "Existing-target PUT and POST-as-update authorize proposed People values whenever at least one executable proposed People subject can be supplied by the finalized profile-aware rowset, even if values appear unchanged.",
+      "Stored authorization and proposed authorization each evaluate the full configured relationship OR group independently; the same strategy does not need to authorize both states.",
+      "Proposed authorization failure returns 403 before stale If-Match, guarded no-op success, or update DML can be exposed.",
+      "Stored authorization, reference outputs that feed proposed People anchors, current-state/profile merge work, proposed authorization, If-Match, guarded no-op, and update DML share a locked write transaction/session or equivalent ContentVersion guard/retry boundary.",
+      "Unauthorized stored-value, proposed-value, and no-op update attempts leave dms.Document stamps, resource rows, child rows, extension rows, ReferentialIdentity rows, and change-query journal rows unchanged.",
+      "Writable-profile PUT and POST-as-update use the finalized merged rowset, including hidden stored People anchors, for proposed authorization."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/StoredRelationshipAuthorizationOrchestrator.cs and ProposedRelationshipAuthorizationOrchestrator.cs for existing-target ordering and guarded-boundary behavior.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs for If-Match, no-op, merge, and persist ordering.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalPutAuthorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Audit and update relational security metadata, ApiSchema-derived authorization inputs, claim-set fixtures, and setup data needed for ODS-effective People CRUD behavior.",
+    "acceptance-criteria": [
+      "Person create operations use NoFurtherAuthorizationRequired when that is the effective ODS metadata.",
+      "Primary relationship create operations that should be EdOrg-only are not forced through same-row People relationship authorization.",
+      "StudentContactAssociation uses the RelationshipsWithStudentsOnly override for applicable CRUD operations.",
+      "StudentEducationOrganizationResponsibilityAssociation follows its relationshipBasedData metadata and through-responsibility auth view behavior.",
+      "Runtime authorization inputs carry People auth view table names, DocumentId output columns, through-responsibility selection, hints, and readable securable names from metadata rather than hardcoded endpoint exceptions.",
+      "Claim-set and integration/E2E fixture data can exercise Student, Contact, Staff, direct, self, transitive, and through-responsibility People CRUD cases without relying on unrelated authorization stories.",
+      "Any discovered non-People-CRUD relational exclusion remains untagged and is documented in the relevant test fixture or task notes rather than being silently restored."
+    ],
+    "steps-to-verify": [
+      "Review ApiSchema, authorization metadata, and test fixture inputs used by src/dms/tests/EdFi.DataManagementService.Tests.Integration and src/dms/tests/EdFi.DataManagementService.Tests.E2E for People CRUD resources.",
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndContacts.feature, RelationshipsWithEdOrgsAndPeople.feature, RelationshipsWithEdOrgsAndStaffs.feature, and RelationshipsWithStudentsOnlyThroughResponsibility.feature for fixture assumptions.",
+      "Run targeted metadata/planner unit tests with claim-set combinations that select NoFurtherAuthorizationRequired, EdOrg-only, StudentsOnly, StudentsOnlyThroughResponsibility, and mixed EdOrg-and-People strategies."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused planner and endpoint-boundary unit coverage for People CRUD strategy selection, operation eligibility, failure metadata, and composition.",
+    "acceptance-criteria": [
+      "Tests cover RelationshipsWithEdOrgsAndPeople, RelationshipsWithEdOrgsAndPeopleInverted, RelationshipsWithPeopleOnly, RelationshipsWithStudentsOnly, and RelationshipsWithStudentsOnlyThroughResponsibility for stored and proposed single-record planning.",
+      "Tests prove EdOrg subjects in mixed strategies use DMS concrete root-table scope and direct-claim plus hierarchy semantics, with inverted strategies swapping only EdOrg hierarchy Source/Target filtering.",
+      "Tests prove People subjects select Student, Contact, Staff, and through-responsibility auth views with the correct DocumentId output columns and hints.",
+      "Tests prove direct, self, transitive, and child-collection People paths produce the expected executable or ineligible subject metadata.",
+      "Tests prove create-new self-person ineligibility, no-executable-subject configuration failure, missing auth-view configuration failure, no-claims synthetic failure metadata, and missing proposed root binding configuration failure.",
+      "Tests prove mixed relationship strategies OR together, subjects inside a strategy AND together, duplicate configured strategies preserve ordinals, and NoFurtherAuthorizationRequired contributes no checks or hints."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationshipAuthorizationStrategyClassifier|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector|FullyQualifiedName~RelationshipAuthorizationEndpointExecutionBoundary\"",
+      "Review new NUnit fixtures for Given_ class names, Setup arrange/act methods, and It_ assertion method names.",
+      "Confirm tests do not depend on provider databases or E2E stack setup."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused SQL compiler, proposed-value extractor, AUTH1 payload, and provider-failure mapping unit coverage for People single-record authorization.",
+    "acceptance-criteria": [
+      "SQL compiler tests cover PostgreSQL and SQL Server stored self, direct Student, direct Contact, direct Staff, transitive Student, through-responsibility Student, mixed EdOrg-and-People AND, and multiple OR strategies.",
+      "SQL compiler tests cover PostgreSQL and SQL Server proposed direct person, existing-target self person, transitive first-hop anchor, proposed element-required, stored invalid-data, no-relationship, and SQL Server scalar-vs-TVP parameterization branches.",
+      "Proposed-value extractor tests prove finalized row values, existing target DocumentId anchors, transitive first-hop runtime values, profile-hidden stored values, and null proposed values are mapped correctly.",
+      "AUTH1 payload tests prove People subject ordinals and runtime failure kinds map back to RelationshipAuthorizationFailure DTO entries without post-failure database lookups.",
+      "Malformed, unknown-version, truncated, and unmappable People AUTH1 payloads map to canonical security-configuration failures.",
+      "Generated SQL expectations do not use UniqueId or USI values for People authorization."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler|FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload|FullyQualifiedName~RelationshipAuthorizationFailureMapper\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~RelationshipAuthorizationProviderFailureMapper\"",
+      "Inspect generated SQL assertion names for both stored and proposed People path shapes."
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add repository and write-executor unit coverage for People CRUD response precedence, staging removal, read/write boundaries, and side-effect prevention.",
+    "acceptance-criteria": [
+      "GET-by-id tests prove People relationship strategies no longer return the temporary 501, unauthorized requests return 403 without hydration, no-claims existing targets return 403, not-found remains not-found, and StoredDocument mode bypass is internal-only.",
+      "DELETE tests prove People relationship strategies no longer return the temporary 501, authorization runs under the locked target boundary, 403 wins over If-Match mismatch, and unauthorized deletes do not execute delete SQL.",
+      "POST create tests prove empty claims short-circuit before reference and target detection, proposed authorization runs before dms.Document insert, unauthorized creates leave no artifacts, and If-Match returns 403 before 412 when proposed authorization fails.",
+      "PUT and POST-as-update tests prove stored authorization gates request-dependent work, proposed authorization runs before If-Match and guarded no-op, and unauthorized no-op/update attempts leave persisted state unchanged.",
+      "Tests prove known unimplemented non-relationship CRUD strategies still return explicit not-implemented results and true security-configuration failures still return security-configuration results.",
+      "Tests prove relationship-not-authorized results carry full People failure DTO metadata, including value source, strategy ordinals, subject ordinals, person kind, auth view, readable names, hints, and claim context."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor|FullyQualifiedName~RelationalWrite\"",
+      "Review test fakes to confirm hydration, delete, document insert, no-op, and update operations are not called after People relationship denial.",
+      "Review assertion coverage around UpdateResult, UpsertResult, DeleteResult, and GetResult relationship-not-authorized variants."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add PostgreSQL backend integration coverage for People CRUD authorization using real relational persistence, auth views, and provider AUTH1 behavior.",
+    "acceptance-criteria": [
+      "PostgreSQL tests cover authorized and unauthorized GET-by-id with no reconstitution on denial.",
+      "PostgreSQL tests cover authorized and unauthorized POST create-new with no persisted create artifacts on denial.",
+      "PostgreSQL tests cover PUT or POST-as-update stored-value denial, proposed-value denial, unauthorized no-op denial, and unchanged persisted state.",
+      "PostgreSQL tests cover authorized and unauthorized DELETE with no delete on denial and 403-over-412 precedence.",
+      "Across the PostgreSQL People CRUD tests, coverage includes Student, Contact, Staff, through-responsibility Student, one self/direct path, one transitive path, empty EdOrg claims, missing People auth view configuration failure, SQL-seeded stored invalid data, proposed element required, and mixed EdOrg-and-People cases where EdOrg passes/People fails, People passes/EdOrg fails, and a second OR strategy authorizes.",
+      "Tests assert persisted side effects for unauthorized writes and deletes, including dms.Document, resource rows, child rows, ReferentialIdentity, and change-query journal rows where applicable."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PeopleRelationship|FullyQualifiedName~RelationalGetByIdAuthorization|FullyQualifiedName~RelationalPostAuthorization|FullyQualifiedName~RelationalPutAuthorization|FullyQualifiedName~RelationalDeleteAuthorization\"",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration&FullyQualifiedName~PeopleRelationship\"",
+      "Inspect PostgreSQL test setup to ensure direct SQL seeding is used only for invalid stored-data or setup cases that normal API validation cannot create."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add SQL Server backend integration coverage for People CRUD authorization using real relational persistence, auth views, provider AUTH1 behavior, and ClaimEducationOrganizationIds parameterization thresholds.",
+    "acceptance-criteria": [
+      "SQL Server tests cover authorized and unauthorized GET-by-id with no reconstitution on denial.",
+      "SQL Server tests cover authorized and unauthorized POST create-new with no persisted create artifacts on denial.",
+      "SQL Server tests cover PUT or POST-as-update stored-value denial, proposed-value denial, unauthorized no-op denial, and unchanged persisted state.",
+      "SQL Server tests cover authorized and unauthorized DELETE with no delete on denial and 403-over-412 precedence.",
+      "Across the SQL Server People CRUD tests, coverage includes Student, Contact, Staff, through-responsibility Student, one self/direct path, one transitive path, empty EdOrg claims, missing People auth view configuration failure, SQL-seeded stored invalid data, proposed element required, and mixed EdOrg-and-People cases where EdOrg passes/People fails, People passes/EdOrg fails, and a second OR strategy authorizes.",
+      "SQL Server tests prove expanded scalar ClaimEducationOrganizationIds are used below 2,000 unique IDs and dms.BigIntTable is used at 2,000 or more unique IDs after dedupe/sort."
+    ],
+    "steps-to-verify": [
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~PeopleRelationship|FullyQualifiedName~RelationalGetByIdAuthorization|FullyQualifiedName~RelationalPostAuthorization|FullyQualifiedName~RelationalPutAuthorization|FullyQualifiedName~RelationalDeleteAuthorization\"",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~PeopleRelationship\"",
+      "Inspect captured SQL or parameter metadata assertions for SQL Server scalar and TVP branches."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add People CRUD ProblemDetails integration coverage by feeding People relationship failures through the shared relationship failure parser and formatter.",
+    "acceptance-criteria": [
+      "Unauthorized People GET-by-id, POST create, PUT or POST-as-update, and DELETE responses return 403 ProblemDetails matching auth.md structure with type, title, detail, errors, status, and correlationId.",
+      "ProblemDetails tests cover People no-relationship, no-claims rendered as none, stored invalid-data, proposed element-required, and mixed failure-kind precedence.",
+      "Readable securable names prefer carried MetaEd/readable names and fall back from JSON paths when needed.",
+      "ProblemDetails tests cover singular and plural securable-element wording and EdOrg claim rendering with at most five displayed claims followed by ... when claims are truncated.",
+      "Student, Contact, Staff, and through-responsibility hints are appended and de-duplicated in deterministic configured strategy order.",
+      "When multiple OR strategies fail, all failed People strategies and failed subjects are preserved internally and the user-facing errors aggregate readable names according to the shared formatter rules.",
+      "Malformed or unmappable People AUTH1 payloads return canonical security-configuration 500 responses rather than generic system errors or fallback 403 responses."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/RelationshipAuthorizationProblemDetailsScenario.cs for People endpoint-level cases.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails|FullyQualifiedName~PeopleRelationship\"",
+      "Validate ProblemDetails assertions treat correlationId as present/non-empty unless the test intentionally supplies a fixed correlation-id header."
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Revalidate relational E2E exclusions and restore only scenarios whose remaining blocker is People GET-by-id, POST, PUT, or DELETE authorization.",
+    "acceptance-criteria": [
+      "Current relational exclusions are revalidated before retagging; scenarios are not restored solely because they appeared in earlier acceptance lists.",
+      "Eligible restored scenarios receive @relational-backend and an appropriate @relational-ci-shard-* tag.",
+      "Expected restore candidates from EducationOrganizationChanges, RelationshipsWithEdOrgsAndContacts, RelationshipsWithEdOrgsAndPeople, DisciplineActionAuthorization, OrganizationDepartmentAuthorization, RelationshipsWithEdOrgsAndStaffs, and RelationshipsWithStudentsOnlyThroughResponsibility are restored only when their setup and assertions are People CRUD-dependent.",
+      "TokenIntrospection scenarios 02 and 03 remain excluded unless revalidation proves their relational exclusion is caused by People CRUD setup.",
+      "StudentAssessmentRegistrationBatteryPartAssociation scenario 01 remains excluded unless revalidation proves its remaining blocker is People CRUD authorization rather than namespace, reference, profile, or unrelated relational behavior.",
+      "Restored E2E coverage includes at least one authorized or unauthorized stored-value read or delete, one authorized or unauthorized proposed-value create, one update path, one Contact path, one Staff path, and one through-responsibility path through real claim-set/token wiring.",
+      "No People GET-many-only retagging from the completed DMS-1095 slice is changed unless required by the current CRUD restoration."
+    ],
+    "steps-to-verify": [
+      "Review relational tags in src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/EducationOrganizationChanges.feature, RelationshipsWithEdOrgsAndContacts.feature, RelationshipsWithEdOrgsAndPeople.feature, RelationshipsWithEdOrgsAndStaffs.feature, RelationshipsWithStudentsOnlyThroughResponsibility.feature, and RoleNamedSecurity feature files.",
+      "Run pwsh ./teardown-local-dms.ps1 from src/dms/tests/EdFi.DataManagementService.Tests.E2E.",
+      "Run pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational from src/dms/tests/EdFi.DataManagementService.Tests.E2E.",
+      "Verify docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore|QueryHandler' includes AppSettings__UseRelationalBackend=true, AppSettings__Datastore=postgresql, and AppSettings__QueryHandler=postgresql.",
+      "Run env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" from src/dms/tests/EdFi.DataManagementService.Tests.E2E."
+    ],
+    "completed": false
+  },
+  {
+    "category": "verification",
+    "description": "Run final formatting and focused verification for the People relationship CRUD implementation after code, tests, metadata, and E2E tags are updated.",
+    "acceptance-criteria": [
+      "Changed C# files are formatted with csharpier.",
+      "Backend plan unit tests pass for relationship authorization planner, SQL compiler, AUTH1 payload, and People subject selector coverage.",
+      "Backend repository and write-executor unit tests pass for People CRUD authorization flow coverage.",
+      "PostgreSQL backend/provider integration tests pass for People CRUD authorization and ProblemDetails coverage.",
+      "SQL Server backend/provider integration tests pass for People CRUD authorization and ProblemDetails coverage when ConnectionStrings__MssqlAdmin is configured.",
+      "API-level integration tests pass for PostgreSQL and SQL Server People relationship CRUD scenarios.",
+      "Relational-backend E2E tests pass against a dms-local stack started with USE_RELATIONAL_BACKEND=true.",
+      "No production or test source file outside DMS-1158 scope is changed for unrelated cleanup."
+    ],
+    "steps-to-verify": [
+      "Run dotnet csharpier format src/dms/backend src/dms/tests/EdFi.DataManagementService.Tests.Integration src/dms/tests/EdFi.DataManagementService.Tests.E2E",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~SingleRecordRelationshipAuthorization\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~RelationalWrite\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~PeopleRelationship\"",
+      "Run ConnectionStrings__MssqlAdmin='<admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorization|FullyQualifiedName~PeopleRelationship\"",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails|FullyQualifiedName~PeopleRelationship\"",
+      "Run env -u NODE_OPTIONS dotnet test src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" after starting the relational E2E stack."
+    ],
+    "completed": false
+  }
+]

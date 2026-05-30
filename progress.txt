@@ -1,0 +1,5 @@
+People relationship CRUD authorization - completed planning metadata gap audit task.
+Decisions: existing RelationshipAuthorizationPlanner and RelationalPeopleAuthorizationSubjectSelector already cover stored/proposed People CRUD planning metadata, create-new self-person ineligibility, child-collection skipped diagnostics, missing auth-view/root-binding security config failures, and no-claims People failure metadata; no production code changes needed.
+Files changed: tasks.json, progress.txt.
+Verification: dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector" passed 81.
+Notes: progress.txt was absent in the worktree at loop start, so this file restarts progress tracking for the CRUD task list.
