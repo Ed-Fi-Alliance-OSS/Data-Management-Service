@@ -1007,6 +1007,229 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_executes_people_get_by_id_relationship_authorization_before_hydration()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-cacacacacaca"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(
+            _studentResourceInfo
+        );
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _studentResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "People authorized")
+        );
+        SingleRecordRelationshipAuthorizationExecutionRequest capturedAuthorizationRequest = null!;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+                capturedAuthorizationRequest =
+                    call.GetArgument<SingleRecordRelationshipAuthorizationExecutionRequest>(0)!
+            )
+            .Returns(
+                Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
+                    new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(91L)
+                )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(JsonNode.Parse("""{"id":"authorized-people"}""")!);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        capturedAuthorizationRequest.CheckSpecs.Should().ContainSingle();
+        var checkSpec = capturedAuthorizationRequest.CheckSpecs[0];
+        checkSpec
+            .ConfiguredStrategy.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        checkSpec.Subjects.Should().Contain(static subject => subject.IsPersonSubject);
+    }
+
+    [Test]
+    public async Task It_returns_people_no_claims_get_by_id_failure_metadata_without_hydration()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-cdcdcdcdcdcd"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(
+            _studentResourceInfo
+        );
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _studentResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: []
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>().Subject;
+        failure
+            .RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Stored);
+        failure.RelationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
+        var failedStrategy = failure.RelationshipFailure.FailedStrategies.Should().ContainSingle().Which;
+        failedStrategy
+            .StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        failedStrategy
+            .Hint.Should()
+            .Contain("requires at least one claim EducationOrganizationId")
+            .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
+            .And.Contain("StudentSchoolAssociation");
+
+        var failedSubject = failedStrategy.FailedSubjects.Should().ContainSingle().Which;
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.AuthObject.SubjectValueColumn.Should().Be("Student_DocumentId");
+        failedSubject
+            .SecurableElements.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationSecurableElement(
+                    "Student",
+                    "$.studentUniqueId",
+                    "StudentUniqueId"
+                )
+            );
+        failedSubject.PersonSubject.Should().NotBeNull();
+        failedSubject.PersonSubject!.PersonKind.Should().Be("Student");
+        failedSubject.PersonSubject.StoredAnchor.RootTableName.Should().Be("edfi.Student");
+        failedSubject.PersonSubject.StoredAnchor.RootDocumentIdColumnName.Should().Be("DocumentId");
+        failedSubject
+            .PersonSubject.Hint.Should()
+            .Be("You may need to create a corresponding 'StudentSchoolAssociation' item.");
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_get_by_id_security_configuration_failure_before_people_relationship_execution()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-cbcbcbcbcbcb"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+                ),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("CustomAuthorizationStrategy");
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_returns_a_namespace_mismatch_403_and_skips_hydration_when_stored_namespace_does_not_match()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-bbbbbbbbbbbb"));
@@ -5467,6 +5690,85 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_forwards_authorized_people_post_relationship_plans_to_the_write_executor_after_target_lookup()
+    {
+        var committedEtag = CreateCommittedReadbackEtag("Authorized People");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid, committedEtag)
+                    )
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithDirectStudentSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc)
+            .Returns(
+                JsonNode.Parse(
+                    """{"studentReference":{"studentUniqueId":"604822"},"name":"Authorized People"}"""
+                )!
+            );
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901L]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        var peopleInsertSuccess = result.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
+        peopleInsertSuccess.NewDocumentUuid.Should().Be(documentUuid);
+        peopleInsertSuccess.ETag.Should().Be(committedEtag);
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().NotBeNull();
+        _capturedExecutorRequest
+            .StoredRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.Authorized>()
+            .Which.CheckSpecs.Should()
+            .ContainSingle()
+            .Which.Subjects.Should()
+            .ContainSingle(static subject => subject.IsPersonSubject);
+        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().NotBeNull();
+        var proposedCheck = _capturedExecutorRequest
+            .ProposedRelationshipAuthorization!.CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+        proposedCheck.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        proposedCheck
+            .ConfiguredStrategy.StrategyName.Should()
+            .Be(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        proposedCheck.Subjects.Should().ContainSingle(static subject => subject.IsPersonSubject);
+        proposedCheck
+            .CheckTarget.Should()
+            .BeOfType<RelationshipAuthorizationCheckTarget.Proposed>()
+            .Which.SubjectBindingsInOrder.Should()
+            .ContainSingle()
+            .Which.Column.Should()
+            .Be(AuthNames.StudentDocumentId);
+        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_treats_no_further_authorization_required_as_a_post_preflight_no_op()
     {
         var committedEtag = CreateCommittedReadbackEtag("No Further High");
@@ -7627,6 +7929,55 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 "auth.EducationOrganizationIdToEducationOrganizationId",
                 "auth.EducationOrganizationIdToStudentDocumentId"
             );
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_people_delete_relationship_not_authorized_before_if_match_and_delete()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("\"stale-etag\"");
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(
+            _studentResourceInfo
+        );
+        var relationshipFailure = CreateMixedAuthObjectRelationshipFailure();
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
+        ConfigureDeleteRelationshipAuthorization(
+            new SingleRecordRelationshipAuthorizationExecutionResult.NotAuthorized(relationshipFailure)
+        );
+        _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
+            documentUuid,
+            123L,
+            isMatch: false
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            mappingSet,
+            writePrecondition,
+            documentUuid,
+            _studentResourceInfo
+        );
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+                ),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901L]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>().Subject;
+        failure.RelationshipFailure.Should().BeSameAs(relationshipFailure);
+        failure
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Any(static subject => subject.PersonSubject is not null)
+            .Should()
+            .BeTrue();
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -10782,13 +11133,23 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static readonly ResourceInfo _studentResourceInfo = CreateResourceInfo("Student");
 
-    private static MappingSet CreateWriteAuthorizationAwareMappingSetWithUnboundStudentSubject(
+    private static MappingSet CreateWriteAuthorizationAwareMappingSetWithDirectStudentSubject(
         ResourceInfo resourceInfo
+    ) =>
+        CreateWriteAuthorizationAwareMappingSetWithUnboundStudentSubject(
+            resourceInfo,
+            includeStudentDocumentIdBinding: true
+        );
+
+    private static MappingSet CreateWriteAuthorizationAwareMappingSetWithUnboundStudentSubject(
+        ResourceInfo resourceInfo,
+        bool includeStudentDocumentIdBinding = false
     )
     {
         const string studentPath = "$.studentReference.studentUniqueId";
         var resourceKey = CreateResourceKeyEntry(resourceInfo);
         var studentDocumentIdColumn = AuthNames.StudentDocumentId;
+        var studentUniqueIdColumn = new DbColumnName("StudentUniqueId");
         var rootTable = CreateRootTableModel(
             resourceInfo.ResourceName.Value,
             [
@@ -10797,8 +11158,17 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     ColumnKind.DocumentFk,
                     new RelationalScalarType(ScalarKind.Int64),
                     false,
-                    new JsonPathExpression(studentPath, []),
+                    new JsonPathExpression("$.studentReference", []),
                     new QualifiedResourceName("Ed-Fi", "Student"),
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    studentUniqueIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    false,
+                    new JsonPathExpression(studentPath, []),
+                    null,
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
@@ -10829,7 +11199,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                         new ReferenceIdentityBinding(
                             new JsonPathExpression(studentPath, []),
                             new JsonPathExpression(studentPath, []),
-                            new DbColumnName("StudentUniqueId")
+                            studentUniqueIdColumn
                         ),
                     ]
                 ),
@@ -10854,7 +11224,37 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var documentIdColumn = rootTable.Columns.Single(static column =>
             column.ColumnName.Value == "DocumentId"
         );
+        var studentDocumentIdColumnModel = rootTable.Columns.Single(column =>
+            column.ColumnName == studentDocumentIdColumn
+        );
         var nameColumn = rootTable.Columns.Single(static column => column.ColumnName.Value == "Name");
+        var columnBindings = new List<WriteColumnBinding>
+        {
+            new(documentIdColumn, new WriteValueSource.DocumentId(), "DocumentId"),
+        };
+
+        if (includeStudentDocumentIdBinding)
+        {
+            columnBindings.Add(
+                new WriteColumnBinding(
+                    studentDocumentIdColumnModel,
+                    new WriteValueSource.DocumentReference(0),
+                    studentDocumentIdColumn.Value
+                )
+            );
+        }
+
+        columnBindings.Add(
+            new WriteColumnBinding(
+                nameColumn,
+                new WriteValueSource.Scalar(
+                    new JsonPathExpression("$.name", []),
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                "Name"
+            )
+        );
+
         var writePlan = new ResourceWritePlan(
             resourceModel,
             [
@@ -10863,23 +11263,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     InsertSql: "",
                     UpdateSql: null,
                     DeleteByParentSql: null,
-                    BulkInsertBatching: new BulkInsertBatchingInfo(100, 2, 1000),
-                    ColumnBindings:
-                    [
-                        new WriteColumnBinding(
-                            documentIdColumn,
-                            new WriteValueSource.DocumentId(),
-                            "DocumentId"
-                        ),
-                        new WriteColumnBinding(
-                            nameColumn,
-                            new WriteValueSource.Scalar(
-                                new JsonPathExpression("$.name", []),
-                                new RelationalScalarType(ScalarKind.String, MaxLength: 75)
-                            ),
-                            "Name"
-                        ),
-                    ],
+                    BulkInsertBatching: new BulkInsertBatchingInfo(100, columnBindings.Count, 1000),
+                    ColumnBindings: columnBindings,
                     KeyUnificationPlans: []
                 ),
             ]
@@ -10889,7 +11274,40 @@ public class Given_RelationalDocumentStoreRepositoryTests
             resourceKey.Resource,
             concreteResources,
             writePlan,
-            CreateReadPlan(resourceModel, rootTable)
+            new ResourceReadPlan(
+                resourceModel,
+                KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+                [new TableReadPlan(rootTable, "select 1")],
+                [
+                    new ReferenceIdentityProjectionTablePlan(
+                        rootTable.Table,
+                        [
+                            new ReferenceIdentityProjectionBinding(
+                                IsIdentityComponent: true,
+                                ReferenceObjectPath: new JsonPathExpression("$.studentReference", []),
+                                TargetResource: new QualifiedResourceName("Ed-Fi", "Student"),
+                                FkColumnOrdinal: 1,
+                                IdentityFieldOrdinalsInOrder:
+                                [
+                                    new ReferenceIdentityProjectionFieldOrdinal(
+                                        new JsonPathExpression(studentPath, []),
+                                        ColumnOrdinal: 2
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ],
+                [],
+                new DocumentReferenceLookupPlan(
+                    SelectByKeysetSql: "select 1",
+                    ResultShape: new DocumentReferenceLookupResultShape(0, 1, 2),
+                    SourcesInOrder:
+                    [
+                        new DocumentReferenceLookupSource(rootTable.Table, studentDocumentIdColumn),
+                    ]
+                )
+            )
         );
 
         return mappingSet with

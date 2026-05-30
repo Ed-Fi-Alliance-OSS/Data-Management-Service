@@ -73,3 +73,10 @@ Decisions: existing plans unit coverage already covered SQL compiler, AUTH1 code
 Files changed: RelationshipAuthorizationProposedValueExtractorTests.cs, RelationshipAuthorizationProviderFailureMapperTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed new test files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~RelationshipAuthorizationProviderFailureMapper" passed 16; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler|FullyQualifiedName~RelationshipAuthorizationAuth1FailurePayload|FullyQualifiedName~RelationshipAuthorizationFailureMapper" passed 76.
 Notes: no production code changes; backend task filter previously selected only 3 indirect extractor tests, now selects focused direct coverage.
+
+People relationship CRUD authorization - completed repository/write-executor unit coverage task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: added People-specific repository coverage for no-claims GET metadata/no hydration, POST create plan forwarding after target lookup with no staging, DELETE 403-before-If-Match/delete, plus write-executor People proposed failure metadata/no persist. Added minimal direct Student write fixture projection metadata so read-plan validation stays realistic.
+Files changed: RelationalDocumentStoreRepositoryTests.cs, DefaultRelationalWriteExecutorTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed edited test files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor|FullyQualifiedName~RelationalWrite" passed 331.
+Notes: no production code changes; remaining tasks are provider/API integration, ProblemDetails, E2E retag/revalidation, and final verification.

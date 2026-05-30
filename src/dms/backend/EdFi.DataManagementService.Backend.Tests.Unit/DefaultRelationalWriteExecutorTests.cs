@@ -5313,6 +5313,82 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_people_proposed_relationship_failure_metadata_for_existing_put_without_persisting()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":333333,"name":"Lincoln High Updated"}""")!
+        );
+        var proposedAuthorization = CreateTransitivePeopleProposedRelationshipAuthorization(request);
+        var relationshipFailure = CreateProposedRelationshipFailure(
+            proposedAuthorization,
+            new RelationshipAuthorizationAuth1SubjectFailure(
+                0,
+                0,
+                RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+            )
+        );
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 333333,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
+                ProposedRelationshipAuthorization = proposedAuthorization,
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        var notAuthorized = updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        notAuthorized.RelationshipFailure.Should().BeSameAs(relationshipFailure);
+        var failedSubject = notAuthorized
+            .RelationshipFailure.FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        failedSubject.AuthObject.Name.Should().Be("auth.EducationOrganizationIdToStudentDocumentId");
+        failedSubject.AuthObject.SubjectValueColumn.Should().Be("Student_DocumentId");
+        failedSubject
+            .SecurableElements.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new RelationshipAuthorizationSecurableElement(
+                    "Student",
+                    "$.studentReference.studentUniqueId",
+                    "StudentUniqueId"
+                )
+            );
+        failedSubject.PersonSubject.Should().NotBeNull();
+        failedSubject.PersonSubject!.PathKind.Should().Be("TransitiveJoinPath");
+        failedSubject.PersonSubject.ProposedAnchor.Should().NotBeNull();
+        failedSubject.PersonSubject.ProposedAnchor!.Kind.Should().Be("FirstHop");
+        failedSubject.PersonSubject.ProposedAnchor.Binding.ColumnName.Should().Be("SchoolId");
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_proposed_relationship_authorization_failure_for_put_before_guarded_no_op_success()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);

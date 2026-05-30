@@ -229,7 +229,7 @@
       "Review test fakes to confirm hydration, delete, document insert, no-op, and update operations are not called after People relationship denial.",
       "Review assertion coverage around UpdateResult, UpsertResult, DeleteResult, and GetResult relationship-not-authorized variants."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",
