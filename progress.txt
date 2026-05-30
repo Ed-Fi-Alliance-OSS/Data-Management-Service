@@ -17,3 +17,10 @@ Decisions: single-record compiler now validates People root anchors separately f
 Files changed: SingleRecordRelationshipAuthorizationSqlCompiler.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler" passed 30.
 Notes: proposed People runtime SQL still remains for next task.
+
+People relationship CRUD authorization - completed proposed-value People authorization task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: proposed People bindings now validate against proposed anchor metadata; direct/self People bind terminal DocumentIds as scalar auth-view values; transitive People bind first-hop anchors and resolve terminal DocumentIds inside SQL, mapping null/missing path to proposed element-required; POST create inline auth still shares the Document insert command.
+Files changed: SingleRecordRelationshipAuthorizationSqlCompiler.cs, RelationalWriteNoProfilePersister.cs, SingleRecordRelationshipAuthorizationExecutor.cs, SQL/executor/persister unit tests, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler" passed 36; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor|FullyQualifiedName~RelationalWriteNoProfilePersister" passed 12.
+Notes: endpoint CRUD wiring tasks remain for GET-by-id/POST/PUT/DELETE.

@@ -78,6 +78,12 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
                 request.EmittedAuth1Index
             )
         );
+        if (sqlPlan.ProposedValueParametersInOrder.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Single-record relationship authorization executor cannot execute proposed-value checks without extracted runtime values."
+            );
+        }
 
         try
         {

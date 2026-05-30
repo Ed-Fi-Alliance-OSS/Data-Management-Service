@@ -42,6 +42,8 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         IReadOnlyList<RelationshipAuthorizationProposedValueSqlParameter> ProposedValueParametersInOrder
     );
 
+    private sealed record ProposedBindingTarget(DbTableName Table, DbColumnName Column);
+
     public SingleRecordRelationshipAuthorizationSqlPlan Compile(
         SingleRecordRelationshipAuthorizationSqlSpec spec
     )
@@ -202,6 +204,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             {
                 var subject = checkSpec.Subjects[subjectOrdinal];
                 var binding = proposedTarget.SubjectBindingsInOrder[subjectOrdinal];
+                var expectedBindingTarget = GetProposedBindingTarget(subject);
 
                 if (!binding.Table.Equals(rootTarget.RootTable))
                 {
@@ -211,10 +214,18 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
                     );
                 }
 
-                if (!binding.Column.Equals(subject.Column))
+                if (!binding.Table.Equals(expectedBindingTarget.Table))
                 {
                     throw new ArgumentException(
-                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets column '{binding.Column.Value}', but the subject targets column '{subject.Column.Value}'.",
+                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets table '{binding.Table}', but the subject proposed anchor targets table '{expectedBindingTarget.Table}'.",
+                        nameof(spec)
+                    );
+                }
+
+                if (!binding.Column.Equals(expectedBindingTarget.Column))
+                {
+                    throw new ArgumentException(
+                        $"Proposed relationship authorization binding '{strategyOrdinal}:{subjectOrdinal}' targets column '{binding.Column.Value}', but the subject proposed anchor targets column '{expectedBindingTarget.Column.Value}'.",
                         nameof(spec)
                     );
                 }
@@ -224,6 +235,16 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         }
 
         return rootTarget;
+    }
+
+    private static ProposedBindingTarget GetProposedBindingTarget(RelationshipAuthorizationSubject subject)
+    {
+        if (subject.PersonMetadata?.ProposedAnchor is { } proposedAnchor)
+        {
+            return new ProposedBindingTarget(proposedAnchor.Binding.Table, proposedAnchor.Binding.Column);
+        }
+
+        return new ProposedBindingTarget(subject.Table, subject.Column);
     }
 
     private static string ResolvePgsqlEdOrgSubjectValueSqlType()
@@ -1092,6 +1113,27 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     )
     {
         var subject = checkSpec.Subjects[subjectOrdinal];
+
+        if (
+            subject.PersonMetadata is
+            {
+                Path.Kind: RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+                ProposedAnchor.Kind: RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
+            } personMetadata
+        )
+        {
+            AppendProposedTransitivePeopleSubjectFailureSelect(
+                writer,
+                strategyOrdinal,
+                subjectOrdinal,
+                subject,
+                personMetadata,
+                proposedValueParameterName,
+                authorizationClaimParameterization
+            );
+            return;
+        }
+
         var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
 
         writer.AppendLine("SELECT");
@@ -1119,6 +1161,197 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         }
 
         writer.AppendLine();
+    }
+
+    private static void AppendProposedTransitivePeopleSubjectFailureSelect(
+        SqlWriter writer,
+        int strategyOrdinal,
+        int subjectOrdinal,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        string proposedValueParameterName,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
+
+        writer.AppendLine("SELECT");
+
+        using (writer.Indent())
+        {
+            writer.AppendLine($"{strategyOrdinal},");
+            writer.AppendLine($"{subjectOrdinal},");
+            writer.Append("CASE WHEN ");
+            AppendProposedTransitivePeopleSubjectInvalidDataSql(
+                writer,
+                subject,
+                personMetadata,
+                proposedValueParameterName,
+                strategyOrdinal,
+                subjectOrdinal
+            );
+            writer.Append(" THEN 'p' ELSE 'n' END,");
+            writer.AppendLine();
+            writer.Append("CASE WHEN ");
+            AppendProposedTransitivePeopleSubjectInvalidDataSql(
+                writer,
+                subject,
+                personMetadata,
+                proposedValueParameterName,
+                strategyOrdinal,
+                subjectOrdinal
+            );
+            writer.Append(" OR NOT ");
+            AppendProposedTransitivePeopleAuthorizationSuccessSql(
+                writer,
+                subject,
+                personMetadata,
+                proposedValueParameterName,
+                authorizationClaimParameterization,
+                authAlias,
+                strategyOrdinal,
+                subjectOrdinal
+            );
+            writer.AppendLine(" THEN 1 ELSE 0 END");
+        }
+
+        writer.AppendLine();
+    }
+
+    private static void AppendProposedTransitivePeopleSubjectInvalidDataSql(
+        SqlWriter writer,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        string proposedValueParameterName,
+        int strategyOrdinal,
+        int subjectOrdinal
+    )
+    {
+        AppendProposedSubjectValueSql(writer, proposedValueParameterName);
+        writer.Append(" IS NULL OR NOT EXISTS (");
+        AppendProposedTransitivePersonPathSelectSql(
+            writer,
+            subject,
+            personMetadata,
+            proposedValueParameterName,
+            strategyOrdinal,
+            subjectOrdinal,
+            appendMembershipCheck: null
+        );
+        writer.Append(")");
+    }
+
+    private static void AppendProposedTransitivePeopleAuthorizationSuccessSql(
+        SqlWriter writer,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        string proposedValueParameterName,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias,
+        int strategyOrdinal,
+        int subjectOrdinal
+    )
+    {
+        writer.Append("EXISTS (");
+        AppendProposedTransitivePersonPathSelectSql(
+            writer,
+            subject,
+            personMetadata,
+            proposedValueParameterName,
+            strategyOrdinal,
+            subjectOrdinal,
+            terminalValueWriter =>
+            {
+                writer.Append("EXISTS (");
+                AppendAuthorizationExistsSelectSql(
+                    writer,
+                    subject.AuthObject,
+                    terminalValueWriter,
+                    authorizationClaimParameterization,
+                    authAlias
+                );
+                writer.Append(")");
+            }
+        );
+        writer.Append(")");
+    }
+
+    private static void AppendProposedTransitivePersonPathSelectSql(
+        SqlWriter writer,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        string proposedValueParameterName,
+        int strategyOrdinal,
+        int subjectOrdinal,
+        Action<Action<SqlWriter>>? appendMembershipCheck
+    )
+    {
+        var pathSteps = personMetadata.Path.Steps;
+        ValidateTransitivePersonPath(subject, personMetadata, pathSteps);
+        var firstStep = pathSteps[0];
+        var firstHopTable =
+            firstStep.TargetTable
+            ?? throw new InvalidOperationException(
+                "Transitive People authorization path steps must include a target table for first-hop joins."
+            );
+        var firstHopColumn =
+            firstStep.TargetColumnName
+            ?? throw new InvalidOperationException(
+                "Transitive People authorization path steps must include a target column for first-hop joins."
+            );
+        var firstHopAlias = $"p{strategyOrdinal}_{subjectOrdinal}_0";
+        var currentSourceAlias = firstHopAlias;
+
+        writer.Append("SELECT 1 FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(firstHopTable));
+        writer.Append($" {firstHopAlias}");
+
+        for (var stepIndex = 1; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target table for intermediate joins."
+                );
+            var targetColumn =
+                step.TargetColumnName
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target column for intermediate joins."
+                );
+            var joinAlias = $"p{strategyOrdinal}_{subjectOrdinal}_{stepIndex}";
+
+            writer.Append(" JOIN ");
+            writer.AppendRelation(new SqlRelationRef.PhysicalTable(targetTable));
+            writer.Append($" {joinAlias} ON {joinAlias}.");
+            writer.AppendQuoted(targetColumn.Value);
+            writer.Append($" = {currentSourceAlias}.");
+            writer.AppendQuoted(step.SourceColumnName.Value);
+
+            currentSourceAlias = joinAlias;
+        }
+
+        var terminalStep = pathSteps[^1];
+
+        writer.Append($" WHERE {firstHopAlias}.");
+        writer.AppendQuoted(firstHopColumn.Value);
+        writer.Append(" = ");
+        AppendProposedSubjectValueSql(writer, proposedValueParameterName);
+        writer.Append($" AND {currentSourceAlias}.");
+        writer.AppendQuoted(terminalStep.SourceColumnName.Value);
+        writer.Append(" IS NOT NULL");
+
+        if (appendMembershipCheck is null)
+        {
+            return;
+        }
+
+        writer.Append(" AND ");
+        appendMembershipCheck(terminalValueWriter =>
+        {
+            terminalValueWriter.Append($"{currentSourceAlias}.");
+            terminalValueWriter.AppendQuoted(terminalStep.SourceColumnName.Value);
+        });
     }
 
     private static void AppendProposedSubjectValueSql(SqlWriter writer, string proposedValueParameterName)

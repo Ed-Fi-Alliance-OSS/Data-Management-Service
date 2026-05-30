@@ -386,7 +386,7 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
     }
 
     [Test]
-    public async Task It_rejects_transitive_people_proposed_specs_at_current_proposed_binding_validation()
+    public async Task It_rejects_proposed_specs_without_extracted_runtime_values()
     {
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
         var sut = new SingleRecordRelationshipAuthorizationExecutor(commandExecutor);
@@ -408,9 +408,9 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
 
         await execute
             .Should()
-            .ThrowAsync<ArgumentException>()
+            .ThrowAsync<InvalidOperationException>()
             .WithMessage(
-                "*targets column 'StudentSchoolAssociation_DocumentId', but the subject targets column 'Student_DocumentId'*"
+                "Single-record relationship authorization executor cannot execute proposed-value checks without extracted runtime values."
             );
         commandExecutor.Commands.Should().BeEmpty();
     }
