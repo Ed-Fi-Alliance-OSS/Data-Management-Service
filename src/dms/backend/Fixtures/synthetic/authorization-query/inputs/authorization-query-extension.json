@@ -7,7 +7,8 @@
       "authorizationchildonlyresources": "authorizationChildOnlyResources",
       "authorizationnullableresources": "authorizationNullableResources",
       "authorizationrootchildresources": "authorizationRootChildResources",
-      "authorizationstudentacademicrecordresources": "authorizationStudentAcademicRecordResources"
+      "authorizationstudentacademicrecordresources": "authorizationStudentAcademicRecordResources",
+      "authorizationstudentschoolresources": "authorizationStudentSchoolResources"
     },
     "compatibleDsRange": "5.2.0",
     "description": "",
@@ -23,7 +24,8 @@
       "AuthorizationChildOnlyResource": "authorizationChildOnlyResources",
       "AuthorizationNullableResource": "authorizationNullableResources",
       "AuthorizationRootChildResource": "authorizationRootChildResources",
-      "AuthorizationStudentAcademicRecordResource": "authorizationStudentAcademicRecordResources"
+      "AuthorizationStudentAcademicRecordResource": "authorizationStudentAcademicRecordResources",
+      "AuthorizationStudentSchoolResource": "authorizationStudentSchoolResources"
     },
     "resourceSchemas": {
       "authorizationAndResources": {
@@ -744,6 +746,146 @@
           "Namespace": [],
           "Staff": [],
           "Student": ["$.studentAcademicRecordReference.studentUniqueId"]
+        }
+      },
+      "authorizationStudentSchoolResources": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "commonExtensionOverrides": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "AuthorizationStudentSchoolId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.authorizationStudentSchoolId",
+            "type": "number"
+          },
+          "Name": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.name",
+            "type": "string"
+          },
+          "School": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.schoolReference.schoolId",
+                "type": "number"
+              }
+            ],
+            "resourceName": "School"
+          },
+          "Student": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.studentUniqueId",
+                "referenceJsonPath": "$.studentReference.studentUniqueId",
+                "type": "string"
+              }
+            ],
+            "resourceName": "Student"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.authorizationStudentSchoolId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic authorization direct Student plus School resource.",
+          "properties": {
+            "authorizationStudentSchoolId": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "name": {
+              "maxLength": 75,
+              "type": "string"
+            },
+            "schoolReference": {
+              "additionalProperties": false,
+              "properties": {
+                "schoolId": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": ["schoolId"],
+              "type": "object"
+            },
+            "studentReference": {
+              "additionalProperties": false,
+              "properties": {
+                "studentUniqueId": {
+                  "maxLength": 32,
+                  "type": "string"
+                }
+              },
+              "required": ["studentUniqueId"],
+              "type": "object"
+            }
+          },
+          "required": ["authorizationStudentSchoolId", "name", "schoolReference"],
+          "title": "Authz.AuthorizationStudentSchoolResource",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+          "$.authorizationStudentSchoolId",
+          "$.schoolReference.schoolId"
+        ],
+        "queryFieldMapping": {
+          "authorizationStudentSchoolId": [
+            {
+              "path": "$.authorizationStudentSchoolId",
+              "type": "number"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "name": [
+            {
+              "path": "$.name",
+              "type": "string"
+            }
+          ]
+        },
+        "resourceName": "AuthorizationStudentSchoolResource",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [
+            {
+              "jsonPath": "$.schoolReference.schoolId",
+              "metaEdName": "SchoolId"
+            }
+          ],
+          "Namespace": [],
+          "Staff": [],
+          "Student": ["$.studentReference.studentUniqueId"]
         }
       }
     }

@@ -533,6 +533,99 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<UpsertResult> CreateAuthorizationStudentSchoolAsync(AuthorizationStudentSchoolSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationStudentSchoolResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentSchoolRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-student-school-{seed.AuthorizationStudentSchoolId}"
+        );
+    }
+
+    public async Task<UpsertResult> UpsertAuthorizationStudentSchoolAsync(
+        AuthorizationStudentSchoolSeed seed,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationStudentSchoolResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentSchoolRequestBody(seed),
+            seed.DocumentUuid,
+            $"post-auth-student-school-{seed.AuthorizationStudentSchoolId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
+    public async Task<UpsertResult> CreateContactAsync(ContactSeed seed)
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "Contact",
+            RelationalQueryAuthorizationRequestBodies.CreateContactRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-contact-{seed.ContactUniqueId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStaffAsync(StaffSeed seed)
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "Staff",
+            RelationalQueryAuthorizationRequestBodies.CreateStaffRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-staff-{seed.StaffUniqueId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStudentContactAssociationAsync(StudentContactAssociationSeed seed)
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StudentContactAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStudentContactAssociationRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-student-contact-association-{seed.StudentUniqueId}-{seed.ContactUniqueId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStaffEducationOrganizationAssignmentAssociationAsync(
+        StaffEducationOrganizationAssignmentAssociationSeed seed
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StaffEducationOrganizationAssignmentAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStaffEducationOrganizationAssignmentAssociationRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"seed-staff-assignment-{seed.StaffUniqueId}-{seed.EducationOrganizationId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStudentEducationOrganizationResponsibilityAssociationAsync(
+        StudentEducationOrganizationResponsibilityAssociationSeed seed
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StudentEducationOrganizationResponsibilityAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStudentEducationOrganizationResponsibilityAssociationRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"seed-student-responsibility-{seed.StudentUniqueId}-{seed.EducationOrganizationId}"
+        );
+    }
+
     public async Task SeedTermDescriptorAsync(Guid documentUuid, string termDescriptor)
     {
         await SeedDescriptorAsync(
@@ -543,6 +636,32 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             "uri://ed-fi.org/TermDescriptor",
             termDescriptor[(termDescriptor.LastIndexOf('#') + 1)..],
             termDescriptor[(termDescriptor.LastIndexOf('#') + 1)..]
+        );
+    }
+
+    public async Task SeedStaffClassificationDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedDescriptorAsync(
+            documentUuid,
+            "StaffClassificationDescriptor",
+            "Ed-Fi:StaffClassificationDescriptor",
+            descriptor,
+            "uri://ed-fi.org/StaffClassificationDescriptor",
+            descriptor[(descriptor.LastIndexOf('#') + 1)..],
+            descriptor[(descriptor.LastIndexOf('#') + 1)..]
+        );
+    }
+
+    public async Task SeedResponsibilityDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedDescriptorAsync(
+            documentUuid,
+            "ResponsibilityDescriptor",
+            "Ed-Fi:ResponsibilityDescriptor",
+            descriptor,
+            "uri://ed-fi.org/ResponsibilityDescriptor",
+            descriptor[(descriptor.LastIndexOf('#') + 1)..],
+            descriptor[(descriptor.LastIndexOf('#') + 1)..]
         );
     }
 
@@ -846,11 +965,13 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         DocumentUuid documentUuid,
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
-        string? traceId = null
+        string? traceId = null,
+        Func<MappingSet, MappingSet>? mappingSetTransform = null
     )
     {
         ResetRecorder();
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+        var mappingSet = mappingSetTransform is null ? MappingSet : mappingSetTransform(MappingSet);
 
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
@@ -858,7 +979,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var request = new IntegrationRelationalGetRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
-            MappingSet: MappingSet,
+            MappingSet: mappingSet,
             ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators:
             [

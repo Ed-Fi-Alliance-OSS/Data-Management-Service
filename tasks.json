@@ -247,7 +247,7 @@
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration&FullyQualifiedName~PeopleRelationship\"",
       "Inspect PostgreSQL test setup to ensure direct SQL seeding is used only for invalid stored-data or setup cases that normal API validation cannot create."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",
