@@ -146,3 +146,145 @@ public class Given_RelationalModelDdlEmitter_With_LongNamed_Root_And_Mirror_Colu
         );
     }
 }
+
+/// <summary>
+/// Verifies that a resource <c>DocumentStamping</c> trigger's no-op diff predicate excludes the
+/// change-version mirror columns while still comparing ordinary client columns, so a stamp-only mirror
+/// update is not treated as a representation change (change-queries.md invariant #5).
+/// </summary>
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Resource_Stamping_Trigger_And_Mirror_Columns
+{
+    private string _pgsqlDdl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = BuildStampingTriggerModelSet(SqlDialect.Pgsql);
+        _pgsqlDdl = new RelationalModelDdlEmitter(SqlDialectFactory.Create(SqlDialect.Pgsql)).Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_diff_client_columns_in_the_resource_stamping_no_op_predicate()
+    {
+        _pgsqlDdl.Should().Contain("OLD.\"StudentUniqueId\" IS DISTINCT FROM NEW.\"StudentUniqueId\"");
+    }
+
+    [Test]
+    public void It_should_not_diff_mirror_columns_in_the_resource_stamping_no_op_predicate()
+    {
+        _pgsqlDdl.Should().NotContain("OLD.\"ContentVersion\" IS DISTINCT FROM");
+        _pgsqlDdl.Should().NotContain("OLD.\"ContentLastModifiedAt\" IS DISTINCT FROM");
+    }
+
+    private static DerivedRelationalModelSet BuildStampingTriggerModelSet(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var rootTableName = new DbTableName(schema, "Student");
+        var rootTable = new DbTableModel(
+            rootTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_Student",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("StudentUniqueId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.studentUniqueId",
+                        [new JsonPathSegment.Property("studentUniqueId")]
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ContentVersion"),
+                    ColumnKind.MirroredContentVersion,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("ContentLastModifiedAt"),
+                    ColumnKind.MirroredContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+        var concreteResource = new ConcreteResourceModel(
+            resourceKey,
+            ResourceStorageKind.RelationalTables,
+            new RelationalResourceModel(
+                resource,
+                schema,
+                ResourceStorageKind.RelationalTables,
+                rootTable,
+                [rootTable],
+                [],
+                []
+            )
+        );
+
+        var stampingTrigger = new DbTriggerInfo(
+            new DbTriggerName("TR_Student_Stamp"),
+            rootTableName,
+            [new DbColumnName("DocumentId")],
+            [],
+            new TriggerKindParameters.DocumentStamping(),
+            MirrorStampTargetTable: rootTableName
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "abc123",
+                1,
+                [0xAB, 0xC1],
+                [new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, new string('e', 64))],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [concreteResource],
+            [],
+            [],
+            [],
+            [stampingTrigger]
+        );
+    }
+}
