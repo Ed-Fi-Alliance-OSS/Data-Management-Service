@@ -284,7 +284,7 @@
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProblemDetails|FullyQualifiedName~PeopleRelationship\"",
       "Validate ProblemDetails assertions treat correlationId as present/non-empty unless the test intentionally supplies a fixed correlation-id header."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e-tests",
