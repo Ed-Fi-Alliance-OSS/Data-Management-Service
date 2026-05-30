@@ -1411,6 +1411,137 @@ public class Given_RelationshipAuthorizationPlannerTests
         }
     }
 
+    [TestCaseSource(nameof(PeopleStoredGetManyStrategyCases))]
+    public void It_should_plan_proposed_people_strategies_with_selected_subjects_and_root_bindings(
+        string strategyName,
+        RelationshipAuthorizationHierarchyDirection expectedDirection,
+        IReadOnlyList<ExpectedStoredPeopleSubject> expectedSubjects
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "ProposedPeopleStrategyMatrixResource");
+        DbColumnName[] rootBindingColumns =
+        [
+            Col("SchoolReference_SchoolId"),
+            Col("ZStudent_DocumentId"),
+            Col("AContact_DocumentId"),
+            Col("BStaff_DocumentId"),
+        ];
+        var mappingSet = CreateMixedRootEdOrgAndPeopleSubjectMappingSet(resource);
+        var writePlan = CreateWritePlan(mappingSet, resource, rootBindingColumns);
+        var planner = CreatePlanner();
+
+        var result = planner.PlanProposedValues(
+            mappingSet,
+            resource,
+            CreateConfiguredAuthorizationStrategies(strategyName),
+            new RelationalAuthorizationContext([42L], []),
+            writePlan
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.Authorized>();
+
+        var checkSpec = ((RelationshipAuthorizationResult.Authorized)result)
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject;
+        var proposedTarget = checkSpec
+            .CheckTarget.Should()
+            .BeOfType<RelationshipAuthorizationCheckTarget.Proposed>()
+            .Subject;
+
+        checkSpec.ConfiguredStrategy.Should().Be(new ConfiguredAuthorizationStrategy(strategyName, 0));
+        checkSpec.RelationshipLocalOrder.Should().Be(0);
+        checkSpec.Direction.Should().Be(expectedDirection);
+        checkSpec.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        proposedTarget.RootTable.Should().Be(Table(resource.ResourceName));
+        checkSpec
+            .Subjects.Select(static subject =>
+                (
+                    subject.Contributors.Single().Kind,
+                    subject.Table,
+                    subject.Column,
+                    subject.AuthObject,
+                    subject.IsPersonSubject
+                )
+            )
+            .Should()
+            .Equal(
+                expectedSubjects.Select(subject =>
+                    (
+                        subject.Kind,
+                        Table(resource.ResourceName),
+                        subject.Column,
+                        subject.AuthObject,
+                        subject.Kind
+                            is SecurableElementKind.Student
+                                or SecurableElementKind.Contact
+                                or SecurableElementKind.Staff
+                    )
+                )
+            );
+        proposedTarget
+            .SubjectBindingsInOrder.Select(static binding =>
+                (
+                    binding.Table,
+                    binding.Column,
+                    binding.BindingIndex,
+                    binding.LogicalKey,
+                    binding.ParameterSeed
+                )
+            )
+            .Should()
+            .Equal(
+                expectedSubjects.Select(subject =>
+                {
+                    var bindingIndex = Array.IndexOf(rootBindingColumns, subject.Column);
+
+                    return (
+                        Table(resource.ResourceName),
+                        subject.Column,
+                        bindingIndex,
+                        subject.Column.Value,
+                        subject.Column.Value
+                    );
+                })
+            );
+
+        for (var subjectIndex = 0; subjectIndex < checkSpec.Subjects.Count; subjectIndex++)
+        {
+            var personSubject = checkSpec.Subjects[subjectIndex];
+
+            if (!personSubject.IsPersonSubject)
+            {
+                continue;
+            }
+
+            personSubject
+                .AuthObject.SubjectValueColumn.Should()
+                .Be(expectedSubjects[subjectIndex].AuthObject.SubjectValueColumn);
+            personSubject
+                .AuthObject.ClaimEducationOrganizationIdColumn.Should()
+                .Be(expectedSubjects[subjectIndex].AuthObject.ClaimEducationOrganizationIdColumn);
+            personSubject
+                .AuthObject.FailureHint.Should()
+                .Be(expectedSubjects[subjectIndex].AuthObject.FailureHint);
+            personSubject.PersonMetadata!.ProposedAnchor.Should().NotBeNull();
+            personSubject
+                .PersonMetadata.ProposedAnchor!.Kind.Should()
+                .Be(RelationshipAuthorizationPersonProposedAnchorKind.RootRow);
+            personSubject
+                .PersonMetadata.ProposedAnchor.Binding.Should()
+                .Be(proposedTarget.SubjectBindingsInOrder[subjectIndex]);
+        }
+
+        foreach (var edOrgSubject in checkSpec.Subjects.Where(static subject => !subject.IsPersonSubject))
+        {
+            edOrgSubject.Table.Should().Be(Table(resource.ResourceName));
+            edOrgSubject.AuthObject.AllowsDirectClaimMatch.Should().BeTrue();
+            edOrgSubject
+                .AuthObject.Should()
+                .Be(RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(expectedDirection));
+        }
+    }
+
     [Test]
     public void It_should_plan_create_new_people_proposed_specs_with_root_row_anchors()
     {

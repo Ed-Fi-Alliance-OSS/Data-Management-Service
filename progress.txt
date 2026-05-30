@@ -59,3 +59,10 @@ Decisions: embedded CMS Claims.json already projects ODS-effective person create
 Files changed: Given_Embedded_Claims_Json.cs, PeopleCrudMetadataAuditTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed audit test files; dotnet test config backend unit --filter "FullyQualifiedName~Given_Embedded_Claims_Json" passed 38; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~Given_Ds52_People_Crud_Authorization_Metadata|FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector" passed 86.
 Notes: no production metadata or authoritative ApiSchema input changes needed; E2E retag/revalidation remains a later task.
+
+People relationship CRUD authorization - completed planner and endpoint-boundary unit coverage task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: existing selector/planner coverage already handled stored strategy matrix, direct/self/transitive/child People paths, no-claims, missing auth-view/root-binding, self-person create ineligibility, duplicate strategies, and boundary support; added proposed strategy matrix across all five People strategies to prove mixed EdOrg/People composition, root bindings, auth-view output columns, hints, and inverted EdOrg metadata.
+Files changed: RelationshipAuthorizationPlannerTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed planner test file; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationshipAuthorizationStrategyClassifier|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector|FullyQualifiedName~RelationshipAuthorizationEndpointExecutionBoundary" passed 107.
+Notes: first verification run failed because test assertion compared auth-view output columns to resource-local proposed root columns; corrected assertion to check auth-view output and proposed binding columns separately.
