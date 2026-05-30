@@ -97,17 +97,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         );
         var rootTarget = NormalizeCheckTargets(spec);
 
-        var mismatchedSubject = spec
-            .CheckSpecs.SelectMany(static checkSpec => checkSpec.Subjects)
-            .FirstOrDefault(subject => !subject.Table.Equals(GetRootTable(rootTarget)));
-
-        if (mismatchedSubject is not null)
-        {
-            throw new ArgumentException(
-                $"Authorization subject table '{mismatchedSubject.Table}' does not match root table '{GetRootTable(rootTarget)}'.",
-                nameof(spec)
-            );
-        }
+        ValidateSubjectRootTables(spec.CheckSpecs, rootTarget);
 
         ValidateAuthorizationClaimParameterization(spec.ClaimEducationOrganizationIdParameterization);
         var proposedValueParametersInOrder =
@@ -276,6 +266,182 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
         };
 
+    private static void ValidateSubjectRootTables(
+        IReadOnlyList<RelationshipAuthorizationCheckSpec> checkSpecs,
+        RelationshipAuthorizationCheckTarget rootTarget
+    )
+    {
+        var rootTable = GetRootTable(rootTarget);
+
+        foreach (var subject in checkSpecs.SelectMany(static checkSpec => checkSpec.Subjects))
+        {
+            if (subject.PersonMetadata is { } personMetadata)
+            {
+                if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
+                {
+                    throw new ArgumentException(
+                        $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match root table '{rootTable}'.",
+                        nameof(checkSpecs)
+                    );
+                }
+
+                continue;
+            }
+
+            if (!subject.Table.Equals(rootTable))
+            {
+                throw new ArgumentException(
+                    $"Authorization subject table '{subject.Table}' does not match root table '{rootTable}'.",
+                    nameof(checkSpecs)
+                );
+            }
+        }
+    }
+
+    private static IReadOnlyList<DbColumnName> BuildStoredTargetRootColumns(
+        SingleRecordRelationshipAuthorizationSqlSpec spec,
+        RelationshipAuthorizationCheckTarget.Stored storedTarget
+    ) =>
+        [
+            .. spec
+                .CheckSpecs.SelectMany(static checkSpec => checkSpec.Subjects)
+                .SelectMany(subject => GetStoredTargetRootColumns(storedTarget.RootTable, subject))
+                .Distinct()
+                .OrderBy(static column => column.Value, StringComparer.Ordinal),
+        ];
+
+    private static IReadOnlyList<DbColumnName> GetStoredTargetRootColumns(
+        DbTableName rootTable,
+        RelationshipAuthorizationSubject subject
+    )
+    {
+        if (subject.PersonMetadata is not { } personMetadata)
+        {
+            return [subject.Column];
+        }
+
+        if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
+        {
+            throw new ArgumentException(
+                $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match root table '{rootTable}'.",
+                nameof(subject)
+            );
+        }
+
+        switch (personMetadata.Path.Kind)
+        {
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                ValidateSelfPersonPath(subject, personMetadata);
+                return [personMetadata.StoredAnchor.RootDocumentIdColumn];
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
+                return [GetDirectRootPersonDocumentIdColumn(subject, personMetadata)];
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
+                ValidateTransitivePersonPath(subject, personMetadata, personMetadata.Path.Steps);
+                return [personMetadata.StoredAnchor.RootDocumentIdColumn];
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(subject),
+                    personMetadata.Path.Kind,
+                    "Unsupported People relationship authorization subject path kind."
+                );
+        }
+    }
+
+    private static void ValidateSelfPersonPath(
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata
+    )
+    {
+        if (
+            !subject.Table.Equals(personMetadata.StoredAnchor.RootTable)
+            || !subject.Column.Equals(personMetadata.StoredAnchor.RootDocumentIdColumn)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Self People authorization subject column '{subject.Table}.{subject.Column}' does not match root DocumentId column '{personMetadata.StoredAnchor.RootTable}.{personMetadata.StoredAnchor.RootDocumentIdColumn}'."
+            );
+        }
+    }
+
+    private static DbColumnName GetDirectRootPersonDocumentIdColumn(
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata
+    )
+    {
+        var step = personMetadata.Path.Steps[0];
+
+        if (!step.SourceTable.Equals(personMetadata.StoredAnchor.RootTable))
+        {
+            throw new InvalidOperationException(
+                $"Direct People authorization subject table '{step.SourceTable}' does not match root table '{personMetadata.StoredAnchor.RootTable}'."
+            );
+        }
+
+        if (!subject.Table.Equals(step.SourceTable) || !subject.Column.Equals(step.SourceColumnName))
+        {
+            throw new InvalidOperationException(
+                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match path root column '{step.SourceTable}.{step.SourceColumnName}'."
+            );
+        }
+
+        return step.SourceColumnName;
+    }
+
+    private static void ValidateTransitivePersonPath(
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        IReadOnlyList<ColumnPathStep> pathSteps
+    )
+    {
+        var expectedSourceTable = personMetadata.StoredAnchor.RootTable;
+
+        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+
+            if (!step.SourceTable.Equals(expectedSourceTable))
+            {
+                throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex} source table '{step.SourceTable}' does not match expected table '{expectedSourceTable}'."
+                );
+            }
+
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex} is missing a target table."
+                );
+
+            if (!pathSteps[stepIndex + 1].SourceTable.Equals(targetTable))
+            {
+                throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex + 1} source table '{pathSteps[stepIndex + 1].SourceTable}' does not match previous target table '{targetTable}'."
+                );
+            }
+
+            expectedSourceTable = targetTable;
+        }
+
+        var terminalStep = pathSteps[^1];
+
+        if (!terminalStep.SourceTable.Equals(expectedSourceTable))
+        {
+            throw new InvalidOperationException(
+                $"Transitive People authorization terminal source table '{terminalStep.SourceTable}' does not match expected table '{expectedSourceTable}'."
+            );
+        }
+
+        if (
+            !subject.Table.Equals(terminalStep.SourceTable)
+            || !subject.Column.Equals(terminalStep.SourceColumnName)
+        )
+        {
+            throw new InvalidOperationException(
+                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match transitive terminal path column '{terminalStep.SourceTable}.{terminalStep.SourceColumnName}'."
+            );
+        }
+    }
+
     private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(NormalizedSqlSpec normalizedSpec)
     {
         List<QuerySqlParameter> parameters = [];
@@ -434,12 +600,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     )
     {
         var writer = new SqlWriter(_sqlDialect);
-        var rootColumns = spec
-            .CheckSpecs.SelectMany(static checkSpec => checkSpec.Subjects)
-            .Select(static subject => subject.Column)
-            .Distinct()
-            .OrderBy(static column => column.Value, StringComparer.Ordinal)
-            .ToArray();
+        var rootColumns = BuildStoredTargetRootColumns(spec, storedTarget);
 
         AppendTargetCte(writer, storedTarget, rootColumns, spec.DocumentIdParameterName);
         writer.AppendLine(",");
@@ -579,6 +740,38 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     )
     {
         var subject = checkSpec.Subjects[subjectOrdinal];
+
+        if (subject.PersonMetadata is { } personMetadata)
+        {
+            AppendStoredPeopleSubjectFailureSelect(
+                writer,
+                strategyOrdinal,
+                subjectOrdinal,
+                subject,
+                personMetadata,
+                authorizationClaimParameterization
+            );
+            return;
+        }
+
+        AppendStoredEdOrgSubjectFailureSelect(
+            writer,
+            strategyOrdinal,
+            subjectOrdinal,
+            checkSpec,
+            authorizationClaimParameterization
+        );
+    }
+
+    private static void AppendStoredEdOrgSubjectFailureSelect(
+        SqlWriter writer,
+        int strategyOrdinal,
+        int subjectOrdinal,
+        RelationshipAuthorizationCheckSpec checkSpec,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        var subject = checkSpec.Subjects[subjectOrdinal];
         var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
 
         writer.AppendLine("SELECT");
@@ -606,6 +799,235 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
 
         writer.AppendLine();
         writer.AppendLine($"FROM {TargetCte}");
+    }
+
+    private static void AppendStoredPeopleSubjectFailureSelect(
+        SqlWriter writer,
+        int strategyOrdinal,
+        int subjectOrdinal,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+    )
+    {
+        var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
+
+        writer.AppendLine("SELECT");
+
+        using (writer.Indent())
+        {
+            writer.AppendLine($"{strategyOrdinal},");
+            writer.AppendLine($"{subjectOrdinal},");
+            writer.Append("CASE WHEN ");
+            AppendStoredPeopleSubjectInvalidDataSql(
+                writer,
+                subject,
+                personMetadata,
+                strategyOrdinal,
+                subjectOrdinal
+            );
+            writer.Append(" THEN 's' ELSE 'n' END,");
+            writer.AppendLine();
+            writer.Append("CASE WHEN NOT ");
+            AppendStoredPeopleAuthorizationSuccessSql(
+                writer,
+                subject,
+                personMetadata,
+                authorizationClaimParameterization,
+                authAlias,
+                strategyOrdinal,
+                subjectOrdinal
+            );
+            writer.AppendLine(" THEN 1 ELSE 0 END");
+        }
+
+        writer.AppendLine();
+        writer.AppendLine($"FROM {TargetCte}");
+    }
+
+    private static void AppendStoredPeopleSubjectInvalidDataSql(
+        SqlWriter writer,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        int strategyOrdinal,
+        int subjectOrdinal
+    )
+    {
+        switch (personMetadata.Path.Kind)
+        {
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                AppendTargetColumn(writer, personMetadata.StoredAnchor.RootDocumentIdColumn);
+                writer.Append(" IS NULL");
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
+                AppendTargetColumn(writer, GetDirectRootPersonDocumentIdColumn(subject, personMetadata));
+                writer.Append(" IS NULL");
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
+                writer.Append("NOT EXISTS (");
+                AppendStoredTransitivePersonPathSelectSql(
+                    writer,
+                    subject,
+                    personMetadata,
+                    strategyOrdinal,
+                    subjectOrdinal,
+                    appendMembershipCheck: null
+                );
+                writer.Append(")");
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(personMetadata),
+                    personMetadata.Path.Kind,
+                    "Unsupported People relationship authorization subject path kind."
+                );
+        }
+    }
+
+    private static void AppendStoredPeopleAuthorizationSuccessSql(
+        SqlWriter writer,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias,
+        int strategyOrdinal,
+        int subjectOrdinal
+    )
+    {
+        switch (personMetadata.Path.Kind)
+        {
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                writer.Append("EXISTS (");
+                AppendAuthorizationExistsSelectSql(
+                    writer,
+                    subject.AuthObject,
+                    subjectValueWriter =>
+                        AppendTargetColumn(
+                            subjectValueWriter,
+                            personMetadata.StoredAnchor.RootDocumentIdColumn
+                        ),
+                    authorizationClaimParameterization,
+                    authAlias
+                );
+                writer.Append(")");
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
+                writer.Append("EXISTS (");
+                AppendAuthorizationExistsSelectSql(
+                    writer,
+                    subject.AuthObject,
+                    subjectValueWriter =>
+                        AppendTargetColumn(
+                            subjectValueWriter,
+                            GetDirectRootPersonDocumentIdColumn(subject, personMetadata)
+                        ),
+                    authorizationClaimParameterization,
+                    authAlias
+                );
+                writer.Append(")");
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
+                writer.Append("EXISTS (");
+                AppendStoredTransitivePersonPathSelectSql(
+                    writer,
+                    subject,
+                    personMetadata,
+                    strategyOrdinal,
+                    subjectOrdinal,
+                    terminalValueWriter =>
+                    {
+                        writer.Append("EXISTS (");
+                        AppendAuthorizationExistsSelectSql(
+                            writer,
+                            subject.AuthObject,
+                            terminalValueWriter,
+                            authorizationClaimParameterization,
+                            authAlias
+                        );
+                        writer.Append(")");
+                    }
+                );
+                writer.Append(")");
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(personMetadata),
+                    personMetadata.Path.Kind,
+                    "Unsupported People relationship authorization subject path kind."
+                );
+        }
+    }
+
+    private static void AppendStoredTransitivePersonPathSelectSql(
+        SqlWriter writer,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
+        int strategyOrdinal,
+        int subjectOrdinal,
+        Action<Action<SqlWriter>>? appendMembershipCheck
+    )
+    {
+        var pathSteps = personMetadata.Path.Steps;
+        ValidateTransitivePersonPath(subject, personMetadata, pathSteps);
+
+        var rootAlias = $"p{strategyOrdinal}_{subjectOrdinal}_0";
+        var pathJoinAliases = Enumerable
+            .Range(1, pathSteps.Count - 1)
+            .Select(index => $"p{strategyOrdinal}_{subjectOrdinal}_{index}")
+            .ToArray();
+
+        writer.Append("SELECT 1 FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(personMetadata.StoredAnchor.RootTable));
+        writer.Append($" {rootAlias}");
+
+        var currentSourceAlias = rootAlias;
+
+        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target table for intermediate joins."
+                );
+            var targetColumn =
+                step.TargetColumnName
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target column for intermediate joins."
+                );
+            var joinAlias = pathJoinAliases[stepIndex];
+
+            writer.Append(" JOIN ");
+            writer.AppendRelation(new SqlRelationRef.PhysicalTable(targetTable));
+            writer.Append($" {joinAlias} ON {joinAlias}.");
+            writer.AppendQuoted(targetColumn.Value);
+            writer.Append($" = {currentSourceAlias}.");
+            writer.AppendQuoted(step.SourceColumnName.Value);
+
+            currentSourceAlias = joinAlias;
+        }
+
+        var terminalStep = pathSteps[^1];
+
+        writer.Append($" WHERE {rootAlias}.");
+        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.Append(" = ");
+        AppendTargetColumn(writer, personMetadata.StoredAnchor.RootDocumentIdColumn);
+        writer.Append($" AND {currentSourceAlias}.");
+        writer.AppendQuoted(terminalStep.SourceColumnName.Value);
+        writer.Append(" IS NOT NULL");
+
+        if (appendMembershipCheck is null)
+        {
+            return;
+        }
+
+        writer.Append(" AND ");
+        appendMembershipCheck(terminalValueWriter =>
+        {
+            terminalValueWriter.Append($"{currentSourceAlias}.");
+            terminalValueWriter.AppendQuoted(terminalStep.SourceColumnName.Value);
+        });
     }
 
     private static void AppendProposedSubjectFailuresCte(SqlWriter writer, NormalizedSqlSpec normalizedSpec)

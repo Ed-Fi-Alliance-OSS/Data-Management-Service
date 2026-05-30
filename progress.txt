@@ -10,3 +10,10 @@ Decisions: removed People endpoint staging 501 conversion for GET-by-id, POST, P
 Files changed: RelationalDocumentStoreRepository.cs, RelationshipAuthorizationEndpointExecutionBoundary.cs, repository/executor/boundary unit tests, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationEndpointExecutionBoundary|FullyQualifiedName~PageDocumentIdAuthorizationSpecAdapter" passed 15; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor" passed 194.
 Notes: direct/transitive proposed People SQL generation remains for next SQL compiler/proposed-value tasks; current executor unit proves direct stored People specs are no longer blocked at staging boundary.
+
+People relationship CRUD authorization - completed stored-value People SQL compiler task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: single-record compiler now validates People root anchors separately from terminal subject tables; direct/self People compare target DocumentId columns to auth views; transitive People re-anchors by target root DocumentId and treats missing/null path rows as stored invalid data while auth-view misses remain no-relationship.
+Files changed: SingleRecordRelationshipAuthorizationSqlCompiler.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler" passed 30.
+Notes: proposed People runtime SQL still remains for next task.

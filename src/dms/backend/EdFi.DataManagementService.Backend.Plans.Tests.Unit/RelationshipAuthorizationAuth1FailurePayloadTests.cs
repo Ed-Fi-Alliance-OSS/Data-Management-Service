@@ -1870,6 +1870,305 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Contain("target.[SchoolId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds) OR EXISTS");
     }
 
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Student,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Contact,
+        RelationshipAuthorizationPersonKind.Contact,
+        "Contact_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Staff,
+        RelationshipAuthorizationPersonKind.Staff,
+        "Staff_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Student,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Contact,
+        RelationshipAuthorizationPersonKind.Contact,
+        "Contact_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Staff,
+        RelationshipAuthorizationPersonKind.Staff,
+        "Staff_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.StudentThroughResponsibility,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId"
+    )]
+    public void It_should_compile_stored_direct_people_authorization_sql(
+        SqlDialect dialect,
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        string personDocumentIdColumnName
+    )
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+        var subject = CreateDirectPersonSubject(
+            authViewKind,
+            personKind,
+            new DbColumnName(personDocumentIdColumnName)
+        );
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredPeopleCheckSpec(
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                        0,
+                        0,
+                        new DbTableName(new DbSchemaName("edfi"), "School"),
+                        subject
+                    ),
+                ],
+                parameterization,
+                14
+            )
+        );
+
+        var subjectColumn = QuoteIdentifier(dialect, personDocumentIdColumnName);
+        var authObject = subject.AuthObject;
+
+        plan.AuthorizationSql.Should()
+            .Contain($"CASE WHEN target.{subjectColumn} IS NULL THEN 's' ELSE 'n' END");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                $"EXISTS (SELECT 1 FROM {QuoteRelation(dialect, authObject.Name)} a0_0 WHERE a0_0.{QuoteIdentifier(dialect, authObject.SubjectValueColumn.Value)} = target.{subjectColumn} AND a0_0.{QuoteIdentifier(dialect, authObject.ClaimEducationOrganizationIdColumn.Value)}{ClaimEducationOrganizationIdFilterFragment(dialect)})"
+            );
+        plan.AuthorizationSql.Should().NotContain("UniqueId");
+        plan.AuthorizationSql.Should().NotContain("USI");
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Student,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Contact,
+        RelationshipAuthorizationPersonKind.Contact,
+        "Contact_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Pgsql,
+        RelationshipAuthorizationPersonAuthViewKind.Staff,
+        RelationshipAuthorizationPersonKind.Staff,
+        "Staff_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Student,
+        RelationshipAuthorizationPersonKind.Student,
+        "Student_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Contact,
+        RelationshipAuthorizationPersonKind.Contact,
+        "Contact_DocumentId"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        RelationshipAuthorizationPersonAuthViewKind.Staff,
+        RelationshipAuthorizationPersonKind.Staff,
+        "Staff_DocumentId"
+    )]
+    public void It_should_compile_stored_self_people_authorization_sql(
+        SqlDialect dialect,
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        string authViewPersonDocumentIdColumnName
+    )
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), personKind.ToString());
+        var subject = CreateSelfPersonSubject(authViewKind, personKind, rootTable);
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredPeopleCheckSpec(
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                        0,
+                        0,
+                        rootTable,
+                        subject
+                    ),
+                ],
+                parameterization,
+                15
+            )
+        );
+
+        plan.AuthorizationSql.Should().Contain($"FROM {QuoteRelation(dialect, rootTable)} r");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                $"CASE WHEN target.{QuoteIdentifier(dialect, "DocumentId")} IS NULL THEN 's' ELSE 'n' END"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                $"a0_0.{QuoteIdentifier(dialect, authViewPersonDocumentIdColumnName)} = target.{QuoteIdentifier(dialect, "DocumentId")}"
+            );
+        plan.AuthorizationSql.Should().NotContain("UniqueId");
+        plan.AuthorizationSql.Should().NotContain("USI");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_stored_transitive_people_authorization_sql_with_invalid_data_failures(
+        SqlDialect dialect
+    )
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreateTransitivePersonSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            rootTable,
+            [
+                new ColumnPathStep(
+                    rootTable,
+                    new DbColumnName("StudentAcademicRecord_DocumentId"),
+                    studentAcademicRecordTable,
+                    new DbColumnName("DocumentId")
+                ),
+                new ColumnPathStep(
+                    studentAcademicRecordTable,
+                    AuthNames.StudentDocumentId,
+                    studentTable,
+                    new DbColumnName("DocumentId")
+                ),
+            ]
+        );
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredPeopleCheckSpec(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                        0,
+                        0,
+                        rootTable,
+                        subject
+                    ),
+                ],
+                parameterization,
+                16
+            )
+        );
+
+        var documentId = QuoteIdentifier(dialect, "DocumentId");
+        var firstHopColumn = QuoteIdentifier(dialect, "StudentAcademicRecord_DocumentId");
+        var studentDocumentId = QuoteIdentifier(dialect, AuthNames.StudentDocumentId.Value);
+        var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+
+        plan.AuthorizationSql.Should()
+            .Contain(
+                $"CASE WHEN NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, rootTable)} p0_0_0 JOIN {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_1 ON p0_0_1.{documentId} = p0_0_0.{firstHopColumn} WHERE p0_0_0.{documentId} = target.{documentId} AND p0_0_1.{studentDocumentId} IS NOT NULL) THEN 's' ELSE 'n' END"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                $"AND EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_1.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})) THEN 1 ELSE 0 END"
+            );
+        plan.AuthorizationSql.Should().NotContain("UniqueId");
+        plan.AuthorizationSql.Should().NotContain("USI");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_mixed_edorg_and_people_subjects_in_one_stored_strategy(SqlDialect dialect)
+    {
+        var parameterization = AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+            dialect,
+            [100L],
+            "ClaimEducationOrganizationIds"
+        );
+        var compiler = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect);
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+
+        var plan = compiler.Compile(
+            new SingleRecordRelationshipAuthorizationSqlSpec(
+                [
+                    CreateStoredCheckSpec(
+                        RelationshipAuthorizationHierarchyDirection.Normal,
+                        0,
+                        0,
+                        CreateSubject("SchoolId", "$.schoolReference.schoolId", rootTable),
+                        CreateDirectPersonSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Student,
+                            RelationshipAuthorizationPersonKind.Student,
+                            AuthNames.StudentDocumentId,
+                            rootTable
+                        )
+                    ),
+                    CreateStoredPeopleCheckSpec(
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                        1,
+                        1,
+                        rootTable,
+                        CreateDirectPersonSubject(
+                            RelationshipAuthorizationPersonAuthViewKind.Staff,
+                            RelationshipAuthorizationPersonKind.Staff,
+                            AuthNames.StaffDocumentId,
+                            rootTable
+                        )
+                    ),
+                ],
+                parameterization,
+                17
+            )
+        );
+
+        plan.AuthorizationSql.Should().Contain("a0_0");
+        plan.AuthorizationSql.Should().Contain("a0_1");
+        plan.AuthorizationSql.Should().Contain("a1_0");
+        plan.AuthorizationSql.Should()
+            .Contain(
+                $"NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {QuoteIdentifier(dialect, "StrategyOrdinal")} = 0) OR NOT EXISTS (SELECT 1 FROM failed_subjects WHERE {QuoteIdentifier(dialect, "StrategyOrdinal")} = 1)"
+            );
+    }
+
     [Test]
     public void It_should_compile_postgresql_proposed_auth1_sql_with_or_strategies_and_and_subjects()
     {
@@ -2079,7 +2378,9 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         compile
             .Should()
             .Throw<ArgumentException>()
-            .WithMessage("*only supports the EdOrg hierarchy auth object*");
+            .WithMessage(
+                "*supports only EdOrg hierarchy or People relationship checks*auth.StudentAuthorization*"
+            );
     }
 
     [Test]
@@ -2135,7 +2436,7 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
             .Should()
             .Throw<ArgumentException>()
             .WithMessage(
-                "*Single-record relationship authorization SQL only supports the EdOrg hierarchy auth object*auth.EducationOrganizationIdToStudentDocumentId*"
+                "*Single-record relationship authorization SQL supports only EdOrg hierarchy or People relationship checks*auth.EducationOrganizationIdToStudentDocumentId*"
             );
     }
 
@@ -2398,10 +2699,15 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         );
     }
 
-    private static RelationshipAuthorizationSubject CreateSubject(string columnName, string jsonPath) =>
+    private static RelationshipAuthorizationSubject CreateSubject(
+        string columnName,
+        string jsonPath,
+        DbTableName? table = null,
+        string resourceName = "School"
+    ) =>
         new(
-            new QualifiedResourceName("Ed-Fi", "School"),
-            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new QualifiedResourceName("Ed-Fi", resourceName),
+            table ?? new DbTableName(new DbSchemaName("edfi"), "School"),
             new DbColumnName(columnName),
             RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
                 RelationshipAuthorizationHierarchyDirection.Normal
@@ -2414,6 +2720,154 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
                 ),
             ]
         );
+
+    private static RelationshipAuthorizationCheckSpec CreateStoredPeopleCheckSpec(
+        string strategyName,
+        int configuredStrategyIndex,
+        int relationshipLocalOrder,
+        DbTableName rootTable,
+        params RelationshipAuthorizationSubject[] subjects
+    ) =>
+        new(
+            new ConfiguredAuthorizationStrategy(strategyName, configuredStrategyIndex),
+            relationshipLocalOrder,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Stored,
+            subjects,
+            new RelationshipAuthorizationCheckTarget.Stored(rootTable, new DbColumnName("DocumentId"))
+        );
+
+    private static RelationshipAuthorizationSubject CreateDirectPersonSubject(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        DbColumnName rootPersonDocumentIdColumn,
+        DbTableName? rootTable = null,
+        string resourceName = "School"
+    )
+    {
+        var resolvedRootTable = rootTable ?? new DbTableName(new DbSchemaName("edfi"), "School");
+        var documentIdColumn = new DbColumnName("DocumentId");
+
+        return new RelationshipAuthorizationSubject(
+            new QualifiedResourceName("Ed-Fi", resourceName),
+            resolvedRootTable,
+            rootPersonDocumentIdColumn,
+            RelationshipAuthorizationAuthObject.CreatePerson(authViewKind),
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    MapPersonKind(personKind),
+                    $"$.{personKind.ToString().ToLowerInvariant()}Reference.{personKind.ToString().ToLowerInvariant()}UniqueId",
+                    $"{personKind}UniqueId"
+                ),
+            ],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                personKind,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                    [
+                        new ColumnPathStep(
+                            resolvedRootTable,
+                            rootPersonDocumentIdColumn,
+                            new DbTableName(new DbSchemaName("edfi"), personKind.ToString()),
+                            documentIdColumn
+                        ),
+                    ]
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(resolvedRootTable, documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+    }
+
+    private static RelationshipAuthorizationSubject CreateSelfPersonSubject(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        DbTableName rootTable
+    )
+    {
+        var documentIdColumn = new DbColumnName("DocumentId");
+
+        return new RelationshipAuthorizationSubject(
+            new QualifiedResourceName("Ed-Fi", personKind.ToString()),
+            rootTable,
+            documentIdColumn,
+            RelationshipAuthorizationAuthObject.CreatePerson(authViewKind),
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    MapPersonKind(personKind),
+                    $"$.{personKind.ToString().ToLowerInvariant()}UniqueId",
+                    $"{personKind}UniqueId"
+                ),
+            ],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                personKind,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId,
+                    []
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(rootTable, documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+    }
+
+    private static RelationshipAuthorizationSubject CreateTransitivePersonSubject(
+        RelationshipAuthorizationPersonAuthViewKind authViewKind,
+        RelationshipAuthorizationPersonKind personKind,
+        DbTableName rootTable,
+        IReadOnlyList<ColumnPathStep> pathSteps
+    )
+    {
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var terminalStep = pathSteps[^1];
+
+        return new RelationshipAuthorizationSubject(
+            new QualifiedResourceName("Ed-Fi", rootTable.Name),
+            terminalStep.SourceTable,
+            terminalStep.SourceColumnName,
+            RelationshipAuthorizationAuthObject.CreatePerson(authViewKind),
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    MapPersonKind(personKind),
+                    $"$.{personKind.ToString().ToLowerInvariant()}Reference.{personKind.ToString().ToLowerInvariant()}UniqueId",
+                    $"{personKind}UniqueId"
+                ),
+            ],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                personKind,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+                    pathSteps
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(rootTable, documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+    }
+
+    private static SecurableElementKind MapPersonKind(RelationshipAuthorizationPersonKind personKind) =>
+        personKind switch
+        {
+            RelationshipAuthorizationPersonKind.Student => SecurableElementKind.Student,
+            RelationshipAuthorizationPersonKind.Contact => SecurableElementKind.Contact,
+            RelationshipAuthorizationPersonKind.Staff => SecurableElementKind.Staff,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(personKind),
+                personKind,
+                "Unsupported person kind."
+            ),
+        };
+
+    private static string QuoteIdentifier(SqlDialect dialect, string identifier) =>
+        dialect is SqlDialect.Pgsql ? $"\"{identifier}\"" : $"[{identifier}]";
+
+    private static string QuoteRelation(SqlDialect dialect, DbTableName table) =>
+        $"{QuoteIdentifier(dialect, table.Schema.Value)}.{QuoteIdentifier(dialect, table.Name)}";
+
+    private static string ClaimEducationOrganizationIdFilterFragment(SqlDialect dialect) =>
+        dialect is SqlDialect.Pgsql
+            ? " = ANY(@ClaimEducationOrganizationIds)"
+            : " IN (@ClaimEducationOrganizationIds_0)";
 
     private static RelationshipAuthorizationSubject[] StampNonPersonSubjects(
         RelationshipAuthorizationAuthObject authObject,

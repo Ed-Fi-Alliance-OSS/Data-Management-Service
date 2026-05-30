@@ -55,7 +55,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler\"",
       "Inspect generated PostgreSQL and SQL Server expectations for self, direct Student, direct Contact, direct Staff, transitive Student, responsibility Student, and mixed EdOrg-and-People checks."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
