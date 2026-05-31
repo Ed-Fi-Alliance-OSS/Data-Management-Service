@@ -355,5 +355,69 @@
       "Inspect PostgreSQL and SQL Server proposed transitive People SQL assertions to confirm the invalid-data path predicate is not duplicated."
     ],
     "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Make POST relationship authorization plan selection the single source of truth for POST stored and proposed authorization.",
+    "acceptance-criteria": [
+      "RelationalDocumentStoreRepository passes PostRelationshipAuthorizationPlans for target-dependent POST authorization without also pre-populating StoredRelationshipAuthorization or ProposedRelationshipAuthorization on the initial executor request.",
+      "StoredRelationshipAuthorizationOrchestrator selects the create-new or existing-resource POST plan inside the write session and sets StoredRelationshipAuthorization and ProposedRelationshipAuthorization only on the selected execution request.",
+      "POST create-new still uses create-new proposed authorization, and POST-as-update still authorizes stored values before proposed values.",
+      "Existing POST create-new and POST-as-update unit coverage is updated only as needed for the simplified request state."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs around CreatePostRelationshipAuthorizationContinue and ExecuteWriteGuardRails.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/StoredRelationshipAuthorizationOrchestrator.cs around ResolvePostRelationshipAuthorizationPlansAsync.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~DefaultRelationalWriteExecutor\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Remove unused transitive People first-hop runtime metadata from proposed relationship authorization values.",
+    "acceptance-criteria": [
+      "ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue carries only the runtime first-hop value needed for SQL parameter binding.",
+      "RelationshipAuthorizationProposedValueExtractor still derives the transitive first-hop value from the finalized root row.",
+      "RelationalWriteNoProfilePersister still binds the first-hop value for proposed transitive People authorization.",
+      "Unit assertions are updated so they verify the runtime value behavior rather than unused Path or Binding payload."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationshipAuthorizationProposedValueExtractor.cs for the TransitivePeopleFirstHopAnchorValue shape.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs around AddProposedValueParameterValues.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~RelationalWriteNoProfilePersister\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Extract shared People relationship path validation helpers used by page and single-record SQL compilers.",
+    "acceptance-criteria": [
+      "Direct People root-column validation and transitive People path validation live in one shared helper used by both PageDocumentIdSqlCompiler and SingleRecordRelationshipAuthorizationSqlCompiler.",
+      "PageDocumentIdSqlCompiler keeps only GET-many SQL emission logic and delegates shared People path validation to the helper.",
+      "SingleRecordRelationshipAuthorizationSqlCompiler keeps only single-record SQL emission logic and delegates shared People path validation to the helper.",
+      "Generated SQL remains unchanged for direct and transitive People subjects in both GET-many and single-record authorization tests."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs for removal of duplicated People path validation logic.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs for removal of duplicated People path validation logic.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler|FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Share the supported relationship strategy names used by single-record and GET-many diagnostics.",
+    "acceptance-criteria": [
+      "RelationalDocumentStoreRepository defines the supported People-capable relationship strategy name list once for relationship authorization diagnostics.",
+      "GET-by-id, POST, PUT, DELETE, and GET-many known-but-not-enabled diagnostics use the shared strategy name list.",
+      "Diagnostic output remains the same except for intentional removal of duplicated list definitions.",
+      "Repository unit coverage or assertions continue to prove the supported strategy names include EdOrg-only, EdOrg-and-People, People-only, Students-only, and Students-only-through-responsibility strategies."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs for a single shared supported relationship strategy name list.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
+      "Inspect known-but-not-enabled diagnostic assertions for GET-by-id, POST, PUT, DELETE, and GET-many relationship authorization."
+    ],
+    "completed": false
   }
 ]
