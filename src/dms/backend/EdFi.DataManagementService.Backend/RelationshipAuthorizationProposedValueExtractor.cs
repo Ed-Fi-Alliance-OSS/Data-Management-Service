@@ -35,11 +35,8 @@ internal abstract record ProposedRelationshipAuthorizationRuntimeValue
     public sealed record SubjectValue(object? Value) : ProposedRelationshipAuthorizationRuntimeValue;
 
     // This is an anchor into a People path, not the terminal person DocumentId consumed by auth views.
-    public sealed record TransitivePeopleFirstHopAnchorValue(
-        object? Value,
-        RelationshipAuthorizationPersonSubjectPath Path,
-        RelationshipAuthorizationProposedValueBinding Binding
-    ) : ProposedRelationshipAuthorizationRuntimeValue;
+    public sealed record TransitivePeopleFirstHopAnchorValue(object? Value)
+        : ProposedRelationshipAuthorizationRuntimeValue;
 }
 
 internal abstract record ProposedRelationshipAuthorizationExtractionResult
@@ -250,15 +247,11 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             {
                 Path.Kind: RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
                 ProposedAnchor.Kind: RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
-            } transitivePersonMetadata
+            }
         )
         {
             return new ProposedRuntimeValue.Ready(
-                new ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue(
-                    value,
-                    transitivePersonMetadata.Path,
-                    transitivePersonMetadata.ProposedAnchor.Binding
-                )
+                new ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue(value)
             );
         }
 

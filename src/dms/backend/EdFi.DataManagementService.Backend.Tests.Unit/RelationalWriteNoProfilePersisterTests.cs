@@ -1850,9 +1850,7 @@ public class Given_Relational_Write_No_Profile_Persister
                             subject,
                             proposedValueBinding,
                             new ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue(
-                                schoolIdValue,
-                                personPath,
-                                proposedValueBinding
+                                schoolIdValue
                             )
                         ),
                     ]

@@ -143,3 +143,10 @@ Decisions: extracted direct root-column, self root DocumentId, stored-anchor roo
 Files changed: RelationshipAuthorizationPeoplePathValidation.cs, PageDocumentIdSqlCompiler.cs, SingleRecordRelationshipAuthorizationSqlCompiler.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed plans files; first test run failed on unused using in new helper, fixed; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler|FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler" passed 124.
 Notes: remaining open tasks are low cleanup for proposed runtime metadata and shared diagnostic strategy names.
+
+People relationship CRUD authorization - completed proposed runtime metadata cleanup task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: TransitivePeopleFirstHopAnchorValue now carries only the first-hop runtime value consumed by SQL parameter binding; path and binding metadata stay on the runtime subject/authorization subject where diagnostics and validation already read them.
+Files changed: RelationshipAuthorizationProposedValueExtractor.cs, RelationshipAuthorizationProposedValueExtractorTests.cs, DefaultRelationalWriteExecutorTests.cs, RelationalWriteNoProfilePersisterTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~RelationalWriteNoProfilePersister" passed 11.
+Notes: remaining open task is shared diagnostic strategy names.

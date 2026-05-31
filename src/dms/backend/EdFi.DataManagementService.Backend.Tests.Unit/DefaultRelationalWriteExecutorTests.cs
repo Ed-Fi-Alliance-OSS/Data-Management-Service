@@ -5832,7 +5832,6 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue>()
             .Subject;
         anchorValue.Value.Should().Be(255901);
-        anchorValue.Binding.Should().Be(runtimeSubject.Binding);
         runtimeSubject.Binding.Table.Should().Be(rootPlan.TableModel.Table);
         runtimeSubject.Binding.Column.Value.Should().Be("SchoolId");
         runtimeSubject.Subject.Table.ToString().Should().Be("edfi.StudentSchoolAssociation");
@@ -5840,7 +5839,6 @@ public class Given_Default_Relational_Write_Executor
 
         runtimeSubject.Subject.PersonMetadata.Should().NotBeNull();
         var personMetadata = runtimeSubject.Subject.PersonMetadata!;
-        anchorValue.Path.Should().Be(personMetadata.Path);
         personMetadata
             .Path.Kind.Should()
             .Be(RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath);

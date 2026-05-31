@@ -136,9 +136,11 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
             .BeOfType<ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue>()
             .Subject;
         runtimeValue.Value.Should().Be(255901L);
-        runtimeValue.Binding.Should().Be(runtimeSubject.Binding);
-        runtimeValue.Path.Kind.Should().Be(RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath);
-        runtimeValue.Path.Steps.Should().HaveCount(2);
+        runtimeSubject.Binding.Column.Value.Should().Be("SchoolId");
+        runtimeSubject
+            .Subject.PersonMetadata!.Path.Kind.Should()
+            .Be(RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath);
+        runtimeSubject.Subject.PersonMetadata.Path.Steps.Should().HaveCount(2);
         runtimeSubject.Subject.Table.ToString().Should().Be("edfi.StudentSchoolAssociation");
         runtimeSubject.Subject.Column.Should().Be(AuthNames.StudentDocumentId);
     }
