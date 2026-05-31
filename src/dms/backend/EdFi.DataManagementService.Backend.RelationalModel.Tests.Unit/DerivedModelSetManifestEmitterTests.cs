@@ -128,6 +128,60 @@ public class Given_A_Descriptor_Only_Model_Set_When_Emitting_Manifest
 }
 
 [TestFixture]
+public class Given_Abstract_Union_View_With_Descriptor_Identity_When_Emitting_Manifest
+{
+    private JsonObject _descriptorOutputColumn = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildDescriptorIdentityProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+        ]);
+        var derivedSet = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var manifest = DerivedModelSetManifestEmitter.Emit(derivedSet);
+
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var abstractUnionViews =
+            root["abstract_union_views"] as JsonArray
+            ?? throw new InvalidOperationException("Expected abstract_union_views to be a JSON array.");
+        var programCarrierView = abstractUnionViews
+            .OfType<JsonObject>()
+            .Single(view =>
+            {
+                var resource =
+                    view["resource"] as JsonObject
+                    ?? throw new InvalidOperationException("Expected abstract union view resource.");
+
+                return resource["resource_name"]!.GetValue<string>() == "ProgramCarrier";
+            });
+        var outputColumns =
+            programCarrierView["output_columns"] as JsonArray
+            ?? throw new InvalidOperationException("Expected output_columns to be a JSON array.");
+
+        _descriptorOutputColumn = outputColumns
+            .OfType<JsonObject>()
+            .Single(column => column["source_path"]?.GetValue<string>() == "$.programTypeDescriptor");
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_reference_flag_on_abstract_union_view_output_columns()
+    {
+        _descriptorOutputColumn["column_name"]!.GetValue<string>().Should().Be("ProgramTypeDescriptor");
+        _descriptorOutputColumn["is_descriptor_reference"]!.GetValue<bool>().Should().BeTrue();
+    }
+}
+
+[TestFixture]
 public class Given_A_Contact_Model_Set_With_Extension_When_Emitting_Manifest
 {
     private string _manifest = default!;

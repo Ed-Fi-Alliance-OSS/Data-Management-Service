@@ -393,6 +393,14 @@ internal static class RelationalAccessTestData
         "Ed-Fi",
         "StudentAcademicRecord"
     );
+    private static readonly QualifiedResourceName _schoolClassificationResource = new(
+        "Ed-Fi",
+        "SchoolClassification"
+    );
+    private static readonly QualifiedResourceName _schoolClassificationMemberResource = new(
+        "Ed-Fi",
+        "SchoolClassificationMember"
+    );
     private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
         "Ed-Fi",
         "SchoolTypeDescriptor"
@@ -408,13 +416,20 @@ internal static class RelationalAccessTestData
         var meetingKey = new ResourceKeyEntry(14, _meetingResource, "1.0", false);
         var decimalKeyKey = new ResourceKeyEntry(15, _decimalKeyResource, "1.0", false);
         var studentAcademicRecordKey = new ResourceKeyEntry(16, _studentAcademicRecordResource, "1.0", false);
+        var schoolClassificationKey = new ResourceKeyEntry(17, _schoolClassificationResource, "1.0", true);
+        var schoolClassificationMemberKey = new ResourceKeyEntry(
+            18,
+            _schoolClassificationMemberResource,
+            "1.0",
+            false
+        );
         var educationOrganizationKey = new ResourceKeyEntry(30, _educationOrganizationResource, "1.0", true);
 
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 8,
+            ResourceKeyCount: 10,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
             ResourceKeysInIdOrder:
@@ -426,6 +441,8 @@ internal static class RelationalAccessTestData
                 meetingKey,
                 decimalKeyKey,
                 studentAcademicRecordKey,
+                schoolClassificationKey,
+                schoolClassificationMemberKey,
                 educationOrganizationKey,
             ]
         );
@@ -475,6 +492,14 @@ internal static class RelationalAccessTestData
                         ResourceStorageKind.SharedDescriptorTable
                     )
                 ),
+                new ConcreteResourceModel(
+                    schoolClassificationMemberKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(
+                        _schoolClassificationMemberResource,
+                        "SchoolClassificationMember"
+                    )
+                ),
             ],
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder:
@@ -502,6 +527,32 @@ internal static class RelationalAccessTestData
                             localEducationAgencyKey,
                             "LocalEducationAgency",
                             "LocalEducationAgencyId"
+                        ),
+                    ]
+                ),
+                new AbstractUnionViewInfo(
+                    schoolClassificationKey,
+                    new DbTableName(new DbSchemaName("edfi"), "SchoolClassification_View"),
+                    [
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("DocumentId"),
+                            new RelationalScalarType(ScalarKind.Int64),
+                            null,
+                            null
+                        ),
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("SchoolTypeDescriptor_DescriptorId"),
+                            new RelationalScalarType(ScalarKind.Int64),
+                            new JsonPathExpression("$.schoolTypeDescriptor", []),
+                            _schoolTypeDescriptorResource,
+                            IsDescriptorReference: true
+                        ),
+                    ],
+                    [
+                        CreateAbstractUnionArm(
+                            schoolClassificationMemberKey,
+                            "SchoolClassificationMember",
+                            "SchoolTypeDescriptor_DescriptorId"
                         ),
                     ]
                 ),
@@ -620,6 +671,19 @@ internal static class RelationalAccessTestData
             isDescriptor: false
         );
 
+    public static ReferenceLookupRequestEntry CreateSchoolClassificationLookup(
+        ReferentialId referentialId,
+        string schoolTypeDescriptor = "uri://ed-fi.org/schooltypedescriptor#alternative"
+    ) =>
+        CreateLookup(
+            _schoolClassificationResource,
+            referentialId,
+            new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.schoolTypeDescriptor"), schoolTypeDescriptor),
+            ]),
+            isDescriptor: false
+        );
+
     public static DescriptorReference CreateDescriptorReference(
         ReferentialId referentialId,
         string uri,
@@ -734,6 +798,10 @@ internal static class RelationalAccessTestData
                     ScalarKind.String
                 ),
                 CreateDescriptorIdentityColumn("TermDescriptor_DescriptorId", "$.termDescriptor"),
+            ],
+            "SchoolClassificationMember" =>
+            [
+                CreateDescriptorIdentityColumn("SchoolTypeDescriptor_DescriptorId", "$.schoolTypeDescriptor"),
             ],
             _ => [],
         };

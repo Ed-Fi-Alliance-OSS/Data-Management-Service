@@ -2740,7 +2740,8 @@
           "target_resource": {
             "project_name": "Ed-Fi",
             "resource_name": "ProgramTypeDescriptor"
-          }
+          },
+          "is_descriptor_reference": true
         },
         {
           "column_name": "StudentReferenceStudentUniqueId",
@@ -41200,7 +41201,8 @@
         },
         {
           "column": "ObjectiveGradeLevelDescriptor_DescriptorId",
-          "identity_json_path": "$.objectiveGradeLevelDescriptor"
+          "identity_json_path": "$.objectiveGradeLevelDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -41688,7 +41690,8 @@
       "identity_elements": [
         {
           "column": "CourseAttemptResultDescriptor_DescriptorId",
-          "identity_json_path": "$.courseAttemptResultDescriptor"
+          "identity_json_path": "$.courseAttemptResultDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "CourseCourse_CourseCode",
@@ -41712,7 +41715,8 @@
         },
         {
           "column": "StudentAcademicRecord_TermDescriptor_DescriptorId",
-          "identity_json_path": "$.studentAcademicRecordReference.termDescriptor"
+          "identity_json_path": "$.studentAcademicRecordReference.termDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -41876,7 +41880,8 @@
         },
         {
           "column": "StateOfIssueStateAbbreviationDescriptor_DescriptorId",
-          "identity_json_path": "$.stateOfIssueStateAbbreviationDescriptor"
+          "identity_json_path": "$.stateOfIssueStateAbbreviationDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -43089,7 +43094,8 @@
         },
         {
           "column": "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706",
-          "identity_json_path": "$.programEvaluationElementReference.programEvaluationPeriodDescriptor"
+          "identity_json_path": "$.programEvaluationElementReference.programEvaluationPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluationElement_ProgramEvaluationTitle",
@@ -43097,7 +43103,8 @@
         },
         {
           "column": "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71",
-          "identity_json_path": "$.programEvaluationElementReference.programEvaluationTypeDescriptor"
+          "identity_json_path": "$.programEvaluationElementReference.programEvaluationTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluationElement_ProgramName",
@@ -43105,7 +43112,8 @@
         },
         {
           "column": "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationElementReference.programTypeDescriptor"
+          "identity_json_path": "$.programEvaluationElementReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -43341,11 +43349,13 @@
       "identity_elements": [
         {
           "column": "GradeTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.gradeTypeDescriptor"
+          "identity_json_path": "$.gradeTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
-          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "GradingPeriodGradingPeriod_GradingPeriodName",
@@ -43517,7 +43527,8 @@
       "identity_elements": [
         {
           "column": "GradingPeriodDescriptor_DescriptorId",
-          "identity_json_path": "$.gradingPeriodDescriptor"
+          "identity_json_path": "$.gradingPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "GradingPeriodName",
@@ -43579,7 +43590,8 @@
         },
         {
           "column": "GraduationPlanTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.graduationPlanTypeDescriptor"
+          "identity_json_path": "$.graduationPlanTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "GraduationSchoolYear_GraduationSchoolYear",
@@ -45739,7 +45751,8 @@
         },
         {
           "column": "SourceSystemDescriptor_DescriptorId",
-          "identity_json_path": "$.sourceSystemDescriptor"
+          "identity_json_path": "$.sourceSystemDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -45787,7 +45800,8 @@
         },
         {
           "column": "PostSecondaryEventCategoryDescriptor_DescriptorId",
-          "identity_json_path": "$.postSecondaryEventCategoryDescriptor"
+          "identity_json_path": "$.postSecondaryEventCategoryDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -46093,7 +46107,8 @@
         },
         {
           "column": "ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programTypeDescriptor"
+          "identity_json_path": "$.programTypeDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -46220,7 +46235,8 @@
       "identity_elements": [
         {
           "column": "ProgramEvaluationPeriodDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationPeriodDescriptor"
+          "identity_json_path": "$.programEvaluationPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluationTitle",
@@ -46228,7 +46244,8 @@
         },
         {
           "column": "ProgramEvaluationTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationTypeDescriptor"
+          "identity_json_path": "$.programEvaluationTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramProgram_EducationOrganizationId",
@@ -46240,7 +46257,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -46300,7 +46318,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationTitle",
@@ -46308,7 +46327,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluation_ProgramName",
@@ -46316,7 +46336,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -46409,7 +46430,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationTitle",
@@ -46417,7 +46439,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluation_ProgramName",
@@ -46425,7 +46448,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -46592,7 +46616,8 @@
         },
         {
           "column": "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
-          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "GradingPeriodGradingPeriod_GradingPeriodName",
@@ -47544,7 +47569,8 @@
       "identity_elements": [
         {
           "column": "AbsenceEventCategoryDescriptor_DescriptorId",
-          "identity_json_path": "$.absenceEventCategoryDescriptor"
+          "identity_json_path": "$.absenceEventCategoryDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "EventDate",
@@ -47798,7 +47824,8 @@
         },
         {
           "column": "StaffClassificationDescriptor_DescriptorId",
-          "identity_json_path": "$.staffClassificationDescriptor"
+          "identity_json_path": "$.staffClassificationDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Staff_StaffUniqueId",
@@ -47938,7 +47965,8 @@
         },
         {
           "column": "EmploymentStatusDescriptor_DescriptorId",
-          "identity_json_path": "$.employmentStatusDescriptor"
+          "identity_json_path": "$.employmentStatusDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "HireDate",
@@ -48092,7 +48120,8 @@
         },
         {
           "column": "StaffLeaveEventCategoryDescriptor_DescriptorId",
-          "identity_json_path": "$.staffLeaveEventCategoryDescriptor"
+          "identity_json_path": "$.staffLeaveEventCategoryDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Staff_StaffUniqueId",
@@ -48187,7 +48216,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Staff_StaffUniqueId",
@@ -48270,7 +48300,8 @@
       "identity_elements": [
         {
           "column": "ProgramAssignmentDescriptor_DescriptorId",
-          "identity_json_path": "$.programAssignmentDescriptor"
+          "identity_json_path": "$.programAssignmentDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "School_SchoolId",
@@ -48799,7 +48830,8 @@
         },
         {
           "column": "TermDescriptor_DescriptorId",
-          "identity_json_path": "$.termDescriptor"
+          "identity_json_path": "$.termDescriptor",
+          "is_descriptor_reference": true
         }
       ]
     },
@@ -49003,7 +49035,8 @@
       "identity_elements": [
         {
           "column": "EducationOrganizationAssociationTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.educationOrganizationAssociationTypeDescriptor"
+          "identity_json_path": "$.educationOrganizationAssociationTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "EducationOrganization_EducationOrganizationId",
@@ -49440,7 +49473,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -49470,7 +49504,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -49635,7 +49670,8 @@
       "identity_elements": [
         {
           "column": "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
-          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "GradingPeriodGradingPeriod_GradingPeriodName",
@@ -49659,7 +49695,8 @@
         },
         {
           "column": "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e",
-          "identity_json_path": "$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor"
+          "identity_json_path": "$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -49793,7 +49830,8 @@
       "identity_elements": [
         {
           "column": "BehaviorDescriptor_DescriptorId",
-          "identity_json_path": "$.behaviorDescriptor"
+          "identity_json_path": "$.behaviorDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "DisciplineIncident_IncidentIdentifier",
@@ -50375,7 +50413,8 @@
         },
         {
           "column": "ResponsibilityDescriptor_DescriptorId",
-          "identity_json_path": "$.responsibilityDescriptor"
+          "identity_json_path": "$.responsibilityDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -50658,7 +50697,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -50688,7 +50728,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -50860,7 +50901,8 @@
       "identity_elements": [
         {
           "column": "AttendanceEventCategoryDescriptor_DescriptorId",
-          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+          "identity_json_path": "$.attendanceEventCategoryDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "EventDate",
@@ -50992,7 +51034,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -51022,7 +51065,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -51192,7 +51236,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -51222,7 +51267,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -51376,7 +51422,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -51406,7 +51453,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -51592,7 +51640,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -51622,7 +51671,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -51711,7 +51761,8 @@
       "identity_elements": [
         {
           "column": "AttendanceEventCategoryDescriptor_DescriptorId",
-          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+          "identity_json_path": "$.attendanceEventCategoryDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "EducationOrganization_EducationOrganizationId",
@@ -51731,7 +51782,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -51797,7 +51849,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationTitle",
@@ -51805,7 +51858,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "ProgramEvaluation_ProgramName",
@@ -51813,7 +51867,8 @@
         },
         {
           "column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor"
+          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -52003,7 +52058,8 @@
       "identity_elements": [
         {
           "column": "AttendanceEventCategoryDescriptor_DescriptorId",
-          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+          "identity_json_path": "$.attendanceEventCategoryDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "EventDate",
@@ -52144,7 +52200,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -52174,7 +52231,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -52328,7 +52386,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -52358,7 +52417,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -52525,7 +52585,8 @@
       "identity_elements": [
         {
           "column": "AttendanceEventCategoryDescriptor_DescriptorId",
-          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+          "identity_json_path": "$.attendanceEventCategoryDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "EventDate",
@@ -52688,7 +52749,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -52718,7 +52780,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -52886,7 +52949,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -53007,7 +53071,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -53037,7 +53102,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -53333,7 +53399,8 @@
         },
         {
           "column": "Program_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Survey_Namespace",
@@ -54563,7 +54630,8 @@
         },
         {
           "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.programReference.programTypeDescriptor"
+          "identity_json_path": "$.programReference.programTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "Student_StudentUniqueId",
@@ -54593,7 +54661,8 @@
           },
           {
             "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
-            "identity_json_path": "$.programReference.programTypeDescriptor"
+            "identity_json_path": "$.programReference.programTypeDescriptor",
+            "is_descriptor_reference": true
           },
           {
             "column": "Student_StudentUniqueId",
@@ -55035,7 +55104,8 @@
         },
         {
           "column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-          "identity_json_path": "$.graduationPlanReference.graduationPlanTypeDescriptor"
+          "identity_json_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+          "is_descriptor_reference": true
         },
         {
           "column": "GraduationPlan_GraduationSchoolYear",

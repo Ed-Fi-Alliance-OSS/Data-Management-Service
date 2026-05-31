@@ -134,8 +134,7 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
         JsonNode requestBody,
         ResourceInfo resourceInfo,
         ResourceSchema resourceSchema,
-        MappingSet mappingSet,
-        long programTypeDescriptorId
+        MappingSet mappingSet
     )
     {
         var documentInfo = RelationalDocumentInfoTestHelper.CreateDocumentInfo(
@@ -153,7 +152,7 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
                 .. documentInfo.DocumentReferences.Where(reference =>
                     reference.Path != new JsonPath("$.programReference")
                 ),
-                CreateProgramDocumentReference(requestBody, programTypeDescriptorId),
+                CreateProgramDocumentReference(requestBody),
             ],
         };
     }
@@ -192,21 +191,23 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
             (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
         );
 
-    private static DocumentReference CreateProgramDocumentReference(
-        JsonNode requestBody,
-        long programTypeDescriptorId
-    )
+    private static DocumentReference CreateProgramDocumentReference(JsonNode requestBody)
     {
         var educationOrganizationId = requestBody["programReference"]
             ?["educationOrganizationId"]?.GetValue<long>()
             .ToString(CultureInfo.InvariantCulture);
         var programName = requestBody["programReference"]?["programName"]?.GetValue<string>();
+        var programTypeDescriptor = requestBody["programReference"]
+            ?["programTypeDescriptor"]?.GetValue<string>()
+            .ToLowerInvariant();
 
-        if (string.IsNullOrWhiteSpace(educationOrganizationId) || string.IsNullOrWhiteSpace(programName))
+        if (
+            string.IsNullOrWhiteSpace(educationOrganizationId)
+            || string.IsNullOrWhiteSpace(programName)
+            || string.IsNullOrWhiteSpace(programTypeDescriptor)
+        )
         {
-            throw new InvalidOperationException(
-                "Expected programReference to include educationOrganizationId and programName."
-            );
+            throw new InvalidOperationException("Expected programReference to contain all identity members.");
         }
 
         var programResourceInfo = new BaseResourceInfo(
@@ -220,10 +221,7 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
                 educationOrganizationId
             ),
             new DocumentIdentityElement(new JsonPath("$.programName"), programName),
-            new DocumentIdentityElement(
-                new JsonPath("$.programTypeDescriptor"),
-                programTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-            ),
+            new DocumentIdentityElement(new JsonPath("$.programTypeDescriptor"), programTypeDescriptor),
         ]);
 
         return new(
@@ -394,8 +392,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             createRequestBody,
             _resourceInfo,
             _resourceSchema,
-            _mappingSet,
-            _seedData.ExtracurricularProgramTypeDescriptorId
+            _mappingSet
         );
 
         _createResult = await ExecuteCreateAsync(
@@ -619,10 +616,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                     EducationOrganizationId.ToString(CultureInfo.InvariantCulture)
                 ),
                 ("$.programName", RoboticsClubProgramName),
-                (
-                    "$.programTypeDescriptor",
-                    extracurricularProgramTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                )
+                ("$.programTypeDescriptor", ExtracurricularProgramTypeDescriptorUri.ToLowerInvariant())
             ),
             roboticsClubProgramDocumentId,
             programResourceKeyId
@@ -873,15 +867,32 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         short resourceKeyId
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        var rows = await _database.QueryRowsAsync(
             """
-            DELETE FROM [dms].[ReferentialIdentity]
+            SELECT [ReferentialId]
+            FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] = @documentId
               AND [ResourceKeyId] = @resourceKeyId;
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId)
+        );
 
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [ReferentialId] = @referentialId;
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
 
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
+        await _database.ExecuteNonQueryAsync(
+            """
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,

@@ -654,7 +654,8 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                     identityColumn.ColumnName,
                     scalarType,
                     identityColumn.SourceJsonPath,
-                    identityColumn.TargetResource
+                    identityColumn.TargetResource,
+                    IsDescriptorReference: identityColumn.Kind is ColumnKind.DescriptorFk
                 )
             );
         }

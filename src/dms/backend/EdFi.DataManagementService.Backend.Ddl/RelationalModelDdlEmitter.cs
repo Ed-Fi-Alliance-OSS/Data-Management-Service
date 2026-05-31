@@ -25,6 +25,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
     private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
+    private static readonly DbColumnName DescriptorUriColumn = new("Uri");
 
     /// <summary>
     /// Builds a SQL script that creates all schemas, tables, indexes, views, and triggers in the model set.
@@ -1203,19 +1204,34 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("'");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' || ");
-            EmitPgsqlColumnToText(writer, elements[i].Column, elements[i].ScalarType);
+            EmitPgsqlIdentityElementToText(writer, elements[i]);
         }
     }
 
     /// <summary>
-    /// Emits a type-aware text conversion for an identity column value in PostgreSQL.
+    /// Emits a canonical text conversion for an identity column value in PostgreSQL.
     /// Delegates to <see cref="DialectIdentityTextFormatter.PgsqlColumnToText"/> so the
     /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
-    private void EmitPgsqlColumnToText(SqlWriter writer, DbColumnName column, RelationalScalarType scalarType)
+    private void EmitPgsqlIdentityElementToText(SqlWriter writer, IdentityElementMapping element)
     {
-        var columnExpression = $"NEW.{Quote(column)}";
-        writer.Append(DialectIdentityTextFormatter.PgsqlColumnToText(columnExpression, scalarType));
+        var columnExpression = $"NEW.{Quote(element.Column)}";
+
+        if (element.IsDescriptorReference)
+        {
+            writer.Append("lower((SELECT descriptor.");
+            writer.Append(Quote(DescriptorUriColumn));
+            writer.Append(" FROM ");
+            writer.Append(Quote(DmsTableNames.Descriptor));
+            writer.Append(" descriptor WHERE descriptor.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = ");
+            writer.Append(columnExpression);
+            writer.Append("))");
+            return;
+        }
+
+        writer.Append(DialectIdentityTextFormatter.PgsqlColumnToText(columnExpression, element.ScalarType));
     }
 
     private void EmitMssqlReferentialIdentityBody(
@@ -1360,23 +1376,36 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("N'");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' + ");
-            EmitMssqlColumnToNvarchar(writer, elements[i].Column, elements[i].ScalarType);
+            EmitMssqlIdentityElementToNvarchar(writer, elements[i]);
         }
     }
 
     /// <summary>
-    /// Emits a type-aware nvarchar conversion for an identity column value in MSSQL.
+    /// Emits a canonical nvarchar conversion for an identity column value in MSSQL.
     /// Delegates to <see cref="DialectIdentityTextFormatter.MssqlColumnToNvarchar"/> so the
     /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
-    private void EmitMssqlColumnToNvarchar(
-        SqlWriter writer,
-        DbColumnName column,
-        RelationalScalarType scalarType
-    )
+    private void EmitMssqlIdentityElementToNvarchar(SqlWriter writer, IdentityElementMapping element)
     {
-        var columnExpression = $"i.{Quote(column)}";
-        writer.Append(DialectIdentityTextFormatter.MssqlColumnToNvarchar(columnExpression, scalarType));
+        var columnExpression = $"i.{Quote(element.Column)}";
+
+        if (element.IsDescriptorReference)
+        {
+            writer.Append("LOWER((SELECT descriptor.");
+            writer.Append(Quote(DescriptorUriColumn));
+            writer.Append(" FROM ");
+            writer.Append(Quote(DmsTableNames.Descriptor));
+            writer.Append(" descriptor WHERE descriptor.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = ");
+            writer.Append(columnExpression);
+            writer.Append("))");
+            return;
+        }
+
+        writer.Append(
+            DialectIdentityTextFormatter.MssqlColumnToNvarchar(columnExpression, element.ScalarType)
+        );
     }
 
     /// <summary>

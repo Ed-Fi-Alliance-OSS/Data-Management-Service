@@ -1593,6 +1593,32 @@ internal static class AbstractIdentityTableTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build project schema whose abstract identity is a descriptor-valued member.
+    /// </summary>
+    internal static JsonObject BuildDescriptorIdentityProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["ProgramCarrier"] = new JsonObject
+                {
+                    ["resourceName"] = "ProgramCarrier",
+                    ["identityJsonPaths"] = new JsonArray { "$.programTypeDescriptor" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["programOfferings"] = BuildDescriptorIdentityMemberSchema(),
+                ["programTypeDescriptors"] = BuildProgramTypeDescriptorSchema(),
+            },
+        };
+    }
+
+    /// <summary>
     /// Build subclass resource schema whose identity comes from one grouped duplicate reference field.
     /// </summary>
     private static JsonObject BuildGroupedReferenceIdentityMemberSchema()
@@ -1650,6 +1676,79 @@ internal static class AbstractIdentityTableTestSchemaBuilder
                         },
                     },
                 },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build subclass resource schema with one descriptor-valued identity member.
+    /// </summary>
+    private static JsonObject BuildDescriptorIdentityMemberSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ProgramOffering",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "ProgramCarrier",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["ProgramTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "ProgramTypeDescriptor",
+                    ["path"] = "$.programTypeDescriptor",
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.programTypeDescriptor" },
+            ["equalityConstraints"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
+                },
+                ["required"] = new JsonArray("programTypeDescriptor"),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build minimal program type descriptor schema.
+    /// </summary>
+    private static JsonObject BuildProgramTypeDescriptorSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ProgramTypeDescriptor",
+            ["isDescriptor"] = true,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                    ["namespace"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                },
+                ["required"] = new JsonArray("codeValue", "namespace"),
             },
         };
     }

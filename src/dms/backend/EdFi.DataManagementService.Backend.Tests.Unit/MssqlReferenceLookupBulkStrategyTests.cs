@@ -70,6 +70,37 @@ public class Given_MssqlReferenceLookupBulkStrategy
     }
 
     [Test]
+    public void It_reuses_the_small_list_descriptor_uri_projection_for_bulk_lookup_sets()
+    {
+        ReferentialId[] referentialIds =
+        [
+            .. Enumerable
+                .Range(1, MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold)
+                .Select(CreateReferentialId),
+        ];
+
+        var command = MssqlReferenceLookupBulkStrategy.BuildCommand(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups:
+                [
+                    RelationalAccessTestData.CreateSchoolClassificationLookup(referentialIds[0]),
+                    .. referentialIds.Skip(1).Select(RelationalAccessTestData.CreateSchoolLookup),
+                ]
+            )
+        );
+
+        command.CommandText.Should().Contain("FROM @referentialIds lookupInput");
+        command.CommandText.Should().Contain("FROM [edfi].[SchoolClassification_View] source");
+        command.CommandText.Should().Contain("N'$.schoolTypeDescriptor='");
+        command.CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
+        command
+            .CommandText.Should()
+            .Contain("descriptor.[DocumentId] = source.[SchoolTypeDescriptor_DescriptorId]");
+    }
+
+    [Test]
     public async Task It_returns_bulk_lookup_rows_in_request_order_even_when_sql_server_returns_them_out_of_order()
     {
         var firstFoundReferentialId = CreateReferentialId(1);

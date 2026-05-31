@@ -49,6 +49,7 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         var aliasReferentialId = new ReferentialId(Guid.NewGuid());
         var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
         var studentAcademicRecordReferentialId = CreateReferentialId(4);
+        var schoolClassificationReferentialId = CreateReferentialId(5);
         var executor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
@@ -97,6 +98,9 @@ public class Given_MssqlReferenceLookupSmallListStrategy
                     RelationalAccessTestData.CreateStudentAcademicRecordLookup(
                         studentAcademicRecordReferentialId
                     ),
+                    RelationalAccessTestData.CreateSchoolClassificationLookup(
+                        schoolClassificationReferentialId
+                    ),
                 ]
             )
         );
@@ -108,16 +112,23 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         executor.Commands[0].CommandText.Should().Contain("(@p2, 2)");
         executor.Commands[0].CommandText.Should().Contain("(@p3, 3)");
         executor.Commands[0].CommandText.Should().Contain("(@p4, 4)");
+        executor.Commands[0].CommandText.Should().Contain("(@p5, 5)");
         executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[School] source");
         executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[EducationOrganization_View] source");
         executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[StudentAcademicRecord] source");
+        executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[SchoolClassification_View] source");
         executor.Commands[0].CommandText.Should().Contain("N'$.termDescriptor='");
+        executor.Commands[0].CommandText.Should().Contain("N'$.schoolTypeDescriptor='");
         executor.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
         executor
             .Commands[0]
             .CommandText.Should()
             .Contain("descriptor.[DocumentId] = source.[TermDescriptor_DescriptorId]");
-        executor.Commands[0].Parameters.Should().HaveCount(5);
+        executor
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("descriptor.[DocumentId] = source.[SchoolTypeDescriptor_DescriptorId]");
+        executor.Commands[0].Parameters.Should().HaveCount(6);
         executor.Commands[0].Parameters[0].Name.Should().Be("@p0");
         executor.Commands[0].Parameters[0].Value.Should().Be(foundReferentialId.Value);
         executor.Commands[0].Parameters[1].Name.Should().Be("@p1");
@@ -128,6 +139,8 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         executor.Commands[0].Parameters[3].Value.Should().Be(descriptorReferentialId.Value);
         executor.Commands[0].Parameters[4].Name.Should().Be("@p4");
         executor.Commands[0].Parameters[4].Value.Should().Be(studentAcademicRecordReferentialId.Value);
+        executor.Commands[0].Parameters[5].Name.Should().Be("@p5");
+        executor.Commands[0].Parameters[5].Value.Should().Be(schoolClassificationReferentialId.Value);
 
         result.Should().HaveCount(3);
         result

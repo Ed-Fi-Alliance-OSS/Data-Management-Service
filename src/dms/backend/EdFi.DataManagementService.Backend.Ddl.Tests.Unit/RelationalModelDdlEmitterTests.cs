@@ -981,6 +981,58 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_MultiColumnReferentialId
 }
 
 [TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Descriptor_Valued_ReferentialIdentity
+{
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_hash_descriptor_uri_instead_of_descriptor_document_id(SqlDialect dialect)
+    {
+        var dialectInstance = SqlDialectFactory.Create(dialect);
+        var emitter = new RelationalModelDdlEmitter(dialectInstance);
+        var modelSet = DescriptorValuedReferentialIdentityFixture.Build(dialect);
+
+        var ddl = emitter.Emit(modelSet);
+
+        if (dialect == SqlDialect.Pgsql)
+        {
+            ddl.Should()
+                .Contain(
+                    "'$.programTypeDescriptor=' || lower((SELECT descriptor.\"Uri\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DocumentId\" = NEW.\"ProgramTypeDescriptor_DescriptorId\"))"
+                );
+            ddl.Should()
+                .Contain(
+                    "'$.graduationPlanTypeDescriptor=' || lower((SELECT descriptor.\"Uri\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DocumentId\" = NEW.\"GraduationPlanTypeDescriptor_DescriptorId\"))"
+                );
+            ddl.Should()
+                .NotContain("'$.programTypeDescriptor=' || NEW.\"ProgramTypeDescriptor_DescriptorId\"::text");
+            ddl.Should()
+                .NotContain(
+                    "'$.graduationPlanTypeDescriptor=' || NEW.\"GraduationPlanTypeDescriptor_DescriptorId\"::text"
+                );
+        }
+        else
+        {
+            ddl.Should()
+                .Contain(
+                    "N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramTypeDescriptor_DescriptorId]))"
+                );
+            ddl.Should()
+                .Contain(
+                    "N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GraduationPlanTypeDescriptor_DescriptorId]))"
+                );
+            ddl.Should()
+                .NotContain(
+                    "N'$.programTypeDescriptor=' + CAST(i.[ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))"
+                );
+            ddl.Should()
+                .NotContain(
+                    "N'$.graduationPlanTypeDescriptor=' + CAST(i.[GraduationPlanTypeDescriptor_DescriptorId] AS nvarchar(max))"
+                );
+        }
+    }
+}
+
+[TestFixture]
 public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 {
     private string _ddl = default!;
@@ -2706,6 +2758,121 @@ internal static class PgsqlMultiColumnReferentialIdentityFixture
                             partBColumn,
                             "$.partB",
                             new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
+                )
+            ),
+        ];
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            triggers
+        );
+    }
+}
+
+internal static class DescriptorValuedReferentialIdentityFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "ProgramOffering");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var programTypeDescriptorColumn = new DbColumnName("ProgramTypeDescriptor_DescriptorId");
+        var graduationPlanTypeDescriptorColumn = new DbColumnName(
+            "GraduationPlanTypeDescriptor_DescriptorId"
+        );
+        var resource = new QualifiedResourceName("Ed-Fi", "ProgramOffering");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var rootTable = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_ProgramOffering", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    programTypeDescriptorColumn,
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.programTypeDescriptor", []),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+                ),
+                new DbColumnModel(
+                    graduationPlanTypeDescriptorColumn,
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.graduationPlanTypeDescriptor", []),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "GraduationPlanTypeDescriptor")
+                ),
+            ],
+            []
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+
+        IReadOnlyList<DbTriggerInfo> triggers =
+        [
+            new(
+                new DbTriggerName("TR_ProgramOffering_ReferentialIdentity"),
+                tableName,
+                [documentIdColumn],
+                [programTypeDescriptorColumn, graduationPlanTypeDescriptorColumn],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "ProgramOffering",
+                    [
+                        new IdentityElementMapping(
+                            programTypeDescriptorColumn,
+                            "$.programTypeDescriptor",
+                            new RelationalScalarType(ScalarKind.Int64),
+                            IsDescriptorReference: true
+                        ),
+                        new IdentityElementMapping(
+                            graduationPlanTypeDescriptorColumn,
+                            "$.graduationPlanTypeDescriptor",
+                            new RelationalScalarType(ScalarKind.Int64),
+                            IsDescriptorReference: true
                         ),
                     ]
                 )

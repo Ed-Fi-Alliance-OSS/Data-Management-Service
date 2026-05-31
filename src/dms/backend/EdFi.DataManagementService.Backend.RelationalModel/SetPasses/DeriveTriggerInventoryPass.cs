@@ -187,7 +187,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                         new IdentityElementMapping(
                             identityElements[0].Column,
                             superclassIdentityJsonPath,
-                            identityElements[0].ScalarType
+                            identityElements[0].ScalarType,
+                            identityElements[0].IsDescriptorReference
                         ),
                     ];
                 }
@@ -684,6 +685,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         var columnScalarTypes = rootTable
             .Columns.Where(c => c.ScalarType is not null)
             .ToDictionary(c => c.ColumnName.Value, c => c.ScalarType!, StringComparer.Ordinal);
+        var columnKinds = rootTable.Columns.ToDictionary(
+            c => c.ColumnName.Value,
+            c => c.Kind,
+            StringComparer.Ordinal
+        );
 
         HashSet<string> seenColumns = new(StringComparer.Ordinal);
         List<IdentityElementMapping> mappings = new(builderContext.IdentityJsonPaths.Count);
@@ -705,7 +711,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                         new IdentityElementMapping(
                             col,
                             canonical,
-                            LookupColumnScalarType(columnScalarTypes, col, canonical, resource)
+                            LookupColumnScalarType(columnScalarTypes, col, canonical, resource),
+                            IsDescriptorReference(columnKinds, col, canonical, resource)
                         )
                     );
                 }
@@ -726,7 +733,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     new IdentityElementMapping(
                         columnName,
                         canonical,
-                        LookupColumnScalarType(columnScalarTypes, columnName, canonical, resource)
+                        LookupColumnScalarType(columnScalarTypes, columnName, canonical, resource),
+                        IsDescriptorReference(columnKinds, columnName, canonical, resource)
                     )
                 );
             }
@@ -753,6 +761,24 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             );
         }
         return scalarType;
+    }
+
+    private static bool IsDescriptorReference(
+        Dictionary<string, ColumnKind> columnKinds,
+        DbColumnName column,
+        string identityPath,
+        QualifiedResourceName resource
+    )
+    {
+        if (!columnKinds.TryGetValue(column.Value, out var kind))
+        {
+            throw new InvalidOperationException(
+                $"Identity column '{column.Value}' for path '{identityPath}' on resource "
+                    + $"'{FormatResource(resource)}' has no column kind metadata."
+            );
+        }
+
+        return kind is ColumnKind.DescriptorFk;
     }
 
     /// <summary>

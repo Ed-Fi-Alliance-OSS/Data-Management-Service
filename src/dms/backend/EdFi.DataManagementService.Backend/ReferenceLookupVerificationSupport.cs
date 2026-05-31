@@ -247,7 +247,7 @@ internal static class ReferenceLookupVerificationSupport
                     outputColumn.ColumnName,
                     outputColumn.ScalarType,
                     IsPreferred: true,
-                    IsDescriptorReference: false
+                    IsDescriptorReference: outputColumn.IsDescriptorReference
                 )
             );
         }
