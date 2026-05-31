@@ -603,7 +603,7 @@ internal static class RelationalAccessTestData
 
     public static ReferenceLookupRequestEntry CreateStudentAcademicRecordLookup(
         ReferentialId referentialId,
-        string termDescriptor = "3"
+        string termDescriptor = "uri://ed-fi.org/termdescriptor#fall"
     ) =>
         CreateLookup(
             _studentAcademicRecordResource,

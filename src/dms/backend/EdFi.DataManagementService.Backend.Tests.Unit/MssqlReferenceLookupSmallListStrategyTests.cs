@@ -112,10 +112,11 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[EducationOrganization_View] source");
         executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[StudentAcademicRecord] source");
         executor.Commands[0].CommandText.Should().Contain("N'$.termDescriptor='");
+        executor.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
         executor
             .Commands[0]
             .CommandText.Should()
-            .Contain("N'$.termDescriptor=' + CAST(source.[TermDescriptor_DescriptorId] AS nvarchar(max))");
+            .Contain("descriptor.[DocumentId] = source.[TermDescriptor_DescriptorId]");
         executor.Commands[0].Parameters.Should().HaveCount(5);
         executor.Commands[0].Parameters[0].Name.Should().Be("@p0");
         executor.Commands[0].Parameters[0].Value.Should().Be(foundReferentialId.Value);

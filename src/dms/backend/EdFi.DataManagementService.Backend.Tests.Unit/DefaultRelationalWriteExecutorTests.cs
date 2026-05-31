@@ -5694,10 +5694,11 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<RelationalWriteExecutorResult.Upsert>()
             .Which.Result.Should()
             .BeOfType<UpsertResult.UpdateSuccess>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
-        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
 
         var runtimeSubject = _noProfilePersister
             .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies.Should()
