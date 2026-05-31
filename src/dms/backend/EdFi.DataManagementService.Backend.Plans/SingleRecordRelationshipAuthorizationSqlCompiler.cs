@@ -299,13 +299,12 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         {
             if (subject.PersonMetadata is { } personMetadata)
             {
-                if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
-                {
-                    throw new ArgumentException(
-                        $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match root table '{rootTable}'.",
-                        nameof(checkSpecs)
-                    );
-                }
+                RelationshipAuthorizationPeoplePathValidation.ValidateStoredAnchorRootTable(
+                    rootTable,
+                    personMetadata,
+                    "root table",
+                    nameof(checkSpecs)
+                );
 
                 continue;
             }
@@ -342,23 +341,40 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             return [subject.Column];
         }
 
-        if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
-        {
-            throw new ArgumentException(
-                $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match root table '{rootTable}'.",
-                nameof(subject)
-            );
-        }
+        RelationshipAuthorizationPeoplePathValidation.ValidateStoredAnchorRootTable(
+            rootTable,
+            personMetadata,
+            "root table",
+            nameof(subject)
+        );
 
         switch (personMetadata.Path.Kind)
         {
             case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
-                ValidateSelfPersonPath(subject, personMetadata);
+                RelationshipAuthorizationPeoplePathValidation.ValidateSelfRootDocumentIdPath(
+                    subject.Table,
+                    subject.Column,
+                    personMetadata
+                );
                 return [personMetadata.StoredAnchor.RootDocumentIdColumn];
             case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
-                return [GetDirectRootPersonDocumentIdColumn(subject, personMetadata)];
+                return
+                [
+                    RelationshipAuthorizationPeoplePathValidation.GetDirectRootPersonDocumentIdColumn(
+                        rootTable,
+                        subject.Table,
+                        subject.Column,
+                        personMetadata,
+                        "root table"
+                    ),
+                ];
             case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
-                ValidateTransitivePersonPath(subject, personMetadata, personMetadata.Path.Steps);
+                RelationshipAuthorizationPeoplePathValidation.ValidateTransitivePersonPath(
+                    rootTable,
+                    subject.Table,
+                    subject.Column,
+                    personMetadata.Path.Steps
+                );
                 return [personMetadata.StoredAnchor.RootDocumentIdColumn];
             default:
                 throw new ArgumentOutOfRangeException(
@@ -369,100 +385,17 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         }
     }
 
-    private static void ValidateSelfPersonPath(
-        RelationshipAuthorizationSubject subject,
-        RelationshipAuthorizationPersonSubjectMetadata personMetadata
-    )
-    {
-        if (
-            !subject.Table.Equals(personMetadata.StoredAnchor.RootTable)
-            || !subject.Column.Equals(personMetadata.StoredAnchor.RootDocumentIdColumn)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Self People authorization subject column '{subject.Table}.{subject.Column}' does not match root DocumentId column '{personMetadata.StoredAnchor.RootTable}.{personMetadata.StoredAnchor.RootDocumentIdColumn}'."
-            );
-        }
-    }
-
     private static DbColumnName GetDirectRootPersonDocumentIdColumn(
         RelationshipAuthorizationSubject subject,
         RelationshipAuthorizationPersonSubjectMetadata personMetadata
-    )
-    {
-        var step = personMetadata.Path.Steps[0];
-
-        if (!step.SourceTable.Equals(personMetadata.StoredAnchor.RootTable))
-        {
-            throw new InvalidOperationException(
-                $"Direct People authorization subject table '{step.SourceTable}' does not match root table '{personMetadata.StoredAnchor.RootTable}'."
-            );
-        }
-
-        if (!subject.Table.Equals(step.SourceTable) || !subject.Column.Equals(step.SourceColumnName))
-        {
-            throw new InvalidOperationException(
-                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match path root column '{step.SourceTable}.{step.SourceColumnName}'."
-            );
-        }
-
-        return step.SourceColumnName;
-    }
-
-    private static void ValidateTransitivePersonPath(
-        RelationshipAuthorizationSubject subject,
-        RelationshipAuthorizationPersonSubjectMetadata personMetadata,
-        IReadOnlyList<ColumnPathStep> pathSteps
-    )
-    {
-        var expectedSourceTable = personMetadata.StoredAnchor.RootTable;
-
-        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
-        {
-            var step = pathSteps[stepIndex];
-
-            if (!step.SourceTable.Equals(expectedSourceTable))
-            {
-                throw new InvalidOperationException(
-                    $"Transitive People authorization path step {stepIndex} source table '{step.SourceTable}' does not match expected table '{expectedSourceTable}'."
-                );
-            }
-
-            var targetTable =
-                step.TargetTable
-                ?? throw new InvalidOperationException(
-                    $"Transitive People authorization path step {stepIndex} is missing a target table."
-                );
-
-            if (!pathSteps[stepIndex + 1].SourceTable.Equals(targetTable))
-            {
-                throw new InvalidOperationException(
-                    $"Transitive People authorization path step {stepIndex + 1} source table '{pathSteps[stepIndex + 1].SourceTable}' does not match previous target table '{targetTable}'."
-                );
-            }
-
-            expectedSourceTable = targetTable;
-        }
-
-        var terminalStep = pathSteps[^1];
-
-        if (!terminalStep.SourceTable.Equals(expectedSourceTable))
-        {
-            throw new InvalidOperationException(
-                $"Transitive People authorization terminal source table '{terminalStep.SourceTable}' does not match expected table '{expectedSourceTable}'."
-            );
-        }
-
-        if (
-            !subject.Table.Equals(terminalStep.SourceTable)
-            || !subject.Column.Equals(terminalStep.SourceColumnName)
-        )
-        {
-            throw new InvalidOperationException(
-                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match transitive terminal path column '{terminalStep.SourceTable}.{terminalStep.SourceColumnName}'."
-            );
-        }
-    }
+    ) =>
+        RelationshipAuthorizationPeoplePathValidation.GetDirectRootPersonDocumentIdColumn(
+            personMetadata.StoredAnchor.RootTable,
+            subject.Table,
+            subject.Column,
+            personMetadata,
+            "root table"
+        );
 
     private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(NormalizedSqlSpec normalizedSpec)
     {
@@ -990,7 +923,12 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     )
     {
         var pathSteps = personMetadata.Path.Steps;
-        ValidateTransitivePersonPath(subject, personMetadata, pathSteps);
+        RelationshipAuthorizationPeoplePathValidation.ValidateTransitivePersonPath(
+            personMetadata.StoredAnchor.RootTable,
+            subject.Table,
+            subject.Column,
+            pathSteps
+        );
 
         var rootAlias = $"p{strategyOrdinal}_{subjectOrdinal}_0";
         var pathJoinAliases = Enumerable
@@ -1294,7 +1232,12 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     )
     {
         var pathSteps = personMetadata.Path.Steps;
-        ValidateTransitivePersonPath(subject, personMetadata, pathSteps);
+        RelationshipAuthorizationPeoplePathValidation.ValidateTransitivePersonPath(
+            personMetadata.StoredAnchor.RootTable,
+            subject.Table,
+            subject.Column,
+            pathSteps
+        );
         var firstStep = pathSteps[0];
         var firstHopTable =
             firstStep.TargetTable

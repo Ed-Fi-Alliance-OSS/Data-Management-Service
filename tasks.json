@@ -402,7 +402,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs for removal of duplicated People path validation logic.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~PageDocumentIdSqlCompiler|FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",

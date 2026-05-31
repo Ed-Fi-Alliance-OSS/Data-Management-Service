@@ -136,3 +136,10 @@ Decisions: repository now sends only PostRelationshipAuthorizationPlans for targ
 Files changed: RelationalDocumentStoreRepository.cs, RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; first test run failed on unused switch variable after cleanup, fixed; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~DefaultRelationalWriteExecutor" passed 189.
 Notes: remaining open tasks are low cleanup for proposed runtime metadata, shared People path validation helpers, and shared diagnostic strategy names.
+
+People relationship CRUD authorization - completed shared People path validation helper task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: extracted direct root-column, self root DocumentId, stored-anchor root-table, and transitive People path validation into RelationshipAuthorizationPeoplePathValidation; page and single-record compilers now keep SQL emission only and delegate shared path validation.
+Files changed: RelationshipAuthorizationPeoplePathValidation.cs, PageDocumentIdSqlCompiler.cs, SingleRecordRelationshipAuthorizationSqlCompiler.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed plans files; first test run failed on unused using in new helper, fixed; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~PageDocumentIdSqlCompiler|FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler" passed 124.
+Notes: remaining open tasks are low cleanup for proposed runtime metadata and shared diagnostic strategy names.

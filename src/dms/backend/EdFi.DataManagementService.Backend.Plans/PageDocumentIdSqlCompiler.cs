@@ -811,12 +811,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var personMetadata = subject.PersonMetadata;
 
-        if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
-        {
-            throw new InvalidOperationException(
-                $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match query root table '{rootTable}'."
-            );
-        }
+        RelationshipAuthorizationPeoplePathValidation.ValidateStoredAnchorRootTable(
+            rootTable,
+            personMetadata,
+            "query root table"
+        );
 
         switch (personMetadata.Path.Kind)
         {
@@ -837,7 +836,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     writer,
                     rootTable,
                     personMetadata.StoredAnchor.RootDocumentIdColumn,
-                    GetDirectRootPersonDocumentIdColumn(rootTable, subject),
+                    RelationshipAuthorizationPeoplePathValidation.GetDirectRootPersonDocumentIdColumn(
+                        rootTable,
+                        subject.Table,
+                        subject.Column,
+                        personMetadata,
+                        "query root table"
+                    ),
                     subject.AuthObject,
                     authorizationClaimParameterization,
                     aliasAllocator.AllocateNext(),
@@ -862,31 +867,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         }
     }
 
-    private static DbColumnName GetDirectRootPersonDocumentIdColumn(
-        DbTableName rootTable,
-        PageDocumentIdAuthorizationPersonSubject subject
-    )
-    {
-        var steps = subject.PersonMetadata.Path.Steps;
-        var step = steps[0];
-
-        if (!step.SourceTable.Equals(rootTable))
-        {
-            throw new InvalidOperationException(
-                $"Direct People authorization subject table '{step.SourceTable}' does not match query root table '{rootTable}'."
-            );
-        }
-
-        if (!subject.Table.Equals(step.SourceTable) || !subject.Column.Equals(step.SourceColumnName))
-        {
-            throw new InvalidOperationException(
-                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match path root column '{step.SourceTable}.{step.SourceColumnName}'."
-            );
-        }
-
-        return step.SourceColumnName;
-    }
-
     private static void AppendRootDocumentIdInTransitivePersonAuthViewSql(
         SqlWriter writer,
         DbTableName rootTable,
@@ -897,7 +877,12 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var personMetadata = subject.PersonMetadata;
         var pathSteps = personMetadata.Path.Steps;
-        ValidateTransitivePersonPath(rootTable, subject, pathSteps);
+        RelationshipAuthorizationPeoplePathValidation.ValidateTransitivePersonPath(
+            rootTable,
+            subject.Table,
+            subject.Column,
+            pathSteps
+        );
 
         var rootSubqueryAlias = aliasAllocator.AllocateNext();
         var pathJoinAliases = Enumerable
@@ -953,61 +938,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             authAlias
         );
         writer.Append(")");
-    }
-
-    private static void ValidateTransitivePersonPath(
-        DbTableName rootTable,
-        PageDocumentIdAuthorizationPersonSubject subject,
-        IReadOnlyList<ColumnPathStep> pathSteps
-    )
-    {
-        var expectedSourceTable = rootTable;
-
-        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
-        {
-            var step = pathSteps[stepIndex];
-
-            if (!step.SourceTable.Equals(expectedSourceTable))
-            {
-                throw new InvalidOperationException(
-                    $"Transitive People authorization path step {stepIndex} source table '{step.SourceTable}' does not match expected table '{expectedSourceTable}'."
-                );
-            }
-
-            var targetTable =
-                step.TargetTable
-                ?? throw new InvalidOperationException(
-                    $"Transitive People authorization path step {stepIndex} is missing a target table."
-                );
-
-            if (!pathSteps[stepIndex + 1].SourceTable.Equals(targetTable))
-            {
-                throw new InvalidOperationException(
-                    $"Transitive People authorization path step {stepIndex + 1} source table '{pathSteps[stepIndex + 1].SourceTable}' does not match previous target table '{targetTable}'."
-                );
-            }
-
-            expectedSourceTable = targetTable;
-        }
-
-        var terminalStep = pathSteps[^1];
-
-        if (!terminalStep.SourceTable.Equals(expectedSourceTable))
-        {
-            throw new InvalidOperationException(
-                $"Transitive People authorization terminal source table '{terminalStep.SourceTable}' does not match expected table '{expectedSourceTable}'."
-            );
-        }
-
-        if (
-            !subject.Table.Equals(terminalStep.SourceTable)
-            || !subject.Column.Equals(terminalStep.SourceColumnName)
-        )
-        {
-            throw new InvalidOperationException(
-                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match transitive terminal path column '{terminalStep.SourceTable}.{terminalStep.SourceColumnName}'."
-            );
-        }
     }
 
     private static void AppendRootDocumentIdInPersonAuthViewSql(
