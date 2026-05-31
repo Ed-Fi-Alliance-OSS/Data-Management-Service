@@ -3293,7 +3293,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "query",
                     effectiveAuthorizationLabel: "GET-many",
-                    executionBoundaryName: "GET-many EdOrg-only relationship query execution boundary"
+                    executionBoundaryName: "GET-many relationship query execution boundary"
                 )
             ),
         ]);

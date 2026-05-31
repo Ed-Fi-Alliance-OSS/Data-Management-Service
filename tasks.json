@@ -338,6 +338,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
       "Inspect GET-many security-configuration assertions for People relationship strategies."
     ],
-    "completed": false
+    "completed": true
   }
 ]

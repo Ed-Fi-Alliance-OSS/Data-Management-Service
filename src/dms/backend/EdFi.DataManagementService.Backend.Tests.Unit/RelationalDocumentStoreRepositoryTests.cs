@@ -4463,7 +4463,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             totalCount: false,
             authorizationStrategyEvaluators:
             [
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
                 CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
             ]
         );
@@ -4477,7 +4477,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Errors.Should()
             .Contain(error => error.Contains("CustomAuthorizationStrategy", StringComparison.Ordinal))
             .And.Contain(error =>
-                error.Contains(AuthorizationStrategyNameConstants.OwnershipBased, StringComparison.Ordinal)
+                error.Contains(AuthorizationStrategyNameConstants.NamespaceBased, StringComparison.Ordinal)
+                && error.Contains("GET-many relationship query execution boundary", StringComparison.Ordinal)
+                && !error.Contains(
+                    "GET-many EdOrg-only relationship query execution boundary",
+                    StringComparison.Ordinal
+                )
             );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(

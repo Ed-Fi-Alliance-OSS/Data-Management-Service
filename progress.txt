@@ -115,3 +115,10 @@ Decisions: repository now carries both existing-resource and create-new POST rel
 Files changed: RelationalWriteContracts.cs, RelationalDocumentStoreRepository.cs, StoredRelationshipAuthorizationOrchestrator.cs, DefaultRelationalWriteExecutor.cs, repository/executor unit tests, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~DefaultRelationalWriteExecutor|FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor" passed 200; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationPlanner|FullyQualifiedName~RelationalPeopleAuthorizationSubjectSelector" passed 86.
 Notes: create-new no-executable is deferred until POST target is known, but still before reference resolution or persistence; empty-claims/known/security preflight behavior preserved.
+
+People relationship CRUD authorization - completed GET-many diagnostic wording cleanup task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: GET-many security-configuration failures now name the current relationship query execution boundary instead of stale EdOrg-only wording; known-but-not-enabled supported strategy list already includes People-capable relationship strategies.
+Files changed: RelationalDocumentStoreRepository.cs, RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository" passed 189.
+Notes: all tasks in tasks.json now complete.
