@@ -100,8 +100,6 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorResult? writeFailureResult = null;
         var executionRequest = request;
         RelationalWriteCurrentState? currentState = null;
-        var ifMatchPreconditionEvaluation =
-            RelationalWriteExecutionStateResolver.GetIfMatchPreconditionEvaluation(request);
 
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
@@ -120,6 +118,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             executionRequest = storedAuthorizationBoundary.ExecutionRequest;
+            var ifMatchPreconditionEvaluation =
+                RelationalWriteExecutionStateResolver.GetIfMatchPreconditionEvaluation(executionRequest);
             // A stored-auth POST lookup is the authorization boundary for this attempt. If it saw
             // CreateNew, keep that decision stable so a later race cannot become an update without
             // stored-value authorization.

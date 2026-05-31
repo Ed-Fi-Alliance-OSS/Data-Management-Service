@@ -5628,6 +5628,90 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_selects_create_new_post_relationship_plan_before_reference_resolution()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.studentReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference]
+        );
+        var createNewFailure = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureSecurityConfiguration([
+                "create-new self person DocumentId unavailable",
+            ])
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                PostRelationshipAuthorizationPlans = CreatePostRelationshipAuthorizationPlans(
+                    createNewImmediateResult: createNewFailure
+                ),
+            }
+        );
+
+        result.Should().BeSameAs(createNewFailure);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_selects_existing_resource_post_relationship_plan_for_post_as_update_self_person_subjects()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        var existingResourceProposedAuthorization = CreateSelfPeopleExistingTargetRelationshipAuthorization(
+            request,
+            SecurableElementKind.Student
+        );
+        var createNewFailure = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureSecurityConfiguration(["create-new plan should not be selected"])
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                PostRelationshipAuthorizationPlans = CreatePostRelationshipAuthorizationPlans(
+                    existingResourceProposedAuthorization: existingResourceProposedAuthorization,
+                    createNewImmediateResult: createNewFailure
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+
+        var runtimeSubject = _noProfilePersister
+            .CapturedMergeResult!.ProposedRelationshipAuthorizationRuntimeCheck!.Strategies.Should()
+            .ContainSingle()
+            .Subject.Subjects.Should()
+            .ContainSingle()
+            .Subject;
+        GetSubjectRuntimeValue(runtimeSubject).Should().Be(345L);
+        runtimeSubject
+            .Subject.PersonMetadata!.ProposedAnchor!.Kind.Should()
+            .Be(RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId);
+    }
+
+    [Test]
     public async Task It_checks_guarded_no_op_only_after_proposed_relationship_authorization_and_matching_if_match()
     {
         var currentRepresentation = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
@@ -6233,6 +6317,28 @@ public class Given_Default_Relational_Write_Executor
                     proposedBinding
                 )
             )
+        );
+    }
+
+    private static PostRelationshipAuthorizationPlans CreatePostRelationshipAuthorizationPlans(
+        RelationshipAuthorizationResult? existingResourceStoredAuthorization = null,
+        RelationshipAuthorizationResult.Authorized? existingResourceProposedAuthorization = null,
+        RelationshipAuthorizationResult.Authorized? createNewProposedAuthorization = null,
+        RelationalWriteExecutorResult? createNewImmediateResult = null
+    )
+    {
+        var noAuthorizationRequired = new RelationshipAuthorizationResult.NoAuthorizationRequired([]);
+
+        return new PostRelationshipAuthorizationPlans(
+            new RelationshipAuthorizationUpdatePlan(
+                existingResourceStoredAuthorization ?? noAuthorizationRequired,
+                (RelationshipAuthorizationResult?)existingResourceProposedAuthorization
+                    ?? noAuthorizationRequired,
+                [],
+                []
+            ),
+            createNewProposedAuthorization,
+            createNewImmediateResult
         );
     }
 

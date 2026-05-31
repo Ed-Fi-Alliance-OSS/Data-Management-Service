@@ -5769,6 +5769,76 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_builds_create_new_people_post_plan_with_self_person_subjects_ineligible()
+    {
+        var committedEtag = CreateCommittedReadbackEtag("Self People");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid, committedEtag)
+                    )
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_studentResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithSelfStudentSubjectAndPeopleAuthViews());
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc)
+            .Returns(JsonNode.Parse("""{"studentUniqueId":"604822","firstName":"Self"}""")!);
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901L]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
+        _capturedExecutorRequests.Should().ContainSingle();
+        var postPlans = _capturedExecutorRequest.PostRelationshipAuthorizationPlans;
+        postPlans.Should().NotBeNull();
+        var createNewFailure = postPlans!
+            .CreateNewImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Subject.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Subject;
+        createNewFailure.Errors.Should().ContainSingle();
+        createNewFailure
+            .Errors[0]
+            .Should()
+            .Contain("no executable Student relationship authorization subjects")
+            .And.Contain("SelfPersonDocumentIdUnavailableForCreateNew");
+        var existingResourceProposed = postPlans
+            .ExistingResourcePlan.ProposedValues.Should()
+            .BeOfType<RelationshipAuthorizationResult.Authorized>()
+            .Subject;
+        existingResourceProposed
+            .CheckSpecs.Should()
+            .ContainSingle()
+            .Subject.Subjects.Should()
+            .ContainSingle()
+            .Subject.PersonMetadata!.ProposedAnchor!.Kind.Should()
+            .Be(RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId);
+        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_treats_no_further_authorization_required_as_a_post_preflight_no_op()
     {
         var committedEtag = CreateCommittedReadbackEtag("No Further High");
@@ -9738,6 +9808,61 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 ),
             },
         };
+    }
+
+    private static MappingSet CreateWriteAuthorizationAwareMappingSetWithSelfStudentSubjectAndPeopleAuthViews()
+    {
+        var resourceInfo = _studentResourceInfo;
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootPlan.TableModel,
+            ResourceStorageKind.RelationalTables
+        );
+        var concreteResourceModel = new ConcreteResourceModel(
+            resourceKey,
+            ResourceStorageKind.RelationalTables,
+            resourceModel
+        )
+        {
+            SecurableElements = new ResourceSecurableElements([], [], ["$.studentUniqueId"], [], []),
+        };
+        var concreteResources = new List<ConcreteResourceModel> { concreteResourceModel };
+        concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources(2));
+        var resourceKeyIdByResource = concreteResources.ToDictionary(
+            static concreteResource => concreteResource.ResourceKey.Resource,
+            static concreteResource => concreteResource.ResourceKey.ResourceKeyId
+        );
+        var resourceKeyById = concreteResources.ToDictionary(
+            static concreteResource => concreteResource.ResourceKey.ResourceKeyId,
+            static concreteResource => concreteResource.ResourceKey
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var readPlan = CreateReadPlan(resourceModel, rootPlan.TableModel);
+        var resource = resourceKey.Resource;
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(concreteResources) with
+            {
+                AuthEdOrgHierarchy = CreateAuthEdOrgHierarchy(),
+            },
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
+            {
+                [resource] = writePlan,
+            },
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resource] = readPlan,
+            },
+            ResourceKeyIdByResource: resourceKeyIdByResource,
+            ResourceKeyById: resourceKeyById,
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
     }
 
     private static MappingSet CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(

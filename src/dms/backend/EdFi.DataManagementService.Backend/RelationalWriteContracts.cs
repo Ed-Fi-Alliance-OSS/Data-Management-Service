@@ -721,7 +721,19 @@ public sealed record RelationalWriteExecutorRequest
     /// namespace authorization applies.
     /// </summary>
     public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; init; }
+
+    /// <summary>
+    /// POST-specific relationship authorization plans for target-dependent create-new vs upsert-as-update
+    /// selection inside the executor's write session.
+    /// </summary>
+    internal PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; init; }
 }
+
+internal sealed record PostRelationshipAuthorizationPlans(
+    RelationshipAuthorizationUpdatePlan ExistingResourcePlan,
+    RelationshipAuthorizationResult? CreateNewProposedRelationshipAuthorization,
+    RelationalWriteExecutorResult? CreateNewImmediateResult
+);
 
 /// <summary>
 /// Namespace authorization inputs threaded from the repository write preflight into the executor.

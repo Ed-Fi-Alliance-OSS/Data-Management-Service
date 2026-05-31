@@ -1577,7 +1577,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
     )
     {
-        var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
+        var existingResourcePlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
             nonNamespaceConfiguredStrategies,
@@ -1585,7 +1585,7 @@ public sealed class RelationalDocumentStoreRepository(
             writePlan
         );
 
-        var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
+        var securityConfigurationFailures = existingResourcePlan.SecurityConfigurationFailures;
 
         if (securityConfigurationFailures.Count > 0)
         {
@@ -1594,7 +1594,20 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        return relationshipAuthorizationPlan.ProposedValues switch
+        if (existingResourcePlan.KnownButNotEnabledFailures.Count > 0)
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                new UpsertResult.UpsertFailureNotImplemented(
+                    BuildKnownButNotEnabledPostAuthorizationMessage(
+                        resource,
+                        existingResourcePlan.KnownButNotEnabledFailures
+                    ),
+                    UpsertFailureNotImplementedReason.StrategyNotEnabled
+                )
+            );
+        }
+
+        return existingResourcePlan.ProposedValues switch
         {
             RelationshipAuthorizationResult.NoAuthorizationRequired
             or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
@@ -1606,8 +1619,13 @@ public sealed class RelationalDocumentStoreRepository(
                 ),
 
             RelationshipAuthorizationResult.Authorized authorized =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    relationshipAuthorizationPlan.StoredValues,
+                CreatePostRelationshipAuthorizationContinue(
+                    mappingSet,
+                    resource,
+                    nonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    writePlan,
+                    existingResourcePlan,
                     authorized,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization
@@ -1648,7 +1666,93 @@ public sealed class RelationalDocumentStoreRepository(
                 ),
 
             _ => throw new InvalidOperationException(
-                $"Unsupported relationship authorization result '{relationshipAuthorizationPlan.ProposedValues.GetType().Name}'."
+                $"Unsupported relationship authorization result '{existingResourcePlan.ProposedValues.GetType().Name}'."
+            ),
+        };
+    }
+
+    private WriteGuardRailPreflightResult<UpsertResult> CreatePostRelationshipAuthorizationContinue(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        ResourceWritePlan writePlan,
+        RelationshipAuthorizationUpdatePlan existingResourcePlan,
+        RelationshipAuthorizationResult.Authorized existingResourceProposedAuthorization,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+    )
+    {
+        var createNewProposedValues = _relationshipAuthorizationPlanner.PlanProposedValues(
+            mappingSet,
+            resource,
+            nonNamespaceConfiguredStrategies,
+            authorizationContext,
+            writePlan
+        );
+
+        return createNewProposedValues switch
+        {
+            RelationshipAuthorizationResult.NoAuthorizationRequired
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    existingResourcePlan.StoredValues,
+                    existingResourceProposedAuthorization,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(existingResourcePlan, null, null)
+                ),
+
+            RelationshipAuthorizationResult.Authorized createNewAuthorized =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    existingResourcePlan.StoredValues,
+                    existingResourceProposedAuthorization,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(existingResourcePlan, createNewAuthorized, null)
+                ),
+
+            RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
+                ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
+                : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    existingResourcePlan.StoredValues,
+                    existingResourceProposedAuthorization,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(existingResourcePlan, noClaims, null)
+                ),
+
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                    new UpsertResult.UpsertFailureNotImplemented(
+                        BuildKnownButNotEnabledPostAuthorizationMessage(
+                            resource,
+                            knownButNotEnabled.Failures
+                        ),
+                        UpsertFailureNotImplementedReason.StrategyNotEnabled
+                    )
+                ),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    existingResourcePlan.StoredValues,
+                    existingResourceProposedAuthorization,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(
+                        existingResourcePlan,
+                        null,
+                        new RelationalWriteExecutorResult.Upsert(
+                            BuildPostAuthorizationSecurityConfigurationFailure(
+                                mappingSet,
+                                securityConfigurationError.Failures
+                            )
+                        )
+                    )
+                ),
+
+            _ => throw new InvalidOperationException(
+                $"Unsupported POST create-new relationship authorization result '{createNewProposedValues.GetType().Name}'."
             ),
         };
     }
@@ -1931,6 +2035,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationshipAuthorizationResult? proposedRelationshipAuthorization = null;
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
+        PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null;
 
         if (preflight is not null)
         {
@@ -1943,6 +2048,7 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedRelationshipAuthorization = continueResult.ProposedRelationshipAuthorization;
                     storedNamespaceAuthorization = continueResult.StoredNamespaceAuthorization;
                     proposedNamespaceAuthorization = continueResult.ProposedNamespaceAuthorization;
+                    postRelationshipAuthorizationPlans = continueResult.PostRelationshipAuthorizationPlans;
                     break;
 
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
@@ -2006,6 +2112,9 @@ public sealed class RelationalDocumentStoreRepository(
                         storedNamespaceAuthorization: storedNamespaceAuthorization,
                         proposedNamespaceAuthorization: proposedNamespaceAuthorization
                     )
+                    {
+                        PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans,
+                    }
                 )
                 .ConfigureAwait(false);
 
@@ -2112,6 +2221,7 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationshipAuthorizationResult? proposedRelationshipAuthorization,
                 RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
                 RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
+                PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null
             )
             {
                 ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
@@ -2120,6 +2230,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
                 StoredNamespaceAuthorization = storedNamespaceAuthorization;
                 ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
+                PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans;
             }
 
             public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
@@ -2129,6 +2240,8 @@ public sealed class RelationalDocumentStoreRepository(
             public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; }
 
             public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; }
+
+            public PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; }
 
             private static void ValidateStoredRelationshipAuthorization(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization
