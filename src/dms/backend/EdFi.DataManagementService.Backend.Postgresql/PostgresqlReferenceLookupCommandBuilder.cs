@@ -161,17 +161,6 @@ internal static class PostgresqlReferenceLookupCommandBuilder
     {
         var columnExpression = $"{sourceAlias}.{QuoteIdentifier(identityElement.Column.Value)}";
 
-        if (identityElement.IsDescriptorReference)
-        {
-            return $"""
-                lower((
-                    SELECT descriptor."Uri"
-                    FROM dms."Descriptor" descriptor
-                    WHERE descriptor."DocumentId" = {columnExpression}
-                ))
-                """;
-        }
-
         return DialectIdentityTextFormatter.PgsqlColumnToText(columnExpression, identityElement.ScalarType);
     }
 

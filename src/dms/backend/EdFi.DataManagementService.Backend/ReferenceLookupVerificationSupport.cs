@@ -19,8 +19,7 @@ internal sealed record ReferenceLookupVerificationProjection(
 internal sealed record ReferenceLookupVerificationElement(
     DbColumnName Column,
     string IdentityJsonPath,
-    RelationalScalarType ScalarType,
-    bool IsDescriptorReference
+    RelationalScalarType ScalarType
 );
 
 internal static class ReferenceLookupVerificationSupport
@@ -194,8 +193,7 @@ internal static class ReferenceLookupVerificationSupport
                 return new ReferenceLookupVerificationElement(
                     sourceColumn.Column,
                     identityElement.IdentityJsonPath.Value,
-                    sourceColumn.ScalarType,
-                    sourceColumn.IsDescriptorReference
+                    sourceColumn.ScalarType
                 );
             })
             .ToArray();
@@ -217,8 +215,7 @@ internal static class ReferenceLookupVerificationSupport
             var candidate = new VerificationSourceColumn(
                 column.ColumnName,
                 column.ScalarType,
-                IsPreferred: column.Storage is ColumnStorage.Stored,
-                IsDescriptorReference: column.Kind is ColumnKind.DescriptorFk
+                IsPreferred: column.Storage is ColumnStorage.Stored
             );
 
             AddPreferredColumn(columnByPath, sourceJsonPath.Canonical, candidate);
@@ -246,8 +243,7 @@ internal static class ReferenceLookupVerificationSupport
                 new VerificationSourceColumn(
                     outputColumn.ColumnName,
                     outputColumn.ScalarType,
-                    IsPreferred: true,
-                    IsDescriptorReference: false
+                    IsPreferred: true
                 )
             );
         }
@@ -330,7 +326,6 @@ internal static class ReferenceLookupVerificationSupport
     private sealed record VerificationSourceColumn(
         DbColumnName Column,
         RelationalScalarType ScalarType,
-        bool IsPreferred,
-        bool IsDescriptorReference
+        bool IsPreferred
     );
 }

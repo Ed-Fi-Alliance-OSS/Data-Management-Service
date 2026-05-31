@@ -339,5 +339,21 @@
       "Inspect GET-many security-configuration assertions for People relationship strategies."
     ],
     "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Remove duplicate proposed transitive People invalid-data SQL emission in the single-record authorization compiler.",
+    "acceptance-criteria": [
+      "AppendProposedTransitivePeopleSubjectFailureSelect computes or emits the proposed transitive People invalid-data predicate once per subject instead of rendering the same first-hop-to-terminal path predicate twice.",
+      "The generated SQL still encodes null first-hop anchors, missing intermediate rows, and null terminal person DocumentIds as proposed element-required failures.",
+      "The generated SQL still checks auth-view membership only after the proposed transitive path is valid and preserves existing AUTH1 failure payload strategy and subject ordinals.",
+      "Existing PostgreSQL and SQL Server proposed transitive People compiler coverage is updated or extended to guard the simplified shape."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/SingleRecordRelationshipAuthorizationSqlCompiler.cs around AppendProposedTransitivePeopleSubjectFailureSelect and AppendProposedTransitivePeopleSubjectInvalidDataSql.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler\"",
+      "Inspect PostgreSQL and SQL Server proposed transitive People SQL assertions to confirm the invalid-data path predicate is not duplicated."
+    ],
+    "completed": false
   }
 ]

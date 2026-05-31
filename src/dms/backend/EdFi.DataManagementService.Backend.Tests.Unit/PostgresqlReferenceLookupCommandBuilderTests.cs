@@ -107,10 +107,9 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
         command.CommandText.Should().Contain("'$.educationOrganizationId='");
         command.CommandText.Should().Contain("'$.descriptor=' || lower(descriptor.\"Uri\")");
         command.CommandText.Should().Contain("'$.termDescriptor='");
-        command.CommandText.Should().Contain("FROM dms.\"Descriptor\" descriptor");
         command
             .CommandText.Should()
-            .Contain("descriptor.\"DocumentId\" = source.\"TermDescriptor_DescriptorId\"");
+            .Contain("'$.termDescriptor=' || source.\"TermDescriptor_DescriptorId\"::text");
     }
 
     [Test]
