@@ -418,6 +418,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
       "Inspect known-but-not-enabled diagnostic assertions for GET-by-id, POST, PUT, DELETE, and GET-many relationship authorization."
     ],
-    "completed": false
+    "completed": true
   }
 ]

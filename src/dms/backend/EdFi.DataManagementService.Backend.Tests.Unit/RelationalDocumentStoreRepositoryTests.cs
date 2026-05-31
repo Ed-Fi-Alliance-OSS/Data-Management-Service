@@ -894,7 +894,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
             ],
             claimEducationOrganizationIds: [255901L]
         );
@@ -912,7 +912,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.GetDocumentById(getRequest);
 
         var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -3914,21 +3915,19 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
             ]
         );
 
         var result = await _sut.QueryDocuments(queryRequest);
 
         result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
-        result
-            .As<QueryResult.QueryFailureNotImplemented>()
-            .FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        result
-            .As<QueryResult.QueryFailureNotImplemented>()
+        var failure = result.As<QueryResult.QueryFailureNotImplemented>();
+        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        failure
             .FailureMessage.Should()
             .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");
+        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -5352,7 +5351,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
             ]);
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
@@ -5361,7 +5360,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>().Subject;
         failure.Reason.Should().Be(UpsertFailureNotImplementedReason.StrategyNotEnabled);
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        failure.FailureMessage.Should().Contain("NamespaceBased");
+        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
         _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         A.CallTo(() =>
@@ -6088,7 +6088,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
             ]);
         A.CallTo(() => updateRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
@@ -6097,7 +6097,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var failure = result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>().Subject;
         failure.Reason.Should().Be(UpdateFailureNotImplementedReason.StrategyNotEnabled);
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        failure.FailureMessage.Should().Contain("NamespaceBased");
+        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
         _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() =>
@@ -8126,7 +8127,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
             ]);
         A.CallTo(() => deleteRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901L]));
@@ -8134,10 +8135,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
-        result
-            .As<DeleteResult.DeleteFailureNotImplemented>()
-            .FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        var failure = result.As<DeleteResult.DeleteFailureNotImplemented>();
+        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         A.CallTo(_commandExecutor)
             .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
@@ -9231,6 +9231,25 @@ public class Given_RelationalDocumentStoreRepositoryTests
         {
             DisposeCallCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private static void AssertSupportedRelationshipStrategyNames(string message)
+    {
+        string[] expectedStrategyNames =
+        [
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+        ];
+
+        foreach (var expectedStrategyName in expectedStrategyNames)
+        {
+            message.Should().Contain(expectedStrategyName);
         }
     }
 

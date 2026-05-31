@@ -150,3 +150,10 @@ Decisions: TransitivePeopleFirstHopAnchorValue now carries only the first-hop ru
 Files changed: RelationshipAuthorizationProposedValueExtractor.cs, RelationshipAuthorizationProposedValueExtractorTests.cs, DefaultRelationalWriteExecutorTests.cs, RelationalWriteNoProfilePersisterTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor|FullyQualifiedName~RelationalWriteNoProfilePersister" passed 11.
 Notes: remaining open task is shared diagnostic strategy names.
+
+People relationship CRUD authorization - completed shared diagnostic strategy names task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: repository now has one supported relationship strategy names list used by GET-by-id, POST, PUT, DELETE, and GET-many known-but-not-enabled diagnostics; endpoint tests assert all supported EdOrg/People strategy names remain in diagnostic output.
+Files changed: RelationalDocumentStoreRepository.cs, RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository" passed 189.
+Notes: all tasks in tasks.json complete.
