@@ -2331,15 +2331,19 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         var documentId = QuoteIdentifier(dialect, "DocumentId");
         var studentDocumentId = QuoteIdentifier(dialect, AuthNames.StudentDocumentId.Value);
         var sourceEdOrgId = QuoteIdentifier(dialect, AuthNames.SourceEdOrgId.Value);
+        var invalidDataColumn = QuoteIdentifier(dialect, "InvalidData");
+        var invalidDataPathPredicate =
+            $"{proposedValue} IS NULL OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_0.{studentDocumentId} IS NOT NULL)";
 
         plan.AuthorizationSql.Should()
-            .Contain(
-                $"CASE WHEN {proposedValue} IS NULL OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_0.{studentDocumentId} IS NOT NULL) THEN 'p' ELSE 'n' END"
-            );
+            .Contain($"SELECT CASE WHEN {invalidDataPathPredicate} THEN 1 ELSE 0 END AS {invalidDataColumn}");
+        plan.AuthorizationSql.Should()
+            .Contain($"CASE WHEN invalid_data.{invalidDataColumn} = 1 THEN 'p' ELSE 'n' END");
         plan.AuthorizationSql.Should()
             .Contain(
-                $"AND EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_0.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})) THEN 1 ELSE 0 END"
+                $"CASE WHEN invalid_data.{invalidDataColumn} = 1 OR NOT EXISTS (SELECT 1 FROM {QuoteRelation(dialect, studentAcademicRecordTable)} p0_0_0 WHERE p0_0_0.{documentId} = {proposedValue} AND p0_0_0.{studentDocumentId} IS NOT NULL AND EXISTS (SELECT 1 FROM {QuoteRelation(dialect, subject.AuthObject.Name)} a0_0 WHERE a0_0.{studentDocumentId} = p0_0_0.{studentDocumentId} AND a0_0.{sourceEdOrgId}{ClaimEducationOrganizationIdFilterFragment(dialect)})) THEN 1 ELSE 0 END"
             );
+        CountOccurrences(plan.AuthorizationSql, invalidDataPathPredicate).Should().Be(1);
         plan.AuthorizationSql.Should().NotContain("UniqueId");
         plan.AuthorizationSql.Should().NotContain("USI");
     }
@@ -3094,6 +3098,20 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
 
     private static string ProposedValueFragment(SqlDialect dialect, string parameterName) =>
         dialect is SqlDialect.Pgsql ? $"CAST(@{parameterName} AS bigint)" : $"@{parameterName}";
+
+    private static int CountOccurrences(string value, string searchValue)
+    {
+        var count = 0;
+        var searchIndex = 0;
+
+        while ((searchIndex = value.IndexOf(searchValue, searchIndex, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            searchIndex += searchValue.Length;
+        }
+
+        return count;
+    }
 
     private static RelationshipAuthorizationSubject[] StampNonPersonSubjects(
         RelationshipAuthorizationAuthObject authObject,

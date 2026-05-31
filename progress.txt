@@ -122,3 +122,10 @@ Decisions: GET-many security-configuration failures now name the current relatio
 Files changed: RelationalDocumentStoreRepository.cs, RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository" passed 189.
 Notes: all tasks in tasks.json now complete.
+
+People relationship CRUD authorization - completed duplicate proposed transitive People SQL cleanup task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: proposed transitive People invalid-data predicate now emits once into an InvalidData derived-table flag and reuses that flag for failure kind and failed-subject selection; auth-view membership still runs only after valid first-hop-to-terminal path.
+Files changed: SingleRecordRelationshipAuthorizationSqlCompiler.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler" passed 36.
+Notes: all tasks in tasks.json complete.

@@ -354,6 +354,6 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler\"",
       "Inspect PostgreSQL and SQL Server proposed transitive People SQL assertions to confirm the invalid-data path predicate is not duplicated."
     ],
-    "completed": false
+    "completed": true
   }
 ]

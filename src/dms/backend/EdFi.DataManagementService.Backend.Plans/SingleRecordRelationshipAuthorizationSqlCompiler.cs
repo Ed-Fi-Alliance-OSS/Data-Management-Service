@@ -24,6 +24,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     private const string SubjectOrdinalColumn = "SubjectOrdinal";
     private const string FailureKindColumn = "FailureKind";
     private const string FailedColumn = "Failed";
+    private const string InvalidDataColumn = "InvalidData";
     private const string PayloadColumn = "Payload";
     private const string AuthorizationResultColumn = "AuthorizationResult";
     private const string ContentVersionColumn = "ContentVersion";
@@ -1174,6 +1175,7 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
     )
     {
         var authAlias = $"a{strategyOrdinal}_{subjectOrdinal}";
+        const string invalidDataAlias = "invalid_data";
 
         writer.AppendLine("SELECT");
 
@@ -1181,26 +1183,13 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
         {
             writer.AppendLine($"{strategyOrdinal},");
             writer.AppendLine($"{subjectOrdinal},");
-            writer.Append("CASE WHEN ");
-            AppendProposedTransitivePeopleSubjectInvalidDataSql(
-                writer,
-                subject,
-                personMetadata,
-                proposedValueParameterName,
-                strategyOrdinal,
-                subjectOrdinal
-            );
-            writer.Append(" THEN 'p' ELSE 'n' END,");
+            writer.Append($"CASE WHEN {invalidDataAlias}.");
+            writer.AppendQuoted(InvalidDataColumn);
+            writer.Append(" = 1 THEN 'p' ELSE 'n' END,");
             writer.AppendLine();
-            writer.Append("CASE WHEN ");
-            AppendProposedTransitivePeopleSubjectInvalidDataSql(
-                writer,
-                subject,
-                personMetadata,
-                proposedValueParameterName,
-                strategyOrdinal,
-                subjectOrdinal
-            );
+            writer.Append($"CASE WHEN {invalidDataAlias}.");
+            writer.AppendQuoted(InvalidDataColumn);
+            writer.Append(" = 1");
             writer.Append(" OR NOT ");
             AppendProposedTransitivePeopleAuthorizationSuccessSql(
                 writer,
@@ -1215,6 +1204,24 @@ public sealed class SingleRecordRelationshipAuthorizationSqlCompiler(SqlDialect 
             writer.AppendLine(" THEN 1 ELSE 0 END");
         }
 
+        writer.AppendLine();
+        writer.AppendLine("FROM (");
+        using (writer.Indent())
+        {
+            writer.Append("SELECT CASE WHEN ");
+            AppendProposedTransitivePeopleSubjectInvalidDataSql(
+                writer,
+                subject,
+                personMetadata,
+                proposedValueParameterName,
+                strategyOrdinal,
+                subjectOrdinal
+            );
+            writer.Append(" THEN 1 ELSE 0 END AS ");
+            writer.AppendQuoted(InvalidDataColumn);
+            writer.AppendLine();
+        }
+        writer.Append($") {invalidDataAlias}");
         writer.AppendLine();
     }
 
