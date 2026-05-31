@@ -306,5 +306,38 @@
       "Run env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter \"Category=relational-backend\" from src/dms/tests/EdFi.DataManagementService.Tests.E2E."
     ],
     "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Medium: Use create-new People relationship authorization planning for POST create-new instead of reusing existing-resource update planning.",
+    "acceptance-criteria": [
+      "POST create-new proposed relationship authorization uses ProposedValueOperationKind.CreateNew semantics, including operation eligibility filtering.",
+      "Self Student, Contact, or Staff subjects selected by a create-new People relationship strategy are omitted as SelfPersonDocumentIdUnavailableForCreateNew; if no executable subjects remain, POST returns the canonical no-executable-subject security-configuration failure before reference resolution or persistence.",
+      "POST-as-update continues to use existing-resource stored-then-proposed planning, and existing-target self-person subjects bind to the locked target DocumentId.",
+      "POST create-new no longer reaches RelationshipAuthorizationProposedValueExtractor with an ExistingTargetDocumentId self-person proposed anchor.",
+      "Focused repository or executor unit coverage proves create-new self-person relationship strategies use the create-new plan, while POST-as-update self-person strategies keep the existing-target plan."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs, StoredRelationshipAuthorizationOrchestrator.cs, ProposedRelationshipAuthorizationOrchestrator.cs, and RelationalWriteContracts.cs for target-dependent POST plan selection.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationPlanner.cs to confirm create-new self-person operation-ineligible metadata is preserved for POST create-new.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~DefaultRelationalWriteExecutor|FullyQualifiedName~RelationshipAuthorizationProposedValueExtractor\"",
+      "Inspect test assertions for POST create-new self-person no-executable security-configuration behavior and POST-as-update existing-target self-person authorization behavior."
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Update GET-many relationship security-configuration diagnostics to remove stale EdOrg-only boundary wording.",
+    "acceptance-criteria": [
+      "GET-many relationship security-configuration messages refer to the current GET-many relationship query execution boundary instead of an EdOrg-only boundary.",
+      "The supported strategy list used for GET-many diagnostics remains aligned with the People-capable relationship strategy set.",
+      "Existing known-but-not-enabled and security-configuration tests or assertions are updated only for the corrected diagnostic text."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs around BuildQueryAuthorizationSecurityConfigurationFailure and BuildKnownButNotEnabledQueryAuthorizationMessage.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"",
+      "Inspect GET-many security-configuration assertions for People relationship strategies."
+    ],
+    "completed": false
   }
 ]
