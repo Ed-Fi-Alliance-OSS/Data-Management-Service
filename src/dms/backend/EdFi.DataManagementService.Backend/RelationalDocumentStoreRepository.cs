@@ -1618,18 +1618,16 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedNamespaceAuthorization
                 ),
 
-            RelationshipAuthorizationResult.Authorized authorized =>
-                CreatePostRelationshipAuthorizationContinue(
-                    mappingSet,
-                    resource,
-                    nonNamespaceConfiguredStrategies,
-                    authorizationContext,
-                    writePlan,
-                    existingResourcePlan,
-                    authorized,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
-                ),
+            RelationshipAuthorizationResult.Authorized => CreatePostRelationshipAuthorizationContinue(
+                mappingSet,
+                resource,
+                nonNamespaceConfiguredStrategies,
+                authorizationContext,
+                writePlan,
+                existingResourcePlan,
+                storedNamespaceAuthorization,
+                proposedNamespaceAuthorization
+            ),
 
             // NamespaceBased AND-composes before relationship OR strategies (auth.md). When a
             // proposed namespace check is also planned, defer NoClaims through Continue so the
@@ -1678,7 +1676,6 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext,
         ResourceWritePlan writePlan,
         RelationshipAuthorizationUpdatePlan existingResourcePlan,
-        RelationshipAuthorizationResult.Authorized existingResourceProposedAuthorization,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
     )
@@ -1696,8 +1693,8 @@ public sealed class RelationalDocumentStoreRepository(
             RelationshipAuthorizationResult.NoAuthorizationRequired
             or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    existingResourcePlan.StoredValues,
-                    existingResourceProposedAuthorization,
+                    null,
+                    null,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
                     new PostRelationshipAuthorizationPlans(existingResourcePlan, null, null)
@@ -1705,8 +1702,8 @@ public sealed class RelationalDocumentStoreRepository(
 
             RelationshipAuthorizationResult.Authorized createNewAuthorized =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    existingResourcePlan.StoredValues,
-                    existingResourceProposedAuthorization,
+                    null,
+                    null,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
                     new PostRelationshipAuthorizationPlans(existingResourcePlan, createNewAuthorized, null)
@@ -1715,8 +1712,8 @@ public sealed class RelationalDocumentStoreRepository(
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
                 : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    existingResourcePlan.StoredValues,
-                    existingResourceProposedAuthorization,
+                    null,
+                    null,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
                     new PostRelationshipAuthorizationPlans(existingResourcePlan, noClaims, null)
@@ -1735,8 +1732,8 @@ public sealed class RelationalDocumentStoreRepository(
 
             RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    existingResourcePlan.StoredValues,
-                    existingResourceProposedAuthorization,
+                    null,
+                    null,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
                     new PostRelationshipAuthorizationPlans(

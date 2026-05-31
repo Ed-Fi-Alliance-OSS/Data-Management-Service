@@ -129,3 +129,10 @@ Decisions: proposed transitive People invalid-data predicate now emits once into
 Files changed: SingleRecordRelationshipAuthorizationSqlCompiler.cs, RelationshipAuthorizationAuth1FailurePayloadTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format changed C# files; dotnet test Plans.Tests.Unit --filter "FullyQualifiedName~SingleRecordRelationshipAuthorizationSqlCompiler" passed 36.
 Notes: all tasks in tasks.json complete.
+
+People relationship CRUD authorization - completed POST relationship plan single-source cleanup task.
+Story: reference/design/backend-redesign/epics/14-authorization/07b-people-relationship-auth-crud.md.
+Decisions: repository now sends only PostRelationshipAuthorizationPlans for target-dependent POST auth; initial executor request leaves stored/proposed relationship auth null so write-session plan selection is sole source of truth. Existing orchestrator selection already sets create-new or existing-resource auth on selected request.
+Files changed: RelationalDocumentStoreRepository.cs, RelationalDocumentStoreRepositoryTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format changed C# files; first test run failed on unused switch variable after cleanup, fixed; dotnet test Backend.Tests.Unit --filter "FullyQualifiedName~RelationalDocumentStoreRepository|FullyQualifiedName~DefaultRelationalWriteExecutor" passed 189.
+Notes: remaining open tasks are low cleanup for proposed runtime metadata, shared People path validation helpers, and shared diagnostic strategy names.

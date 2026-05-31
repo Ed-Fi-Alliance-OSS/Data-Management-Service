@@ -5612,19 +5612,28 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
         _capturedExecutorRequests.Should().ContainSingle();
-        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().NotBeNull();
-        _capturedExecutorRequest
-            .StoredRelationshipAuthorization.Should()
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
+        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().BeNull();
+        var postPlans = _capturedExecutorRequest.PostRelationshipAuthorizationPlans;
+        postPlans.Should().NotBeNull();
+        postPlans!
+            .ExistingResourcePlan.StoredValues.Should()
             .BeOfType<RelationshipAuthorizationResult.Authorized>()
             .Which.CheckSpecs.Should()
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Stored);
-        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().NotBeNull();
-        _capturedExecutorRequest
-            .ProposedRelationshipAuthorization.Should()
+        postPlans
+            .ExistingResourcePlan.ProposedValues.Should()
             .BeOfType<RelationshipAuthorizationResult.Authorized>()
             .Which.CheckSpecs.Should()
+            .ContainSingle()
+            .Which.ValueSource.Should()
+            .Be(RelationshipAuthorizationValueSource.Proposed);
+        var createNewProposedAuthorization = postPlans.CreateNewProposedRelationshipAuthorization;
+        createNewProposedAuthorization.Should().NotBeNull();
+        createNewProposedAuthorization!
+            .CheckSpecs.Should()
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Proposed);
@@ -5675,19 +5684,28 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, committedEtag));
         _capturedExecutorRequests.Should().ContainSingle();
-        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().NotBeNull();
-        _capturedExecutorRequest
-            .StoredRelationshipAuthorization.Should()
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
+        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().BeNull();
+        var postPlans = _capturedExecutorRequest.PostRelationshipAuthorizationPlans;
+        postPlans.Should().NotBeNull();
+        postPlans!
+            .ExistingResourcePlan.StoredValues.Should()
             .BeOfType<RelationshipAuthorizationResult.Authorized>()
             .Which.CheckSpecs.Should()
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Stored);
-        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().NotBeNull();
-        _capturedExecutorRequest
-            .ProposedRelationshipAuthorization.Should()
+        postPlans
+            .ExistingResourcePlan.ProposedValues.Should()
             .BeOfType<RelationshipAuthorizationResult.Authorized>()
             .Which.CheckSpecs.Should()
+            .ContainSingle()
+            .Which.ValueSource.Should()
+            .Be(RelationshipAuthorizationValueSource.Proposed);
+        var createNewProposedAuthorization = postPlans.CreateNewProposedRelationshipAuthorization;
+        createNewProposedAuthorization.Should().NotBeNull();
+        createNewProposedAuthorization!
+            .CheckSpecs.Should()
             .ContainSingle()
             .Which.ValueSource.Should()
             .Be(RelationshipAuthorizationValueSource.Proposed);
@@ -5745,19 +5763,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
         peopleInsertSuccess.NewDocumentUuid.Should().Be(documentUuid);
         peopleInsertSuccess.ETag.Should().Be(committedEtag);
         _capturedExecutorRequests.Should().ContainSingle();
-        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().NotBeNull();
-        _capturedExecutorRequest
-            .StoredRelationshipAuthorization.Should()
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
+        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().BeNull();
+        var postPlans = _capturedExecutorRequest.PostRelationshipAuthorizationPlans;
+        postPlans.Should().NotBeNull();
+        postPlans!
+            .ExistingResourcePlan.StoredValues.Should()
             .BeOfType<RelationshipAuthorizationResult.Authorized>()
             .Which.CheckSpecs.Should()
             .ContainSingle()
             .Which.Subjects.Should()
             .ContainSingle(static subject => subject.IsPersonSubject);
-        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().NotBeNull();
-        var proposedCheck = _capturedExecutorRequest
-            .ProposedRelationshipAuthorization!.CheckSpecs.Should()
-            .ContainSingle()
-            .Subject;
+        var createNewProposedAuthorization = postPlans.CreateNewProposedRelationshipAuthorization;
+        createNewProposedAuthorization.Should().NotBeNull();
+        var proposedCheck = createNewProposedAuthorization!.CheckSpecs.Should().ContainSingle().Subject;
         proposedCheck.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
         proposedCheck
             .ConfiguredStrategy.StrategyName.Should()
@@ -5815,6 +5834,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
         _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
+        _capturedExecutorRequest.ProposedRelationshipAuthorization.Should().BeNull();
         var postPlans = _capturedExecutorRequest.PostRelationshipAuthorizationPlans;
         postPlans.Should().NotBeNull();
         var createNewFailure = postPlans!
