@@ -16,16 +16,9 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
     {
         ArgumentNullException.ThrowIfNull(checkSpec);
 
-        if (IsPeopleRelationshipStrategy(checkSpec.ConfiguredStrategy.StrategyName))
-        {
-            throw new InvalidOperationException(
-                $"PageDocumentId authorization does not support People relationship strategy '{checkSpec.ConfiguredStrategy.StrategyName}' until GET-many People relationship execution is enabled."
-            );
-        }
-
-        var errorMessage = GetNonEdOrgHierarchyErrorMessage(
+        var errorMessage = GetUnsupportedPageDocumentIdErrorMessage(
             checkSpec,
-            "PageDocumentId authorization supports only EdOrg hierarchy relationship checks."
+            "PageDocumentId authorization supports only EdOrg hierarchy or People relationship checks."
         );
 
         if (errorMessage is not null)
@@ -96,6 +89,50 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
         return null;
     }
 
+    private static string? GetUnsupportedPageDocumentIdErrorMessage(
+        RelationshipAuthorizationCheckSpec checkSpec,
+        string messagePrefix
+    )
+    {
+        foreach (var subject in checkSpec.Subjects)
+        {
+            if (subject.IsPersonSubject)
+            {
+                if (!UsesPeopleAuthObject(subject.AuthObject))
+                {
+                    return $"{messagePrefix} Auth object '{subject.AuthObject.Name}' is not supported.";
+                }
+
+                if (
+                    subject.Contributors.Count == 0
+                    || subject.Contributors.Any(static contributor => !IsPersonSubjectKind(contributor.Kind))
+                )
+                {
+                    return $"{messagePrefix} Subject column '{subject.Column.Value}' is not a People subject.";
+                }
+
+                continue;
+            }
+
+            if (!UsesEdOrgHierarchyAuthObject(subject.AuthObject))
+            {
+                return $"{messagePrefix} Auth object '{subject.AuthObject.Name}' is not supported.";
+            }
+
+            if (
+                subject.Contributors.Count == 0
+                || subject.Contributors.Any(static contributor =>
+                    contributor.Kind is not SecurableElementKind.EducationOrganization
+                )
+            )
+            {
+                return $"{messagePrefix} Subject column '{subject.Column.Value}' is not an EducationOrganization subject.";
+            }
+        }
+
+        return null;
+    }
+
     private static bool UsesEdOrgHierarchyAuthObject(RelationshipAuthorizationAuthObject authObject) =>
         authObject.Name.Equals(AuthNames.EdOrgIdToEdOrgId)
         && (
@@ -108,4 +145,16 @@ internal static class RelationshipAuthorizationEndpointExecutionBoundary
                 && authObject.ClaimEducationOrganizationIdColumn.Equals(AuthNames.TargetEdOrgId)
             )
         );
+
+    private static bool UsesPeopleAuthObject(RelationshipAuthorizationAuthObject authObject) =>
+        AuthObjectDefinitions.PeopleAuthViewDefinitions.Any(definition =>
+            authObject.Name.Equals(definition.View)
+            && authObject.SubjectValueColumn.Equals(definition.PersonDocumentIdOutputColumn)
+            && authObject.ClaimEducationOrganizationIdColumn.Equals(
+                definition.ClaimEducationOrganizationIdColumn
+            )
+        );
+
+    private static bool IsPersonSubjectKind(SecurableElementKind kind) =>
+        kind is SecurableElementKind.Student or SecurableElementKind.Contact or SecurableElementKind.Staff;
 }

@@ -129,7 +129,13 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             parameterValues[parameterName] = plannedPredicate.ParameterValue;
         }
 
-        AddAuthorizationParameterValues(parameterValues, authorizationClaimParameterization);
+        if (authorizationClaimParameterization is not null)
+        {
+            AuthorizationClaimEducationOrganizationIdParameterValues.AddTo(
+                parameterValues,
+                authorizationClaimParameterization
+            );
+        }
 
         var querySpec = new PageDocumentIdQuerySpec(
             RootTable: rootTable.Table,
@@ -143,47 +149,6 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
         return new PageKeysetSpec.Query(sqlPlan, parameterValues);
-    }
-
-    private static void AddAuthorizationParameterValues(
-        IDictionary<string, object?> parameterValues,
-        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
-    )
-    {
-        if (authorizationClaimParameterization is null)
-        {
-            return;
-        }
-
-        switch (authorizationClaimParameterization.Kind)
-        {
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlStructured:
-                parameterValues[authorizationClaimParameterization.BaseParameterName] =
-                    authorizationClaimParameterization.ClaimEducationOrganizationIds;
-                return;
-
-            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
-                for (
-                    var parameterIndex = 0;
-                    parameterIndex < authorizationClaimParameterization.ParameterNamesInOrder.Count;
-                    parameterIndex++
-                )
-                {
-                    parameterValues[
-                        authorizationClaimParameterization.ParameterNamesInOrder[parameterIndex]
-                    ] = authorizationClaimParameterization.ClaimEducationOrganizationIds[parameterIndex];
-                }
-
-                return;
-
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(authorizationClaimParameterization),
-                    authorizationClaimParameterization.Kind,
-                    "Unsupported authorization claim EdOrg parameterization kind."
-                );
-        }
     }
 
     private static PlannedPredicate? PlanPredicate(

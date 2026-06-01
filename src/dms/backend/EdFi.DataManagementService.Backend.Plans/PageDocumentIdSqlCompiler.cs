@@ -399,6 +399,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         foreach (var strategy in normalizedStrategies)
         {
+            ArgumentException.ThrowIfNullOrWhiteSpace(strategy.StrategyName);
             ArgumentNullException.ThrowIfNull(strategy.Subjects);
 
             if (strategy.Subjects.Any(static subject => subject is null))
@@ -412,9 +413,15 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             if (strategy.Subjects.Count == 0)
             {
                 throw new ArgumentException(
-                    $"Authorization strategy '{strategy.Kind}' requires at least one authorization subject.",
+                    $"Authorization strategy '{strategy.StrategyName}' requires at least one authorization subject.",
                     nameof(authorization)
                 );
+            }
+
+            foreach (var subject in strategy.Subjects)
+            {
+                ArgumentNullException.ThrowIfNull(subject.AuthObject);
+                ArgumentNullException.ThrowIfNull(subject.Contributors);
             }
         }
 
@@ -636,11 +643,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             AppendAuthorizationSubjectSql(
                 writer,
                 rootTable,
-                strategy.Kind,
                 strategy.Subjects[subjectIndex],
-                strategy.AllowsDirectClaimMatch,
                 authorizationClaimParameterization,
-                aliasAllocator.AllocateNext()
+                aliasAllocator
             );
         }
     }
@@ -648,9 +653,303 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static void AppendAuthorizationSubjectSql(
         SqlWriter writer,
         DbTableName rootTable,
-        PageDocumentIdAuthorizationStrategyKind strategyKind,
         PageDocumentIdAuthorizationSubject subject,
-        bool allowsDirectClaimMatch,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        PlanSqlTableAliasAllocator aliasAllocator
+    )
+    {
+        switch (subject)
+        {
+            case PageDocumentIdAuthorizationEdOrgSubject edOrgSubject:
+                AppendAuthorizationEdOrgSubjectSql(
+                    writer,
+                    rootTable,
+                    edOrgSubject,
+                    authorizationClaimParameterization,
+                    aliasAllocator.AllocateNext()
+                );
+                return;
+            case PageDocumentIdAuthorizationPersonSubject personSubject:
+                AppendAuthorizationPersonSubjectSql(
+                    writer,
+                    rootTable,
+                    personSubject,
+                    authorizationClaimParameterization,
+                    aliasAllocator
+                );
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(subject),
+                    subject.GetType().Name,
+                    "Unsupported page document-id authorization subject."
+                );
+        }
+    }
+
+    private static void AppendAuthorizationPersonSubjectSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        PlanSqlTableAliasAllocator aliasAllocator
+    )
+    {
+        var personMetadata = subject.PersonMetadata;
+
+        if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
+        {
+            throw new InvalidOperationException(
+                $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match query root table '{rootTable}'."
+            );
+        }
+
+        switch (personMetadata.Path.Kind)
+        {
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                AppendRootDocumentIdInPersonAuthViewSql(
+                    writer,
+                    rootTable,
+                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    subject.AuthObject,
+                    authorizationClaimParameterization,
+                    aliasAllocator.AllocateNext(),
+                    aliasAllocator.AllocateNext()
+                );
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
+                AppendRootDocumentIdInPersonAuthViewSql(
+                    writer,
+                    rootTable,
+                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    GetDirectRootPersonDocumentIdColumn(rootTable, subject),
+                    subject.AuthObject,
+                    authorizationClaimParameterization,
+                    aliasAllocator.AllocateNext(),
+                    aliasAllocator.AllocateNext()
+                );
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
+                AppendRootDocumentIdInTransitivePersonAuthViewSql(
+                    writer,
+                    rootTable,
+                    subject,
+                    authorizationClaimParameterization,
+                    aliasAllocator
+                );
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(subject),
+                    personMetadata.Path.Kind,
+                    "Unsupported People relationship authorization subject path kind."
+                );
+        }
+    }
+
+    private static DbColumnName GetDirectRootPersonDocumentIdColumn(
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject
+    )
+    {
+        var steps = subject.PersonMetadata.Path.Steps;
+        var step = steps[0];
+
+        if (!step.SourceTable.Equals(rootTable))
+        {
+            throw new InvalidOperationException(
+                $"Direct People authorization subject table '{step.SourceTable}' does not match query root table '{rootTable}'."
+            );
+        }
+
+        if (!subject.Table.Equals(step.SourceTable) || !subject.Column.Equals(step.SourceColumnName))
+        {
+            throw new InvalidOperationException(
+                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match path root column '{step.SourceTable}.{step.SourceColumnName}'."
+            );
+        }
+
+        return step.SourceColumnName;
+    }
+
+    private static void AppendRootDocumentIdInTransitivePersonAuthViewSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        PlanSqlTableAliasAllocator aliasAllocator
+    )
+    {
+        var personMetadata = subject.PersonMetadata;
+        var pathSteps = personMetadata.Path.Steps;
+        ValidateTransitivePersonPath(rootTable, subject, pathSteps);
+
+        var rootSubqueryAlias = aliasAllocator.AllocateNext();
+        var pathJoinAliases = Enumerable
+            .Range(0, pathSteps.Count - 1)
+            .Select(_ => aliasAllocator.AllocateNext())
+            .ToArray();
+        var authAlias = aliasAllocator.AllocateNext();
+
+        writer.Append($"{_rootAlias}.");
+        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{rootSubqueryAlias}.");
+        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
+        writer.Append($" {rootSubqueryAlias}");
+
+        var currentSourceAlias = rootSubqueryAlias;
+
+        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target table for intermediate joins."
+                );
+            var targetColumn =
+                step.TargetColumnName
+                ?? throw new InvalidOperationException(
+                    "Transitive People authorization path steps must include a target column for intermediate joins."
+                );
+            var joinAlias = pathJoinAliases[stepIndex];
+
+            writer.Append(" JOIN ");
+            writer.AppendRelation(new SqlRelationRef.PhysicalTable(targetTable));
+            writer.Append($" {joinAlias} ON {joinAlias}.");
+            writer.AppendQuoted(targetColumn.Value);
+            writer.Append($" = {currentSourceAlias}.");
+            writer.AppendQuoted(step.SourceColumnName.Value);
+
+            currentSourceAlias = joinAlias;
+        }
+
+        var terminalStep = pathSteps[^1];
+
+        writer.Append($" WHERE {currentSourceAlias}.");
+        writer.AppendQuoted(terminalStep.SourceColumnName.Value);
+        AppendPersonAuthViewMembershipSubquerySql(
+            writer,
+            subject.AuthObject,
+            authorizationClaimParameterization,
+            authAlias
+        );
+        writer.Append(")");
+    }
+
+    private static void ValidateTransitivePersonPath(
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        IReadOnlyList<ColumnPathStep> pathSteps
+    )
+    {
+        var expectedSourceTable = rootTable;
+
+        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+
+            if (!step.SourceTable.Equals(expectedSourceTable))
+            {
+                throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex} source table '{step.SourceTable}' does not match expected table '{expectedSourceTable}'."
+                );
+            }
+
+            var targetTable =
+                step.TargetTable
+                ?? throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex} is missing a target table."
+                );
+
+            if (!pathSteps[stepIndex + 1].SourceTable.Equals(targetTable))
+            {
+                throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex + 1} source table '{pathSteps[stepIndex + 1].SourceTable}' does not match previous target table '{targetTable}'."
+                );
+            }
+
+            expectedSourceTable = targetTable;
+        }
+
+        var terminalStep = pathSteps[^1];
+
+        if (!terminalStep.SourceTable.Equals(expectedSourceTable))
+        {
+            throw new InvalidOperationException(
+                $"Transitive People authorization terminal source table '{terminalStep.SourceTable}' does not match expected table '{expectedSourceTable}'."
+            );
+        }
+
+        if (
+            !subject.Table.Equals(terminalStep.SourceTable)
+            || !subject.Column.Equals(terminalStep.SourceColumnName)
+        )
+        {
+            throw new InvalidOperationException(
+                $"People authorization subject column '{subject.Table}.{subject.Column}' does not match transitive terminal path column '{terminalStep.SourceTable}.{terminalStep.SourceColumnName}'."
+            );
+        }
+    }
+
+    private static void AppendRootDocumentIdInPersonAuthViewSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        DbColumnName rootDocumentIdColumn,
+        DbColumnName rootPersonDocumentIdColumn,
+        RelationshipAuthorizationAuthObject authObject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string rootSubqueryAlias,
+        string authAlias
+    )
+    {
+        writer.Append($"{_rootAlias}.");
+        writer.AppendQuoted(rootDocumentIdColumn.Value);
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{rootSubqueryAlias}.");
+        writer.AppendQuoted(rootDocumentIdColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
+        writer.Append($" {rootSubqueryAlias} WHERE {rootSubqueryAlias}.");
+        writer.AppendQuoted(rootPersonDocumentIdColumn.Value);
+        AppendPersonAuthViewMembershipSubquerySql(
+            writer,
+            authObject,
+            authorizationClaimParameterization,
+            authAlias
+        );
+        writer.Append(")");
+    }
+
+    private static void AppendPersonAuthViewMembershipSubquerySql(
+        SqlWriter writer,
+        RelationshipAuthorizationAuthObject authObject,
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        string authAlias
+    )
+    {
+        writer.Append(" IN (SELECT ");
+        writer.Append($"{authAlias}.");
+        writer.AppendQuoted(authObject.SubjectValueColumn.Value);
+        writer.Append(" FROM ");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(authObject.Name));
+        writer.Append($" {authAlias} WHERE {authAlias}.");
+        writer.AppendQuoted(authObject.ClaimEducationOrganizationIdColumn.Value);
+        AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
+            writer,
+            authorizationClaimParameterization
+        );
+        writer.Append(")");
+    }
+
+    private static void AppendAuthorizationEdOrgSubjectSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationEdOrgSubject subject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
@@ -663,24 +962,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             );
         }
 
-        var (resourceEdOrgColumn, claimFilterColumn) = strategyKind switch
-        {
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly => (
-                AuthNames.TargetEdOrgId,
-                AuthNames.SourceEdOrgId
-            ),
-            PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted => (
-                AuthNames.SourceEdOrgId,
-                AuthNames.TargetEdOrgId
-            ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(strategyKind),
-                strategyKind,
-                "Unsupported authorization strategy kind."
-            ),
-        };
-
-        if (allowsDirectClaimMatch)
+        if (subject.AuthObject.AllowsDirectClaimMatch)
         {
             writer.Append("(");
             AppendRootSubjectDirectClaimMatchSql(writer, subject, authorizationClaimParameterization);
@@ -688,8 +970,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             AppendRootSubjectHierarchyMatchSql(
                 writer,
                 subject,
-                resourceEdOrgColumn,
-                claimFilterColumn,
+                subject.AuthObject,
                 authorizationClaimParameterization,
                 authAlias
             );
@@ -700,8 +981,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         AppendRootSubjectHierarchyMatchSql(
             writer,
             subject,
-            resourceEdOrgColumn,
-            claimFilterColumn,
+            subject.AuthObject,
             authorizationClaimParameterization,
             authAlias
         );
@@ -709,7 +989,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
     private static void AppendRootSubjectDirectClaimMatchSql(
         SqlWriter writer,
-        PageDocumentIdAuthorizationSubject subject,
+        PageDocumentIdAuthorizationEdOrgSubject subject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
     )
     {
@@ -723,9 +1003,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
     private static void AppendRootSubjectHierarchyMatchSql(
         SqlWriter writer,
-        PageDocumentIdAuthorizationSubject subject,
-        DbColumnName resourceEdOrgColumn,
-        DbColumnName claimFilterColumn,
+        PageDocumentIdAuthorizationEdOrgSubject subject,
+        RelationshipAuthorizationAuthObject authObject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
         string authAlias
     )
@@ -734,11 +1013,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer.AppendQuoted(subject.Column.Value);
         writer.Append(" IN (SELECT ");
         writer.Append($"{authAlias}.");
-        writer.AppendQuoted(resourceEdOrgColumn.Value);
+        writer.AppendQuoted(authObject.SubjectValueColumn.Value);
         writer.Append(" FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(AuthNames.EdOrgIdToEdOrgId));
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(authObject.Name));
         writer.Append($" {authAlias} WHERE {authAlias}.");
-        writer.AppendQuoted(claimFilterColumn.Value);
+        writer.AppendQuoted(authObject.ClaimEducationOrganizationIdColumn.Value);
         AuthorizationClaimEducationOrganizationIdSqlHelper.AppendClaimFilterSql(
             writer,
             authorizationClaimParameterization

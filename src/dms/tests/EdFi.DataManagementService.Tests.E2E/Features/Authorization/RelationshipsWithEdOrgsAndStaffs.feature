@@ -123,6 +123,9 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       }
                   """
 
+        @reset-data-before-scenario
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Ensure client can Search staffEducationOrganizationAssignmentAssociations
 
              When a GET request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations"
@@ -292,6 +295,9 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
+        @reset-data-before-scenario
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 11  Ensure client cannot search staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -443,6 +449,9 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       }
                   """
 
+        @reset-data-before-scenario
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 16 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
              When a GET request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations/"
@@ -607,6 +616,9 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
+        @reset-data-before-scenario
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 23 Ensure client cannot  search staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """

@@ -48,34 +48,11 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
         }
 
         RelationshipAuthorizationEndpointExecutionBoundary.ThrowIfUnsupportedForPageDocumentId(checkSpec);
-        var authObject = SelectPageDocumentIdAuthObject(checkSpec);
 
         return new PageDocumentIdAuthorizationStrategy(
-            MapKind(checkSpec.Direction),
-            [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))],
-            checkSpec.ConfiguredStrategy.RawConfiguredIndex,
-            checkSpec.RelationshipLocalOrder,
-            authObject.AllowsDirectClaimMatch
+            checkSpec.ConfiguredStrategy.StrategyName,
+            [.. checkSpec.Subjects.Select(subject => AdaptSubject(storedTarget.RootTable, subject))]
         );
-    }
-
-    private static RelationshipAuthorizationAuthObject SelectPageDocumentIdAuthObject(
-        RelationshipAuthorizationCheckSpec checkSpec
-    )
-    {
-        var authObjects = checkSpec
-            .Subjects.Select(static subject => subject.AuthObject)
-            .Distinct()
-            .ToArray();
-
-        if (authObjects.Length != 1)
-        {
-            throw new InvalidOperationException(
-                "PageDocumentId authorization requires exactly one EdOrg auth object."
-            );
-        }
-
-        return authObjects[0];
     }
 
     private static PageDocumentIdAuthorizationSubject AdaptSubject(
@@ -85,6 +62,11 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
     {
         ArgumentNullException.ThrowIfNull(subject);
 
+        if (subject.PersonMetadata is not null)
+        {
+            return AdaptPersonSubject(rootTable, subject, subject.PersonMetadata);
+        }
+
         if (!subject.Table.Equals(rootTable))
         {
             throw new InvalidOperationException(
@@ -93,22 +75,33 @@ internal static class PageDocumentIdAuthorizationSpecAdapter
             );
         }
 
-        return new PageDocumentIdAuthorizationSubject(subject.Table, subject.Column);
+        return new PageDocumentIdAuthorizationEdOrgSubject(
+            subject.Table,
+            subject.Column,
+            subject.AuthObject,
+            subject.Contributors
+        );
     }
 
-    private static PageDocumentIdAuthorizationStrategyKind MapKind(
-        RelationshipAuthorizationHierarchyDirection direction
-    ) =>
-        direction switch
+    private static PageDocumentIdAuthorizationPersonSubject AdaptPersonSubject(
+        DbTableName rootTable,
+        RelationshipAuthorizationSubject subject,
+        RelationshipAuthorizationPersonSubjectMetadata personMetadata
+    )
+    {
+        if (!personMetadata.StoredAnchor.RootTable.Equals(rootTable))
         {
-            RelationshipAuthorizationHierarchyDirection.Normal =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
-            RelationshipAuthorizationHierarchyDirection.Inverted =>
-                PageDocumentIdAuthorizationStrategyKind.RelationshipsWithEdOrgsOnlyInverted,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(direction),
-                direction,
-                "Unsupported page-query authorization direction."
-            ),
-        };
+            throw new InvalidOperationException(
+                $"People authorization subject root table '{personMetadata.StoredAnchor.RootTable}' does not match query root table '{rootTable}'."
+            );
+        }
+
+        return new PageDocumentIdAuthorizationPersonSubject(
+            subject.Table,
+            subject.Column,
+            subject.AuthObject,
+            subject.Contributors,
+            personMetadata
+        );
+    }
 }

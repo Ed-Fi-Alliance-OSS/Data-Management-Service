@@ -28,7 +28,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 {
     public enum RelationshipAuthorizationEndpoint
     {
-        Query,
         GetById,
         Post,
         Put,
@@ -3004,29 +3003,250 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_keeps_people_query_relationship_authorization_staged_until_get_many_integration()
+    public async Task It_executes_people_query_relationship_authorization_through_page_keyset_planning()
     {
+        var resourceInfo = _studentResourceInfo;
+        var documentUuid = new DocumentUuid(Guid.Parse("94949494-1111-2222-3333-444444444444"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(resourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "Student")];
         var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            mappingSet,
+            [],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [255901L],
+            resourceInfo: resourceInfo
+        );
+        var hydratedPage = new HydratedPage(
+            1,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "People relationship query authorization should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        var success = (QueryResult.QuerySuccess)result;
+        success.TotalCount.Should().Be(1);
+        success.EdfiDocs.Should().ContainSingle();
+        capturedKeyset
+            .ParameterValues[RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<long>>()
+            .Which.Should()
+            .Equal(255901L);
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.\"DocumentId\" IN (SELECT")
+            .And.Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentId\"")
+            .And.Contain("\"Student_DocumentId\"");
+        capturedKeyset
+            .Plan.TotalCountSql.Should()
+            .Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentId\"");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_ignores_no_further_authorization_required_when_combined_with_people_query_relationship_authorization()
+    {
+        var resourceInfo = _studentResourceInfo;
+        var documentUuid = new DocumentUuid(Guid.Parse("96969696-1111-2222-3333-444444444444"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(resourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "Student")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
             [],
             totalCount: false,
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
                 ),
             ],
-            claimEducationOrganizationIds: [255901L]
+            claimEducationOrganizationIds: [255901L],
+            resourceInfo: resourceInfo
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "People relationship query authorization should still plan when NoFurtherAuthorizationRequired is present."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().BeNull();
+        success.EdfiDocs.Should().ContainSingle();
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentId\"")
+            .And.Contain("\"Student_DocumentId\"")
+            .And.NotContain(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_short_circuits_supported_people_query_authorization_with_empty_edorg_claims(
+        bool totalCount
+    )
+    {
+        var resourceInfo = _studentResourceInfo;
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(resourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [],
+            resourceInfo: resourceInfo
         );
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
-        result
-            .As<QueryResult.QueryFailureNotImplemented>()
-            .FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople)
-            .And.Contain("GET-many EdOrg-only relationship query execution boundary");
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_validates_people_auth_views_before_short_circuiting_empty_edorg_claims(
+        bool totalCount
+    )
+    {
+        var resourceInfo = _studentResourceInfo;
+        var queryRequest = CreateQueryRequest(
+            CreateAuthorizationAwareMappingSetWithSelfStudentSubject(resourceInfo),
+            [],
+            totalCount: totalCount,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [],
+            resourceInfo: resourceInfo
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure
+            .Errors[0]
+            .Should()
+            .Contain("people auth views were not emitted")
+            .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
+            .And.Contain(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -3039,7 +3259,85 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_query_security_configuration_failure_before_people_relationship_staging()
+    public async Task It_combines_edorg_only_and_people_query_relationship_strategies_as_or_branches()
+    {
+        var resourceInfo = _studentResourceInfo;
+        var documentUuid = new DocumentUuid(Guid.Parse("95959595-1111-2222-3333-444444444444"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(resourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "Student")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [255901L],
+            resourceInfo: resourceInfo
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 91L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901L],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Mixed relationship query authorization should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("\"SchoolId_Unified\"")
+            .And.Contain("\"auth\".\"EducationOrganizationIdToEducationOrganizationId\"")
+            .And.Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentId\"")
+            .And.Contain(" OR ");
+        capturedKeyset.Plan.TotalCountSql.Should().BeNull();
+    }
+
+    [TestCase("CustomAuthorizationStrategy")]
+    [TestCase("UnknownBasisWithStudent")]
+    public async Task It_returns_query_security_configuration_failure_for_invalid_metadata_mixed_with_people_relationship_authorization(
+        string invalidStrategyName
+    )
     {
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
@@ -3050,7 +3348,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
                 ),
-                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator(invalidStrategyName),
             ],
             claimEducationOrganizationIds: [255901L]
         );
@@ -3063,7 +3361,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors[0]
             .Should()
-            .Contain("CustomAuthorizationStrategy");
+            .Contain(invalidStrategyName);
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -3075,8 +3373,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
-    [Test]
-    public async Task It_preserves_known_but_not_enabled_query_diagnostics_when_people_staging_wins()
+    [TestCase(AuthorizationStrategyNameConstants.NamespaceBased)]
+    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
+    [TestCase("SchoolWithResponsibility")]
+    public async Task It_returns_not_implemented_for_known_out_of_scope_query_authorization_when_mixed_with_people_relationship_authorization(
+        string unsupportedStrategyName
+    )
     {
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
@@ -3087,7 +3389,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople
                 ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(unsupportedStrategyName),
             ],
             claimEducationOrganizationIds: [255901L]
         );
@@ -3097,8 +3399,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var failure = result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>().Subject;
         failure
             .FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople)
-            .And.Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+            .Contain(unsupportedStrategyName)
+            .And.Contain("GET-many relationship query execution boundary")
+            .And.Contain(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly);
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -3135,12 +3438,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failures.Select(static failure => failure.RelationshipLocalOrder).Should().Equal(0, 2);
     }
 
-    [TestCase(RelationshipAuthorizationEndpoint.Query)]
     [TestCase(RelationshipAuthorizationEndpoint.GetById)]
     [TestCase(RelationshipAuthorizationEndpoint.Post)]
     [TestCase(RelationshipAuthorizationEndpoint.Put)]
     [TestCase(RelationshipAuthorizationEndpoint.Delete)]
-    public async Task It_keeps_people_no_applicable_subject_failures_behind_endpoint_staging(
+    public async Task It_keeps_people_no_applicable_subject_failures_behind_single_record_endpoint_staging(
         RelationshipAuthorizationEndpoint endpoint
     )
     {
@@ -3164,12 +3466,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .And.NotContain("authorization metadata is invalid");
     }
 
-    [TestCase(RelationshipAuthorizationEndpoint.Query)]
     [TestCase(RelationshipAuthorizationEndpoint.GetById)]
     [TestCase(RelationshipAuthorizationEndpoint.Post)]
     [TestCase(RelationshipAuthorizationEndpoint.Put)]
     [TestCase(RelationshipAuthorizationEndpoint.Delete)]
-    public async Task It_keeps_people_missing_auth_view_failures_behind_endpoint_staging(
+    public async Task It_keeps_people_missing_auth_view_failures_behind_single_record_endpoint_staging(
         RelationshipAuthorizationEndpoint endpoint
     )
     {
@@ -6604,11 +6905,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         return endpoint switch
         {
-            RelationshipAuthorizationEndpoint.Query => await ExecuteQueryWithRelationshipStrategy(
-                resourceInfo,
-                mappingSet,
-                authorizationStrategyEvaluators
-            ),
             RelationshipAuthorizationEndpoint.GetById => await ExecuteGetByIdWithRelationshipStrategy(
                 resourceInfo,
                 mappingSet,
@@ -6631,26 +6927,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(endpoint), endpoint, null),
         };
-    }
-
-    private async Task<string> ExecuteQueryWithRelationshipStrategy(
-        ResourceInfo resourceInfo,
-        MappingSet mappingSet,
-        AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators
-    )
-    {
-        var queryRequest = CreateQueryRequest(
-            mappingSet,
-            [],
-            totalCount: false,
-            authorizationStrategyEvaluators: authorizationStrategyEvaluators,
-            claimEducationOrganizationIds: [255901L],
-            resourceInfo: resourceInfo
-        );
-
-        var result = await _sut.QueryDocuments(queryRequest);
-
-        return result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>().Subject.FailureMessage;
     }
 
     private async Task<string> ExecuteGetByIdWithRelationshipStrategy(
@@ -7551,6 +7827,92 @@ public class Given_RelationalDocumentStoreRepositoryTests
             QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
             {
                 [resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Supported(),
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                ),
+            },
+        };
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSetWithRootEdOrgAndSelfStudentSubject(
+        ResourceInfo resourceInfo
+    )
+    {
+        const string schoolPath = "$.schoolReference.schoolId";
+        const string studentPath = "$.studentUniqueId";
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = CreateRootTableModel(
+            resourceInfo.ResourceName.Value,
+            [
+                new DbColumnModel(
+                    AuthNames.SchoolIdUnified,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    new JsonPathExpression(schoolPath, []),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ]
+        );
+        var resourceModel = new RelationalResourceModel(
+            resourceKey.Resource,
+            new DbSchemaName("edfi"),
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+        var concreteResource = new ConcreteResourceModel(
+            resourceKey,
+            ResourceStorageKind.RelationalTables,
+            resourceModel
+        )
+        {
+            SecurableElements = new ResourceSecurableElements(
+                [new EdOrgSecurableElement(schoolPath, "SchoolId")],
+                [],
+                [studentPath],
+                [],
+                []
+            ),
+        };
+        var concreteResources = new List<ConcreteResourceModel> { concreteResource };
+        concreteResources.AddRange(CreateRequiredPeopleAuthAssociationResources(2));
+        var readPlan = CreateReadPlan(resourceModel, rootTable);
+        var resourceKeyIdByResource = concreteResources.ToDictionary(
+            static concreteResourceModel => concreteResourceModel.ResourceKey.Resource,
+            static concreteResourceModel => concreteResourceModel.ResourceKey.ResourceKeyId
+        );
+        var resourceKeyById = concreteResources.ToDictionary(
+            static concreteResourceModel => concreteResourceModel.ResourceKey.ResourceKeyId,
+            static concreteResourceModel => concreteResourceModel.ResourceKey
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(concreteResources) with
+            {
+                AuthEdOrgHierarchy = CreateAuthEdOrgHierarchy(),
+            },
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resourceKey.Resource] = readPlan,
+            },
+            ResourceKeyIdByResource: resourceKeyIdByResource,
+            ResourceKeyById: resourceKeyById,
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        )
+        {
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resourceKey.Resource] = new RelationalQueryCapability(
                     new RelationalQuerySupport.Supported(),
                     new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase),
                     new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)

@@ -62,41 +62,51 @@ public sealed record QueryValuePredicate(
 }
 
 /// <summary>
-/// Supported DMS-1055 authorization strategy kinds for page-<c>DocumentId</c> query compilation.
-/// </summary>
-public enum PageDocumentIdAuthorizationStrategyKind
-{
-    /// <summary>
-    /// Filters the auth hierarchy from source token EdOrg ids down to target resource EdOrg ids.
-    /// </summary>
-    RelationshipsWithEdOrgsOnly,
-
-    /// <summary>
-    /// Filters the auth hierarchy from target token EdOrg ids up to source resource EdOrg ids.
-    /// </summary>
-    RelationshipsWithEdOrgsOnlyInverted,
-}
-
-/// <summary>
-/// One concrete root-table EdOrg authorization subject used by DMS-1055 query compilation.
+/// One authorization subject used by page-<c>DocumentId</c> relationship authorization.
 /// </summary>
 /// <param name="Table">The table owning the authorization subject column.</param>
-/// <param name="Column">The concrete root-table EdOrg subject column.</param>
-public sealed record PageDocumentIdAuthorizationSubject(DbTableName Table, DbColumnName Column);
+/// <param name="Column">The subject column.</param>
+/// <param name="AuthObject">The auth object used to evaluate this subject.</param>
+/// <param name="Contributors">Schema securable elements that contributed this executable subject.</param>
+public abstract record PageDocumentIdAuthorizationSubject(
+    DbTableName Table,
+    DbColumnName Column,
+    RelationshipAuthorizationAuthObject AuthObject,
+    IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors
+);
 
 /// <summary>
-/// One relationship-based authorization strategy with its participating EdOrg subjects.
+/// One concrete root-table EducationOrganization authorization subject.
 /// </summary>
-/// <param name="Kind">The supported relationship authorization kind.</param>
+public sealed record PageDocumentIdAuthorizationEdOrgSubject(
+    DbTableName Table,
+    DbColumnName Column,
+    RelationshipAuthorizationAuthObject AuthObject,
+    IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors
+) : PageDocumentIdAuthorizationSubject(Table, Column, AuthObject, Contributors);
+
+/// <summary>
+/// One Student, Contact, or Staff authorization subject with DMS-1056 person path metadata.
+/// </summary>
+/// <param name="PersonMetadata">DocumentId path metadata used to bind the root document to a person auth view.</param>
+public sealed record PageDocumentIdAuthorizationPersonSubject(
+    DbTableName Table,
+    DbColumnName Column,
+    RelationshipAuthorizationAuthObject AuthObject,
+    IReadOnlyList<RelationshipAuthorizationSubjectContributor> Contributors,
+    RelationshipAuthorizationPersonSubjectMetadata PersonMetadata
+) : PageDocumentIdAuthorizationSubject(Table, Column, AuthObject, Contributors);
+
+/// <summary>
+/// One relationship-based authorization strategy with its participating subjects.
+/// </summary>
+/// <param name="StrategyName">The configured strategy name used for diagnostics.</param>
 /// <param name="Subjects">
-/// The participating concrete root-table EdOrg authorization subjects. Multiple subjects are combined with AND.
+/// The participating authorization subjects. Multiple subjects are combined with AND in this order.
 /// </param>
 public sealed record PageDocumentIdAuthorizationStrategy(
-    PageDocumentIdAuthorizationStrategyKind Kind,
-    IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects,
-    int? RawConfiguredIndex = null,
-    int? RelationshipLocalOrder = null,
-    bool AllowsDirectClaimMatch = false
+    string StrategyName,
+    IReadOnlyList<PageDocumentIdAuthorizationSubject> Subjects
 );
 
 /// <summary>

@@ -19,13 +19,15 @@ namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 public class ClaimSetManagementHooks(
     PlaywrightContext playwrightContext,
     TestLogger logger,
-    FeatureContext featureContext
+    FeatureContext featureContext,
+    ScenarioContext scenarioContext
 )
 {
     private const string ResetDataBeforeScenarioTag = "reset-data-before-scenario";
 
     private readonly FeatureContext _featureContext = featureContext;
     private readonly PlaywrightContext _playwrightContext = playwrightContext;
+    private readonly ScenarioContext _scenarioContext = scenarioContext;
     private readonly TestLogger _logger = logger;
 
     /// <summary>
@@ -35,17 +37,24 @@ public class ClaimSetManagementHooks(
     [BeforeScenario(Order = 100)] // Run early in the scenario setup
     public async Task ClearCacheBeforeScenario()
     {
-        if (
-            _featureContext.FeatureInfo.Tags.Contains(
-                ResetDataBeforeScenarioTag,
-                StringComparer.OrdinalIgnoreCase
-            )
-        )
+        bool featureTagged = HasResetDataBeforeScenarioTag(_featureContext.FeatureInfo.Tags);
+        bool scenarioTagged = HasResetDataBeforeScenarioTag(_scenarioContext.ScenarioInfo.Tags);
+
+        if (featureTagged || scenarioTagged)
         {
+            string tagScope = (featureTagged, scenarioTagged) switch
+            {
+                (true, true) => "feature and scenario tags",
+                (true, false) => "feature tag",
+                _ => "scenario tag",
+            };
+
             _logger.log.Information(
-                "===== ClaimSetManagementHooks: Resetting data before scenario for feature tag '{FeatureTag}' in '{FeatureTitle}' =====",
+                "===== ClaimSetManagementHooks: Resetting data before scenario for {TagScope} '{FeatureTag}' in feature '{FeatureTitle}', scenario '{ScenarioTitle}' =====",
+                tagScope,
                 ResetDataBeforeScenarioTag,
-                _featureContext.FeatureInfo.Title
+                _featureContext.FeatureInfo.Title,
+                _scenarioContext.ScenarioInfo.Title
             );
 
             await new SearchContainerSetup().ResetData();
@@ -110,6 +119,9 @@ public class ClaimSetManagementHooks(
             lastException
         );
     }
+
+    private static bool HasResetDataBeforeScenarioTag(IEnumerable<string> tags) =>
+        tags.Contains(ResetDataBeforeScenarioTag, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Resets both CMS and DMS claimsets after scenarios tagged with @ResetClaimsetsAfterScenario.

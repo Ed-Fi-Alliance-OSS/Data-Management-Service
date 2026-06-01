@@ -6,7 +6,8 @@
       "authorizationandresources": "authorizationAndResources",
       "authorizationchildonlyresources": "authorizationChildOnlyResources",
       "authorizationnullableresources": "authorizationNullableResources",
-      "authorizationrootchildresources": "authorizationRootChildResources"
+      "authorizationrootchildresources": "authorizationRootChildResources",
+      "authorizationstudentacademicrecordresources": "authorizationStudentAcademicRecordResources"
     },
     "compatibleDsRange": "5.2.0",
     "description": "",
@@ -21,7 +22,8 @@
       "AuthorizationAndResource": "authorizationAndResources",
       "AuthorizationChildOnlyResource": "authorizationChildOnlyResources",
       "AuthorizationNullableResource": "authorizationNullableResources",
-      "AuthorizationRootChildResource": "authorizationRootChildResources"
+      "AuthorizationRootChildResource": "authorizationRootChildResources",
+      "AuthorizationStudentAcademicRecordResource": "authorizationStudentAcademicRecordResources"
     },
     "resourceSchemas": {
       "authorizationAndResources": {
@@ -595,6 +597,153 @@
           "Namespace": [],
           "Staff": [],
           "Student": []
+        }
+      },
+      "authorizationStudentAcademicRecordResources": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "commonExtensionOverrides": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "AuthorizationStudentAcademicRecordId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.authorizationStudentAcademicRecordId",
+            "type": "number"
+          },
+          "Name": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.name",
+            "type": "string"
+          },
+          "StudentAcademicRecord": {
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isReference": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.educationOrganizationReference.educationOrganizationId",
+                "referenceJsonPath": "$.studentAcademicRecordReference.educationOrganizationId",
+                "type": "number"
+              },
+              {
+                "identityJsonPath": "$.schoolYearTypeReference.schoolYear",
+                "referenceJsonPath": "$.studentAcademicRecordReference.schoolYear",
+                "type": "string"
+              },
+              {
+                "identityJsonPath": "$.studentReference.studentUniqueId",
+                "referenceJsonPath": "$.studentAcademicRecordReference.studentUniqueId",
+                "type": "string"
+              },
+              {
+                "identityJsonPath": "$.termDescriptor",
+                "referenceJsonPath": "$.studentAcademicRecordReference.termDescriptor",
+                "type": "string"
+              }
+            ],
+            "resourceName": "StudentAcademicRecord"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.authorizationStudentAcademicRecordId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic authorization transitive StudentAcademicRecord resource.",
+          "properties": {
+            "authorizationStudentAcademicRecordId": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "name": {
+              "maxLength": 75,
+              "type": "string"
+            },
+            "studentAcademicRecordReference": {
+              "additionalProperties": false,
+              "properties": {
+                "educationOrganizationId": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "schoolYear": {
+                  "maximum": 2100,
+                  "minimum": 1900,
+                  "type": "integer"
+                },
+                "studentUniqueId": {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                "termDescriptor": {
+                  "maxLength": 306,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "educationOrganizationId",
+                "schoolYear",
+                "studentUniqueId",
+                "termDescriptor"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "authorizationStudentAcademicRecordId",
+            "name",
+            "studentAcademicRecordReference"
+          ],
+          "title": "Authz.AuthorizationStudentAcademicRecordResource",
+          "type": "object"
+        },
+        "numericJsonPaths": [
+          "$.authorizationStudentAcademicRecordId",
+          "$.studentAcademicRecordReference.educationOrganizationId",
+          "$.studentAcademicRecordReference.schoolYear"
+        ],
+        "queryFieldMapping": {
+          "authorizationStudentAcademicRecordId": [
+            {
+              "path": "$.authorizationStudentAcademicRecordId",
+              "type": "number"
+            }
+          ],
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "name": [
+            {
+              "path": "$.name",
+              "type": "string"
+            }
+          ]
+        },
+        "resourceName": "AuthorizationStudentAcademicRecordResource",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": ["$.studentAcademicRecordReference.studentUniqueId"]
         }
       }
     }

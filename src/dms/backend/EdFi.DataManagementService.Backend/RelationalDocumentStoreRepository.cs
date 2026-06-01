@@ -872,25 +872,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalQueryRequest.AuthorizationContext
         );
 
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                configuredAuthorizationStrategies,
-                relationshipAuthorizationResult,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new QueryResult.QueryFailureNotImplemented(
-                BuildKnownButNotEnabledQueryAuthorizationMessage(
-                    resource,
-                    CombinePeopleEndpointStagingFailures(
-                        peopleStagingFailures,
-                        relationshipAuthorizationResult
-                    )
-                )
-            );
-        }
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization = null;
 
         switch (relationshipAuthorizationResult)
@@ -1903,7 +1884,12 @@ public sealed class RelationalDocumentStoreRepository(
             operationLabel: "GET-by-id",
             effectiveAuthorizationLabel: "GET",
             executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "single-record EdOrg-only relationship"
+            supportedStrategySetName: "single-record EdOrg-only relationship",
+            supportedStrategyNames:
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            ]
         );
 
     private static string BuildKnownButNotEnabledDeleteAuthorizationMessage(
@@ -1916,7 +1902,12 @@ public sealed class RelationalDocumentStoreRepository(
             operationLabel: "DELETE",
             effectiveAuthorizationLabel: "DELETE",
             executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "single-record EdOrg-only relationship"
+            supportedStrategySetName: "single-record EdOrg-only relationship",
+            supportedStrategyNames:
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            ]
         );
 
     private static string BuildKnownButNotEnabledPostAuthorizationMessage(
@@ -1929,7 +1920,12 @@ public sealed class RelationalDocumentStoreRepository(
             operationLabel: "POST",
             effectiveAuthorizationLabel: "POST",
             executionBoundaryName: "POST create-new EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "POST create-new EdOrg-only relationship"
+            supportedStrategySetName: "POST create-new EdOrg-only relationship",
+            supportedStrategyNames:
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            ]
         );
 
     private static string BuildKnownButNotEnabledPutAuthorizationMessage(
@@ -1942,7 +1938,12 @@ public sealed class RelationalDocumentStoreRepository(
             operationLabel: "PUT",
             effectiveAuthorizationLabel: "PUT",
             executionBoundaryName: "PUT EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "PUT EdOrg-only relationship"
+            supportedStrategySetName: "PUT EdOrg-only relationship",
+            supportedStrategyNames:
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+            ]
         );
 
     private static bool TryCreatePeopleEndpointStagingFailures(
@@ -1986,7 +1987,7 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     strategy.ConfiguredStrategy,
                     strategy.RelationshipLocalOrder,
-                    Hint: "People relationship endpoint execution is staged until GET-many and CRUD People relationship authorization execution are enabled."
+                    Hint: "People relationship single-record endpoint execution is staged until CRUD People relationship authorization execution is enabled."
                 )),
         ];
 
@@ -2186,8 +2187,18 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "query",
             effectiveAuthorizationLabel: "GET-many",
-            executionBoundaryName: "GET-many EdOrg-only relationship query execution boundary",
-            supportedStrategySetName: "GET-many EdOrg-only relationship"
+            executionBoundaryName: "GET-many relationship query execution boundary",
+            supportedStrategySetName: "GET-many relationship",
+            supportedStrategyNames:
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
+                AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
+            ]
         );
 
     private static string BuildKnownButNotEnabledAuthorizationMessage(
@@ -2196,7 +2207,8 @@ public sealed class RelationalDocumentStoreRepository(
         string operationLabel,
         string effectiveAuthorizationLabel,
         string executionBoundaryName,
-        string supportedStrategySetName
+        string supportedStrategySetName,
+        IReadOnlyList<string> supportedStrategyNames
     )
     {
         var unsupportedStrategyNames = knownButNotEnabledFailures
@@ -2206,12 +2218,15 @@ public sealed class RelationalDocumentStoreRepository(
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static strategyName => strategyName, StringComparer.Ordinal)
             .Select(static strategyName => $"'{strategyName}'");
+        var supportedStrategyNamesText = string.Join(
+            ", ",
+            supportedStrategyNames.Select(static strategyName => $"'{strategyName}'")
+        );
 
         return $"Relational {operationLabel} authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
             + $"when effective {effectiveAuthorizationLabel} authorization includes strategies outside the current {executionBoundaryName}. Unsupported strategies: "
             + $"[{string.Join(", ", unsupportedStrategyNames)}]. Supported {supportedStrategySetName} strategies are "
-            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}', "
-            + $"'{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted}', and "
+            + $"{supportedStrategyNamesText}, and "
             + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op.";
     }
 

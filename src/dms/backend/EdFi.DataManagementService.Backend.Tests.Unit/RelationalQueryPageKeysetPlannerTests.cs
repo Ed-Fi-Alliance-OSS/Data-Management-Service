@@ -171,6 +171,52 @@ public class Given_RelationalQueryPageKeysetPlanner
         keyset.ParameterValues["studentUniqueId"].Should().Be("800000001");
     }
 
+    [Test]
+    public void It_should_add_authorization_claim_EdOrg_scalar_parameter_values_to_planned_query()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql);
+        var authorizationParameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar,
+            "ClaimEducationOrganizationIds",
+            [111L, 222L],
+            ["ClaimEducationOrganizationIds_0", "ClaimEducationOrganizationIds_1"]
+        );
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            authorization: new PageDocumentIdAuthorizationSpec(
+                [
+                    new PageDocumentIdAuthorizationStrategy(
+                        "RelationshipsWithEdOrgsOnly",
+                        [
+                            new PageDocumentIdAuthorizationEdOrgSubject(
+                                new DbTableName(new DbSchemaName("edfi"), "AcademicWeek"),
+                                new DbColumnName("SchoolId"),
+                                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                                    RelationshipAuthorizationHierarchyDirection.Normal
+                                ),
+                                []
+                            ),
+                        ]
+                    ),
+                ],
+                authorizationParameterization
+            )
+        );
+
+        keyset.ParameterValues["ClaimEducationOrganizationIds_0"].Should().Be(111L);
+        keyset.ParameterValues["ClaimEducationOrganizationIds_1"].Should().Be(222L);
+        keyset
+            .Plan.PageParametersInOrder.Should()
+            .Contain(parameter => parameter.ParameterName == "ClaimEducationOrganizationIds_0");
+        keyset.Plan.TotalCountParametersInOrder.Should().NotBeNull();
+        keyset
+            .Plan.TotalCountParametersInOrder!.Value.Should()
+            .Contain(parameter => parameter.ParameterName == "ClaimEducationOrganizationIds_1");
+    }
+
     [TestCase("1.5")]
     [TestCase("2147483648")]
     public void It_should_signal_empty_page_when_integer_number_query_values_cannot_be_represented(
