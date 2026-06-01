@@ -56,7 +56,7 @@ Fragment files must follow this naming pattern:
 **Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet`
 - Demonstrates the staged DMS-1055 fail-fast behavior for known unsupported mixed GET-many strategies
 - Includes resource: academicWeeks
-- Authorization: RelationshipsWithEdOrgsOnly plus NamespaceBased
+- Authorization: RelationshipsWithEdOrgsOnly plus OwnershipBased
 
 ### 004-sample-extension-claimset.json
 **Claim Set Name**: `SampleExtensionResourceClaims`

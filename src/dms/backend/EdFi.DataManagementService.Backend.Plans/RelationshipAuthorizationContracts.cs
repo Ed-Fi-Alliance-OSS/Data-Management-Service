@@ -20,7 +20,6 @@ public enum RelationshipAuthorizationStrategyKind
 {
     RelationshipsWithEdOrgsOnly,
     RelationshipsWithEdOrgsOnlyInverted,
-    NamespaceBased,
     OwnershipBased,
     RelationshipsWithEdOrgsAndPeople,
     RelationshipsWithEdOrgsAndPeopleInverted,

@@ -191,6 +191,15 @@ internal class UpdateByIdHandler(
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            UpdateFailureNamespaceNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: NamespaceAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.NamespaceFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             UpdateFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

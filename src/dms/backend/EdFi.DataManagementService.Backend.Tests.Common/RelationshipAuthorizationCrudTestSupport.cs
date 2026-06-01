@@ -28,7 +28,7 @@ public static class RelationshipAuthorizationCrudTestSupport
     public const string RelationshipsWithEdOrgsOnly = "RelationshipsWithEdOrgsOnly";
     public const string RelationshipsWithEdOrgsOnlyInverted = "RelationshipsWithEdOrgsOnlyInverted";
     public const string NoFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
-    public const string NamespaceBased = "NamespaceBased";
+    public const string OwnershipBased = "OwnershipBased";
 
     public static IReadOnlyList<string> EdOrgOnlyStrategyNames { get; } = [RelationshipsWithEdOrgsOnly];
 
@@ -42,7 +42,7 @@ public static class RelationshipAuthorizationCrudTestSupport
     [RelationshipsWithEdOrgsOnly, NoFurtherAuthorizationRequired];
 
     public static IReadOnlyList<string> EdOrgOnlyPlusKnownUnsupportedStrategyNames { get; } =
-    [RelationshipsWithEdOrgsOnly, NamespaceBased];
+    [RelationshipsWithEdOrgsOnly, OwnershipBased];
 
     public static RelationshipAuthorizationCrudScenario SupportedEdOrgOnlyScenario { get; } =
         new("supported-edorg-only", RootAndChildEdOrgResourceName, EdOrgOnlyStrategyNames);

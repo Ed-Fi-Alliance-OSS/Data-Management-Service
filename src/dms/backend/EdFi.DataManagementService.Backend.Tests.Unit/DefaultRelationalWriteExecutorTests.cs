@@ -4701,6 +4701,477 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_authorizes_a_post_create_when_the_finalized_proposed_namespace_matches()
+    {
+        var request = CreateNamespacePostCreateRequest("uri://ed-fi.org/Survey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_binds_the_finalized_merged_namespace_value_and_not_the_request_body()
+    {
+        var request = CreateNamespacePostCreateRequest(
+            mergedNamespace: "uri://ed-fi.org/Survey",
+            selectedBody: JsonNode.Parse("""{"namespace":"uri://request-body-ignored/"}""")!
+        );
+
+        await _sut.ExecuteAsync(request);
+
+        var namespaceCommand = _writeSessionFactory
+            .Session.RelationshipAuthorizationCommands.Should()
+            .ContainSingle()
+            .Subject;
+        namespaceCommand
+            .Parameters.Single(parameter => parameter.Name == "@proposedNamespace")
+            .Value.Should()
+            .Be("uri://ed-fi.org/Survey");
+    }
+
+    [Test]
+    public async Task It_returns_namespace_not_authorized_and_does_not_persist_on_a_proposed_mismatch()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        var request = CreateNamespacePostCreateRequest("uri://other.org/Survey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NamespaceMismatch);
+        notAuthorized
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_namespace_not_authorized_when_the_proposed_namespace_is_missing()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.ProposedNamespaceMissing
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        var request = CreateNamespacePostCreateRequest(mergedNamespace: null);
+
+        var result = await _sut.ExecuteAsync(request);
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.ProposedNamespaceMissing);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_fails_closed_to_unknown_failure_when_the_namespace_auth1_payload_cannot_be_mapped()
+    {
+        // An emitted index with no matching planned check is unmappable; fail closed rather than allow.
+        UseNamespaceProviderFailureExtractor("ns1|9|m");
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        var request = CreateNamespacePostCreateRequest("uri://ed-fi.org/Survey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>();
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_runs_the_proposed_namespace_check_for_an_existing_target_post()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var rootPlan = CreateNamespaceRootPlan();
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            rootWritePlan: rootPlan,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal("uri://other.org/Survey"),
+                ]
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedNamespaceAuthorization = CreateProposedNamespaceAuthorization(),
+            }
+        );
+
+        // The proposed namespace check now runs for an existing target rather than failing closed.
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_proposed_namespace_failure_before_proposed_relationship_failure_for_existing_put()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High"
+        );
+        // The persister throws if proposed relationship authorization is reached; a regression to
+        // relationship-before-namespace would surface the relationship failure instead of the
+        // namespace failure asserted below.
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+        var rootTable = request.WritePlan.TablePlansInDependencyOrder[0].TableModel.Table;
+        var namespaceAuth = new RelationalWriteNamespaceAuthorization(
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    NamespaceAuthorizationCheckValueSource.Proposed,
+                    rootTable,
+                    new DbColumnName("Name")
+                ),
+            ],
+            NamespacePrefixParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedNamespaceAuthorization = namespaceAuth,
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_namespace_not_authorized_before_if_match_precondition_for_a_post_create()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        // A stale If-Match alongside a namespace denial must yield the namespace 403, not a 412.
+        var request = CreateNamespacePostCreateRequest(
+            "uri://other.org/Survey",
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_stored_namespace_not_authorized_before_if_match_precondition_for_a_put()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        // A stale If-Match on a PUT must lose to a stored namespace denial evaluated in the locked boundary.
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            }
+        );
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Stored);
+        _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_stored_namespace_not_authorized_before_if_match_precondition_for_a_post_as_update()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        // The POST resolves to an existing target in-session; the stored namespace denial in the locked
+        // boundary must win over the stale If-Match precondition.
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            }
+        );
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Stored);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_proposed_namespace_not_authorized_before_relationship_no_claims_for_a_post_create()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        // Mixed POST-create: NamespaceBased AND-composes ahead of the relationship OR-group, so an
+        // unauthorized proposed namespace must surface over the deferred relationship NoClaims denial.
+        var request = CreateNamespacePostCreateRequest("uri://other.org/Survey");
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateNamespaceRootNoClaimsAuthorization(request),
+            }
+        );
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_relationship_no_claims_after_the_proposed_namespace_authorizes_for_a_post_create()
+    {
+        // The proposed namespace check authorizes (no AUTH1 raised), so the relationship NoClaims denial
+        // that POST preflight deferred — rather than short-circuiting — now surfaces from the relationship
+        // orchestrator that runs after the namespace orchestrator.
+        var request = CreateNamespacePostCreateRequest("uri://ed-fi.org/Survey");
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateNamespaceRootNoClaimsAuthorization(request),
+            }
+        );
+
+        var relationshipFailure = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Subject.RelationshipFailure;
+        relationshipFailure.ClaimEducationOrganizationIds.Should().BeEmpty();
+        relationshipFailure
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Which.FailedSubjects.Should()
+            .ContainSingle()
+            .Which.FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    private RelationalWriteExecutorRequest CreateNamespacePostCreateRequest(
+        string? mergedNamespace,
+        JsonNode? selectedBody = null,
+        WritePrecondition? writePrecondition = null
+    )
+    {
+        var rootPlan = CreateNamespaceRootPlan();
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            rootWritePlan: rootPlan,
+            selectedBody: selectedBody ?? JsonNode.Parse("""{"namespace":"uri://ed-fi.org/Survey"}""")!,
+            writePrecondition: writePrecondition
+        );
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(mergedNamespace),
+                ]
+            )
+        );
+
+        return request with
+        {
+            ProposedNamespaceAuthorization = CreateProposedNamespaceAuthorization(),
+        };
+    }
+
+    private void UseNamespaceProviderFailureExtractor(string providerMessage)
+    {
+        _sut = new DefaultRelationalWriteExecutor(
+            _writeSessionFactory,
+            _referenceResolverAdapterFactory,
+            _writeFlattener,
+            _currentStateLoader,
+            _currentEtagPreconditionChecker,
+            _committedRepresentationReader,
+            _targetLookupResolver,
+            _writeFreshnessChecker,
+            _noProfileMergeSynthesizer,
+            _profileMergeSynthesizer,
+            _noProfilePersister,
+            _writeExceptionClassifier,
+            _writeConstraintResolver,
+            _readMaterializer,
+            relationshipAuthorizationProviderFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
+                NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+                providerMessage
+            )
+        );
+    }
+
+    [Test]
     public async Task It_authorizes_proposed_relationship_values_for_existing_put_before_persist()
     {
         var request = CreateRequest(
@@ -5701,6 +6172,56 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
+    private static RelationshipAuthorizationResult.NoClaims CreateNamespaceRootNoClaimsAuthorization(
+        RelationalWriteExecutorRequest request
+    )
+    {
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var subject = CreateRelationshipAuthorizationSubject(
+            request,
+            rootPlan,
+            "Namespace",
+            "$.namespace",
+            "Namespace"
+        );
+        var checkSpec = new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                0
+            ),
+            0,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Proposed,
+            [subject],
+            new RelationshipAuthorizationCheckTarget.Stored(
+                rootPlan.TableModel.Table,
+                new DbColumnName("DocumentId")
+            )
+        );
+
+        return new RelationshipAuthorizationResult.NoClaims(
+            [checkSpec],
+            [
+                new RelationshipAuthorizationFailureMetadata(
+                    RelationshipAuthorizationFailureKind.NoClaimEducationOrganizationIds,
+                    request.WritePlan.Model.Resource,
+                    checkSpec.ConfiguredStrategy,
+                    checkSpec.RelationshipLocalOrder,
+                    checkSpec.ValueSource,
+                    checkSpec.Subjects[0].AuthObject,
+                    new RelationshipAuthorizationFailureLocation(
+                        Kind: SecurableElementKind.EducationOrganization,
+                        JsonPath: "$.namespace",
+                        ReadableName: "Namespace",
+                        Table: rootPlan.TableModel.Table,
+                        Column: _namespaceColumn
+                    ),
+                    Hint: "Relationship authorization requires at least one claim EducationOrganizationId."
+                ),
+            ]
+        );
+    }
+
     private static RelationshipAuthorizationFailure CreateProposedSchoolIdRelationshipFailure(
         RelationalWriteExecutorRequest request
     ) =>
@@ -6197,6 +6718,116 @@ public class Given_Default_Relational_Write_Executor
             DescriptorEdgeSources: []
         );
     }
+
+    private static readonly DbTableName _namespaceRootTable = new(new DbSchemaName("edfi"), "Survey");
+    private static readonly DbColumnName _namespaceColumn = new("Namespace");
+
+    private static TableWritePlan CreateNamespaceRootPlan()
+    {
+        var tableModel = new DbTableModel(
+            _namespaceRootTable,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_Survey",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    _namespaceColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 255),
+                    false,
+                    new JsonPathExpression("$.namespace", []),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"Survey\" values (@DocumentId, @Namespace)",
+            UpdateSql: "update edfi.\"Survey\" set \"Namespace\" = @Namespace where \"DocumentId\" = @DocumentId",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 2, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.namespace", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 255)
+                    ),
+                    "Namespace"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static RelationalWriteNamespaceAuthorization CreateProposedNamespaceAuthorization(
+        SqlDialect dialect = SqlDialect.Pgsql,
+        string[]? prefixes = null
+    ) =>
+        new(
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    NamespaceAuthorizationCheckValueSource.Proposed,
+                    _namespaceRootTable,
+                    _namespaceColumn
+                ),
+            ],
+            NamespacePrefixParameterizationFactory.Create(
+                dialect,
+                prefixes ?? ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            )
+        );
+
+    private static RelationalWriteNamespaceAuthorization CreateStoredNamespaceAuthorization(
+        SqlDialect dialect = SqlDialect.Pgsql,
+        string[]? prefixes = null
+    ) =>
+        new(
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    NamespaceAuthorizationCheckValueSource.Stored,
+                    _namespaceRootTable,
+                    _namespaceColumn
+                ),
+            ],
+            NamespacePrefixParameterizationFactory.Create(
+                dialect,
+                prefixes ?? ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            )
+        );
 
     private static TableWritePlan CreateRootPlan()
     {

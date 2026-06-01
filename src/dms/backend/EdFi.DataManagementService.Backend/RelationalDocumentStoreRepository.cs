@@ -35,6 +35,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteSessionFactory writeSessionFactory,
     RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector,
     ISingleRecordRelationshipAuthorizationExecutor singleRecordRelationshipAuthorizationExecutor,
+    INamespaceAuthorizationExecutor namespaceAuthorizationExecutor,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null
@@ -78,6 +79,9 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly ISingleRecordRelationshipAuthorizationExecutor _singleRecordRelationshipAuthorizationExecutor =
         singleRecordRelationshipAuthorizationExecutor
         ?? throw new ArgumentNullException(nameof(singleRecordRelationshipAuthorizationExecutor));
+    private readonly INamespaceAuthorizationExecutor _namespaceAuthorizationExecutor =
+        namespaceAuthorizationExecutor
+        ?? throw new ArgumentNullException(nameof(namespaceAuthorizationExecutor));
     private readonly IRelationalParameterConfigurator _relationalParameterConfigurator =
         relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
@@ -105,9 +109,6 @@ public sealed class RelationalDocumentStoreRepository(
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
         var writePrecondition = NormalizeWritePrecondition(relationalUpsertRequest.WritePrecondition);
 
-        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
-        // CRUD authorization is implemented for relational writes.
-
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
             return await _descriptorWriteHandler
@@ -118,7 +119,9 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpsertRequest.EdfiDoc,
                         relationalUpsertRequest.DocumentUuid,
                         relationalUpsertRequest.DocumentInfo.ReferentialId,
-                        relationalUpsertRequest.TraceId
+                        relationalUpsertRequest.TraceId,
+                        relationalUpsertRequest.AuthorizationStrategyEvaluators,
+                        relationalUpsertRequest.AuthorizationContext
                     )
                     {
                         WritePrecondition = writePrecondition,
@@ -195,7 +198,8 @@ public sealed class RelationalDocumentStoreRepository(
                     relationalGetRequest.ReadMode,
                     relationalGetRequest.AuthorizationStrategyEvaluators,
                     relationalGetRequest.ReadableProfileProjectionContext,
-                    relationalGetRequest.TraceId
+                    relationalGetRequest.TraceId,
+                    relationalGetRequest.AuthorizationContext
                 )
             );
         }
@@ -236,9 +240,6 @@ public sealed class RelationalDocumentStoreRepository(
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
         var writePrecondition = NormalizeWritePrecondition(relationalUpdateRequest.WritePrecondition);
 
-        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
-        // CRUD authorization is implemented for relational writes.
-
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
             return await _descriptorWriteHandler
@@ -249,7 +250,9 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpdateRequest.EdfiDoc,
                         relationalUpdateRequest.DocumentUuid,
                         referentialId: null,
-                        relationalUpdateRequest.TraceId
+                        relationalUpdateRequest.TraceId,
+                        relationalUpdateRequest.AuthorizationStrategyEvaluators,
+                        relationalUpdateRequest.AuthorizationContext
                     )
                     {
                         WritePrecondition = writePrecondition,
@@ -317,9 +320,6 @@ public sealed class RelationalDocumentStoreRepository(
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
         var writePrecondition = NormalizeWritePrecondition(relationalDeleteRequest.WritePrecondition);
 
-        // TODO DMS-1057: Restore relational write authorization checks once NamespaceBased
-        // CRUD authorization is implemented for relational writes.
-
         if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
         {
             return _descriptorWriteHandler.HandleDeleteAsync(
@@ -328,7 +328,8 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     relationalDeleteRequest.DocumentUuid,
                     relationalDeleteRequest.TraceId,
-                    relationalDeleteRequest.AuthorizationStrategyEvaluators
+                    relationalDeleteRequest.AuthorizationStrategyEvaluators,
+                    relationalDeleteRequest.AuthorizationContext
                 )
                 {
                     WritePrecondition = writePrecondition,
@@ -336,14 +337,36 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        return DeleteDocumentByIdAsync(relationalDeleteRequest, mappingSet, resource, writePrecondition);
+        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) resolve
+        // before the write session opens, so a denial issues no DB roundtrip and never locks the
+        // target. The stored namespace check itself runs inside the delete session against the locked
+        // target (see AuthorizeDeleteIfRequiredAsync).
+        var authorizationPreflight = AuthorizeDeletePreflight(relationalDeleteRequest, mappingSet, resource);
+
+        return authorizationPreflight switch
+        {
+            DeleteAuthorizationPreflightResult.Stop stop => Task.FromResult(stop.Result),
+            DeleteAuthorizationPreflightResult.Proceed proceed => DeleteDocumentByIdAsync(
+                relationalDeleteRequest,
+                mappingSet,
+                resource,
+                writePrecondition,
+                proceed.StoredNamespaceAuthorization,
+                proceed.NonNamespaceConfiguredStrategies
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported relational delete authorization preflight result '{authorizationPreflight.GetType().Name}'."
+            ),
+        };
     }
 
     private async Task<DeleteResult> DeleteDocumentByIdAsync(
         IRelationalDeleteRequest relationalDeleteRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        WritePrecondition writePrecondition
+        WritePrecondition writePrecondition,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
     )
     {
         var documentUuid = relationalDeleteRequest.DocumentUuid;
@@ -427,10 +450,12 @@ public sealed class RelationalDocumentStoreRepository(
                         );
 
                         var authorizationFailure = await AuthorizeDeleteIfRequiredAsync(
-                                relationalDeleteRequest,
                                 mappingSet,
                                 resource,
                                 resolved.DocumentId,
+                                storedNamespaceAuthorization,
+                                nonNamespaceConfiguredStrategies,
+                                relationalDeleteRequest.AuthorizationContext,
                                 sessionCommandExecutor
                             )
                             .ConfigureAwait(false);
@@ -637,28 +662,44 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private async Task<DeleteResult?> AuthorizeDeleteIfRequiredAsync(
-        IRelationalDeleteRequest relationalDeleteRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource,
         long documentId,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext,
         IRelationalCommandExecutor sessionCommandExecutor
     )
     {
-        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
-            relationalDeleteRequest.AuthorizationStrategyEvaluators
-        );
+        // Namespace AND-composes before the relationship OR group; the stored namespace check runs
+        // against the locked target and before any precondition result.
+        if (storedNamespaceAuthorization is not null)
+        {
+            var namespaceFailure = await ExecuteDeleteNamespaceAuthorizationAsync(
+                    mappingSet,
+                    documentId,
+                    storedNamespaceAuthorization,
+                    sessionCommandExecutor
+                )
+                .ConfigureAwait(false);
+
+            if (namespaceFailure is not null)
+            {
+                return namespaceFailure;
+            }
+        }
 
         var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
             resource,
-            configuredAuthorizationStrategies,
-            relationalDeleteRequest.AuthorizationContext
+            nonNamespaceConfiguredStrategies,
+            authorizationContext
         );
 
         if (
             TryCreatePeopleEndpointStagingFailures(
                 resource,
-                configuredAuthorizationStrategies,
+                nonNamespaceConfiguredStrategies,
                 relationshipAuthorizationResult,
                 out var peopleStagingFailures
             )
@@ -685,7 +726,7 @@ public sealed class RelationalDocumentStoreRepository(
                 if (
                     !TryCreateNoClaimsRelationshipAuthorizationFailure(
                         noClaims,
-                        relationalDeleteRequest.AuthorizationContext.ClaimEducationOrganizationIds,
+                        authorizationContext.ClaimEducationOrganizationIds,
                         DeleteRelationshipAuthorizationAuth1Index,
                         out var noClaimsFailure
                     ) || noClaimsFailure is null
@@ -724,6 +765,142 @@ public sealed class RelationalDocumentStoreRepository(
                     $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
                 );
         }
+    }
+
+    private static DeleteAuthorizationPreflightResult AuthorizeDeletePreflight(
+        IRelationalDeleteRequest relationalDeleteRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            relationalDeleteRequest.AuthorizationStrategyEvaluators
+        );
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            NamespaceAuthorizationOperation.Delete,
+            configuredAuthorizationStrategies,
+            relationalDeleteRequest.AuthorizationContext
+        );
+
+        switch (orchestratorOutcome)
+        {
+            case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
+                return new DeleteAuthorizationPreflightResult.Stop(
+                    new DeleteResult.DeleteFailureSecurityConfiguration([
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ])
+                );
+
+            case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
+                return new DeleteAuthorizationPreflightResult.Stop(
+                    new DeleteResult.DeleteFailureNamespaceNotAuthorized(
+                        NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                    )
+                );
+
+            case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
+                return new DeleteAuthorizationPreflightResult.Proceed(
+                    null,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies
+                );
+
+            case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
+                return new DeleteAuthorizationPreflightResult.Proceed(
+                    null,
+                    stillUnsupported.NonNamespaceConfiguredStrategies
+                );
+
+            case RelationalAuthorizationPlanOutcome.Plan plan:
+                return AuthorizeDeletePlanPreflight(
+                    mappingSet,
+                    plan,
+                    relationalDeleteRequest.AuthorizationContext
+                );
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+                );
+        }
+    }
+
+    private static DeleteAuthorizationPreflightResult AuthorizeDeletePlanPreflight(
+        MappingSet mappingSet,
+        RelationalAuthorizationPlanOutcome.Plan plan,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return new DeleteAuthorizationPreflightResult.Proceed(
+                null,
+                plan.NonNamespaceConfiguredStrategies
+            );
+        }
+
+        NamespacePrefixParameterization namespacePrefixParameterization;
+
+        try
+        {
+            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+                mappingSet.Key.Dialect,
+                authorizationContext.NamespacePrefixes,
+                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
+            );
+        }
+        catch (NamespacePrefixLimitExceededException ex)
+        {
+            return new DeleteAuthorizationPreflightResult.Stop(
+                new DeleteResult.DeleteFailureSecurityConfiguration([
+                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
+                ])
+            );
+        }
+
+        return new DeleteAuthorizationPreflightResult.Proceed(
+            new RelationalWriteNamespaceAuthorization(plan.NamespaceChecks, namespacePrefixParameterization),
+            plan.NonNamespaceConfiguredStrategies
+        );
+    }
+
+    private async Task<DeleteResult?> ExecuteDeleteNamespaceAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationalWriteNamespaceAuthorization storedNamespaceAuthorization,
+        IRelationalCommandExecutor sessionCommandExecutor
+    )
+    {
+        // Run the stored check against the delete session's command executor so it executes inside the
+        // same transaction that already locked the target document.
+        return await StoredNamespaceAuthorizationExecution
+            .ExecuteAsync<DeleteResult>(
+                sessionCommandExecutor,
+                _relationshipAuthorizationProviderFailureExtractor,
+                mappingSet,
+                documentId,
+                storedNamespaceAuthorization,
+                onNotAuthorized: failure => new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
+                onInvalidAuthorizationFailure: failureMessage => new DeleteResult.UnknownFailure(
+                    failureMessage
+                )
+            )
+            .ConfigureAwait(false);
+    }
+
+    private abstract record DeleteAuthorizationPreflightResult
+    {
+        private DeleteAuthorizationPreflightResult() { }
+
+        public sealed record Stop(DeleteResult Result) : DeleteAuthorizationPreflightResult;
+
+        public sealed record Proceed(
+            RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+            IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies
+        ) : DeleteAuthorizationPreflightResult;
     }
 
     private async Task<DeleteResult?> ExecuteDeleteRelationshipAuthorizationAsync(
@@ -832,7 +1009,8 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalQueryRequest.PaginationParameters,
                         relationalQueryRequest.AuthorizationStrategyEvaluators,
                         relationalQueryRequest.ReadableProfileProjectionContext,
-                        relationalQueryRequest.TraceId
+                        relationalQueryRequest.TraceId,
+                        relationalQueryRequest.AuthorizationContext
                     )
                 )
                 .ConfigureAwait(false);
@@ -864,47 +1042,28 @@ public sealed class RelationalDocumentStoreRepository(
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalQueryRequest.AuthorizationStrategyEvaluators
         );
-
-        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
+        var authorizationResolution = ResolveQueryAuthorization(
             mappingSet,
             resource,
             configuredAuthorizationStrategies,
-            relationalQueryRequest.AuthorizationContext
+            relationalQueryRequest.AuthorizationContext,
+            relationalQueryRequest.PaginationParameters.TotalCount
         );
 
-        PageDocumentIdAuthorizationSpec? pageQueryAuthorization = null;
+        PageDocumentIdAuthorizationSpec? pageQueryAuthorization;
 
-        switch (relationshipAuthorizationResult)
+        switch (authorizationResolution)
         {
-            case RelationshipAuthorizationResult.NoAuthorizationRequired:
-            case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
+            case QueryAuthorizationResolution.Complete complete:
+                return complete.Result;
+
+            case QueryAuthorizationResolution.Proceed proceed:
+                pageQueryAuthorization = proceed.Authorization;
                 break;
-
-            case RelationshipAuthorizationResult.Authorized authorized:
-                pageQueryAuthorization = PageDocumentIdAuthorizationSpecAdapter.Adapt(authorized);
-                break;
-
-            case RelationshipAuthorizationResult.NoClaims:
-                return new QueryResult.QuerySuccess(
-                    [],
-                    relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-                );
-
-            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
-                return new QueryResult.QueryFailureNotImplemented(
-                    BuildKnownButNotEnabledQueryAuthorizationMessage(resource, knownButNotEnabled.Failures)
-                );
-
-            case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
-                return BuildQueryAuthorizationSecurityConfigurationFailure(
-                    mappingSet,
-                    resource,
-                    securityConfigurationError.Failures
-                );
 
             default:
                 throw new InvalidOperationException(
-                    $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
+                    $"Unsupported query authorization resolution '{authorizationResolution.GetType().Name}'."
                 );
         }
 
@@ -997,6 +1156,222 @@ public sealed class RelationalDocumentStoreRepository(
         return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
     }
 
+    private QueryAuthorizationResolution ResolveQueryAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        bool totalCount
+    )
+    {
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            NamespaceAuthorizationOperation.ReadMany,
+            configuredAuthorizationStrategies,
+            authorizationContext
+        );
+
+        switch (orchestratorOutcome)
+        {
+            case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
+                return new QueryAuthorizationResolution.Complete(
+                    new QueryResult.QueryFailureSecurityConfiguration([
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ])
+                );
+
+            case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
+                return new QueryAuthorizationResolution.Complete(
+                    new QueryResult.QueryFailureNamespaceNotAuthorized(
+                        NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                    )
+                );
+
+            case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
+                return ResolveQueryRelationshipAuthorization(
+                    mappingSet,
+                    resource,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    totalCount,
+                    [],
+                    null
+                );
+
+            case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
+                return ResolveQueryRelationshipAuthorization(
+                    mappingSet,
+                    resource,
+                    stillUnsupported.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    totalCount,
+                    [],
+                    null
+                );
+
+            case RelationalAuthorizationPlanOutcome.Plan plan:
+                return ResolveQueryPlanAuthorization(
+                    mappingSet,
+                    resource,
+                    plan,
+                    authorizationContext,
+                    totalCount
+                );
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+                );
+        }
+    }
+
+    private QueryAuthorizationResolution ResolveQueryPlanAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalAuthorizationPlanOutcome.Plan plan,
+        RelationalAuthorizationContext authorizationContext,
+        bool totalCount
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return ResolveQueryRelationshipAuthorization(
+                mappingSet,
+                resource,
+                plan.NonNamespaceConfiguredStrategies,
+                authorizationContext,
+                totalCount,
+                [],
+                null
+            );
+        }
+
+        NamespacePrefixParameterization namespacePrefixParameterization;
+
+        try
+        {
+            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+                mappingSet.Key.Dialect,
+                authorizationContext.NamespacePrefixes,
+                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
+            );
+        }
+        catch (NamespacePrefixLimitExceededException ex)
+        {
+            return new QueryAuthorizationResolution.Complete(
+                new QueryResult.QueryFailureSecurityConfiguration([
+                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
+                ])
+            );
+        }
+
+        return ResolveQueryRelationshipAuthorization(
+            mappingSet,
+            resource,
+            plan.NonNamespaceConfiguredStrategies,
+            authorizationContext,
+            totalCount,
+            plan.NamespaceChecks,
+            namespacePrefixParameterization
+        );
+    }
+
+    private QueryAuthorizationResolution ResolveQueryRelationshipAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        bool totalCount,
+        IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
+        NamespacePrefixParameterization? namespacePrefixParameterization
+    )
+    {
+        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
+            mappingSet,
+            resource,
+            nonNamespaceConfiguredStrategies,
+            authorizationContext
+        );
+
+        switch (relationshipAuthorizationResult)
+        {
+            case RelationshipAuthorizationResult.NoAuthorizationRequired:
+            case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
+                return new QueryAuthorizationResolution.Proceed(
+                    ComposePageQueryAuthorization(null, namespaceChecks, namespacePrefixParameterization)
+                );
+
+            case RelationshipAuthorizationResult.Authorized authorized:
+                return new QueryAuthorizationResolution.Proceed(
+                    ComposePageQueryAuthorization(
+                        PageDocumentIdAuthorizationSpecAdapter.Adapt(authorized),
+                        namespaceChecks,
+                        namespacePrefixParameterization
+                    )
+                );
+
+            case RelationshipAuthorizationResult.NoClaims:
+                return new QueryAuthorizationResolution.Complete(
+                    new QueryResult.QuerySuccess([], totalCount ? 0 : null)
+                );
+
+            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
+                return new QueryAuthorizationResolution.Complete(
+                    new QueryResult.QueryFailureNotImplemented(
+                        BuildKnownButNotEnabledQueryAuthorizationMessage(
+                            resource,
+                            knownButNotEnabled.Failures
+                        )
+                    )
+                );
+
+            case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
+                return new QueryAuthorizationResolution.Complete(
+                    BuildQueryAuthorizationSecurityConfigurationFailure(
+                        mappingSet,
+                        resource,
+                        securityConfigurationError.Failures
+                    )
+                );
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
+                );
+        }
+    }
+
+    private static PageDocumentIdAuthorizationSpec? ComposePageQueryAuthorization(
+        PageDocumentIdAuthorizationSpec? relationshipAuthorization,
+        IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
+        NamespacePrefixParameterization? namespacePrefixParameterization
+    )
+    {
+        if (namespaceChecks.Count == 0)
+        {
+            return relationshipAuthorization;
+        }
+
+        return (relationshipAuthorization ?? new PageDocumentIdAuthorizationSpec([])) with
+        {
+            NamespaceChecks = namespaceChecks,
+            NamespacePrefixParameterization = namespacePrefixParameterization,
+        };
+    }
+
+    private abstract record QueryAuthorizationResolution
+    {
+        private QueryAuthorizationResolution() { }
+
+        public sealed record Proceed(PageDocumentIdAuthorizationSpec? Authorization)
+            : QueryAuthorizationResolution;
+
+        public sealed record Complete(QueryResult Result) : QueryAuthorizationResolution;
+    }
+
     private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostRelationshipIfRequired(
         IRelationalUpsertRequest relationalUpsertRequest,
         MappingSet mappingSet,
@@ -1004,17 +1379,170 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceWritePlan writePlan
     )
     {
-        var authorizationStrategyEvaluators = relationalUpsertRequest.AuthorizationStrategyEvaluators;
         var authorizationContext = relationalUpsertRequest.AuthorizationContext;
-
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
-            authorizationStrategyEvaluators
+            relationalUpsertRequest.AuthorizationStrategyEvaluators
         );
 
+        // A POST may resolve to create or upsert-as-update in-session, so plan both the stored and
+        // proposed namespace checks here; the executor applies the stored check only when the write
+        // resolves to an existing target.
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            NamespaceAuthorizationOperation.Update,
+            configuredAuthorizationStrategies,
+            authorizationContext
+        );
+
+        switch (orchestratorOutcome)
+        {
+            case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
+                return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                    new UpsertResult.UpsertFailureSecurityConfiguration([
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ])
+                );
+
+            case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
+                return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                    new UpsertResult.UpsertFailureNamespaceNotAuthorized(
+                        NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                    )
+                );
+
+            case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
+                return AuthorizePostRelationshipBucket(
+                    mappingSet,
+                    resource,
+                    writePlan,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    storedNamespaceAuthorization: null,
+                    proposedNamespaceAuthorization: null
+                );
+
+            case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
+                return AuthorizePostRelationshipBucket(
+                    mappingSet,
+                    resource,
+                    writePlan,
+                    stillUnsupported.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    storedNamespaceAuthorization: null,
+                    proposedNamespaceAuthorization: null
+                );
+
+            case RelationalAuthorizationPlanOutcome.Plan plan:
+                return AuthorizePostPlan(mappingSet, resource, writePlan, plan, authorizationContext);
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+                );
+        }
+    }
+
+    private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostPlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
+        RelationalAuthorizationPlanOutcome.Plan plan,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return AuthorizePostRelationshipBucket(
+                mappingSet,
+                resource,
+                writePlan,
+                plan.NonNamespaceConfiguredStrategies,
+                authorizationContext,
+                storedNamespaceAuthorization: null,
+                proposedNamespaceAuthorization: null
+            );
+        }
+
+        NamespacePrefixParameterization namespacePrefixParameterization;
+
+        try
+        {
+            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+                mappingSet.Key.Dialect,
+                authorizationContext.NamespacePrefixes,
+                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
+            );
+        }
+        catch (NamespacePrefixLimitExceededException ex)
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                new UpsertResult.UpsertFailureSecurityConfiguration([
+                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
+                ])
+            );
+        }
+
+        var (storedNamespaceAuthorization, proposedNamespaceAuthorization) = SplitNamespaceAuthorization(
+            plan.NamespaceChecks,
+            namespacePrefixParameterization
+        );
+
+        return AuthorizePostRelationshipBucket(
+            mappingSet,
+            resource,
+            writePlan,
+            plan.NonNamespaceConfiguredStrategies,
+            authorizationContext,
+            storedNamespaceAuthorization,
+            proposedNamespaceAuthorization
+        );
+    }
+
+    /// <summary>
+    /// Splits the planner's namespace checks into a stored-value authorization (evaluated in the
+    /// locked-target boundary) and a proposed-value authorization (evaluated after merge). Each group
+    /// is re-indexed from zero because the two are executed as independent single-record statements,
+    /// so each carries its own AUTH1 payload index.
+    /// </summary>
+    private static (
+        RelationalWriteNamespaceAuthorization? Stored,
+        RelationalWriteNamespaceAuthorization? Proposed
+    ) SplitNamespaceAuthorization(
+        IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
+        NamespacePrefixParameterization namespacePrefixParameterization
+    )
+    {
+        var stored = NamespaceAuthorizationFactory.SplitByValueSource(
+            namespaceChecks,
+            NamespaceAuthorizationCheckValueSource.Stored,
+            namespacePrefixParameterization
+        );
+        var proposed = NamespaceAuthorizationFactory.SplitByValueSource(
+            namespaceChecks,
+            NamespaceAuthorizationCheckValueSource.Proposed,
+            namespacePrefixParameterization
+        );
+
+        return (stored, proposed);
+    }
+
+    private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostRelationshipBucket(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+    )
+    {
         var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
-            configuredAuthorizationStrategies,
+            nonNamespaceConfiguredStrategies,
             authorizationContext,
             writePlan
         );
@@ -1034,7 +1562,7 @@ public sealed class RelationalDocumentStoreRepository(
         if (
             TryCreatePeopleEndpointStagingFailures(
                 resource,
-                configuredAuthorizationStrategies,
+                nonNamespaceConfiguredStrategies,
                 out var peopleStagingFailures
             )
         )
@@ -1057,16 +1585,35 @@ public sealed class RelationalDocumentStoreRepository(
         {
             RelationshipAuthorizationResult.NoAuthorizationRequired
             or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(null, null),
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    null,
+                    null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization
+                ),
 
             RelationshipAuthorizationResult.Authorized authorized =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Continue(
                     relationshipAuthorizationPlan.StoredValues,
-                    authorized
+                    authorized,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization
                 ),
 
-            RelationshipAuthorizationResult.NoClaims noClaims =>
-                BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext),
+            // NamespaceBased AND-composes before relationship OR strategies (auth.md). When a
+            // proposed namespace check is also planned, defer NoClaims through Continue so the
+            // namespace check gets to deny first; ProposedRelationshipAuthorizationOrchestrator
+            // emits the NoClaims failure if namespace authorized. With no namespace check planned,
+            // short-circuit at preflight to avoid a needless executor roundtrip.
+            RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
+            && storedNamespaceAuthorization is null
+                ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
+                : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    null,
+                    noClaims,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization
+                ),
 
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Stop(
@@ -1100,17 +1647,139 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceWritePlan writePlan
     )
     {
-        var authorizationStrategyEvaluators = relationalUpdateRequest.AuthorizationStrategyEvaluators;
         var authorizationContext = relationalUpdateRequest.AuthorizationContext;
-
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
-            authorizationStrategyEvaluators
+            relationalUpdateRequest.AuthorizationStrategyEvaluators
         );
 
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            NamespaceAuthorizationOperation.Update,
+            configuredAuthorizationStrategies,
+            authorizationContext
+        );
+
+        switch (orchestratorOutcome)
+        {
+            case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
+                return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                    new UpdateResult.UpdateFailureSecurityConfiguration([
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ])
+                );
+
+            case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
+                return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                    new UpdateResult.UpdateFailureNamespaceNotAuthorized(
+                        NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                    )
+                );
+
+            case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
+                return AuthorizePutRelationshipBucket(
+                    mappingSet,
+                    resource,
+                    writePlan,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    storedNamespaceAuthorization: null,
+                    proposedNamespaceAuthorization: null
+                );
+
+            case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
+                return AuthorizePutRelationshipBucket(
+                    mappingSet,
+                    resource,
+                    writePlan,
+                    stillUnsupported.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    storedNamespaceAuthorization: null,
+                    proposedNamespaceAuthorization: null
+                );
+
+            case RelationalAuthorizationPlanOutcome.Plan plan:
+                return AuthorizePutPlan(mappingSet, resource, writePlan, plan, authorizationContext);
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+                );
+        }
+    }
+
+    private WriteGuardRailPreflightResult<UpdateResult> AuthorizePutPlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
+        RelationalAuthorizationPlanOutcome.Plan plan,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return AuthorizePutRelationshipBucket(
+                mappingSet,
+                resource,
+                writePlan,
+                plan.NonNamespaceConfiguredStrategies,
+                authorizationContext,
+                storedNamespaceAuthorization: null,
+                proposedNamespaceAuthorization: null
+            );
+        }
+
+        NamespacePrefixParameterization namespacePrefixParameterization;
+
+        try
+        {
+            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+                mappingSet.Key.Dialect,
+                authorizationContext.NamespacePrefixes,
+                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
+            );
+        }
+        catch (NamespacePrefixLimitExceededException ex)
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                new UpdateResult.UpdateFailureSecurityConfiguration([
+                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
+                ])
+            );
+        }
+
+        var (storedNamespaceAuthorization, proposedNamespaceAuthorization) = SplitNamespaceAuthorization(
+            plan.NamespaceChecks,
+            namespacePrefixParameterization
+        );
+
+        return AuthorizePutRelationshipBucket(
+            mappingSet,
+            resource,
+            writePlan,
+            plan.NonNamespaceConfiguredStrategies,
+            authorizationContext,
+            storedNamespaceAuthorization,
+            proposedNamespaceAuthorization
+        );
+    }
+
+    private WriteGuardRailPreflightResult<UpdateResult> AuthorizePutRelationshipBucket(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+    )
+    {
         var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
-            configuredAuthorizationStrategies,
+            nonNamespaceConfiguredStrategies,
             authorizationContext,
             writePlan
         );
@@ -1130,7 +1799,7 @@ public sealed class RelationalDocumentStoreRepository(
         if (
             TryCreatePeopleEndpointStagingFailures(
                 resource,
-                configuredAuthorizationStrategies,
+                nonNamespaceConfiguredStrategies,
                 out var peopleStagingFailures
             )
         )
@@ -1165,15 +1834,28 @@ public sealed class RelationalDocumentStoreRepository(
         {
             RelationshipAuthorizationResult.NoAuthorizationRequired
             or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
-                new WriteGuardRailPreflightResult<UpdateResult>.Continue(null, null),
+                new WriteGuardRailPreflightResult<UpdateResult>.Continue(
+                    null,
+                    null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization
+                ),
 
             RelationshipAuthorizationResult.NoClaims noClaims =>
-                new WriteGuardRailPreflightResult<UpdateResult>.Continue(noClaims, null),
+                new WriteGuardRailPreflightResult<UpdateResult>.Continue(
+                    noClaims,
+                    null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization
+                ),
 
             RelationshipAuthorizationResult.Authorized authorized =>
                 new WriteGuardRailPreflightResult<UpdateResult>.Continue(
                     authorized,
-                    relationshipAuthorizationPlan.ProposedValues as RelationshipAuthorizationResult.Authorized
+                    relationshipAuthorizationPlan.ProposedValues
+                        as RelationshipAuthorizationResult.Authorized,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization
                 ),
 
             _ => throw new InvalidOperationException(
@@ -1187,34 +1869,25 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
-        return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-            BuildNoClaimsPostRelationshipAuthorizationResult(
-                noClaims,
-                authorizationContext.ClaimEducationOrganizationIds
-            )
-        );
-    }
-
-    private static UpsertResult BuildNoClaimsPostRelationshipAuthorizationResult(
-        RelationshipAuthorizationResult.NoClaims noClaims,
-        IReadOnlyList<long> claimEducationOrganizationIds
-    )
-    {
         if (
             !TryCreateNoClaimsRelationshipAuthorizationFailure(
                 noClaims,
-                claimEducationOrganizationIds,
+                authorizationContext.ClaimEducationOrganizationIds,
                 PostRelationshipAuthorizationAuth1Index,
                 out var noClaimsFailure
             ) || noClaimsFailure is null
         )
         {
-            return new UpsertResult.UnknownFailure(
-                "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                new UpsertResult.UnknownFailure(
+                    "Relationship authorization required caller EducationOrganizationIds, but denial metadata could not be built."
+                )
             );
         }
 
-        return CreateUpsertRelationshipNotAuthorized(noClaimsFailure);
+        return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+            CreateUpsertRelationshipNotAuthorized(noClaimsFailure)
+        );
     }
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
@@ -1258,7 +1931,9 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         RelationshipAuthorizationResult? storedRelationshipAuthorization = null;
-        RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization = null;
+        RelationshipAuthorizationResult? proposedRelationshipAuthorization = null;
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
 
         if (preflight is not null)
         {
@@ -1269,6 +1944,8 @@ public sealed class RelationalDocumentStoreRepository(
                 case WriteGuardRailPreflightResult<TResult>.Continue continueResult:
                     storedRelationshipAuthorization = continueResult.StoredRelationshipAuthorization;
                     proposedRelationshipAuthorization = continueResult.ProposedRelationshipAuthorization;
+                    storedNamespaceAuthorization = continueResult.StoredNamespaceAuthorization;
+                    proposedNamespaceAuthorization = continueResult.ProposedNamespaceAuthorization;
                     break;
 
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
@@ -1328,7 +2005,9 @@ public sealed class RelationalDocumentStoreRepository(
                         profileWriteContext: profileWriteContext,
                         writePrecondition: writePrecondition,
                         storedRelationshipAuthorization: storedRelationshipAuthorization,
-                        proposedRelationshipAuthorization: proposedRelationshipAuthorization
+                        proposedRelationshipAuthorization: proposedRelationshipAuthorization,
+                        storedNamespaceAuthorization: storedNamespaceAuthorization,
+                        proposedNamespaceAuthorization: proposedNamespaceAuthorization
                     )
                 )
                 .ConfigureAwait(false);
@@ -1433,17 +2112,26 @@ public sealed class RelationalDocumentStoreRepository(
         {
             public Continue(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization,
-                RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization
+                RelationshipAuthorizationResult? proposedRelationshipAuthorization,
+                RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
+                RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
             )
             {
                 ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
+                ValidateProposedRelationshipAuthorization(proposedRelationshipAuthorization);
                 StoredRelationshipAuthorization = storedRelationshipAuthorization;
                 ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
+                StoredNamespaceAuthorization = storedNamespaceAuthorization;
+                ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
             }
 
             public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
 
-            public RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization { get; }
+            public RelationshipAuthorizationResult? ProposedRelationshipAuthorization { get; }
+
+            public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; }
+
+            public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; }
 
             private static void ValidateStoredRelationshipAuthorization(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization
@@ -1462,6 +2150,28 @@ public sealed class RelationalDocumentStoreRepository(
                         );
                 }
             }
+
+            private static void ValidateProposedRelationshipAuthorization(
+                RelationshipAuthorizationResult? proposedRelationshipAuthorization
+            )
+            {
+                // Proposed relationship results other than Authorized and NoClaims are decided at
+                // preflight: KnownButNotEnabled and SecurityConfigurationError must short-circuit
+                // there, and NoAuthorizationRequired / NoFurtherAuthorizationRequired translate to
+                // null. Allow NoClaims through so the proposed namespace check still gets to deny
+                // first when both fail.
+                switch (proposedRelationshipAuthorization)
+                {
+                    case null:
+                    case RelationshipAuthorizationResult.Authorized:
+                    case RelationshipAuthorizationResult.NoClaims:
+                        return;
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unsupported proposed relationship authorization result '{proposedRelationshipAuthorization.GetType().Name}' for executor entry."
+                        );
+                }
+            }
         }
 
         public sealed record Stop(TResult Result) : WriteGuardRailPreflightResult<TResult>;
@@ -1474,6 +2184,17 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceReadPlan readPlan
     )
     {
+        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) resolve
+        // before the target lookup, so a denial issues no read roundtrip and never depends on document
+        // existence. The stored namespace check itself runs per attempt against the resolved target
+        // (see AuthorizeGetByIdAgainstTargetAsync).
+        var authorizationPreflight = AuthorizeGetByIdPreflight(relationalGetRequest, mappingSet, resource);
+
+        if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
+        {
+            return preflightStop.Result;
+        }
+
         for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
         {
             var targetLookupResult = await _readTargetLookupService
@@ -1496,13 +2217,25 @@ public sealed class RelationalDocumentStoreRepository(
                 );
             }
 
-            var authorizationOutcome = await AuthorizeGetByIdIfRequiredAsync(
-                    relationalGetRequest,
-                    mappingSet,
-                    resource,
-                    existingDocument.DocumentId
-                )
-                .ConfigureAwait(false);
+            var authorizationOutcome = authorizationPreflight switch
+            {
+                GetByIdAuthorizationPreflightResult.AuthorizationNotRequired =>
+                    GetAuthorizationOutcome.NotRequired,
+                GetByIdAuthorizationPreflightResult.Proceed proceed =>
+                    await AuthorizeGetByIdAgainstTargetAsync(
+                            relationalGetRequest,
+                            mappingSet,
+                            resource,
+                            proceed.StoredNamespaceAuthorization,
+                            proceed.NonNamespaceConfiguredStrategies,
+                            existingDocument.DocumentId,
+                            existingDocument.ContentVersion
+                        )
+                        .ConfigureAwait(false),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported GET-by-id authorization preflight result '{authorizationPreflight.GetType().Name}'."
+                ),
+            };
 
             if (authorizationOutcome.FailureResult is not null)
             {
@@ -1662,27 +2395,175 @@ public sealed class RelationalDocumentStoreRepository(
         return currentDocument.ContentVersion != observedContentVersion.Value;
     }
 
-    private async Task<GetAuthorizationOutcome> AuthorizeGetByIdIfRequiredAsync(
+    private static GetByIdAuthorizationPreflightResult AuthorizeGetByIdPreflight(
         IRelationalGetRequest relationalGetRequest,
         MappingSet mappingSet,
-        QualifiedResourceName resource,
-        long documentId
+        QualifiedResourceName resource
     )
     {
         if (ShouldBypassSingleRecordAuthorization(relationalGetRequest))
         {
-            return GetAuthorizationOutcome.NotRequired;
+            return GetByIdAuthorizationPreflightResult.AuthorizationNotRequired.Instance;
         }
 
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             relationalGetRequest.AuthorizationStrategyEvaluators
         );
+        var authorizationContext = relationalGetRequest.AuthorizationContext;
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            NamespaceAuthorizationOperation.ReadSingle,
+            configuredAuthorizationStrategies,
+            authorizationContext
+        );
 
+        switch (orchestratorOutcome)
+        {
+            case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
+                return new GetByIdAuthorizationPreflightResult.Stop(
+                    new GetResult.GetFailureSecurityConfiguration([
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ])
+                );
+
+            case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
+                return new GetByIdAuthorizationPreflightResult.Stop(
+                    new GetResult.GetFailureNamespaceNotAuthorized(
+                        NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                    )
+                );
+
+            case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
+                return new GetByIdAuthorizationPreflightResult.Proceed(
+                    null,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies
+                );
+
+            case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
+                return new GetByIdAuthorizationPreflightResult.Proceed(
+                    null,
+                    stillUnsupported.NonNamespaceConfiguredStrategies
+                );
+
+            case RelationalAuthorizationPlanOutcome.Plan plan:
+                return AuthorizeGetByIdPlanPreflight(mappingSet, plan, authorizationContext);
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+                );
+        }
+    }
+
+    private static GetByIdAuthorizationPreflightResult AuthorizeGetByIdPlanPreflight(
+        MappingSet mappingSet,
+        RelationalAuthorizationPlanOutcome.Plan plan,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return new GetByIdAuthorizationPreflightResult.Proceed(
+                null,
+                plan.NonNamespaceConfiguredStrategies
+            );
+        }
+
+        NamespacePrefixParameterization namespacePrefixParameterization;
+
+        try
+        {
+            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+                mappingSet.Key.Dialect,
+                authorizationContext.NamespacePrefixes,
+                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
+            );
+        }
+        catch (NamespacePrefixLimitExceededException ex)
+        {
+            return new GetByIdAuthorizationPreflightResult.Stop(
+                new GetResult.GetFailureSecurityConfiguration([
+                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
+                ])
+            );
+        }
+
+        return new GetByIdAuthorizationPreflightResult.Proceed(
+            new RelationalWriteNamespaceAuthorization(plan.NamespaceChecks, namespacePrefixParameterization),
+            plan.NonNamespaceConfiguredStrategies
+        );
+    }
+
+    private async Task<GetAuthorizationOutcome> AuthorizeGetByIdAgainstTargetAsync(
+        IRelationalGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        long documentId,
+        long storedContentVersion
+    )
+    {
+        var authorizationContext = relationalGetRequest.AuthorizationContext;
+
+        if (storedNamespaceAuthorization is not null)
+        {
+            var namespaceOutcome = await ExecuteGetNamespaceAuthorizationAsync(
+                    mappingSet,
+                    documentId,
+                    storedNamespaceAuthorization
+                )
+                .ConfigureAwait(false);
+
+            if (namespaceOutcome is not null)
+            {
+                return namespaceOutcome;
+            }
+
+            var relationshipOutcome = await AuthorizeGetRelationshipAsync(
+                    mappingSet,
+                    resource,
+                    nonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    documentId
+                )
+                .ConfigureAwait(false);
+
+            // Namespace authorization read the stored row but does not report a content version, so
+            // its decision must be pinned to the stored content version that drove this attempt. The
+            // served representation, the relationship boundary, and the post-hydration boundary must
+            // all agree on that one version; otherwise a mutation that interleaved with the
+            // authorization sequence could change the namespace and serve a representation the
+            // namespace check never validated.
+            return AnchorNamespaceReadBoundary(relationshipOutcome, storedContentVersion);
+        }
+
+        return await AuthorizeGetRelationshipAsync(
+                mappingSet,
+                resource,
+                nonNamespaceConfiguredStrategies,
+                authorizationContext,
+                documentId
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<GetAuthorizationOutcome> AuthorizeGetRelationshipAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        long documentId
+    )
+    {
         var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
             mappingSet,
             resource,
             configuredAuthorizationStrategies,
-            relationalGetRequest.AuthorizationContext
+            authorizationContext
         );
 
         if (
@@ -1719,7 +2600,7 @@ public sealed class RelationalDocumentStoreRepository(
                 if (
                     !TryCreateNoClaimsRelationshipAuthorizationFailure(
                         noClaims,
-                        relationalGetRequest.AuthorizationContext.ClaimEducationOrganizationIds,
+                        authorizationContext.ClaimEducationOrganizationIds,
                         GetByIdRelationshipAuthorizationAuth1Index,
                         out var noClaimsFailure
                     ) || noClaimsFailure is null
@@ -1769,6 +2650,79 @@ public sealed class RelationalDocumentStoreRepository(
                     $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
                 );
         }
+    }
+
+    private static GetAuthorizationOutcome AnchorNamespaceReadBoundary(
+        GetAuthorizationOutcome relationshipOutcome,
+        long storedContentVersion
+    )
+    {
+        // A failure or an already-requested retry from the relationship boundary takes precedence and
+        // is returned unchanged.
+        if (relationshipOutcome is not { FailureResult: null, RetryTargetResolution: false } authorized)
+        {
+            return relationshipOutcome;
+        }
+
+        // The namespace check ran against the stored row but reports no version, so its decision is
+        // only valid for the stored content version. When the relationship boundary either reported
+        // no version (a no-op OR group) or reported the same stored version, pin the read boundary to
+        // that version so hydration and the post-hydration boundary serve exactly the namespace-checked
+        // representation.
+        if (
+            authorized.ObservedContentVersion is null
+            || authorized.ObservedContentVersion == storedContentVersion
+        )
+        {
+            return authorized with { ObservedContentVersion = storedContentVersion };
+        }
+
+        // The relationship boundary observed a different content version than the one the namespace
+        // check authorized, so a mutation interleaved with the authorization sequence and the
+        // namespace decision can no longer be trusted for the version that would be served. Force a
+        // retry so the entire authorization sequence re-runs against the current row.
+        return authorized with
+        {
+            RetryTargetResolution = true,
+        };
+    }
+
+    private async Task<GetAuthorizationOutcome?> ExecuteGetNamespaceAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationalWriteNamespaceAuthorization storedNamespaceAuthorization
+    )
+    {
+        var executionResult = await _namespaceAuthorizationExecutor
+            .ExecuteAsync(
+                new NamespaceAuthorizationExecutionRequest(
+                    mappingSet,
+                    documentId,
+                    ProposedNamespace: null,
+                    storedNamespaceAuthorization.Checks,
+                    storedNamespaceAuthorization.NamespacePrefixParameterization
+                )
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            NamespaceAuthorizationExecutionResult.Authorized => null,
+            NamespaceAuthorizationExecutionResult.NotAuthorized notAuthorized => new GetAuthorizationOutcome(
+                new GetResult.GetFailureNamespaceNotAuthorized(notAuthorized.Failure),
+                null,
+                false
+            ),
+            NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                new GetAuthorizationOutcome(
+                    new GetResult.UnknownFailure(invalidFailure.FailureMessage),
+                    null,
+                    false
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported namespace authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
     }
 
     private async Task<GetAuthorizationOutcome> ExecuteGetRelationshipAuthorizationAsync(
@@ -1868,6 +2822,29 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         public static GetAuthorizationOutcome NotRequired { get; } = new(null, null, false);
+    }
+
+    private abstract record GetByIdAuthorizationPreflightResult
+    {
+        private GetByIdAuthorizationPreflightResult() { }
+
+        // A document-independent namespace planner terminal (no usable root column, no prefixes, or
+        // prefix cap exceeded) denied or failed the request before any target lookup.
+        public sealed record Stop(GetResult Result) : GetByIdAuthorizationPreflightResult;
+
+        // Document-dependent authorization remains and runs per attempt against the resolved target.
+        // StoredNamespaceAuthorization is null when only relationship strategies must be evaluated.
+        public sealed record Proceed(
+            RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+            IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies
+        ) : GetByIdAuthorizationPreflightResult;
+
+        // No per-record authorization is required for this read (StoredDocument-mode bypass); the
+        // target is still looked up and served.
+        public sealed record AuthorizationNotRequired : GetByIdAuthorizationPreflightResult
+        {
+            public static AuthorizationNotRequired Instance { get; } = new();
+        }
     }
 
     private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>

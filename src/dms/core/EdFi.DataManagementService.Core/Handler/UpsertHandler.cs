@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -186,6 +187,15 @@ internal class UpsertHandler(
                 Body: ForRelationshipAuthorization(
                     requestInfo.FrontendRequest.TraceId,
                     failure.RelationshipFailure
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
+            UpsertFailureNamespaceNotAuthorized notAuthorized => new(
+                StatusCode: 403,
+                Body: NamespaceAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.NamespaceFailure,
+                    requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: [],
                 ContentType: "application/problem+json"

@@ -95,6 +95,42 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
     }
 
     [Test]
+    public void It_should_bind_postgresql_array_parameter_for_string_namespace_prefix_patterns()
+    {
+        using var command = new NpgsqlCommand();
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParametersInOrder:
+                [
+                    new QuerySqlParameter(
+                        QuerySqlParameterRole.Filter,
+                        "namespacePrefixes",
+                        QuerySqlParameterBinding.PgsqlArray
+                    ),
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                totalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["namespacePrefixes"] = new[] { "uri://ed-fi.org/%", "uri://gbisd.edu/%" },
+                ["offset"] = 0L,
+                ["limit"] = 25L,
+            }
+        );
+
+        HydrationBatchBuilder.AddParameters(command, keyset);
+
+        command.Parameters.Count.Should().Be(3);
+        command.Parameters.Contains("@namespacePrefixes").Should().BeTrue();
+        command
+            .Parameters["@namespacePrefixes"]
+            .Value.Should()
+            .BeEquivalentTo(new[] { "uri://ed-fi.org/%", "uri://gbisd.edu/%" });
+    }
+
+    [Test]
     public void It_should_bind_mssql_structured_parameter_with_expected_type_and_table_value()
     {
         using var command = new SqlCommand();
@@ -174,7 +210,7 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Hydration query keyset parameter 'ClaimEducationOrganizationIds' requires an IReadOnlyList<long> runtime value."
+                "Hydration query keyset parameter 'ClaimEducationOrganizationIds' requires an IReadOnlyList<long> or IReadOnlyList<string> runtime value."
             );
     }
 

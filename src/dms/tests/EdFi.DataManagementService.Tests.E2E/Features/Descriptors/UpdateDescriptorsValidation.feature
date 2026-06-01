@@ -107,30 +107,14 @@ Feature: Update a Descriptor
                   """
 
 
-        # Ignored because we do not have namespace security for descriptors yet. DMS-81
-        @API-036 @ignore
-        Scenario: 04 Put a descriptor using an invalid namespace
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
-                  """
-                    {
-                        "id": "{id}",
-                        "codeValue": "xxxx",
-                        "description": "Wrong Value",
-                        "namespace": "uri://.org/wrong",
-                        "shortDescription": "Wrong Value"
-                    }
-                  """
-             Then it should respond with 403
-              And the response body is
-                  """
-                    {
-                        "detail": "Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org').",
-                        "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
-                        "title": "Authorization Denied",
-                        "status": 403,
-                        "correlationId": null
-                    }
-                  """
+        # Descriptor PUT namespace authorization is covered end-to-end by
+        # Features/Authorization/NamespaceAuthorization.feature scenario 07 (same body
+        # shape, identity preserved, mismatching claim-set namespace prefixes). The
+        # historical "PUT with invalid namespace" scenario at this slot cannot be
+        # exercised against descriptor PUT because changing the Namespace field is an
+        # identity change — descriptor PUT enforces (Namespace, CodeValue) immutability
+        # ahead of namespace authorization, so the response would be a 400 key-change
+        # error, not a 403.
 
         @API-037
         @relational-backend

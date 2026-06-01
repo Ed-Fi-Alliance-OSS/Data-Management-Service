@@ -37,12 +37,15 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         CancellationToken cancellationToken
     )
     {
-        if (
+        var storedRelationshipRequiresAuthorization =
             request.StoredRelationshipAuthorization
-            is null
+            is not (
+                null
                 or RelationshipAuthorizationResult.NoAuthorizationRequired
                 or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired
-        )
+            );
+
+        if (!storedRelationshipRequiresAuthorization && request.StoredNamespaceAuthorization is null)
         {
             return new StoredRelationshipAuthorizationBoundary(
                 request,
@@ -238,6 +241,21 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         CancellationToken cancellationToken
     )
     {
+        // Namespace AND-composes before the relationship OR group; both run against the one locked
+        // target and before any precondition result.
+        var namespaceResult = await AuthorizeStoredNamespaceAsync(
+                request,
+                existingTarget,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (namespaceResult is not null)
+        {
+            return namespaceResult;
+        }
+
         return request.StoredRelationshipAuthorization switch
         {
             null
@@ -245,7 +263,7 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
             or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired => null,
 
             RelationshipAuthorizationResult.NoClaims noClaims =>
-                RelationalWriteExecutorResults.BuildNoClaimsStoredRelationshipAuthorizationResult(
+                RelationalWriteExecutorResults.BuildNoClaimsRelationshipAuthorizationResult(
                     request.OperationKind,
                     noClaims
                 ),
@@ -271,6 +289,42 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                 $"Unsupported stored relationship authorization result '{request.StoredRelationshipAuthorization.GetType().Name}'."
             ),
         };
+    }
+
+    private async Task<RelationalWriteExecutorResult?> AuthorizeStoredNamespaceAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument existingTarget,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var namespaceAuthorization = request.StoredNamespaceAuthorization;
+
+        if (namespaceAuthorization is null)
+        {
+            return null;
+        }
+
+        return await StoredNamespaceAuthorizationExecution
+            .ExecuteAsync(
+                writeSession.CreateCommandExecutor(),
+                _relationshipAuthorizationProviderFailureExtractor,
+                request.MappingSet,
+                existingTarget.DocumentId,
+                namespaceAuthorization,
+                onNotAuthorized: failure =>
+                    RelationalWriteExecutorResults.BuildNamespaceAuthorizationFailureResult(
+                        request.OperationKind,
+                        failure
+                    ),
+                onInvalidAuthorizationFailure: failureMessage =>
+                    RelationalWriteExecutorResults.BuildUnknownFailureResult(
+                        request.OperationKind,
+                        failureMessage
+                    ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task<RelationalWriteExecutorResult?> ExecuteAsync(
@@ -358,3 +412,54 @@ internal sealed record StoredRelationshipAuthorizationBoundary(
     PostTargetReevaluationMode PostTargetReevaluation,
     bool ExistingTargetLocked
 );
+
+/// <summary>
+/// Runs the stored namespace authorization check for an already-resolved target against a session
+/// command executor and maps the three-case <see cref="NamespaceAuthorizationExecutionResult"/> onto a
+/// caller-specific result. The authorized case is always a null result; the two failure cases are
+/// mapped by the supplied factories, so every call site shares one execution shape and a new execution
+/// result case forces a single edit here.
+/// </summary>
+internal static class StoredNamespaceAuthorizationExecution
+{
+    public static async Task<TResult?> ExecuteAsync<TResult>(
+        IRelationalCommandExecutor commandExecutor,
+        IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
+        MappingSet mappingSet,
+        long documentId,
+        RelationalWriteNamespaceAuthorization namespaceAuthorization,
+        Func<NamespaceAuthorizationFailure, TResult> onNotAuthorized,
+        Func<string, TResult> onInvalidAuthorizationFailure,
+        CancellationToken cancellationToken = default
+    )
+        where TResult : class
+    {
+        var namespaceExecutor = new NamespaceAuthorizationExecutor(commandExecutor, providerFailureExtractor);
+
+        var executionResult = await namespaceExecutor
+            .ExecuteAsync(
+                new NamespaceAuthorizationExecutionRequest(
+                    mappingSet,
+                    documentId,
+                    ProposedNamespace: null,
+                    namespaceAuthorization.Checks,
+                    namespaceAuthorization.NamespacePrefixParameterization
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            NamespaceAuthorizationExecutionResult.Authorized => null,
+            NamespaceAuthorizationExecutionResult.NotAuthorized notAuthorized => onNotAuthorized(
+                notAuthorized.Failure
+            ),
+            NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                onInvalidAuthorizationFailure(invalidFailure.FailureMessage),
+            _ => throw new InvalidOperationException(
+                $"Unsupported namespace authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
+    }
+}

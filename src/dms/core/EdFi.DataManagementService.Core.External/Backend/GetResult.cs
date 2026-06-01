@@ -45,6 +45,13 @@ public record GetResult
         : GetResult();
 
     /// <summary>
+    /// A failure because namespace authorization denied access to the document. Carries the
+    /// namespace failure metadata so Core can build the §2.9-§2.12 ProblemDetails response.
+    /// </summary>
+    public record GetFailureNamespaceNotAuthorized(NamespaceAuthorizationFailure NamespaceFailure)
+        : GetResult();
+
+    /// <summary>
     /// A failure because the requested read operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

@@ -105,8 +105,6 @@ internal static class RelationshipAuthorizationStrategyClassifier
         StringComparer.Ordinal
     )
     {
-        [AuthorizationStrategyNameConstants.NamespaceBased] =
-            RelationshipAuthorizationStrategyKind.NamespaceBased,
         [AuthorizationStrategyNameConstants.OwnershipBased] =
             RelationshipAuthorizationStrategyKind.OwnershipBased,
     };

@@ -12,7 +12,7 @@ internal sealed record DescriptorReadRow(
     Guid DocumentUuid,
     DateTimeOffset ContentLastModifiedAt,
     short ResourceKeyId,
-    string Namespace,
+    string? Namespace,
     string CodeValue,
     string ShortDescription,
     string? Description,
@@ -98,12 +98,11 @@ internal static class DescriptorReadRowReader
                 resourceKeyId
             ),
             ResourceKeyId: resourceKeyId,
-            Namespace: ReadRequiredDescriptorStringField(
-                reader,
-                NamespaceColumnName,
-                documentId,
-                resourceKeyId
-            ),
+            // Namespace is read nullably so a stored NULL flows into the namespace-authorization
+            // stored-namespace-uninitialized 403 path instead of being masked as a 500 invariant
+            // before the auth check runs. Callers that have no namespace authorization configured
+            // must still treat a NULL value as corruption.
+            Namespace: reader.GetNullableFieldValue<string>(NamespaceColumnName),
             CodeValue: ReadRequiredDescriptorStringField(
                 reader,
                 CodeValueColumnName,

@@ -84,7 +84,8 @@ public class Given_No_Profile_Relational_Post
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
             AuthorizationSubjectSelectorTestSupport.Create(),
-            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
+            A.Fake<INamespaceAuthorizationExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -199,7 +200,8 @@ public class Given_No_Profile_Relational_Put
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
             AuthorizationSubjectSelectorTestSupport.Create(),
-            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
+            A.Fake<INamespaceAuthorizationExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -314,7 +316,8 @@ public class Given_A_Profiled_Relational_Post
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
             AuthorizationSubjectSelectorTestSupport.Create(),
-            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
+            A.Fake<INamespaceAuthorizationExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -428,7 +431,8 @@ public class Given_A_Profiled_Relational_Put
             A.Fake<IRelationalDeleteConstraintResolver>(),
             A.Fake<IRelationalWriteSessionFactory>(),
             AuthorizationSubjectSelectorTestSupport.Create(),
-            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>()
+            A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
+            A.Fake<INamespaceAuthorizationExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();

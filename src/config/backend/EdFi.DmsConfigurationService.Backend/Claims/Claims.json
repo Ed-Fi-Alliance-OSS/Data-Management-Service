@@ -5134,7 +5134,7 @@
                       "name": "RelationshipsWithEdOrgsOnly"
                     },
                     {
-                      "name": "NamespaceBased"
+                      "name": "OwnershipBased"
                     }
                   ]
                 }

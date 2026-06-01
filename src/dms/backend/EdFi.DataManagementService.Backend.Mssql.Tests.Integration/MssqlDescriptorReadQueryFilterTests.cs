@@ -319,7 +319,11 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
 
         var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
         failure.FailureMessage.Should().Contain($"DocumentId {corruptDocumentId}");
-        failure.FailureMessage.Should().Contain("dms.Descriptor.Namespace must not be null.");
+        // The row reader treats Namespace as nullable so a stored null can flow into the
+        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
+        // required column, so the reader's invariant message names it when the LEFT JOIN
+        // finds no descriptor row.
+        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
     }
 
     private static IEnumerable<TestCaseData> SupportedFilterCases()

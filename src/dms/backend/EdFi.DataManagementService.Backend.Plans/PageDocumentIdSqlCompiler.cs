@@ -67,15 +67,25 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         );
         var authorization = NormalizeAuthorization(spec.Authorization);
         var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
+        var namespacePrefixParameterization = authorization?.NamespacePrefixParameterization;
         var requiresDocumentUuidJoin = rewrittenPredicates.Any(static predicate =>
             predicate.Target is QueryPredicateTarget.DocumentUuid
         );
-        var requiresDescriptorJoin = rewrittenPredicates.Any(static predicate =>
-            predicate.Target is QueryPredicateTarget.DescriptorColumn
-        );
+        // The descriptor join also covers the descriptor-alias namespace check used by descriptor
+        // queries: the page subquery roots on dms.Document for ResourceKeyId paging, while the
+        // Namespace column lives on the joined dms.Descriptor row.
+        var requiresDescriptorJoin =
+            rewrittenPredicates.Any(static predicate =>
+                predicate.Target is QueryPredicateTarget.DescriptorColumn
+            )
+            || (
+                authorization?.NamespaceChecks?.Any(check => check.RootTable.Equals(_descriptorTable))
+                ?? false
+            );
         var filterParametersInOrder = BuildFilterParametersInOrder(
             rewrittenPredicates,
-            authorizationClaimParameterization
+            authorizationClaimParameterization,
+            namespacePrefixParameterization
         );
         var filterParameterNamesInOrder = filterParametersInOrder
             .Select(static parameter => parameter.ParameterName)
@@ -326,7 +336,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static IReadOnlyList<QuerySqlParameter> BuildFilterParametersInOrder(
         IReadOnlyList<RewrittenPredicate> predicates,
-        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
+        NamespacePrefixParameterization? namespacePrefixParameterization
     )
     {
         List<QuerySqlParameter> filterParametersInOrder =
@@ -336,6 +347,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 predicate.ParameterName
             )),
         ];
+
+        if (namespacePrefixParameterization is not null)
+        {
+            filterParametersInOrder.AddRange(
+                NamespacePrefixSqlHelper.BuildFilterParametersInOrder(namespacePrefixParameterization)
+            );
+        }
 
         if (authorizationClaimParameterization is not null)
         {
@@ -425,19 +443,47 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             }
         }
 
-        if (normalizedStrategies.Length == 0)
+        if (
+            authorization.NamespaceChecks is not null
+            && authorization.NamespaceChecks.Any(static check => check is null)
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(PageDocumentIdAuthorizationSpec.NamespaceChecks)} must not contain null entries.",
+                nameof(authorization)
+            );
+        }
+
+        var normalizedNamespaceChecks = (authorization.NamespaceChecks ?? []).ToArray();
+
+        if (normalizedStrategies.Length == 0 && normalizedNamespaceChecks.Length == 0)
         {
             return null;
         }
 
-        ArgumentNullException.ThrowIfNull(authorization.ClaimEducationOrganizationIdParameterization);
-        ValidateAuthorizationClaimParameterization(
-            authorization.ClaimEducationOrganizationIdParameterization
-        );
+        if (normalizedStrategies.Length > 0)
+        {
+            ArgumentNullException.ThrowIfNull(authorization.ClaimEducationOrganizationIdParameterization);
+            ValidateAuthorizationClaimParameterization(
+                authorization.ClaimEducationOrganizationIdParameterization
+            );
+        }
+
+        if (normalizedNamespaceChecks.Length > 0)
+        {
+            ArgumentNullException.ThrowIfNull(authorization.NamespacePrefixParameterization);
+            NamespacePrefixParameterizationValidator.ValidateOrThrow(
+                authorization.NamespacePrefixParameterization,
+                _dialect,
+                nameof(PageDocumentIdAuthorizationSpec.NamespacePrefixParameterization),
+                "Page document-id SQL compilation"
+            );
+        }
 
         return authorization with
         {
             Strategies = normalizedStrategies,
+            NamespaceChecks = normalizedNamespaceChecks,
         };
     }
 
@@ -572,7 +618,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
     )
     {
-        var predicateCount = predicates.Count + (authorization is null ? 0 : 1);
+        var hasNamespaceGroup = (authorization?.NamespaceChecks?.Count ?? 0) > 0;
+        var hasRelationshipGroup = (authorization?.Strategies.Count ?? 0) > 0;
+        var predicateCount = predicates.Count + (hasNamespaceGroup ? 1 : 0) + (hasRelationshipGroup ? 1 : 0);
 
         writer.AppendWhereClause(
             predicateCount,
@@ -581,6 +629,22 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 if (index < predicates.Count)
                 {
                     AppendPredicateSql(predicateWriter, predicates[index]);
+                    return;
+                }
+
+                var groupIndex = index - predicates.Count;
+
+                if (hasNamespaceGroup && groupIndex == 0)
+                {
+                    AppendNamespaceChecksSql(
+                        predicateWriter,
+                        rootTable,
+                        authorization!.NamespaceChecks!,
+                        authorization.NamespacePrefixParameterization
+                            ?? throw new InvalidOperationException(
+                                "Namespace authorization SQL emission requires a namespace prefix parameterization when namespace checks are present."
+                            )
+                    );
                     return;
                 }
 
@@ -594,6 +658,56 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                         )
                 );
             }
+        );
+    }
+
+    private static void AppendNamespaceChecksSql(
+        SqlWriter writer,
+        DbTableName rootTable,
+        IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
+        NamespacePrefixParameterization namespacePrefixParameterization
+    )
+    {
+        for (var checkIndex = 0; checkIndex < namespaceChecks.Count; checkIndex++)
+        {
+            if (checkIndex > 0)
+            {
+                writer.Append(" AND ");
+            }
+
+            var check = namespaceChecks[checkIndex];
+            var tableAlias = ResolveNamespaceCheckAlias(check.RootTable, rootTable);
+
+            NamespacePrefixSqlHelper.AppendRootTableNamespacePredicate(
+                writer,
+                tableAlias,
+                check.NamespaceColumn,
+                namespacePrefixParameterization
+            );
+        }
+    }
+
+    /// <summary>
+    /// Resolves the SQL alias to qualify a namespace check column. Resource queries always check
+    /// against the query root table. Descriptor queries root the page subquery on
+    /// <c>dms.Document</c> but the namespace column lives on the joined <c>dms.Descriptor</c> row;
+    /// in that case the check binds to the shared descriptor alias rather than the document root.
+    /// </summary>
+    private static string ResolveNamespaceCheckAlias(DbTableName checkRootTable, DbTableName queryRootTable)
+    {
+        if (checkRootTable.Equals(queryRootTable))
+        {
+            return _rootAlias;
+        }
+
+        if (queryRootTable.Equals(_documentTable) && checkRootTable.Equals(_descriptorTable))
+        {
+            return _descriptorAlias;
+        }
+
+        throw new InvalidOperationException(
+            $"Namespace authorization check spec table '{checkRootTable}' does not match query root table '{queryRootTable}'. "
+                + "Namespace authorization SQL emission supports only concrete root-table columns (or the shared dms.Descriptor join for descriptor queries)."
         );
     }
 

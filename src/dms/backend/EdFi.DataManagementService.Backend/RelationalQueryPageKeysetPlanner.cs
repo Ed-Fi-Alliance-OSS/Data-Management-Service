@@ -136,6 +136,10 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 authorizationClaimParameterization
             );
         }
+        NamespacePrefixParameterValueBinder.Bind(
+            parameterValues,
+            authorization?.NamespacePrefixParameterization
+        );
 
         var querySpec = new PageDocumentIdQuerySpec(
             RootTable: rootTable.Table,

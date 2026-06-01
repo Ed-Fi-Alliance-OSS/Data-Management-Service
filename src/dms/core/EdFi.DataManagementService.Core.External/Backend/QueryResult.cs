@@ -42,6 +42,13 @@ public record QueryResult
     public record QueryFailureSecurityConfiguration(string[] Errors) : QueryResult();
 
     /// <summary>
+    /// A failure because namespace authorization denied the query (the §2.9 no-prefixes preflight).
+    /// Carries the namespace failure metadata so Core can build the ProblemDetails response.
+    /// </summary>
+    public record QueryFailureNamespaceNotAuthorized(NamespaceAuthorizationFailure NamespaceFailure)
+        : QueryResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

@@ -67,7 +67,26 @@ internal static class RelationalWriteExecutorResults
         };
     }
 
-    public static RelationalWriteExecutorResult BuildNoClaimsStoredRelationshipAuthorizationResult(
+    public static RelationalWriteExecutorResult BuildNamespaceAuthorizationFailureResult(
+        RelationalWriteOperationKind operationKind,
+        NamespaceAuthorizationFailure namespaceFailure
+    )
+    {
+        ArgumentNullException.ThrowIfNull(namespaceFailure);
+
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceFailure)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureNamespaceNotAuthorized(namespaceFailure)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    public static RelationalWriteExecutorResult BuildNoClaimsRelationshipAuthorizationResult(
         RelationalWriteOperationKind operationKind,
         RelationshipAuthorizationResult.NoClaims noClaims
     )

@@ -33,7 +33,11 @@ internal sealed class RelationalWriteExecutionStateResolver(
         RelationalWriteExecutorRequest request
     ) =>
         request.WritePrecondition is WritePrecondition.IfMatch
-        && request.ProposedRelationshipAuthorization is not null
+        && (
+            request.ProposedRelationshipAuthorization is not null
+            || request.StoredNamespaceAuthorization is not null
+            || request.ProposedNamespaceAuthorization is not null
+        )
             ? IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             : IfMatchPreconditionEvaluation.BeforeProposedAuthorization;
 

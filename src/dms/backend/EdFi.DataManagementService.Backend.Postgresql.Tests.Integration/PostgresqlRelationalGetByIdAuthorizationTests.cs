@@ -46,7 +46,7 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
     private static readonly IReadOnlyList<string> _normalPlusKnownUnsupportedStrategy =
     [
         AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-        AuthorizationStrategyNameConstants.NamespaceBased,
+        AuthorizationStrategyNameConstants.OwnershipBased,
     ];
 
     private static readonly QuerySchoolSeed[] _schoolSeeds =
@@ -320,7 +320,7 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
         );
 
         var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.NamespaceBased);
+        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         _context.AssertNoHydration();
     }
 

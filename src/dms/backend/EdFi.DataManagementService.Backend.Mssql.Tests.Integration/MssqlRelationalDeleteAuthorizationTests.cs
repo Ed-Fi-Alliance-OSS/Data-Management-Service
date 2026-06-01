@@ -455,7 +455,7 @@ public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOr
             .Subject;
         notImplemented
             .FailureMessage.Should()
-            .Contain(RelationshipAuthorizationCrudTestSupport.NamespaceBased);
+            .Contain(RelationshipAuthorizationCrudTestSupport.OwnershipBased);
         var securityConfiguration = securityConfigurationResult
             .Should()
             .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()

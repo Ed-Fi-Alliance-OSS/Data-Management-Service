@@ -22,7 +22,8 @@ public sealed record DescriptorGetByIdRequest
         RelationalGetRequestReadMode readMode,
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
-        TraceId traceId
+        TraceId traceId,
+        RelationalAuthorizationContext? relationalAuthorizationContext = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -34,6 +35,8 @@ public sealed record DescriptorGetByIdRequest
             ?? throw new ArgumentNullException(nameof(authorizationStrategyEvaluators));
         ReadableProfileProjectionContext = readableProfileProjectionContext;
         TraceId = traceId;
+        RelationalAuthorizationContext =
+            relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
     }
 
     /// <summary>
@@ -70,6 +73,14 @@ public sealed record DescriptorGetByIdRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Request-scoped authorization inputs (namespace prefixes and claim education organization ids)
+    /// used by backend-planned namespace authorization. Carried alongside the evaluators because the
+    /// evaluators preserve raw strategy names with empty filter providers in relational mode and do not
+    /// carry the namespace prefixes the planner needs.
+    /// </summary>
+    public RelationalAuthorizationContext RelationalAuthorizationContext { get; init; }
 }
 
 /// <summary>
@@ -85,7 +96,8 @@ public sealed record DescriptorQueryRequest
         PaginationParameters paginationParameters,
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
-        TraceId traceId
+        TraceId traceId,
+        RelationalAuthorizationContext? relationalAuthorizationContext = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -98,6 +110,8 @@ public sealed record DescriptorQueryRequest
             ?? throw new ArgumentNullException(nameof(authorizationStrategyEvaluators));
         ReadableProfileProjectionContext = readableProfileProjectionContext;
         TraceId = traceId;
+        RelationalAuthorizationContext =
+            relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
     }
 
     /// <summary>
@@ -134,6 +148,14 @@ public sealed record DescriptorQueryRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Request-scoped authorization inputs (namespace prefixes and claim education organization ids)
+    /// used by backend-planned namespace authorization. Carried alongside the evaluators because the
+    /// evaluators preserve raw strategy names with empty filter providers in relational mode and do not
+    /// carry the namespace prefixes the planner needs.
+    /// </summary>
+    public RelationalAuthorizationContext RelationalAuthorizationContext { get; init; }
 }
 
 /// <summary>

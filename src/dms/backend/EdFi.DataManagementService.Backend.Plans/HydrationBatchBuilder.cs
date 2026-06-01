@@ -392,7 +392,17 @@ public static class HydrationBatchBuilder
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = $"@{bareName}";
-        parameter.Value = RequireInt64List(value, bareName).ToArray();
+        // PostgreSQL array parameters carry either claim EdOrg ids (long[]) or namespace prefix LIKE
+        // patterns (string[]); Npgsql infers the element type from the runtime array.
+        parameter.Value = value switch
+        {
+            IReadOnlyList<long> int64Values => int64Values.ToArray(),
+            IReadOnlyList<string> stringValues => stringValues.ToArray(),
+            _ => throw new InvalidOperationException(
+                "Hydration query keyset parameter "
+                    + $"'{bareName}' requires an IReadOnlyList<long> or IReadOnlyList<string> runtime value."
+            ),
+        };
         command.Parameters.Add(parameter);
     }
 

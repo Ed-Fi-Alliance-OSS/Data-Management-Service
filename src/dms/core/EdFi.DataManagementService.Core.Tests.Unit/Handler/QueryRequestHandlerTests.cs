@@ -222,6 +222,61 @@ public class QueryRequestHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Namespace_Not_Authorized : QueryRequestHandlerTests
+    {
+        internal static readonly NamespaceAuthorizationFailure Failure = new(
+            NamespaceAuthorizationFailureKind.NoPrefixesConfigured,
+            ValueSource: null,
+            EmittedAuth1Index: null,
+            StrategyName: AuthorizationStrategyNameConstants.NamespaceBased,
+            ConfiguredNamespacePrefixes: []
+        );
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                return Task.FromResult<QueryResult>(
+                    new QueryResult.QueryFailureNamespaceNotAuthorized(Failure)
+                );
+            }
+        }
+
+        private static readonly string _traceId = "namespace-query-403";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_namespace_failure_to_the_canonical_namespace_problem_details_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = NamespaceAuthorizationFailureResponse.ForFailure(Failure, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Implemented : QueryRequestHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -277,8 +332,8 @@ public class QueryRequestHandlerTests
                 "Relational query authorization is not implemented for resource "
                 + "'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires "
                 + "filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests "
-                + "with no authorization strategies or only 'NoFurtherAuthorizationRequired' are "
-                + "currently supported.";
+                + "with no authorization strategies or with 'NamespaceBased' and/or "
+                + "'NoFurtherAuthorizationRequired' are currently supported.";
 
             public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {

@@ -23,7 +23,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         MappingSet mappingSet,
         QualifiedResourceName requestResource,
         DescriptorQueryPreprocessingResult preprocessingResult,
-        PaginationParameters paginationParameters
+        PaginationParameters paginationParameters,
+        PageDocumentIdAuthorizationSpec? authorization = null
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
@@ -54,14 +55,16 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
             OffsetParameterName: OffsetParameterName,
             LimitParameterName: LimitParameterName,
-            IncludeTotalCountSql: paginationParameters.TotalCount
+            IncludeTotalCountSql: paginationParameters.TotalCount,
+            Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(pageQuerySpec);
         var parameterValues = BuildParameterValues(
             resourceKeyId,
             preprocessingResult.QueryElementsInOrder,
             parameterNamesByIndex,
-            paginationParameters
+            paginationParameters,
+            authorization
         );
 
         return new PageKeysetSpec.Query(sqlPlan, parameterValues);
@@ -168,7 +171,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         short resourceKeyId,
         IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder,
         IReadOnlyList<string> parameterNamesByIndex,
-        PaginationParameters paginationParameters
+        PaginationParameters paginationParameters,
+        PageDocumentIdAuthorizationSpec? authorization
     )
     {
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
@@ -193,6 +197,11 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                 ),
             };
         }
+
+        NamespacePrefixParameterValueBinder.Bind(
+            parameterValues,
+            authorization?.NamespacePrefixParameterization
+        );
 
         return parameterValues;
     }

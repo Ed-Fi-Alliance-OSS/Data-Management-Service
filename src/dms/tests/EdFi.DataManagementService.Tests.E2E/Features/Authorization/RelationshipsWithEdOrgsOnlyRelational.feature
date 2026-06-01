@@ -176,7 +176,7 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
               And the response body is
                   """
                   {
-                      "error": "Relational query authorization is not implemented for resource 'Ed-Fi.AcademicWeek' when effective GET-many authorization includes strategies outside the current GET-many relationship query execution boundary. Unsupported strategies: ['NamespaceBased']. Supported GET-many relationship strategies are 'RelationshipsWithEdOrgsOnly', 'RelationshipsWithEdOrgsOnlyInverted', 'RelationshipsWithEdOrgsAndPeople', 'RelationshipsWithEdOrgsAndPeopleInverted', 'RelationshipsWithPeopleOnly', 'RelationshipsWithStudentsOnly', 'RelationshipsWithStudentsOnlyThroughResponsibility', and 'NoFurtherAuthorizationRequired' as a no-op."
+                      "error": "Relational query authorization is not implemented for resource 'Ed-Fi.AcademicWeek' when effective GET-many authorization includes strategies outside the current GET-many relationship query execution boundary. Unsupported strategies: ['OwnershipBased']. Supported GET-many relationship strategies are 'RelationshipsWithEdOrgsOnly', 'RelationshipsWithEdOrgsOnlyInverted', 'RelationshipsWithEdOrgsAndPeople', 'RelationshipsWithEdOrgsAndPeopleInverted', 'RelationshipsWithPeopleOnly', 'RelationshipsWithStudentsOnly', 'RelationshipsWithStudentsOnlyThroughResponsibility', and 'NoFurtherAuthorizationRequired' as a no-op."
                   }
                   """
 

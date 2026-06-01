@@ -27,8 +27,10 @@ public class Given_Descriptor_Write_Handler_Delete
         "EducationOrganizationCategoryDescriptor"
     );
 
+    // NamespaceBased is now authorized for descriptors through the relational authorization planner, so
+    // only strategies with no descriptor-applicable filter remain fail-closed here.
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-    [TestCase(AuthorizationStrategyNameConstants.NamespaceBased)]
+    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_delete_authorization_without_executing_sql(
         string authorizationStrategyName
     )

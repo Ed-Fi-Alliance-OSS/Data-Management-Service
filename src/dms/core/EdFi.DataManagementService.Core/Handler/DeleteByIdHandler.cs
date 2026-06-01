@@ -101,6 +101,15 @@ internal class DeleteByIdHandler(
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            DeleteFailureNamespaceNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: NamespaceAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.NamespaceFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             DeleteFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

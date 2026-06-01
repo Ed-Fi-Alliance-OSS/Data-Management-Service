@@ -330,6 +330,58 @@ public class DeleteByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Namespace_Not_Authorized : DeleteByIdHandlerTests
+    {
+        internal static readonly NamespaceAuthorizationFailure Failure = new(
+            NamespaceAuthorizationFailureKind.StoredNamespaceUninitialized,
+            NamespaceAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            StrategyName: "NamespaceBased",
+            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(new DeleteFailureNamespaceNotAuthorized(Failure));
+            }
+        }
+
+        private static readonly string _traceId = "namespace-delete-403";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+
+            var (deleteHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await deleteHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_namespace_denial_to_the_canonical_problem_details_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = NamespaceAuthorizationFailureResponse.ForFailure(Failure, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode.DeepEquals(_requestInfo.FrontendResponse.Body, expected).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Implemented : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

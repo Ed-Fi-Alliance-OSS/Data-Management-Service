@@ -7,8 +7,10 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.Logging;
 
@@ -45,21 +47,30 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
-        if (
-            !RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(
-                request.AuthorizationStrategyEvaluators
-            )
-        )
+        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
+        // unsupported strategies resolve before any SQL roundtrip. The stored namespace check itself
+        // runs in memory against the namespace value materialized by the existing single SELECT.
+        var authorizationPreflight = ResolveDescriptorReadAuthorization(
+            request.MappingSet,
+            request.Resource,
+            request.AuthorizationStrategyEvaluators,
+            request.RelationalAuthorizationContext,
+            NamespaceAuthorizationOperation.ReadSingle,
+            "descriptor GET",
+            "GET"
+        );
+
+        switch (authorizationPreflight)
         {
-            return new GetResult.GetFailureNotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    request.Resource,
-                    request.AuthorizationStrategyEvaluators,
-                    "descriptor GET",
-                    "GET"
-                )
-            );
+            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                return new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage);
+            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                return new GetResult.GetFailureSecurityConfiguration(configError.Errors);
+            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                return new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
         }
+
+        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
 
         RelationalCommand command;
 
@@ -110,6 +121,35 @@ internal sealed class DescriptorReadHandler(
             return new GetResult.GetFailureNotExists();
         }
 
+        // The descriptor row reader emits the same Namespace column the orchestrator resolved as
+        // the stored authorization source, so the namespace check runs against that materialized
+        // value without a second SQL roundtrip. The stored-namespace mismatch and uninitialized
+        // failure kinds are constructed directly here because no AUTH1 codec mediates the
+        // single-record path.
+        if (proceed.NamespacePrefixParameterization is { } namespacePrefixParameterization)
+        {
+            var namespaceFailure = EvaluateStoredNamespace(
+                descriptorRow.Namespace,
+                namespacePrefixParameterization
+            );
+
+            if (namespaceFailure is not null)
+            {
+                return new GetResult.GetFailureNamespaceNotAuthorized(namespaceFailure);
+            }
+        }
+        else if (string.IsNullOrEmpty(descriptorRow.Namespace))
+        {
+            // Without namespace authorization configured, the stored-namespace-uninitialized 403
+            // path does not apply, so a null stored Namespace is genuine descriptor row corruption.
+            // Surface it as an UnknownFailure with the same column-naming diagnostic the row
+            // reader produces for the other required descriptor columns.
+            return new GetResult.UnknownFailure(
+                $"Descriptor read corruption detected for DocumentId {descriptorRow.DocumentId} "
+                    + $"(ResourceKeyId={descriptorRow.ResourceKeyId}): dms.Descriptor.Namespace must not be null."
+            );
+        }
+
         LogDiscriminatorMismatchIfPresent(request, descriptorRow);
 
         return new GetResult.GetSuccess(
@@ -134,21 +174,33 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
-        if (
-            !RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(
-                request.AuthorizationStrategyEvaluators
-            )
-        )
+        var authorizationPreflight = ResolveDescriptorReadAuthorization(
+            request.MappingSet,
+            request.Resource,
+            request.AuthorizationStrategyEvaluators,
+            request.RelationalAuthorizationContext,
+            NamespaceAuthorizationOperation.ReadMany,
+            "descriptor query",
+            "GET-many"
+        );
+
+        switch (authorizationPreflight)
         {
-            return new QueryResult.QueryFailureNotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    request.Resource,
-                    request.AuthorizationStrategyEvaluators,
-                    "descriptor query",
-                    "GET-many"
-                )
-            );
+            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                return new QueryResult.QueryFailureNotImplemented(notImplemented.FailureMessage);
+            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                return new QueryResult.QueryFailureSecurityConfiguration(configError.Errors);
+            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                return new QueryResult.QueryFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
         }
+
+        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+
+        // The descriptor page subquery roots on dms.Document while Namespace lives on the joined
+        // dms.Descriptor row. The page SQL compiler aliases the namespace check to the descriptor
+        // join, so the planner consumes the orchestrator's namespace check specs + prefix
+        // parameterization through PageDocumentIdAuthorizationSpec.
+        var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
 
         DescriptorQueryPreprocessingResult preprocessingResult;
 
@@ -182,7 +234,12 @@ internal sealed class DescriptorReadHandler(
 
         try
         {
-            queryRowsPage = await ReadQueryRowsAsync(request, preprocessingResult, cancellationToken)
+            queryRowsPage = await ReadQueryRowsAsync(
+                    request,
+                    preprocessingResult,
+                    authorizationSpec,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         catch (NotSupportedException ex)
@@ -221,6 +278,7 @@ internal sealed class DescriptorReadHandler(
     internal Task<DescriptorQueryRowsPage> ReadQueryRowsAsync(
         DescriptorQueryRequest request,
         DescriptorQueryPreprocessingResult preprocessingResult,
+        PageDocumentIdAuthorizationSpec? authorizationSpec = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -239,7 +297,8 @@ internal sealed class DescriptorReadHandler(
             request.MappingSet,
             request.Resource,
             preprocessingResult,
-            request.PaginationParameters
+            request.PaginationParameters,
+            authorizationSpec
         );
         var command = BuildQueryCommand(request.MappingSet.Key.Dialect, plannedQuery);
 
@@ -354,32 +413,31 @@ internal sealed class DescriptorReadHandler(
     {
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        List<string> requiredParameterNames = [];
+        List<QuerySqlParameter> requiredParameters = [];
         HashSet<string> seenParameterNames = new(StringComparer.OrdinalIgnoreCase);
 
-        AddParameterNames(
-            plannedQuery.Plan.TotalCountParametersInOrder,
-            requiredParameterNames,
-            seenParameterNames
-        );
-        AddParameterNames(
-            plannedQuery.Plan.PageParametersInOrder,
-            requiredParameterNames,
-            seenParameterNames
-        );
+        AddParameters(plannedQuery.Plan.TotalCountParametersInOrder, requiredParameters, seenParameterNames);
+        AddParameters(plannedQuery.Plan.PageParametersInOrder, requiredParameters, seenParameterNames);
 
         List<string> missingParameterNames = [];
         List<RelationalParameter> parameters = [];
 
-        foreach (var parameterName in requiredParameterNames)
+        foreach (var queryParameter in requiredParameters)
         {
-            if (!plannedQuery.ParameterValues.TryGetValue(parameterName, out var parameterValue))
+            if (
+                !plannedQuery.ParameterValues.TryGetValue(
+                    queryParameter.ParameterName,
+                    out var parameterValue
+                )
+            )
             {
-                missingParameterNames.Add(parameterName);
+                missingParameterNames.Add(queryParameter.ParameterName);
                 continue;
             }
 
-            parameters.Add(new RelationalParameter($"@{parameterName}", parameterValue));
+            parameters.Add(
+                NamespaceAuthorizationCommandParameterBuilder.BuildParameter(queryParameter, parameterValue)
+            );
         }
 
         if (missingParameterNames.Count > 0)
@@ -393,9 +451,9 @@ internal sealed class DescriptorReadHandler(
         return parameters;
     }
 
-    private static void AddParameterNames(
+    private static void AddParameters(
         IReadOnlyList<QuerySqlParameter>? parameterInventory,
-        ICollection<string> requiredParameterNames,
+        ICollection<QuerySqlParameter> requiredParameters,
         ISet<string> seenParameterNames
     )
     {
@@ -404,14 +462,14 @@ internal sealed class DescriptorReadHandler(
             return;
         }
 
-        foreach (var parameterName in parameterInventory.Select(static parameter => parameter.ParameterName))
+        foreach (var parameter in parameterInventory)
         {
-            if (!seenParameterNames.Add(parameterName))
+            if (!seenParameterNames.Add(parameter.ParameterName))
             {
                 continue;
             }
 
-            requiredParameterNames.Add(parameterName);
+            requiredParameters.Add(parameter);
         }
     }
 
@@ -544,6 +602,207 @@ internal sealed class DescriptorReadHandler(
         }
 
         return trimmed.ToString();
+    }
+
+    /// <summary>
+    /// Plans descriptor GET / query namespace authorization through the relational authorization
+    /// orchestrator before any SQL is built. Strategies other than <c>NamespaceBased</c> /
+    /// <c>NoFurtherAuthorizationRequired</c> fail closed; the namespace planner terminals
+    /// (no configured prefixes, no usable root column, MSSQL prefix cap) short-circuit with no DB
+    /// roundtrip; otherwise the configured namespace prefixes are surfaced for the in-memory
+    /// stored-value check on GET-by-id or for SQL emission on query.
+    /// </summary>
+    private static DescriptorReadAuthorizationPreflightOutcome ResolveDescriptorReadAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators,
+        RelationalAuthorizationContext authorizationContext,
+        NamespaceAuthorizationOperation operation,
+        string operationLabel,
+        string actionLabel
+    )
+    {
+        if (
+            !RelationalReadGuardrails.HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired(
+                authorizationStrategyEvaluators
+            )
+        )
+        {
+            return new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
+                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                    resource,
+                    authorizationStrategyEvaluators,
+                    operationLabel,
+                    actionLabel
+                )
+            );
+        }
+
+        if (!RelationalReadGuardrails.ContainsNamespaceBased(authorizationStrategyEvaluators))
+        {
+            return DescriptorReadAuthorizationPreflightOutcome.Proceed.NoAuthorization;
+        }
+
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            authorizationStrategyEvaluators
+        );
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            operation,
+            configuredAuthorizationStrategies,
+            authorizationContext
+        );
+
+        return orchestratorOutcome switch
+        {
+            RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
+                new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError([
+                    NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                        RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                    ),
+                ]),
+            RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
+                new DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized(
+                    NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                ),
+            RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorReadPlanPreflight(
+                mappingSet,
+                authorizationContext,
+                plan
+            ),
+            // Restricting strategies to NamespaceBased / NoFurtherAuthorizationRequired above means the
+            // relationship classifier cannot report still-unsupported or security-configuration
+            // outcomes here, but fail closed if a future strategy reaches this point.
+            RelationalAuthorizationPlanOutcome.StillUnsupported
+            or RelationalAuthorizationPlanOutcome.SecurityConfigurationError =>
+                new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
+                    RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                        resource,
+                        authorizationStrategyEvaluators,
+                        operationLabel,
+                        actionLabel
+                    )
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadPlanPreflight(
+        MappingSet mappingSet,
+        RelationalAuthorizationContext authorizationContext,
+        RelationalAuthorizationPlanOutcome.Plan plan
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return DescriptorReadAuthorizationPreflightOutcome.Proceed.NoAuthorization;
+        }
+
+        NamespacePrefixParameterization namespacePrefixParameterization;
+
+        try
+        {
+            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+                mappingSet.Key.Dialect,
+                authorizationContext.NamespacePrefixes,
+                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
+            );
+        }
+        catch (NamespacePrefixLimitExceededException ex)
+        {
+            return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError([
+                NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
+            ]);
+        }
+
+        return new DescriptorReadAuthorizationPreflightOutcome.Proceed(
+            plan.NamespaceChecks,
+            namespacePrefixParameterization
+        );
+    }
+
+    private static PageDocumentIdAuthorizationSpec? BuildDescriptorQueryAuthorizationSpec(
+        DescriptorReadAuthorizationPreflightOutcome.Proceed proceed
+    )
+    {
+        if (proceed.NamespaceChecks.Count == 0)
+        {
+            return null;
+        }
+
+        // No relational relationship strategies participate in descriptor queries; pass an empty
+        // strategy list so the compiler emits namespace-only authorization.
+        return new PageDocumentIdAuthorizationSpec(
+            Strategies: [],
+            NamespaceChecks: proceed.NamespaceChecks,
+            NamespacePrefixParameterization: proceed.NamespacePrefixParameterization
+        );
+    }
+
+    private static NamespaceAuthorizationFailure? EvaluateStoredNamespace(
+        string? storedNamespace,
+        NamespacePrefixParameterization namespacePrefixParameterization
+    )
+    {
+        if (string.IsNullOrEmpty(storedNamespace))
+        {
+            return new NamespaceAuthorizationFailure(
+                NamespaceAuthorizationFailureKind.StoredNamespaceUninitialized,
+                NamespaceAuthorizationFailureValueSource.Stored,
+                EmittedAuth1Index: 0,
+                AuthorizationStrategyNameConstants.NamespaceBased,
+                [.. namespacePrefixParameterization.ConfiguredPrefixesInOrder]
+            );
+        }
+
+        // The single-record GET-by-id check mirrors the LIKE prefix filter the GET-many and write paths
+        // emit so it accepts and rejects the same stored namespaces for the same caller. The match and
+        // its dialect case sensitivity live on the shared parameterization, next to the SQL escaping it
+        // mirrors, instead of being re-derived here.
+        if (namespacePrefixParameterization.MatchesAnyPrefix(storedNamespace))
+        {
+            return null;
+        }
+
+        return new NamespaceAuthorizationFailure(
+            NamespaceAuthorizationFailureKind.NamespaceMismatch,
+            NamespaceAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            AuthorizationStrategyNameConstants.NamespaceBased,
+            [.. namespacePrefixParameterization.ConfiguredPrefixesInOrder]
+        );
+    }
+
+    private abstract record DescriptorReadAuthorizationPreflightOutcome
+    {
+        private DescriptorReadAuthorizationPreflightOutcome() { }
+
+        public sealed record NotImplemented(string FailureMessage)
+            : DescriptorReadAuthorizationPreflightOutcome;
+
+        public sealed record SecurityConfigurationError(string[] Errors)
+            : DescriptorReadAuthorizationPreflightOutcome;
+
+        public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
+            : DescriptorReadAuthorizationPreflightOutcome;
+
+        /// <param name="NamespaceChecks">
+        /// Planner-emitted check specs (used by the GET-many SQL emission path).
+        /// </param>
+        /// <param name="NamespacePrefixParameterization">
+        /// Dialect-specific prefix parameterization; non-null exactly when namespace authorization
+        /// applies. Drives the GET-many SQL emission and the GET-by-id in-memory stored-value check.
+        /// </param>
+        public sealed record Proceed(
+            IReadOnlyList<NamespaceAuthorizationCheckSpec> NamespaceChecks,
+            NamespacePrefixParameterization? NamespacePrefixParameterization
+        ) : DescriptorReadAuthorizationPreflightOutcome
+        {
+            public static Proceed NoAuthorization { get; } = new([], null);
+        }
     }
 
     private static RelationalCommand BuildGetByIdCommand(

@@ -74,6 +74,12 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly ProposedRelationshipAuthorizationOrchestrator _proposedRelationshipAuthorizationOrchestrator =
         new(persister);
 
+    private readonly ProposedNamespaceAuthorizationOrchestrator _proposedNamespaceAuthorizationOrchestrator =
+        new(
+            relationshipAuthorizationProviderFailureExtractor
+                ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance
+        );
+
     private readonly RelationalWriteDatabaseFailureResultMapper _databaseFailureResultMapper = new(
         writeExceptionClassifier,
         writeConstraintResolver
@@ -219,6 +225,19 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             var mergeResult = mergeBoundary.MergeResult!;
+
+            // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
+            // namespace denial surfaces over a concurrent relationship denial. Mirrors the
+            // stored-side ordering used for locked-target authorization.
+            var namespaceAuthorizationBoundary = await _proposedNamespaceAuthorizationOrchestrator
+                .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (namespaceAuthorizationBoundary.ImmediateResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return namespaceAuthorizationBoundary.ImmediateResult;
+            }
 
             var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
                 .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)

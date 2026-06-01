@@ -2105,7 +2105,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             resource,
             CreateConfiguredAuthorizationStrategies(
                 AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.NamespaceBased
+                AuthorizationStrategyNameConstants.OwnershipBased
             ),
             new RelationalAuthorizationContext([42L], [])
         );
@@ -2128,7 +2128,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Should()
             .Equal(
                 AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.NamespaceBased
+                AuthorizationStrategyNameConstants.OwnershipBased
             );
         securityConfigurationErrorResult
             .Failures.Select(static failure => failure.RelationshipLocalOrder)
@@ -2236,7 +2236,7 @@ public class Given_RelationshipAuthorizationPlannerTests
         var result = planner.PlanStoredValues(
             CreateMinimalMappingSet(resource),
             resource,
-            CreateConfiguredAuthorizationStrategies(AuthorizationStrategyNameConstants.NamespaceBased),
+            CreateConfiguredAuthorizationStrategies(AuthorizationStrategyNameConstants.OwnershipBased),
             new RelationalAuthorizationContext([42L], [])
         );
 
@@ -2252,7 +2252,7 @@ public class Given_RelationshipAuthorizationPlannerTests
         knownButNotEnabledResult
             .Failures[0]
             .ConfiguredStrategy?.StrategyName.Should()
-            .Be(AuthorizationStrategyNameConstants.NamespaceBased);
+            .Be(AuthorizationStrategyNameConstants.OwnershipBased);
     }
 
     [Test]
@@ -2323,7 +2323,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             CreateMinimalMappingSet(resource),
             resource,
             CreateConfiguredAuthorizationStrategies(
-                AuthorizationStrategyNameConstants.NamespaceBased,
+                AuthorizationStrategyNameConstants.OwnershipBased,
                 "CustomAuthorizationStrategy"
             ),
             new RelationalAuthorizationContext([42L], [])
@@ -2342,7 +2342,7 @@ public class Given_RelationshipAuthorizationPlannerTests
         securityConfigurationErrorResult
             .Failures[0]
             .ConfiguredStrategy?.StrategyName.Should()
-            .Be(AuthorizationStrategyNameConstants.NamespaceBased);
+            .Be(AuthorizationStrategyNameConstants.OwnershipBased);
         securityConfigurationErrorResult.Failures[0].RelationshipLocalOrder.Should().Be(0);
         securityConfigurationErrorResult
             .Failures[1]
