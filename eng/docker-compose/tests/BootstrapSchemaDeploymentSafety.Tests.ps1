@@ -278,6 +278,7 @@ exit $ExitCode
                 $params | Should -Contain "InfraOnly"
                 $params | Should -Contain "DmsOnly"
                 $params | Should -Contain "LoadSeedData"
+                $params | Should -Contain "SkipConnectorSetup"
                 $params | Should -Not -Contain "ApiSchemaPath"
                 $params | Should -Not -Contain "ClaimsDirectoryPath"
                 $params | Should -Not -Contain "Extensions"
@@ -2538,6 +2539,18 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
             $content | Should -Match 'psql -v ON_ERROR_STOP=1'
+        }
+
+        It "skips the default connector until per-instance databases and connectors are ready" {
+            $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
+            $content = Get-Content -LiteralPath $e2eSetupScript -Raw
+
+            # Instance Management E2E disables DMS startup provisioning and creates the per-instance
+            # schemas later in this setup script. The default connector targets the main database's
+            # to_debezium publication, so start-local-dms.ps1 must not register it before this
+            # harness has provisioned the databases and the tests create instance-specific connectors.
+            $content | Should -Match 'start-local-dms\.ps1'
+            $content | Should -Match 'SkipConnectorSetup'
         }
     }
 }

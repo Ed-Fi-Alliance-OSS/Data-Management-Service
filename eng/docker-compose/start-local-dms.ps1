@@ -83,6 +83,12 @@ param (
     [Switch]
     $DmsOnly,
 
+    # Skip registering the default Debezium source connector. Used by Instance Management E2E,
+    # which provisions per-instance databases after startup and creates per-instance connectors
+    # from the tests.
+    [Switch]
+    $SkipConnectorSetup,
+
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
     [Switch]
@@ -276,12 +282,17 @@ else {
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
 
-        # Register the Debezium source connector now that the schema has been provisioned and
-        # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
-        # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
-        # RUNNING state and throws on failure.
-        Write-Output "Running connector setup..."
-        ./setup-connectors.ps1 $EnvironmentFile
+        if (-not $SkipConnectorSetup) {
+            # Register the Debezium source connector now that the schema has been provisioned and
+            # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
+            # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
+            # RUNNING state and throws on failure.
+            Write-Output "Running connector setup..."
+            ./setup-connectors.ps1 $EnvironmentFile
+        }
+        else {
+            Write-Output "Skipping default connector setup."
+        }
 
         return
     }
@@ -419,8 +430,13 @@ else {
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
-    Write-Output "Running connector setup..."
-    ./setup-connectors.ps1 $EnvironmentFile
+    if (-not $SkipConnectorSetup) {
+        Write-Output "Running connector setup..."
+        ./setup-connectors.ps1 $EnvironmentFile
+    }
+    else {
+        Write-Output "Skipping default connector setup."
+    }
 
     if($AddSmokeTestCredentials)
     {

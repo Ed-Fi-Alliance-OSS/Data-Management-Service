@@ -17,7 +17,7 @@
     moves E2E runtime loading onto the staged bootstrap workspace.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata -SkipConnectorSetup
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -126,10 +126,10 @@ try {
 
         # Run the start script - NO instance creation
         if ($SkipDockerBuild) {
-            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata -SkipConnectorSetup
         }
         else {
-            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata -SkipConnectorSetup
         }
     }
     finally {
