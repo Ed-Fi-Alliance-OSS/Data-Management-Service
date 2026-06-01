@@ -30,19 +30,29 @@ start up different configurations:
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
 
-After starting the environment, you’ll need to install Kafka connector
-configurations in both Kafka Connector images. The file `setup-connectors.ps1`
-will do this for you. Warning: you need to wait a few seconds after starting the
-services before you can install connector configurations.
+After starting the environment, you’ll need to install the Kafka connector
+configuration. The file `setup-connectors.ps1` will do this for you.
+
+> [!IMPORTANT]
+> Register the connector only after DMS has started and deployed the schema.
+> The Debezium PostgreSQL source connector snapshots `dms.document` the moment it
+> is registered, so registering it against a missing or empty table leaves the
+> connector silently not streaming changes. The `start-local-dms.ps1` and
+> `start-published-dms.ps1` scripts already defer connector registration until
+> after schema provisioning. For the `start-all-services.ps1` local-debugger
+> workflow you must run it yourself once DMS is up (see below).
 
 ```pwsh
 ./setup-connectors.ps1
 ```
 
-> [!WARNING]
-> The script `setup-connectors.ps1` first attempts to delete
-> connectors that are already installed. On first execution, this results in a
-> 404 error. _This is normal_. Ignore that initial 404 error message.
+> [!NOTE]
+> `setup-connectors.ps1` waits for the Kafka Connect REST API to become
+> available, replaces any existing connector, and then verifies the connector and
+> all of its tasks reach the `RUNNING` state before returning. A failed
+> registration is reported as an error rather than as silent success, and a
+> not-yet-present connector on first run is handled without surfacing a spurious
+> 404.
 
 Convenience PowerShell scripts have been included in the directory, which
 startup the appropriate services and inject the Kafka connectors (where
@@ -50,7 +60,10 @@ relevant).
 
 * `start-all-services.ps1` launches both `postgresql.yml` and
   `kafka.yml`, without starting the DMS. Useful for running DMS in a
-  local debugger.
+  local debugger. Because the DMS schema does not exist until you start DMS
+  from your debugger, this script does **not** register the Kafka connector;
+  run `./setup-connectors.ps1` yourself after DMS is up and the schema is
+  deployed.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary
   services.
 * `start-published-dms.ps1` launches the DMS published build along with all

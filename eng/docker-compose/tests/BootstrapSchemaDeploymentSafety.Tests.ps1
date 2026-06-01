@@ -5,6 +5,7 @@
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester stubs intentionally keep production-compatible signatures.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'Pester tests intentionally shadow Invoke-WebRequest to stub HTTP calls.')]
 param()
 
 Describe "DMS-1151 bootstrap schema deployment safety" {
@@ -1261,6 +1262,148 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 Should -Throw -ExpectedMessage "*Only PostgreSQL provisioning is supported*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
+
+        It "carries SSL and timeout options through the host-side translation" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "Secured"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=secured_db;SSL Mode=Require;Trust Server Certificate=true;Timeout=45;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            # Host and port are translated to host-side coordinates...
+            $connectionString | Should -Match "host=localhost"
+            $connectionString | Should -Match "port=5544"
+            $connectionString | Should -Not -Match "dms-postgresql"
+            # ...while every other stored option survives verbatim rather than being dropped.
+            $connectionString | Should -Match "database=secured_db"
+            $connectionString | Should -Match "SSL Mode=Require"
+            $connectionString | Should -Match "Trust Server Certificate=true"
+            $connectionString | Should -Match "Timeout=45"
+        }
+
+        It "carries options through unchanged for external (non-translated) hosts" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "ExternalSecured"
+                        connectionString = 'host=managed-pg.example.com;port=5439;username=ops_user;password=ops_pass;database=ext_db;SSL Mode=VerifyFull;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "host=managed-pg.example.com"
+            $connectionString | Should -Match "port=5439"
+            $connectionString | Should -Match "SSL Mode=VerifyFull"
+            $connectionString | Should -Not -Match "host=localhost"
+        }
+
+        It "carries a quoted-semicolon password through the host-side translation intact" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "QuotedSemicolon"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password="abc;123";database=quoted_db;SSL Mode=Require;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+
+            # The password embeds a semicolon, so the value is quoted and a regex match on
+            # "password=abc;123" would not work. Parse the emitted string back through the same
+            # builder and assert the value survived intact.
+            $reparsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $reparsed.set_ConnectionString($connectionString)
+            $reparsed.get_Item("password") | Should -Be 'abc;123'
+            $reparsed.get_Item("host") | Should -Be 'localhost'
+            $reparsed.get_Item("port") | Should -Be '5544'
+            $reparsed.get_Item("database") | Should -Be 'quoted_db'
+            $reparsed.get_Item("ssl mode") | Should -Be 'Require'
+            $reparsed.ContainsKey("host") | Should -BeTrue
+        }
+
+        It "carries a quoted password with semicolons and equals through an external host intact" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DmsInstances {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        instanceName = "ExternalQuoted"
+                        connectionString = 'host=managed-pg.example.com;port=5439;username=ops_user;password="p;w=d/q";database=ext_db;'
+                        dmsInstanceRouteContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+
+            # No translation occurs for an external host; the quoted password must still round-trip
+            # uncorrupted through the builder.
+            $reparsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $reparsed.set_ConnectionString($connectionString)
+            $reparsed.get_Item("password") | Should -Be 'p;w=d/q'
+            $reparsed.get_Item("host") | Should -Be 'managed-pg.example.com'
+            $reparsed.get_Item("port") | Should -Be '5439'
+            $reparsed.get_Item("database") | Should -Be 'ext_db'
+        }
     }
 
     Context "configure result contract" {
@@ -1419,6 +1562,43 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             ($lines -join "`n") | Should -Match "Provisioned 1 database target"
             ($lines -join "`n") | Should -Match "database=td host=h port=5432 user=u"
             ($lines -join "`n") | Should -Match "Story 04"
+        }
+
+        It "Format-LogSafePath preserves backslashes so Windows paths survive sanitization" {
+            . $script:repo.ProvisionScript
+
+            Format-LogSafePath "C:\work\ApiSchema" | Should -Be "C:\work\ApiSchema"
+            # Control characters that enable log forging are still stripped.
+            Format-LogSafePath "C:\work\ApiSchema`r`nINJECTED" | Should -Be "C:\work\ApiSchemaINJECTED"
+        }
+
+        It "Format-LogSafePath preserves printable path characters and strips only control characters" {
+            . $script:repo.ProvisionScript
+
+            # Spaces, parentheses, '#', hyphens, and backslashes are all path-legal and must survive.
+            Format-LogSafePath 'C:\Program Files (x86)\Ed-Fi\Api #1' | Should -Be 'C:\Program Files (x86)\Ed-Fi\Api #1'
+            Format-LogSafePath '/srv/ed fi/api (staging)/schema#2.json' | Should -Be '/srv/ed fi/api (staging)/schema#2.json'
+            # Tabs, carriage returns, and newlines are control characters and are removed.
+            Format-LogSafePath "a`tb`r`nc" | Should -Be "abc"
+        }
+
+        It "guidance preserves backslashes in Windows-style staged paths" {
+            . $script:repo.ProvisionScript
+
+            $schemaWorkspace = [pscustomobject]@{
+                BootstrapManifestPath = "C:\work\.bootstrap\bootstrap-manifest.json"
+                ApiSchemaManifestPath = "C:\work\.bootstrap\ApiSchema\bootstrap-api-schema-manifest.json"
+                CoreSchemaPath = "C:\work\.bootstrap\ApiSchema\schemas\Ed-Fi\ApiSchema.json"
+                ExtensionSchemaPaths = [string[]]@()
+                EffectiveSchemaHash = "hash-xyz"
+                WorkspaceFingerprint = "fp"
+            }
+
+            $joined = (Get-ProvisionIdeGuidance -SchemaWorkspace $schemaWorkspace -ProvisionedTargets @()) -join "`n"
+
+            # The path lines feed Format-LogSafePath directly, so backslashes survive on every platform.
+            $joined | Should -Match ([regex]::Escape("C:\work\.bootstrap\bootstrap-manifest.json"))
+            $joined | Should -Match ([regex]::Escape("C:\work\.bootstrap\ApiSchema\bootstrap-api-schema-manifest.json"))
         }
     }
 
@@ -2260,6 +2440,104 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $thrownMessage | Should -Not -Match "`n"
             $thrownMessage | Should -Not -Match "FAKE-LOG-LINE"
             $thrownMessage | Should -Match "evil-admin"
+        }
+    }
+
+    Context "connector setup" {
+        It "start-all-services.ps1 does not register the connector before the DMS schema exists" {
+            $scriptPath = Join-Path $script:sourceDockerComposeRoot "start-all-services.ps1"
+
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$errors)
+            $errors.Count | Should -Be 0
+
+            # An automatic invocation would appear as a CommandAst whose command name is the
+            # connector script. Mentioning it inside a Write-Output guidance string is a string
+            # literal, not a command, so it is correctly ignored by GetCommandName().
+            $invokedCommands = @(
+                $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true) |
+                    ForEach-Object { $_.GetCommandName() }
+            )
+            $connectorInvocations = @($invokedCommands | Where-Object { $_ -and $_ -like "*setup-connectors.ps1" })
+            $connectorInvocations | Should -BeNullOrEmpty
+
+            # The deferral guidance must still tell the developer how to register it afterward.
+            $sourceText = Get-Content -LiteralPath $scriptPath -Raw
+            $sourceText | Should -Match 'deferred'
+            $sourceText | Should -Match 'setup-connectors\.ps1'
+
+            # Removing the connector call removed the only command that previously surfaced a Docker
+            # startup failure, so the up path must check $LASTEXITCODE and throw instead of printing
+            # success guidance over a failed `docker compose up`.
+            $sourceText | Should -Match '\$LASTEXITCODE -ne 0'
+            $sourceText | Should -Match 'Failed to start PostgreSQL and Kafka services'
+        }
+
+        It "builds connector JSON with a structurally escaped password" {
+            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
+
+            # A password full of JSON-significant characters that the old string .Replace would corrupt.
+            $trickyPassword = 'p@ss"with\back\slash ''quoted'' #hash'
+            $body = New-ConnectorRequestBody `
+                -TemplatePath (Join-Path $script:sourceDockerComposeRoot "postgresql_connector.json") `
+                -Password $trickyPassword
+
+            $parsed = $body | ConvertFrom-Json
+            $parsed.name | Should -Be "postgresql-source"
+            $parsed.config."database.password" | Should -Be $trickyPassword
+            # The template placeholder password must not survive.
+            $body | Should -Not -Match "abcdefgh1!"
+        }
+
+        It "waits for the connector to disappear after delete before returning" {
+            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
+
+            $script:absentProbeCount = 0
+            function Invoke-WebRequest {
+                param([string]$Uri, [string]$Method, [int]$TimeoutSec, [switch]$SkipHttpErrorCheck)
+                $script:absentProbeCount++
+                # Still present on the first probe, gone on the second: the function must keep polling.
+                if ($script:absentProbeCount -ge 2) {
+                    return [pscustomobject]@{ StatusCode = 404 }
+                }
+                return [pscustomobject]@{ StatusCode = 200 }
+            }
+
+            Wait-ConnectorAbsent -ConnectorUrl "http://localhost:8083/connectors/postgresql-source" -ConnectorName "postgresql-source" -DelaySeconds 0 -MaxAttempts 5
+
+            $script:absentProbeCount | Should -BeGreaterOrEqual 2
+        }
+
+        It "throws when the connector never disappears after delete" {
+            . (Join-Path $script:sourceDockerComposeRoot "setup-connectors.ps1")
+
+            function Invoke-WebRequest {
+                param([string]$Uri, [string]$Method, [int]$TimeoutSec, [switch]$SkipHttpErrorCheck)
+                return [pscustomobject]@{ StatusCode = 200 }
+            }
+
+            { Wait-ConnectorAbsent -ConnectorUrl "http://localhost:8083/connectors/postgresql-source" -ConnectorName "postgresql-source" -DelaySeconds 0 -MaxAttempts 3 } |
+                Should -Throw -ExpectedMessage "*was not removed within*"
+        }
+    }
+
+    Context "instance management E2E database setup hardening" {
+        It "drops and recreates each test database with checked exit codes" {
+            $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
+            $content = Get-Content -LiteralPath $e2eSetupScript -Raw
+
+            $content | Should -Match 'DROP DATABASE IF EXISTS \$db;'
+            $content | Should -Match 'CREATE DATABASE \$db;'
+            # The fire-and-forget form that swallowed CREATE failures must be gone.
+            $content | Should -Not -Match 'CREATE DATABASE \$db;" 2>&1 \| Out-Null'
+        }
+
+        It "applies the exported schema with ON_ERROR_STOP and a checked exit code" {
+            $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
+            $content = Get-Content -LiteralPath $e2eSetupScript -Raw
+
+            $content | Should -Match 'psql -v ON_ERROR_STOP=1'
         }
     }
 }

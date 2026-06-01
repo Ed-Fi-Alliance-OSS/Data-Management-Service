@@ -52,8 +52,8 @@ param (
     $AddSmokeTestCredentials,
 
     # Load seed data via the direct-SQL database-template path. Retained pending the implementation
-    # gate in bootstrap-design.md §6.4 line 1250: removal is gated on Story 04 XSD-staging
-    # verification. The new API-based seed path — load-dms-seed-data.ps1 + bootstrap-*-dms.ps1 —
+    # gate in bootstrap-design.md section 6.4 line 1250: removal is gated on Story 04 XSD-staging
+    # verification. The new API-based seed path, via load-dms-seed-data.ps1 + bootstrap-*-dms.ps1,
     # is the forward contract; the slice that closes the gate owns this switch's removal.
     [Switch]
     $LoadSeedData,
@@ -97,11 +97,11 @@ Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
-        # Caller supplied an explicit relative path — resolve against the caller's CWD.
+        # Caller supplied an explicit relative path - resolve against the caller's CWD.
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $originalLocation.Path $EnvironmentFile))
     }
     else {
-        # Default value — resolve against the script directory so that invoking the
+        # Default value - resolve against the script directory so that invoking the
         # script from any CWD (e.g. the repo root) still finds eng/docker-compose/.env.
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $EnvironmentFile))
     }
@@ -264,6 +264,14 @@ else {
 
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
+
+        # Register the Debezium source connector now that the schema has been provisioned and
+        # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
+        # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
+        # RUNNING state and throws on failure.
+        Write-Output "Running connector setup..."
+        ./setup-connectors.ps1 $EnvironmentFile
+
         return
     }
 
@@ -324,8 +332,10 @@ else {
             throw "Failed to start Kafka connector infrastructure. Exit code $LASTEXITCODE"
         }
 
-        Write-Output "Running connector setup..."
-        ./setup-connectors.ps1 $EnvironmentFile
+        # Connector registration is intentionally deferred to the -DmsOnly phase. The Debezium
+        # source connector snapshots dms.document on registration; those tables do not exist
+        # until provision-dms-schema.ps1 runs, so registering here would start the connector
+        # task in a failed state. setup-connectors.ps1 runs after schema provisioning completes.
 
         if ($EnableKafkaUI) {
             Write-Output "Starting Kafka UI..."

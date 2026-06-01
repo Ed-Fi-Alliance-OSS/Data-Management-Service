@@ -82,6 +82,38 @@ function Format-LogSafeText {
     return $builder.ToString()
 }
 
+function Format-LogSafePath {
+    <#
+    .SYNOPSIS
+    Sanitizes a filesystem path for safe inclusion in log/guidance output. Strips only control
+    characters (newlines, tabs, etc.) that enable log forging, while preserving every printable
+    character so paths survive intact - including backslashes, spaces, parentheses, '#', and any
+    other path-legal punctuation. Use Format-LogSafeText for untrusted/external values where the
+    stricter whitelist is appropriate.
+    #>
+    param(
+        $Value
+    )
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrEmpty($text)) {
+        return ""
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in $text.ToCharArray()) {
+        if (-not [char]::IsControl($character)) {
+            $null = $builder.Append($character)
+        }
+    }
+
+    return $builder.ToString()
+}
+
 function New-BootstrapManifest {
     <#
     .SYNOPSIS
@@ -639,6 +671,7 @@ Export-ModuleMember -Function `
     Get-BootstrapRoot, `
     Get-BootstrapWorkspaceMismatchMessage, `
     Format-LogSafeText, `
+    Format-LogSafePath, `
     New-BootstrapManifest, `
     Read-BootstrapManifest, `
     Read-RequiredJsonBoolean, `

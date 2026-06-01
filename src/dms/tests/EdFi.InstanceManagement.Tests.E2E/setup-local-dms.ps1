@@ -27,6 +27,26 @@ param(
     $SkipDockerBuild
 )
 
+function Test-DmsDocumentTablePresent {
+    <#
+    .SYNOPSIS
+    Returns $true when the dms.document table exists in the given PostgreSQL database. Throws
+    when the existence query itself cannot be run, so a failed psql invocation is never read as
+    "table absent". Used to turn a silently-empty schema deploy into a hard setup failure.
+    #>
+    param(
+        [string]
+        $Database
+    )
+
+    $regclass = (docker exec dms-postgresql psql -U postgres -d $Database -tAc "SELECT to_regclass('dms.document');" | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query database '$Database' for the dms.document table (psql exit code $LASTEXITCODE)."
+    }
+
+    return -not [string]::IsNullOrWhiteSpace($regclass)
+}
+
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for Instance Management E2E Testing
 ======================================================================
@@ -152,8 +172,18 @@ try {
         "edfi_datamanagementservice_d255902_sy2024"
     )
 
+    # Drop-then-create each database so the run starts from a known-empty state. Failures are
+    # surfaced (no 2>&1 | Out-Null swallowing) so a stale database can never silently mask a
+    # setup problem.
     foreach ($db in $databases) {
-        docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE $db;" 2>&1 | Out-Null
+        docker exec dms-postgresql psql -U postgres -c "DROP DATABASE IF EXISTS $db;"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to drop existing database '$db' (psql exit code $LASTEXITCODE)."
+        }
+        docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE $db;"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create database '$db' (psql exit code $LASTEXITCODE)."
+        }
         Write-Host "  Created database: $db" -ForegroundColor Green
     }
 
@@ -184,17 +214,40 @@ try {
     }
     Write-Host "  Schema deployed to main database" -ForegroundColor Green
 
+    # The installer can exit 0 without producing the expected objects (e.g. a no-op against the
+    # wrong database). Assert the schema actually landed before exporting it, otherwise every
+    # per-instance database would be seeded from an empty dump and the run would 500 at test time.
+    if (-not (Test-DmsDocumentTablePresent -Database "edfi_datamanagementservice")) {
+        throw "Schema verification failed: 'dms.document' is missing from the main database after running the installer."
+    }
+    Write-Host "  Verified dms.document exists in main database" -ForegroundColor Green
+
     # Export schema from main database
     Write-Host "`nExporting schema from main database..." -ForegroundColor Cyan
     $tempSchemaFile = [System.IO.Path]::GetTempFileName()
     docker exec dms-postgresql pg_dump -U postgres -d edfi_datamanagementservice --schema-only > $tempSchemaFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to export schema from the main database. pg_dump exited with code $LASTEXITCODE."
+    }
+    if ((Get-Item -LiteralPath $tempSchemaFile).Length -eq 0) {
+        throw "Schema export produced an empty file. The main database schema is missing or pg_dump failed silently."
+    }
     Write-Host "  Schema exported successfully" -ForegroundColor Green
 
     # Apply schema to each test database
     Write-Host "`nApplying schema to test databases..." -ForegroundColor Cyan
     foreach ($db in $databases) {
-        Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d $db
-        Write-Host "  Schema applied to: $db" -ForegroundColor Green
+        # ON_ERROR_STOP=1 makes psql abort and return non-zero on the first failed statement,
+        # so a partially-applied schema fails the run immediately instead of being detected only
+        # by the dms.document postcondition below.
+        Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -v ON_ERROR_STOP=1 -U postgres -d $db
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to apply schema to test database '$db' (psql exit code $LASTEXITCODE)."
+        }
+        if (-not (Test-DmsDocumentTablePresent -Database $db)) {
+            throw "Schema verification failed: 'dms.document' is missing from test database '$db' after applying the exported schema."
+        }
+        Write-Host "  Schema applied and verified: $db" -ForegroundColor Green
     }
 
     # Clean up temp file

@@ -58,6 +58,23 @@ if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
     }
 }
 
+if (-not (Get-Command Format-LogSafePath -ErrorAction SilentlyContinue)) {
+    function Format-LogSafePath {
+        param($Value)
+
+        if ($null -eq $Value) { return "" }
+        $text = [string]$Value
+        $builder = [System.Text.StringBuilder]::new()
+        foreach ($character in $text.ToCharArray()) {
+            if (-not [char]::IsControl($character)) {
+                $null = $builder.Append($character)
+            }
+        }
+
+        return $builder.ToString()
+    }
+}
+
 function Resolve-ProvisionEnvironmentFile {
     param(
         [string]
@@ -148,27 +165,89 @@ function Resolve-EnvPlaceholdersInText {
     )
 }
 
-function Convert-ConnectionStringToHashtable {
+function ConvertTo-ConnectionStringBuilder {
+    <#
+    .SYNOPSIS
+    Parses a connection string into a [System.Data.Common.DbConnectionStringBuilder]. Unlike a
+    naive ';' split, this correctly handles quoted values that themselves contain ';' or '=' (for
+    example password="abc;123"). Returns $null instead of throwing when -AllowParseFailure is set
+    and the input is not a valid connection string (used to detect CMS-encrypted base64 blobs).
+
+    Callers must use the explicit get_/set_ accessors on the returned builder: PowerShell's
+    property/indexer sugar (.ConnectionString, ['key'], .Keys) misbehaves on this
+    IDictionary-implementing type and silently fails to parse.
+    #>
     param(
         [string]
-        $ConnectionString
+        $ConnectionString,
+
+        [switch]
+        $AllowParseFailure
     )
 
-    $values = @{}
-    foreach ($segment in @($ConnectionString -split ";")) {
-        if ([string]::IsNullOrWhiteSpace($segment)) {
-            continue
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    try {
+        $builder.set_ConnectionString($ConnectionString)
+    }
+    catch {
+        if ($AllowParseFailure) {
+            return $null
         }
 
-        $parts = $segment.Split("=", 2)
-        if ($parts.Length -ne 2) {
-            continue
-        }
-
-        $values[$parts[0].Trim().ToLowerInvariant()] = $parts[1].Trim()
+        throw "CMS DMS instance connection string is not a valid connection string."
     }
 
-    return $values
+    return $builder
+}
+
+function Get-ConnectionStringValue {
+    <#
+    .SYNOPSIS
+    Returns the first non-empty value among the supplied case-insensitive keys, or $null when none
+    is present. Used instead of direct indexer access because PowerShell's ['key'] sugar misbehaves
+    on DbConnectionStringBuilder.
+    #>
+    param(
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder,
+
+        [string[]]
+        $Keys
+    )
+
+    foreach ($key in $Keys) {
+        if ($Builder.ContainsKey($key)) {
+            $value = [string]$Builder.get_Item($key)
+            if (-not [string]::IsNullOrWhiteSpace($value)) {
+                return $value
+            }
+        }
+    }
+
+    return $null
+}
+
+function Set-ConnectionStringValue {
+    <#
+    .SYNOPSIS
+    Updates or adds a value on the builder via set_Item: it overwrites the key when present or adds it
+    when absent, so host/port can be mutated without duplicating keys or disturbing any other stored
+    option. Unrelated options and their values are preserved; the emitted keyword casing is whatever the
+    builder normalizes it to.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mutates an in-memory builder object; no system state changes and no -WhatIf surface.')]
+    param(
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder,
+
+        [string]
+        $Key,
+
+        [string]
+        $Value
+    )
+
+    $Builder.set_Item($Key, $Value)
 }
 
 function Get-DatabaseNameFromConnectionString {
@@ -180,10 +259,14 @@ function Get-DatabaseNameFromConnectionString {
         $AllowMissing
     )
 
-    $parts = Convert-ConnectionStringToHashtable -ConnectionString $ConnectionString
-    foreach ($key in @("database", "initial catalog")) {
-        if ($parts.ContainsKey($key) -and -not [string]::IsNullOrWhiteSpace([string]$parts[$key])) {
-            return [string]$parts[$key]
+    # AllowParseFailure: a CMS-encrypted connection string is an opaque base64 blob that is not a
+    # valid connection string. Treat an unparseable value as "no database name" so the caller falls
+    # through to the decryption path rather than throwing here.
+    $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString -AllowParseFailure
+    if ($null -ne $builder) {
+        $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database", "initial catalog")
+        if (-not [string]::IsNullOrWhiteSpace($databaseName)) {
+            return $databaseName
         }
     }
 
@@ -196,8 +279,8 @@ function Get-DatabaseNameFromConnectionString {
 
 function Resolve-TargetDialect {
     param(
-        [hashtable]
-        $ConnectionStringParts
+        [System.Data.Common.DbConnectionStringBuilder]
+        $Builder
     )
 
     # DMS-916 / DMS-1151 currently provisions only PostgreSQL. Reject MSSQL-style key sets
@@ -205,12 +288,12 @@ function Resolve-TargetDialect {
     # than a cryptic SchemaTools failure.
     $mssqlMarkers = @("server", "initial catalog", "user id", "trusted_connection")
     foreach ($marker in $mssqlMarkers) {
-        if ($ConnectionStringParts.ContainsKey($marker)) {
+        if ($Builder.ContainsKey($marker)) {
             throw "CMS DMS instance connection string uses MSSQL-style key '$(Format-LogSafeText $marker)'. Only PostgreSQL provisioning is supported."
         }
     }
 
-    if (-not $ConnectionStringParts.ContainsKey("host") -and -not $ConnectionStringParts.ContainsKey("server")) {
+    if (-not $Builder.ContainsKey("host") -and -not $Builder.ContainsKey("server")) {
         throw "CMS DMS instance connection string is missing a host key. Cannot determine the provisioning dialect."
     }
 
@@ -236,41 +319,31 @@ function Convert-CmsConnectionStringToHostSideTarget {
         $EnvValues
     )
 
-    $parts = Convert-ConnectionStringToHashtable -ConnectionString $ConnectionString
-    $dialect = Resolve-TargetDialect -ConnectionStringParts $parts
+    $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString
+    $dialect = Resolve-TargetDialect -Builder $builder
 
-    $databaseName = ""
-    foreach ($key in @("database")) { # initial catalog is an MSSQL marker already rejected by Resolve-TargetDialect
-        if ($parts.ContainsKey($key) -and -not [string]::IsNullOrWhiteSpace([string]$parts[$key])) {
-            $databaseName = [string]$parts[$key]
-            break
-        }
-    }
+    # initial catalog is an MSSQL marker already rejected by Resolve-TargetDialect, so the
+    # surviving PostgreSQL keys are database / host / username.
+    $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database")
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
         throw "CMS DMS instance connection string did not contain a database name."
     }
 
-    $instanceHost = if ($parts.ContainsKey("host")) { [string]$parts["host"] } else { "" }
-    # PostgreSQL canonically defaults to 5432 when port is omitted. Docker-internal targets
-    # (host=dms-postgresql) keep 5432 here and are translated to localhost:POSTGRES_PORT by
-    # the host-side translation block below.
-    $instancePort = if ($parts.ContainsKey("port") -and -not [string]::IsNullOrWhiteSpace([string]$parts["port"])) {
-        [string]$parts["port"]
-    }
-    else {
-        "5432"
-    }
-    $instanceUser = if ($parts.ContainsKey("username")) { [string]$parts["username"] }
-                    elseif ($parts.ContainsKey("user id")) { [string]$parts["user id"] }
-                    else { "" }
-    $instancePassword = if ($parts.ContainsKey("password")) { [string]$parts["password"] } else { "" }
-
+    $instanceHost = Get-ConnectionStringValue -Builder $builder -Keys @("host")
     if ([string]::IsNullOrWhiteSpace($instanceHost)) {
         throw "CMS DMS instance connection string is missing the host key."
     }
+
+    $instanceUser = Get-ConnectionStringValue -Builder $builder -Keys @("username")
     if ([string]::IsNullOrWhiteSpace($instanceUser)) {
         throw "CMS DMS instance connection string is missing the username key."
     }
+
+    # PostgreSQL canonically defaults to 5432 when port is omitted. Docker-internal targets
+    # (host=dms-postgresql) keep 5432 here and are translated to localhost:POSTGRES_PORT by
+    # the host-side translation block below.
+    $portValue = Get-ConnectionStringValue -Builder $builder -Keys @("port")
+    $instancePort = if (-not [string]::IsNullOrWhiteSpace($portValue)) { $portValue } else { "5432" }
 
     # Translate Docker-internal PostgreSQL coordinates to host-side coordinates. Any other
     # host (e.g. an external managed PostgreSQL server) is left untouched so per-instance
@@ -283,7 +356,15 @@ function Convert-CmsConnectionStringToHostSideTarget {
         $effectivePort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "POSTGRES_PORT" -DefaultValue "5432"
     }
 
-    $hostConnectionString = "host=$effectiveHost;port=$effectivePort;username=$instanceUser;password=$instancePassword;database=$databaseName;"
+    # Mutate only host and port. Every other option the CMS stored (SSL Mode, Trust Server
+    # Certificate, Timeout, Pooling, a password containing ';' or '=', etc.) is carried through
+    # verbatim by the builder, which also re-quotes values correctly. Setting port also adds it
+    # when the source omitted one, so the provisioning target always carries an explicit,
+    # reachable port (5432 for an external host, or the host-side mapped POSTGRES_PORT).
+    Set-ConnectionStringValue -Builder $builder -Key "host" -Value $effectiveHost
+    Set-ConnectionStringValue -Builder $builder -Key "port" -Value $effectivePort
+
+    $hostConnectionString = $builder.get_ConnectionString()
 
     # TargetKey identifies an effective provisioning target. Two instances pointing at the
     # same physical database (same dialect, translated host, port, database, and user) share
@@ -585,8 +666,8 @@ function Get-ProvisionIdeGuidance {
 
     $lines.Add("")
     $lines.Add("--- IDE next-step guidance ---")
-    $lines.Add("Bootstrap manifest:      $(Format-LogSafeText $SchemaWorkspace.BootstrapManifestPath)")
-    $lines.Add("  ApiSchema manifest:    $(Format-LogSafeText $SchemaWorkspace.ApiSchemaManifestPath)")
+    $lines.Add("Bootstrap manifest:      $(Format-LogSafePath $SchemaWorkspace.BootstrapManifestPath)")
+    $lines.Add("  ApiSchema manifest:    $(Format-LogSafePath $SchemaWorkspace.ApiSchemaManifestPath)")
     if ($SchemaWorkspace.EffectiveSchemaHash) {
         $lines.Add("  Effective schema hash: $(Format-LogSafeText $SchemaWorkspace.EffectiveSchemaHash)")
     }
@@ -594,7 +675,7 @@ function Get-ProvisionIdeGuidance {
     $lines.Add("Expected DMS runtime appsettings for IDE-hosted launch (activation deferred to Story 04 - DMS-1154):")
     $apiSchemaRoot = [System.IO.Path]::GetDirectoryName($SchemaWorkspace.ApiSchemaManifestPath)
     $lines.Add("  AppSettings__UseApiSchemaPath = true")
-    $lines.Add("  AppSettings__ApiSchemaPath    = $(Format-LogSafeText $apiSchemaRoot)")
+    $lines.Add("  AppSettings__ApiSchemaPath    = $(Format-LogSafePath $apiSchemaRoot)")
     $lines.Add("Note: bootstrap does not flip these flags. Story 04 owns enabling staged-schema runtime loading;")
     $lines.Add("      until then DMS containers and IDE launches keep using the DLL-backed schema assemblies.")
 
