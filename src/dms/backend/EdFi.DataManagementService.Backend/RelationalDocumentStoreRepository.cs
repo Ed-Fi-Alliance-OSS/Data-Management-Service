@@ -1305,6 +1305,33 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationshipAuthorizationResult.Authorized authorized:
+                // NamespaceBased and relationship authorization each cap their own SQL Server parameter
+                // list below 2,000, but a single page query composes both lists, so a client within both
+                // per-list caps can still push the command past SQL Server's per-command parameter ceiling.
+                // Fail closed with a security-configuration result instead of letting the query fail at
+                // execution.
+                if (
+                    namespacePrefixParameterization is not null
+                    && authorized.ClaimEducationOrganizationIdParameterization is not null
+                    && AuthorizationParameterBudget.ExceedsCombinedLimit(
+                        namespacePrefixParameterization,
+                        authorized.ClaimEducationOrganizationIdParameterization
+                    )
+                )
+                {
+                    return new QueryAuthorizationResolution.Complete(
+                        new QueryResult.QueryFailureSecurityConfiguration([
+                            NamespaceAuthorizationSecurityConfigurationMessages.CombinedAuthorizationParameterCapExceeded(
+                                namespacePrefixParameterization.ConfiguredPrefixesInOrder.Count,
+                                authorized
+                                    .ClaimEducationOrganizationIdParameterization
+                                    .ClaimEducationOrganizationIds
+                                    .Count
+                            ),
+                        ])
+                    );
+                }
+
                 return new QueryAuthorizationResolution.Proceed(
                     ComposePageQueryAuthorization(
                         PageDocumentIdAuthorizationSpecAdapter.Adapt(authorized),

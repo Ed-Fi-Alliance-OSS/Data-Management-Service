@@ -4533,6 +4533,57 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_a_security_configuration_500_when_combined_mssql_namespace_and_relationship_parameters_exceed_the_limit()
+    {
+        var pgsqlMappingSet = CreateNamespaceAndRootEdOrgMappingSet(_schoolResourceInfo);
+        var mappingSet = pgsqlMappingSet with
+        {
+            Key = pgsqlMappingSet.Key with { Dialect = SqlDialect.Mssql },
+        };
+        // Each list stays below its own 2,000 SQL Server cap, but together they exceed the per-command
+        // parameter budget, so the request must fail closed instead of failing at execution.
+        string[] namespacePrefixes = [.. Enumerable.Range(0, 1500).Select(index => $"uri://prefix-{index}/")];
+        long[] claimEducationOrganizationIds =
+        [
+            .. Enumerable.Range(0, 1500).Select(index => 100000L + index),
+        ];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: claimEducationOrganizationIds,
+            namespacePrefixes: namespacePrefixes
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("1500 namespace prefixes")
+            .And.Contain("1500 authorization education organization ids")
+            .And.Contain("exceed the SQL Server parameter limit");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_returns_security_configuration_failure_when_query_authorization_strategy_metadata_is_invalid()
     {
         var queryRequest = CreateQueryRequest(
@@ -10941,7 +10992,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
-
     private static ResourceKeyEntry CreateResourceKeyEntry(short resourceKeyId, string resourceName) =>
         new(resourceKeyId, new QualifiedResourceName("Ed-Fi", resourceName), "1.0.0", false);
 
@@ -10980,5 +11030,4 @@ public class Given_RelationalDocumentStoreRepositoryTests
             >()
         );
     }
-
 }

@@ -32,4 +32,20 @@ public static class NamespaceAuthorizationSecurityConfigurationMessages
             "The API client has {0} namespace prefixes, which exceeds the SQL Server limit for NamespaceBased authorization. Configure fewer than 2,000 namespace prefixes.",
             prefixCount
         );
+
+    /// <summary>
+    /// The client's namespace prefixes and authorization education organization ids together exceed the
+    /// number of parameters SQL Server can bind for a single query that composes <c>NamespaceBased</c> and
+    /// relationship-based authorization, even though each list is within its own per-list limit.
+    /// </summary>
+    public static string CombinedAuthorizationParameterCapExceeded(
+        int namespacePrefixCount,
+        int claimEducationOrganizationIdCount
+    ) =>
+        string.Format(
+            CultureInfo.InvariantCulture,
+            "The API client has {0} namespace prefixes and {1} authorization education organization ids, which together exceed the SQL Server parameter limit for combining NamespaceBased and relationship authorization on a single query. Configure fewer namespace prefixes or reduce the client's authorized education organizations.",
+            namespacePrefixCount,
+            claimEducationOrganizationIdCount
+        );
 }
