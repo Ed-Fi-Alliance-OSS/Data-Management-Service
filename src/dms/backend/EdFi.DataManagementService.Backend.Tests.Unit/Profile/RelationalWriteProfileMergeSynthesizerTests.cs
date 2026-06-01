@@ -115,6 +115,63 @@ public class Given_ProfileSynthesizer_for_ExistingDocument_with_hidden_scalar_bi
 }
 
 [TestFixture]
+public class Given_ProfileSynthesizer_for_ExistingDocument_root_with_change_version_mirror_columns
+{
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // The write-plan root model carries the change-version mirror columns, but the hydration
+        // (read) projection omits them, so the current-state hydrated row is shorter than the
+        // write-plan column list. The root-table synthesis must project the current row from the
+        // hydrated row's own column set, not the write-plan column set, or it indexes past the row.
+        var plan = BuildSingleScalarBindingRootPlanWithMirrorColumns(scalarRelativePath: "$.birthDate");
+        var body = new JsonObject { ["birthDate"] = "2026-01-01" };
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+        var appliedContext = CreateContext(
+            request,
+            storedScopeStates: StoredVisiblePresentScope("$", "birthDate")
+        );
+
+        var synthesizer = BuildProfileSynthesizer();
+        _result = UnwrapMergeResult(
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "request-value"),
+                    writableRequestBody: body,
+                    currentState: BuildCurrentStateWithSingleRootRowExcludingMirrorColumns(
+                        plan,
+                        "stored-value"
+                    ),
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_completes_the_root_merge_without_indexing_past_the_hydrated_row()
+    {
+        ((FlattenedWriteValue.Literal)_result.TablesInDependencyOrder[0].MergedRows[0].Values[0])
+            .Value.Should()
+            .Be("stored-value");
+    }
+
+    [Test]
+    public void It_projects_the_current_row_from_the_hydration_columns()
+    {
+        _result.TablesInDependencyOrder[0].CurrentRows.Should().ContainSingle();
+        ((FlattenedWriteValue.Literal)_result.TablesInDependencyOrder[0].CurrentRows[0].Values[0])
+            .Value.Should()
+            .Be("stored-value");
+    }
+}
+
+[TestFixture]
 public class Given_ProfileSynthesizer_for_ExistingDocument_with_visible_absent_inlined_scope
 {
     private RelationalWriteMergeResult _result = null!;

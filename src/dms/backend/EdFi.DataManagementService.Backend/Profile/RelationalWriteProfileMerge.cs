@@ -356,8 +356,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             var projected = RelationalWriteMergeSupport.ProjectCurrentRows(rootTable, hydrated.Rows);
             projectedCurrentRootRow = projected[0];
+            // Key the current-row projection by the hydrated row's own table model, not the
+            // write-plan root model. The hydration (read) projection omits non-hydration columns
+            // (such as the change-version mirror columns), so the hydrated row is shorter than the
+            // write-plan column list; iterating the write-plan columns would index past the row.
             currentRootRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
-                rootTable.TableModel,
+                hydrated.TableModel,
                 hydrated.Rows[0]
             );
         }

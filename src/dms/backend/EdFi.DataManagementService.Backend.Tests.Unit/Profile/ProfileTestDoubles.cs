@@ -176,6 +176,50 @@ internal static class ProfileTestDoubles
     }
 
     /// <summary>
+    /// Build a single-scalar-binding root plan whose root table model also carries the two
+    /// synthesized change-version mirror columns (<c>ContentVersion</c>,
+    /// <c>ContentLastModifiedAt</c>) appended after the client column. The mirror columns are
+    /// non-writable and carry no write binding, matching the model produced by the change-version
+    /// mirror derivation pass. The hydration (read) projection omits them, so a current-state
+    /// hydrated row has fewer columns than this write-plan root model.
+    /// </summary>
+    internal static ResourceWritePlan BuildSingleScalarBindingRootPlanWithMirrorColumns(
+        string scalarRelativePath = "$.firstName"
+    )
+    {
+        var scalarColumn = Column("FirstName", ColumnKind.Scalar, StringType());
+        var contentVersionColumn = Column(
+            "ContentVersion",
+            ColumnKind.MirroredContentVersion,
+            Int64Type(),
+            isNullable: false
+        ) with
+        {
+            IsWritable = false,
+        };
+        var contentLastModifiedAtColumn = Column(
+            "ContentLastModifiedAt",
+            ColumnKind.MirroredContentLastModifiedAt,
+            new RelationalScalarType(ScalarKind.DateTime),
+            isNullable: false
+        ) with
+        {
+            IsWritable = false,
+        };
+        var rootModel = RootTable(
+            "Student",
+            [scalarColumn, contentVersionColumn, contentLastModifiedAtColumn]
+        );
+        var scalarBinding = new WriteColumnBinding(
+            scalarColumn,
+            new WriteValueSource.Scalar(Path(scalarRelativePath), StringType()),
+            "FirstName"
+        );
+        var rootPlan = RootPlan(rootModel, [scalarBinding]);
+        return WrapPlan(rootModel, [rootPlan], documentReferenceBindings: []);
+    }
+
+    /// <summary>
     /// Build a root plan with a KeyUnificationWritePlan whose single member is a
     /// ReferenceDerivedMember. Useful for tests that need the resolver's reference-rooted
     /// governance path. Bindings: [0] = canonical (Precomputed), [1] = ReferenceDerived
@@ -1710,6 +1754,43 @@ internal static class ProfileTestDoubles
             [new HydratedTableRows(writePlan.TablePlansInDependencyOrder[0].TableModel, [columnValues])],
             []
         );
+
+    /// <summary>
+    /// Build a current state whose single hydrated root row carries only the hydration-projection
+    /// columns: the change-version mirror columns are excluded, matching the read plan that omits
+    /// them. The hydrated row and its table model therefore have fewer columns than the write-plan
+    /// root model, exercising the contract that current-row projections index the hydrated row by
+    /// its own (read-projection) column set rather than the write-plan column set.
+    /// </summary>
+    internal static RelationalWriteCurrentState BuildCurrentStateWithSingleRootRowExcludingMirrorColumns(
+        ResourceWritePlan writePlan,
+        params object?[] hydrationColumnValues
+    )
+    {
+        var writeRootModel = writePlan.TablePlansInDependencyOrder[0].TableModel;
+        var hydrationRootModel = writeRootModel with
+        {
+            Columns =
+            [
+                .. writeRootModel.Columns.Where(column =>
+                    column.Kind
+                        is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                ),
+            ],
+        };
+        return new(
+            new DocumentMetadataRow(
+                DocumentId: 345L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [new HydratedTableRows(hydrationRootModel, [hydrationColumnValues])],
+            []
+        );
+    }
 
     /// <summary>
     /// Build a <see cref="RelationalWriteCurrentState"/> for a two-table plan: one row on

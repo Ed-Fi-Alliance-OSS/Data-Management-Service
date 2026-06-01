@@ -1266,13 +1266,20 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             dialectRules,
             out var parametersChanged
         );
+        // The mirror-stamp target is another table reference (the resource root the trigger stamps)
+        // and must be shortened alongside the trigger's own table; for child / extension triggers it
+        // points at a different table than Table, so its change must be tracked independently.
+        var updatedMirrorStampTargetTable = trigger.MirrorStampTargetTable is { } mirrorStampTargetTable
+            ? ShortenTable(mirrorStampTargetTable, dialectRules)
+            : (DbTableName?)null;
 
         changed =
             columnsChanged
             || identityColumnsChanged
             || parametersChanged
             || !updatedTable.Equals(trigger.Table)
-            || !updatedName.Equals(trigger.Name);
+            || !updatedName.Equals(trigger.Name)
+            || !Equals(updatedMirrorStampTargetTable, trigger.MirrorStampTargetTable);
 
         if (!changed)
         {
@@ -1286,6 +1293,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             KeyColumns = updatedColumns,
             IdentityProjectionColumns = updatedIdentityColumns,
             Parameters = updatedParameters,
+            MirrorStampTargetTable = updatedMirrorStampTargetTable,
         };
     }
 
