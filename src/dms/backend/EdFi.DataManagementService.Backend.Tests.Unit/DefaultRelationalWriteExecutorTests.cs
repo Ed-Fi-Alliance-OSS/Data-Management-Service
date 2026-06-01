@@ -4820,6 +4820,60 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_fails_closed_to_security_configuration_when_the_proposed_namespace_plan_cannot_be_reconciled_with_the_root_row()
+    {
+        // The planned namespace column has no binding in the finalized root row, so proposed-value
+        // extraction returns InvalidAuthorizationPlan. The write must fail closed as a
+        // security-configuration error (matching the proposed relationship sibling and the read-path
+        // namespace mapping), not a generic unknown failure.
+        var rootPlan = CreateNamespaceRootPlan();
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            rootWritePlan: rootPlan,
+            selectedBody: JsonNode.Parse("""{"namespace":"uri://ed-fi.org/Survey"}""")!
+        );
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal("uri://ed-fi.org/Survey"),
+                ]
+            )
+        );
+        var unreconcilableNamespaceAuth = new RelationalWriteNamespaceAuthorization(
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    NamespaceAuthorizationCheckValueSource.Proposed,
+                    _namespaceRootTable,
+                    new DbColumnName("NotABoundColumn")
+                ),
+            ],
+            NamespacePrefixParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedNamespaceAuthorization = unreconcilableNamespaceAuth,
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_runs_the_proposed_namespace_check_for_an_existing_target_post()
     {
         var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(

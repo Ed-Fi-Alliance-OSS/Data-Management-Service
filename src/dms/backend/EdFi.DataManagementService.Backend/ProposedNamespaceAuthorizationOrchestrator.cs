@@ -51,9 +51,9 @@ internal sealed class ProposedNamespaceAuthorizationOrchestrator(
         if (extraction is ProposedNamespaceValueExtractionResult.InvalidAuthorizationPlan invalid)
         {
             return new ProposedNamespaceAuthorizationBoundary(
-                RelationalWriteExecutorResults.BuildUnknownFailureResult(
+                RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                     request.OperationKind,
-                    invalid.FailureMessage
+                    [invalid.FailureMessage]
                 )
             );
         }

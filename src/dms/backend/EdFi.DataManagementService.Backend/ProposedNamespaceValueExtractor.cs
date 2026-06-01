@@ -23,7 +23,8 @@ internal abstract record ProposedNamespaceValueExtractionResult
 
     /// <summary>
     /// The planned namespace checks could not be reconciled with the finalized root row. The write
-    /// fails closed as an unknown failure.
+    /// fails closed as a security-configuration failure, matching the read-path namespace
+    /// security-configuration mapping and the proposed relationship sibling.
     /// </summary>
     public sealed record InvalidAuthorizationPlan(string FailureMessage)
         : ProposedNamespaceValueExtractionResult;
