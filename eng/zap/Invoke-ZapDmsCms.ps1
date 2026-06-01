@@ -4,7 +4,6 @@ param(
     [string]$OutputDir = (Join-Path (Get-Location) "zap-reports"),
     [string]$SysAdminId = "DmsConfigurationService",
     [string]$SysAdminSecret = "ValidClientSecret1234567890!Abcd",
-    [string]$DataStoreConnectionString = "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
     [string]$ZapImage = "ghcr.io/zaproxy/zaproxy:stable",
     [string]$CmsOpenApiPath = "/metadata/specifications",
     [string]$HostAlias = "host.docker.internal",
