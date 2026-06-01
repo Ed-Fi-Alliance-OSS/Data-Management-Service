@@ -165,12 +165,12 @@ public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identit
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlNoProfileAmbiguousStorageCollapsed",
+                    DataStoreType: "test",
+                    Name: "MssqlNoProfileAmbiguousStorageCollapsed",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -214,7 +214,7 @@ public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identit
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();

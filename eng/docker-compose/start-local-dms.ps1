@@ -69,7 +69,7 @@ param (
 
     # Skip creating initial DMS Instance in Configuration Service
     [Switch]
-    $NoDmsInstance,
+    $NoDataStore,
 
     # School year range for multi-instance setup (format: StartYear-EndYear, e.g., "2022-2026")
     [string]
@@ -152,12 +152,12 @@ if (-not $d) {
         throw "Parameter -LoadSeedData cannot be used with -InfraOnly or -DmsOnly."
     }
 
-    if ($DmsOnly -and ($NoDmsInstance -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
-        throw "Parameters -NoDmsInstance, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
+    if ($DmsOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
+        throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
     }
 
-    if ($NoDmsInstance -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
-        throw "Parameters -NoDmsInstance and -SchoolYearRange are mutually exclusive. Use -NoDmsInstance for manual instance creation, or use -SchoolYearRange to auto-create instances."
+    if ($NoDataStore -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+        throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual instance creation, or use -SchoolYearRange to auto-create instances."
     }
 
     if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and -not $envValues.CONFIG_SERVICE_TENANT) {
@@ -448,7 +448,7 @@ else {
         Write-Output "Credential values were returned to the caller and were not written to logs."
     }
 
-    if(-not $NoDmsInstance -or $SchoolYearRange)
+    if(-not $NoDataStore -or $SchoolYearRange)
     {
         Import-Module ../Dms-Management.psm1 -Force
 
@@ -500,17 +500,17 @@ else {
                 }
             }
             # Handle single default instance
-            elseif(-not $NoDmsInstance) {
-                Write-Output "Creating initial DMS Instance..."
+            elseif(-not $NoDataStore) {
+                Write-Output "Creating initial data store..."
 
-                # Create DMS Instance using environment variables
-                $instanceId = Add-DmsInstance -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development" -Tenant $tenant
+                # Create data store using environment variables
+                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -Name "Local Development Instance" -DataStoreType "Development" -Tenant $tenant
 
-                Write-Output "DMS Instance created successfully with ID: $instanceId"
+                Write-Output "Data store created successfully with ID: $dataStoreId"
             }
         }
         catch {
-            throw "Failed to create DMS Instance(s): $($_.Exception.Message)"
+            throw "Failed to create data store(s): $($_.Exception.Message)"
         }
     }
 

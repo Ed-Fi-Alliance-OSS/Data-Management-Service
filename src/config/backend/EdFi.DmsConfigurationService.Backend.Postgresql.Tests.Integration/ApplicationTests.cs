@@ -10,7 +10,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
-using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -734,7 +734,7 @@ public class ApplicationTests : DatabaseTest
                     ApplicationId = _id,
                     Name = "Unapproved Client",
                     IsApproved = false,
-                    DmsInstanceIds = [],
+                    DataStoreIds = [],
                 },
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
@@ -765,10 +765,10 @@ public class ApplicationTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_DmsInstanceApplicationWithDisabledApiClient : ApplicationTests
+    public class Given_DataStoreApplicationWithDisabledApiClient : ApplicationTests
     {
         private long _applicationId;
-        private long _dmsInstanceId;
+        private long _dataStoreId;
 
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
@@ -776,25 +776,25 @@ public class ApplicationTests : DatabaseTest
             new TestAuditContext()
         );
 
-        private readonly IDmsInstanceRepository _dmsInstanceRepository;
+        private readonly IDataStoreRepository _dataStoreRepository;
 
-        public Given_DmsInstanceApplicationWithDisabledApiClient()
+        public Given_DataStoreApplicationWithDisabledApiClient()
         {
-            var routeContextRepository = new DmsInstanceRouteContextRepository(
+            var routeContextRepository = new DataStoreContextRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<DmsInstanceRouteContextRepository>.Instance,
+                NullLogger<DataStoreContextRepository>.Instance,
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
-            var derivativeRepository = new DmsInstanceDerivativeRepository(
+            var derivativeRepository = new DataStoreDerivativeRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 new TestAuditContext()
             );
-            _dmsInstanceRepository = new DmsInstanceRepository(
+            _dataStoreRepository = new DataStoreRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<DmsInstanceRepository>.Instance,
+                NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 routeContextRepository,
                 derivativeRepository,
@@ -815,30 +815,30 @@ public class ApplicationTests : DatabaseTest
             var vendorResult = await vendorRepository.InsertVendor(
                 new VendorInsertCommand
                 {
-                    Company = "DmsInstance Disabled Test Company",
-                    ContactEmailAddress = "dmsinstance@test.com",
-                    ContactName = "DmsInstance Test",
-                    NamespacePrefixes = "DmsInstancePrefix",
+                    Company = "DataStore Disabled Test Company",
+                    ContactEmailAddress = "datastore@test.com",
+                    ContactName = "DataStore Test",
+                    NamespacePrefixes = "DataStorePrefix",
                 }
             );
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
             _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
-            var dmsResult = await _dmsInstanceRepository.InsertDmsInstance(
-                new DmsInstanceInsertCommand
+            var dmsResult = await _dataStoreRepository.InsertDataStore(
+                new DataStoreInsertCommand
                 {
-                    InstanceType = "Test",
-                    InstanceName = "Disabled Client Test Instance",
+                    DataStoreType = "Test",
+                    Name = "Disabled Client Test Instance",
                     ConnectionString = "Server=test;Database=TestDb;",
                 }
             );
-            dmsResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
-            _dmsInstanceId = (dmsResult as DmsInstanceInsertResult.Success)!.Id;
+            dmsResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            _dataStoreId = (dmsResult as DataStoreInsertResult.Success)!.Id;
 
             var appResult = await _applicationRepository.InsertApplication(
                 new ApplicationInsertCommand
                 {
-                    ApplicationName = "DmsInstance Disabled App",
+                    ApplicationName = "DataStore Disabled App",
                     VendorId = _vendorId,
                     ClaimSetName = "Test Claim Set",
                     EducationOrganizationIds = [],
@@ -854,9 +854,9 @@ public class ApplicationTests : DatabaseTest
                 new ApiClientInsertCommand
                 {
                     ApplicationId = _applicationId,
-                    Name = "Disabled DmsInstance Client",
+                    Name = "Disabled DataStore Client",
                     IsApproved = false,
-                    DmsInstanceIds = [_dmsInstanceId],
+                    DataStoreIds = [_dataStoreId],
                 },
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
@@ -864,14 +864,14 @@ public class ApplicationTests : DatabaseTest
         }
 
         [Test]
-        public async Task It_should_return_enabled_false_from_QueryApplicationByDmsInstance()
+        public async Task It_should_return_enabled_false_from_QueryApplicationByDataStore()
         {
-            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
-                _dmsInstanceId,
+            var result = await _dataStoreRepository.QueryApplicationByDataStore(
+                _dataStoreId,
                 new PagingQuery { Limit = 25, Offset = 0 }
             );
-            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
-            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+            result.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
+            var app = ((ApplicationByDataStoreQueryResult.Success)result).ApplicationResponse.Single(a =>
                 a.Id == _applicationId
             );
             app.Enabled.Should().BeFalse();
@@ -884,7 +884,7 @@ public class ApplicationTests : DatabaseTest
             var appResult = await _applicationRepository.InsertApplication(
                 new ApplicationInsertCommand
                 {
-                    ApplicationName = "DmsInstance All Approved App",
+                    ApplicationName = "DataStore All Approved App",
                     VendorId = _vendorId,
                     ClaimSetName = "Test Claim Set Approved",
                     EducationOrganizationIds = [],
@@ -899,19 +899,19 @@ public class ApplicationTests : DatabaseTest
                 new ApiClientInsertCommand
                 {
                     ApplicationId = approvedAppId,
-                    Name = "Approved DmsInstance Client",
+                    Name = "Approved DataStore Client",
                     IsApproved = true,
-                    DmsInstanceIds = [_dmsInstanceId],
+                    DataStoreIds = [_dataStoreId],
                 },
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
 
-            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
-                _dmsInstanceId,
+            var result = await _dataStoreRepository.QueryApplicationByDataStore(
+                _dataStoreId,
                 new PagingQuery { Limit = 25, Offset = 0 }
             );
-            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
-            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+            result.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
+            var app = ((ApplicationByDataStoreQueryResult.Success)result).ApplicationResponse.Single(a =>
                 a.Id == approvedAppId
             );
             app.Enabled.Should().BeTrue();
@@ -919,11 +919,11 @@ public class ApplicationTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_DmsInstanceApplicationEnabled_CrossInstanceIsolation : ApplicationTests
+    public class Given_DataStoreApplicationEnabled_CrossInstanceIsolation : ApplicationTests
     {
         private long _applicationId;
-        private long _dmsInstance1Id;
-        private long _dmsInstance2Id;
+        private long _dataStore1Id;
+        private long _dataStore2Id;
 
         private readonly IApiClientRepository _apiClientRepository = new ApiClientRepository(
             Configuration.DatabaseOptions,
@@ -931,25 +931,25 @@ public class ApplicationTests : DatabaseTest
             new TestAuditContext()
         );
 
-        private readonly IDmsInstanceRepository _dmsInstanceRepository;
+        private readonly IDataStoreRepository _dataStoreRepository;
 
-        public Given_DmsInstanceApplicationEnabled_CrossInstanceIsolation()
+        public Given_DataStoreApplicationEnabled_CrossInstanceIsolation()
         {
-            var routeContextRepository = new DmsInstanceRouteContextRepository(
+            var routeContextRepository = new DataStoreContextRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<DmsInstanceRouteContextRepository>.Instance,
+                NullLogger<DataStoreContextRepository>.Instance,
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
-            var derivativeRepository = new DmsInstanceDerivativeRepository(
+            var derivativeRepository = new DataStoreDerivativeRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 new TestAuditContext()
             );
-            _dmsInstanceRepository = new DmsInstanceRepository(
+            _dataStoreRepository = new DataStoreRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<DmsInstanceRepository>.Instance,
+                NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 routeContextRepository,
                 derivativeRepository,
@@ -979,27 +979,27 @@ public class ApplicationTests : DatabaseTest
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
             _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
-            var dms1Result = await _dmsInstanceRepository.InsertDmsInstance(
-                new DmsInstanceInsertCommand
+            var dms1Result = await _dataStoreRepository.InsertDataStore(
+                new DataStoreInsertCommand
                 {
-                    InstanceType = "Test",
-                    InstanceName = "CrossInstance Instance 1",
+                    DataStoreType = "Test",
+                    Name = "CrossInstance Instance 1",
                     ConnectionString = "Server=test1;Database=TestDb1;",
                 }
             );
-            dms1Result.Should().BeOfType<DmsInstanceInsertResult.Success>();
-            _dmsInstance1Id = (dms1Result as DmsInstanceInsertResult.Success)!.Id;
+            dms1Result.Should().BeOfType<DataStoreInsertResult.Success>();
+            _dataStore1Id = (dms1Result as DataStoreInsertResult.Success)!.Id;
 
-            var dms2Result = await _dmsInstanceRepository.InsertDmsInstance(
-                new DmsInstanceInsertCommand
+            var dms2Result = await _dataStoreRepository.InsertDataStore(
+                new DataStoreInsertCommand
                 {
-                    InstanceType = "Test",
-                    InstanceName = "CrossInstance Instance 2",
+                    DataStoreType = "Test",
+                    Name = "CrossInstance Instance 2",
                     ConnectionString = "Server=test2;Database=TestDb2;",
                 }
             );
-            dms2Result.Should().BeOfType<DmsInstanceInsertResult.Success>();
-            _dmsInstance2Id = (dms2Result as DmsInstanceInsertResult.Success)!.Id;
+            dms2Result.Should().BeOfType<DataStoreInsertResult.Success>();
+            _dataStore2Id = (dms2Result as DataStoreInsertResult.Success)!.Id;
 
             var appResult = await _applicationRepository.InsertApplication(
                 new ApplicationInsertCommand
@@ -1014,27 +1014,27 @@ public class ApplicationTests : DatabaseTest
             appResult.Should().BeOfType<ApplicationInsertResult.Success>();
             _applicationId = (appResult as ApplicationInsertResult.Success)!.Id;
 
-            // Client 1: approved, linked to DmsInstance 1 only
+            // Client 1: approved, linked to DataStore 1 only
             var client1Result = await _apiClientRepository.InsertApiClient(
                 new ApiClientInsertCommand
                 {
                     ApplicationId = _applicationId,
                     Name = "Approved Client Instance1",
                     IsApproved = true,
-                    DmsInstanceIds = [_dmsInstance1Id],
+                    DataStoreIds = [_dataStore1Id],
                 },
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             client1Result.Should().BeOfType<ApiClientInsertResult.Success>();
 
-            // Client 2: disabled, linked to DmsInstance 2 only
+            // Client 2: disabled, linked to DataStore 2 only
             var client2Result = await _apiClientRepository.InsertApiClient(
                 new ApiClientInsertCommand
                 {
                     ApplicationId = _applicationId,
                     Name = "Disabled Client Instance2",
                     IsApproved = false,
-                    DmsInstanceIds = [_dmsInstance2Id],
+                    DataStoreIds = [_dataStore2Id],
                 },
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
@@ -1044,12 +1044,12 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task It_should_return_enabled_true_for_instance_with_only_approved_clients()
         {
-            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
-                _dmsInstance1Id,
+            var result = await _dataStoreRepository.QueryApplicationByDataStore(
+                _dataStore1Id,
                 new PagingQuery { Limit = 25, Offset = 0 }
             );
-            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
-            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+            result.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
+            var app = ((ApplicationByDataStoreQueryResult.Success)result).ApplicationResponse.Single(a =>
                 a.Id == _applicationId
             );
             app.Enabled.Should().BeTrue();
@@ -1058,12 +1058,12 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task It_should_return_enabled_false_for_instance_with_disabled_client_without_bleeding_across_instances()
         {
-            var result = await _dmsInstanceRepository.QueryApplicationByDmsInstance(
-                _dmsInstance2Id,
+            var result = await _dataStoreRepository.QueryApplicationByDataStore(
+                _dataStore2Id,
                 new PagingQuery { Limit = 25, Offset = 0 }
             );
-            result.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
-            var app = ((ApplicationByDmsInstanceQueryResult.Success)result).ApplicationResponse.Single(a =>
+            result.Should().BeOfType<ApplicationByDataStoreQueryResult.Success>();
+            var app = ((ApplicationByDataStoreQueryResult.Success)result).ApplicationResponse.Single(a =>
                 a.Id == _applicationId
             );
             app.Enabled.Should().BeFalse();
@@ -1148,7 +1148,7 @@ public class ApplicationTests : DatabaseTest
                     ApplicationId = applicationId,
                     Name = "Unapproved OpenIddict Client",
                     IsApproved = false,
-                    DmsInstanceIds = [],
+                    DataStoreIds = [],
                 },
                 new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
             );

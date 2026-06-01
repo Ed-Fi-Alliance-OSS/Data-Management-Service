@@ -332,12 +332,12 @@ public abstract class DatabaseTest : DatabaseTestBase
             Configuration.DatabaseConnectionString
             ?? throw new InvalidOperationException("Database connection string is not configured.");
 
-        var dmsInstanceSelection = new DmsInstanceSelection();
-        dmsInstanceSelection.SetSelectedDmsInstance(
-            new DmsInstance(
+        var dataStoreSelection = new DataStoreSelection();
+        dataStoreSelection.SetSelectedDataStore(
+            new DataStore(
                 Id: 1,
-                InstanceType: "integration",
-                InstanceName: "IntegrationTestInstance",
+                DataStoreType: "integration",
+                Name: "IntegrationTestInstance",
                 ConnectionString: connectionString,
                 RouteContext: []
             )
@@ -351,7 +351,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         // Returning the concrete provider ensures query code paths
         // open their own connections rather than reusing the fixture’s transaction.
         return new NpgsqlDataSourceProvider(
-            dmsInstanceSelection,
+            dataStoreSelection,
             _dataSourceCache,
             NullLogger<NpgsqlDataSourceProvider>.Instance
         );

@@ -14,10 +14,10 @@ fast access times while requiring consideration for multi-instance deployments.
 
 DMS uses exclusively **in-memory caching**:
 
-- **No distributed cache** - Each DMS instance maintains its own cache
+- **No distributed cache** - Each data store maintains its own cache
 - **No Redis or external cache stores** - Caching uses `HybridCache` (with
   in-memory storage only) or `ConcurrentDictionary`
-- **Instance isolation** - Cache state is not shared between DMS instances
+- **Instance isolation** - Cache state is not shared between data stores
 
 This approach is appropriate for DMS because:
 
@@ -35,7 +35,7 @@ Only per-client and per-connection caches remain cold:
 | ---------------- | -------- | ------------------------------ |
 | Compiled Schemas | Warm     | Pre-compiled on startup        |
 | OIDC Metadata    | Warm     | Loaded during startup          |
-| DMS Instances    | Warm     | Loaded from CMS on startup     |
+| data stores    | Warm     | Loaded from CMS on startup     |
 | ClaimSets        | Warm     | Loaded from CMS on startup     |
 | CMS Token        | Warm     | Fetched as startup dependency  |
 | App Context      | Cold     | Fetched per client on auth     |
@@ -46,7 +46,7 @@ Only per-client and per-connection caches remain cold:
 ### 1. Application Context Cache
 
 **Purpose:** Caches application context data retrieved from the Configuration
-Service, mapping API clients to their authorized DMS instances.
+Service, mapping API clients to their authorized data stores.
 
 **Location:**
 
@@ -63,10 +63,10 @@ built-in stampede protection
   - `ApplicationId` - Parent application ID
   - `ClientId` - Client identifier string
   - `ClientUuid` - Client UUID
-  - `DmsInstanceIds` - List of authorized DMS instance IDs
+  - `DataStoreIds` - List of authorized data store IDs
 
 **Multi-Tenancy Support:** No - one cache entry per API client, not per tenant.
-Each client's `DmsInstanceIds` determine which data they can access.
+Each client's `DataStoreIds` determine which data they can access.
 
 **TTL:** 10 minutes (configurable via `CacheExpirationMinutes`)
 
@@ -270,24 +270,24 @@ csb.MaxAutoPrepare = 256;            // Max prepared statements
 
 ---
 
-### 6. DMS Instance Cache
+### 6. data store cache
 
-**Purpose:** Caches DMS instance configurations (connection strings, route
+**Purpose:** Caches data store configurations (connection strings, route
 contexts) from the Configuration Service for multi-instance routing.
 
 **Location:**
 
-- `src/dms/core/.../Configuration/ConfigurationServiceDmsInstanceProvider.cs`
+- `src/dms/core/.../Configuration/ConfigurationServiceDataStoreProvider.cs`
 
 **Implementation:** `ConcurrentDictionary<string, TenantCacheEntry>` (custom) where each entry tracks the cached list plus the last refresh timestamp
 
 **Cache Structure:**
 
 - **Key:** Tenant identifier (empty string `""` for default/single-tenant, or tenant name)
-- **Value:** `IList<DmsInstance>` - list of DMS instance records, each containing:
-  - `Id` - Unique instance identifier
-  - `InstanceType` - Type/category of the instance
-  - `InstanceName` - Display name
+- **Value:** `IList<DataStore>` - list of data store records, each containing:
+  - `Id` - Unique data store identifier
+  - `DataStoreType` - Type/category of the data store
+  - `Name` - Display name
   - `ConnectionString` - Database connection string (nullable)
   - `RouteContext` - Dictionary mapping route qualifier names to values
     (e.g., `{"schoolYear": "2024", "district": "255901"}`)
@@ -296,13 +296,13 @@ contexts) from the Configuration Service for multi-instance routing.
 
 **Multi-Tenancy Support:** Yes - one cache entry per tenant
 
-**Warm-up:** Loaded on startup via `InitializeDmsInstances()` in `Program.cs`
+**Warm-up:** Loaded on startup via `InitializeDataStores()` in `Program.cs`
 
 **Cache Operations:**
 
 | Operation | Method                  | Description                  |
 | --------- | ----------------------- | ---------------------------- |
-| Load      | `LoadDmsInstances(t)`   | Fetches and caches instances |
+| Load      | `LoadDataStores(t)`   | Fetches and caches instances |
 | Refresh   | `RefreshInstancesIfExpiredAsync(t)` | Reloads the cache when TTL expires |
 | Get All   | `GetAll(tenant)`        | Returns all for tenant       |
 | Get By ID | `GetById(id, tenant)`   | Returns specific instance    |
@@ -311,8 +311,8 @@ contexts) from the Configuration Service for multi-instance routing.
 
 **Invalidation Strategy:**
 
-- **TTL-based refresh** - `ResolveDmsInstanceMiddleware` checks `RefreshInstancesIfExpiredAsync()` on every request and reloads the cached configuration when the configured TTL expires. The refresh logs `"DMS instance cache expired for tenant {Tenant} ..."` when a reload happens.
-- **Cache-miss fallback for new tenants** - `TenantValidator` triggers `LoadDmsInstances()` when an unknown tenant is requested, allowing new tenants to be added without restart.
+- **TTL-based refresh** - `ResolveDataStoreMiddleware` checks `RefreshInstancesIfExpiredAsync()` on every request and reloads the cached configuration when the configured TTL expires. The refresh logs `"data store cache expired for tenant {Tenant} ..."` when a reload happens.
+- **Cache-miss fallback for new tenants** - `TenantValidator` triggers `LoadDataStores()` when an unknown tenant is requested, allowing new tenants to be added without restart.
 - **Limitation:** Updates to existing tenant instances or deleted tenants still require either a TTL expiration (or manual reload) or application restart to take effect if the TTL is disabled.
 
 ---
@@ -398,7 +398,7 @@ Configuration Service during cache expiration under high load.
 | Configuration Service Token    | Yes                | HybridCache.GetOrCreateAsync   |
 | Compiled Schemas               | No*                | ConcurrentDictionary.GetOrAdd  |
 | NpgsqlDataSource               | No*                | ConcurrentDictionary.GetOrAdd  |
-| DMS Instances                  | No                 | Direct assignment on startup   |
+| data stores                  | No                 | Direct assignment on startup   |
 | OIDC Metadata                  | Yes                | ConfigurationManager (built-in)|
 
 *These caches use `ConcurrentDictionary.GetOrAdd()` which provides atomic
@@ -436,7 +436,7 @@ Default values: ClaimSets and AppContext = 10 min, Token = 25 min.
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
 | CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
 | NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | No       | Shutdown     |
-| DMS Instance | ConcurDict   | Sing. | Configurable (CacheSettings.DmsInstanceCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
+| data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
 
 ## Cache Invalidation Patterns
@@ -445,16 +445,16 @@ DMS uses several invalidation patterns:
 
 ### 1. TTL-Based Expiration
 
-Used by: Application Context, ClaimSets, CMS Token, OIDC Metadata, DMS Instance Cache
+Used by: Application Context, ClaimSets, CMS Token, OIDC Metadata, data store cache
 
 Cache entries automatically expire after a configured time period. This is the
 simplest pattern and requires no manual intervention.
 
-The DMS instance cache tracks the last refresh timestamp and exposes
-`RefreshInstancesIfExpiredAsync()`. `ResolveDmsInstanceMiddleware` invokes it at the
-start of every request so that once `CacheSettings.DmsInstanceCacheExpirationSeconds`
+The data store cache tracks the last refresh timestamp and exposes
+`RefreshInstancesIfExpiredAsync()`. `ResolveDataStoreMiddleware` invokes it at the
+start of every request so that once `CacheSettings.DataStoreCacheExpirationSeconds`
 elapses the next request reloads the configuration and logs
-"DMS instance cache expired for tenant {Tenant} ...".
+"data store cache expired for tenant {Tenant} ...".
 
 ### 2. Version-Based (Reload ID) Invalidation
 
@@ -484,7 +484,7 @@ Requires `EnableClaimsetReload: true` in configuration.
 
 ### 4. Lifetime-Based (Application Shutdown)
 
-Used by: NpgsqlDataSource, DMS Instances
+Used by: NpgsqlDataSource, data stores
 
 Cache persists for the entire application lifetime and is only cleared on
 shutdown. Suitable for rarely-changing configuration data.
@@ -553,7 +553,7 @@ Note: All cache TTLs are now configurable via `CacheSettings`.
 
 Since caches are local to each instance:
 
-- Each DMS instance maintains independent cache state
+- Each data store maintains independent cache state
 - TTL expiration may cause temporary inconsistencies between instances
 - Schema is fixed at startup; no cross-instance coordination is needed for schema state
 - Consider load balancer sticky sessions if cache consistency is critical
@@ -569,7 +569,7 @@ Since caches are local to each instance:
 
 DMS warms most caches during startup (see `Program.cs`):
 
-- **DMS Instances** - Loaded from Configuration Service before accepting requests
+- **data stores** - Loaded from Configuration Service before accepting requests
 - **ClaimSets** - Retrieved and cached for all tenants on startup
 - **CMS Token** - Fetched as a dependency of the above operations
 - **Compiled Schemas** - Primed via `ProvideApiSchemaMiddleware`

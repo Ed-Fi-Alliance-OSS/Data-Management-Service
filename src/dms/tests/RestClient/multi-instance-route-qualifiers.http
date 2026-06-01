@@ -66,39 +66,39 @@ Authorization: bearer {{configToken}}
 
 ### Create DMS Instance 1 - District 255901, School Year 2024
 # @name createInstance1
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceType": "District",
-  "instanceName": "District 255901 - School Year 2024",
+  "dataStoreType": "District",
+  "name": "District 255901 - School Year 2024",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024;"
 }
 
 ###
-@instance1Id = {{createInstance1.response.body.id}}
+@dataStore1Id = {{createInstance1.response.body.id}}
 
 ### Create Route Context for Instance 1 - districtId
 # @name createRouteContext1A
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance1Id}},
+  "dataStoreId": {{dataStore1Id}},
   "contextKey": "districtId",
   "contextValue": "{{districtId1}}"
 }
 
 ### Create Route Context for Instance 1 - schoolYear
 # @name createRouteContext1B
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance1Id}},
+  "dataStoreId": {{dataStore1Id}},
   "contextKey": "schoolYear",
   "contextValue": "{{schoolYear1}}"
 }
@@ -107,39 +107,39 @@ Content-Type: application/json
 ### ============================================================================
 ### Create DMS Instance 2 - District 255901, School Year 2025
 # @name createInstance2
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceType": "District",
-  "instanceName": "District 255901 - School Year 2025",
+  "dataStoreType": "District",
+  "name": "District 255901 - School Year 2025",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025;"
 }
 
 ###
-@instance2Id = {{createInstance2.response.body.id}}
+@dataStore2Id = {{createInstance2.response.body.id}}
 
 ### Create Route Context for Instance 2 - districtId
 # @name createRouteContext2A
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance2Id}},
+  "dataStoreId": {{dataStore2Id}},
   "contextKey": "districtId",
   "contextValue": "{{districtId1}}"
 }
 
 ### Create Route Context for Instance 2 - schoolYear
 # @name createRouteContext2B
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance2Id}},
+  "dataStoreId": {{dataStore2Id}},
   "contextKey": "schoolYear",
   "contextValue": "{{schoolYear2}}"
 }
@@ -148,39 +148,39 @@ Content-Type: application/json
 ### ============================================================================
 ### Create DMS Instance 3 - District 255902, School Year 2024
 # @name createInstance3
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceType": "District",
-  "instanceName": "District 255902 - School Year 2024",
+  "dataStoreType": "District",
+  "name": "District 255902 - School Year 2024",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024;"
 }
 
 ###
-@instance3Id = {{createInstance3.response.body.id}}
+@dataStore3Id = {{createInstance3.response.body.id}}
 
 ### Create Route Context for Instance 3 - districtId
 # @name createRouteContext3A
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance3Id}},
+  "dataStoreId": {{dataStore3Id}},
   "contextKey": "districtId",
   "contextValue": "{{districtId2}}"
 }
 
 ### Create Route Context for Instance 3 - schoolYear
 # @name createRouteContext3B
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance3Id}},
+  "dataStoreId": {{dataStore3Id}},
   "contextKey": "schoolYear",
   "contextValue": "{{schoolYear1}}"
 }
@@ -191,15 +191,15 @@ Content-Type: application/json
 ### ============================================================================
 
 ### List all DMS Instances
-GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 ### Get specific instance by ID
-GET http://localhost:{{configPort}}/v2/dmsInstances/{{instance1Id}}
+GET http://localhost:{{configPort}}/v2/dataStores/{{dataStore1Id}}
 Authorization: bearer {{configToken}}
 
-### List all Route Contexts
-GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=25
+### List all Data Store Contexts
+GET http://localhost:{{configPort}}/v2/dataStoreContexts?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 
@@ -218,7 +218,7 @@ Content-Type: application/json
   "applicationName": "Multi-District Test App",
   "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
   "educationOrganizationIds": [255901, 255902],
-  "dmsInstanceIds": [{{instance1Id}}, {{instance2Id}}, {{instance3Id}}]
+  "dataStoreIds": [{{dataStore1Id}}, {{dataStore2Id}}, {{dataStore3Id}}]
 }
 
 ###
@@ -388,16 +388,16 @@ Authorization: bearer {{dmsToken}}
 ### CLEANUP (Optional)
 ### ============================================================================
 
-### Delete Instance 1
-DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance1Id}}
+### Delete Data Store 1
+DELETE http://localhost:{{configPort}}/v2/dataStores/{{dataStore1Id}}
 Authorization: bearer {{configToken}}
 
-### Delete Instance 2
-DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance2Id}}
+### Delete Data Store 2
+DELETE http://localhost:{{configPort}}/v2/dataStores/{{dataStore2Id}}
 Authorization: bearer {{configToken}}
 
-### Delete Instance 3
-DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance3Id}}
+### Delete Data Store 3
+DELETE http://localhost:{{configPort}}/v2/dataStores/{{dataStore3Id}}
 Authorization: bearer {{configToken}}
 
 ### Delete Application

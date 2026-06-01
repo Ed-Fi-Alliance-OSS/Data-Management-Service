@@ -125,19 +125,19 @@ Authorization: bearer {{configToken}}
 @vendorId={{getVendor.response.body.id}}
 
 ### Create a DMS instance
-# @name createDmsInstance
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStore
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "instanceType": "Test",
-    "instanceName": "Test DMS Instance",
+    "dataStoreType": "Test",
+    "name": "Test DMS Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
-@dmsInstanceId={{createDmsInstance.response.body.id}}
+@dataStoreId={{createDataStore.response.body.id}}
 
 ### Create a new application
 # @name createApplication
@@ -149,7 +149,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
     "claimSetName": "E2E-NameSpaceBasedClaimSet",
-    "dmsInstanceIds": [{{dmsInstanceId}}]
+    "dataStoreIds": [{{dataStoreId}}]
 }
 
 ###

@@ -45,7 +45,7 @@ public class ApiClientModule : IEndpointModule
         IApiClientRepository apiClientRepository,
         IApplicationRepository applicationRepository,
         IVendorRepository vendorRepository,
-        IDmsInstanceRepository dmsInstanceRepository,
+        IDataStoreRepository dataStoreRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor,
@@ -71,31 +71,29 @@ public class ApiClientModule : IEndpointModule
 
         ApplicationResponse application = applicationSuccess.ApplicationResponse;
 
-        // Validate DmsInstanceIds exist (optimized single query)
-        if (command.DmsInstanceIds.Length > 0)
+        // Validate DataStoreIds exist (optimized single query)
+        if (command.DataStoreIds.Length > 0)
         {
-            var existingIdsResult = await dmsInstanceRepository.GetExistingDmsInstanceIds(
-                command.DmsInstanceIds
-            );
-            if (existingIdsResult is DmsInstanceIdsExistResult.Success existingSuccess)
+            var existingIdsResult = await dataStoreRepository.GetExistingDataStoreIds(command.DataStoreIds);
+            if (existingIdsResult is DataStoreIdsExistResult.Success existingSuccess)
             {
                 var notFoundIds = command
-                    .DmsInstanceIds.Where(id => !existingSuccess.ExistingIds.Contains(id))
+                    .DataStoreIds.Where(id => !existingSuccess.ExistingIds.Contains(id))
                     .ToList();
 
                 if (notFoundIds.Count > 0)
                 {
                     throw new ValidationException([
                         new ValidationFailure(
-                            "DmsInstanceIds",
-                            $"The following DmsInstanceIds were not found in database: {string.Join(", ", notFoundIds)}"
+                            "DataStoreIds",
+                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}"
                         ),
                     ]);
                 }
             }
-            else if (existingIdsResult is DmsInstanceIdsExistResult.FailureUnknown failure)
+            else if (existingIdsResult is DataStoreIdsExistResult.FailureUnknown failure)
             {
-                logger.LogError("Error validating DmsInstanceIds: {Message}", failure.FailureMessage);
+                logger.LogError("Error validating DataStoreIds: {Message}", failure.FailureMessage);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             }
         }
@@ -129,7 +127,7 @@ public class ApiClientModule : IEndpointModule
             application.ClaimSetName,
             namespacePrefixes,
             string.Join(",", application.EducationOrganizationIds),
-            command.DmsInstanceIds,
+            command.DataStoreIds,
             command.IsApproved
         );
 
@@ -161,7 +159,7 @@ public class ApiClientModule : IEndpointModule
             {
                 ClientId = clientId,
                 ClientUuid = clientUuid,
-                DmsInstanceIds = command.DmsInstanceIds,
+                DataStoreIds = command.DataStoreIds,
             }
         );
 
@@ -188,10 +186,10 @@ public class ApiClientModule : IEndpointModule
                         $"Application with ID {command.ApplicationId} not found."
                     ),
                 ]);
-            case ApiClientInsertResult.FailureDmsInstanceNotFound:
+            case ApiClientInsertResult.FailureDataStoreNotFound:
                 await clientRepository.DeleteClientAsync(clientUuid.ToString());
                 throw new ValidationException([
-                    new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
+                    new ValidationFailure("DataStoreId", "Data store does not exist."),
                 ]);
             case ApiClientInsertResult.FailureUnknown failure:
                 logger.LogError("Failure creating client {Failure}", failure);
@@ -255,7 +253,7 @@ public class ApiClientModule : IEndpointModule
         IApiClientRepository apiClientRepository,
         IApplicationRepository applicationRepository,
         IVendorRepository vendorRepository,
-        IDmsInstanceRepository dmsInstanceRepository,
+        IDataStoreRepository dataStoreRepository,
         IIdentityProviderRepository identityProviderRepository,
         IOptions<IdentitySettings> identitySettings,
         ILogger<ApiClientModule> logger
@@ -292,32 +290,30 @@ public class ApiClientModule : IEndpointModule
 
         ApplicationResponse application = applicationSuccess.ApplicationResponse;
 
-        // Validate DmsInstanceIds exist (optimized single query)
-        if (command.DmsInstanceIds.Length > 0)
+        // Validate DataStoreIds exist (optimized single query)
+        if (command.DataStoreIds.Length > 0)
         {
-            var existingIdsResult = await dmsInstanceRepository.GetExistingDmsInstanceIds(
-                command.DmsInstanceIds
-            );
-            if (existingIdsResult is DmsInstanceIdsExistResult.Success existingIdsSuccess)
+            var existingIdsResult = await dataStoreRepository.GetExistingDataStoreIds(command.DataStoreIds);
+            if (existingIdsResult is DataStoreIdsExistResult.Success existingIdsSuccess)
             {
                 var notFoundIds = command
-                    .DmsInstanceIds.Where(id => !existingIdsSuccess.ExistingIds.Contains(id))
+                    .DataStoreIds.Where(id => !existingIdsSuccess.ExistingIds.Contains(id))
                     .ToList();
 
                 if (notFoundIds.Count > 0)
                 {
                     throw new ValidationException([
                         new ValidationFailure(
-                            "DmsInstanceIds",
-                            $"The following DmsInstanceIds were not found in database: {string.Join(", ", notFoundIds)}"
+                            "DataStoreIds",
+                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}"
                         ),
                     ]);
                 }
             }
-            else if (existingIdsResult is DmsInstanceIdsExistResult.FailureUnknown failure)
+            else if (existingIdsResult is DataStoreIdsExistResult.FailureUnknown failure)
             {
                 logger.LogError(
-                    "Error validating DmsInstanceIds: {Message}",
+                    "Error validating DataStoreIds: {Message}",
                     SanitizeForLog(failure.FailureMessage)
                 );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
@@ -348,7 +344,7 @@ public class ApiClientModule : IEndpointModule
             command.Name,
             application.ClaimSetName,
             string.Join(",", application.EducationOrganizationIds),
-            command.DmsInstanceIds,
+            command.DataStoreIds,
             command.IsApproved,
             identitySettings.Value.ClientRole
         );
@@ -400,7 +396,7 @@ public class ApiClientModule : IEndpointModule
                         existingApiClient.Name,
                         originalApplication.ClaimSetName,
                         string.Join(",", originalApplication.EducationOrganizationIds),
-                        [.. existingApiClient.DmsInstanceIds],
+                        [.. existingApiClient.DataStoreIds],
                         existingApiClient.IsApproved,
                         identitySettings.Value.ClientRole
                     );
@@ -413,7 +409,7 @@ public class ApiClientModule : IEndpointModule
                             ApplicationId = existingApiClient.ApplicationId,
                             Name = existingApiClient.Name,
                             IsApproved = existingApiClient.IsApproved,
-                            DmsInstanceIds = [.. existingApiClient.DmsInstanceIds],
+                            DataStoreIds = [.. existingApiClient.DataStoreIds],
                             ClientUuid = rollbackSuccess.ClientUuid,
                         };
                         var syncResult = await apiClientRepository.UpdateApiClient(syncCommand);
@@ -451,10 +447,10 @@ public class ApiClientModule : IEndpointModule
                                 $"Application with ID {command.ApplicationId} not found."
                             ),
                         ]);
-                    case ApiClientUpdateResult.FailureDmsInstanceNotFound:
+                    case ApiClientUpdateResult.FailureDataStoreNotFound:
                         await AttemptRollback();
                         throw new ValidationException([
-                            new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
+                            new ValidationFailure("DataStoreId", "Data store does not exist."),
                         ]);
                     case ApiClientUpdateResult.FailureUnknown failure:
                         await AttemptRollback();
@@ -578,7 +574,7 @@ public class ApiClientModule : IEndpointModule
                             application.ClaimSetName,
                             namespacePrefixes,
                             string.Join(",", application.EducationOrganizationIds),
-                            [.. apiClient.DmsInstanceIds],
+                            [.. apiClient.DataStoreIds],
                             apiClient.IsApproved
                         );
                         logger.LogWarning(

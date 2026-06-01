@@ -40,11 +40,11 @@ Feature: Token validation
                     }
                   """
              Then it should respond with 201
-             When a POST request is made to "/v2/dmsInstances" with
+             When a POST request is made to "/v2/dataStores" with
                   """
                     {
-                      "instanceType": "Test",
-                      "instanceName": "I-{scenarioRunId}",
+                      "dataStoreType": "Test",
+                      "name": "I-{scenarioRunId}",
                       "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
@@ -56,7 +56,7 @@ Feature: Token validation
                       "applicationName": "A-{scenarioRunId}",
                       "claimSetName": "ClaimSet03",
                       "educationOrganizationIds": [],
-                      "dmsInstanceIds": [{dmsInstanceId}]
+                      "dataStoreIds": [{dataStoreId}]
                     }
                   """
              Then it should respond with 201
@@ -66,7 +66,7 @@ Feature: Token validation
                       "applicationId": {applicationId},
                       "name": "DC-{scenarioRunId}",
                       "isApproved": false,
-                      "dmsInstanceIds": [{dmsInstanceId}]
+                      "dataStoreIds": [{dataStoreId}]
                     }
                   """
              Then it should respond with 201

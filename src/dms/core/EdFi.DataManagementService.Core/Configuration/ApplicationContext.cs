@@ -26,7 +26,7 @@ public record ApplicationContext(
     /// </summary>
     Guid ClientUuid,
     /// <summary>
-    /// List of DMS instance IDs this application is authorized to access
+    /// List of data store IDs this application is authorized to access
     /// </summary>
-    List<long> DmsInstanceIds
+    List<long> DataStoreIds
 );

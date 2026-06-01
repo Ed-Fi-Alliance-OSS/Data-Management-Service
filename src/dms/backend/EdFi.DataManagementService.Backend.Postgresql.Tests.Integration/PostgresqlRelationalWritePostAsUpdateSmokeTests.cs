@@ -147,7 +147,7 @@ file static class PostAsUpdateIntegrationTestSupport
         services.AddSingleton<IHostApplicationLifetime, PostAsUpdateNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -439,12 +439,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWritePostAsUpdateImmutableIdentity",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWritePostAsUpdateImmutableIdentity",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1061,12 +1061,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleStudentAcademicRecord",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleStudentAcademicRecord",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1106,12 +1106,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleStudentAcademicRecord",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleStudentAcademicRecord",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1151,12 +1151,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleStudentAcademicRecord",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleStudentAcademicRecord",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -2621,12 +2621,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWritePostAsUpdateFocused",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWritePostAsUpdateFocused",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -2992,12 +2992,12 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWritePostCreateRaceFocused",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWritePostCreateRaceFocused",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -3349,12 +3349,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWritePostAsUpdateAuthoritativeDs52",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWritePostAsUpdateAuthoritativeDs52",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -4073,12 +4073,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWritePostAsUpdateAuthoritativeSampleStudentAcademicRecord",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWritePostAsUpdateAuthoritativeSampleStudentAcademicRecord",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

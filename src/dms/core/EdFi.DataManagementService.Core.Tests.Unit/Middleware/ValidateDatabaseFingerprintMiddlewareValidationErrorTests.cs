@@ -57,7 +57,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: [new DmsInstanceId(1)]
+                DataStoreIds: [new DataStoreId(1)]
             ),
         };
     }
@@ -65,13 +65,13 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
     private static (
         ValidateDatabaseFingerprintMiddleware middleware,
         IDatabaseFingerprintReader fingerprintReader,
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         CapturingLogger<ValidateDatabaseFingerprintMiddleware> middlewareLogger,
         IServiceProvider serviceProvider
     ) CreateMiddleware()
     {
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
-        var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+        var dataStoreSelection = A.Fake<IDataStoreSelection>();
         var middlewareLogger = new CapturingLogger<ValidateDatabaseFingerprintMiddleware>();
         var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
 
@@ -89,8 +89,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         );
 
         var serviceProvider = A.Fake<IServiceProvider>();
-        A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
-            .Returns(dmsInstanceSelection);
+        A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
         var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
         var middleware = new ValidateDatabaseFingerprintMiddleware(
@@ -100,7 +99,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             middlewareLogger
         );
 
-        return (middleware, fingerprintReader, dmsInstanceSelection, middlewareLogger, serviceProvider);
+        return (middleware, fingerprintReader, dataStoreSelection, middlewareLogger, serviceProvider);
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>
@@ -163,7 +162,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, middlewareLogger, serviceProvider) =
+            var (middleware, fingerprintReader, dataStoreSelection, middlewareLogger, serviceProvider) =
                 CreateMiddleware();
 
             _fingerprintReader = fingerprintReader;
@@ -171,13 +170,13 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             _middlewareLogger = middlewareLogger;
             _exceptionLogger = new CapturingLogger();
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "Server=test;Database=corrupt",
                         RouteContext: []
                     )
@@ -315,18 +314,17 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, _, serviceProvider) =
-                CreateMiddleware();
+            var (middleware, fingerprintReader, dataStoreSelection, _, serviceProvider) = CreateMiddleware();
 
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "Server=test;Database=invalid-seed",
                         RouteContext: []
                     )
@@ -415,20 +413,19 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, _, serviceProvider) =
-                CreateMiddleware();
+            var (middleware, fingerprintReader, dataStoreSelection, _, serviceProvider) = CreateMiddleware();
 
             _fingerprintReader = fingerprintReader;
             _firstRequestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
             _secondRequestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "Server=test;Database=multi-issue",
                         RouteContext: []
                     )
@@ -524,19 +521,18 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, _, serviceProvider) =
-                CreateMiddleware();
+            var (middleware, fingerprintReader, dataStoreSelection, _, serviceProvider) = CreateMiddleware();
 
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
             _exceptionLogger = new CapturingLogger();
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "Server=test;Database=projection-failure",
                         RouteContext: []
                     )
@@ -615,16 +611,15 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, _, serviceProvider) =
-                CreateMiddleware();
+            var (middleware, fingerprintReader, dataStoreSelection, _, serviceProvider) = CreateMiddleware();
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "TransientFailInstance",
+                        DataStoreType: "Test",
+                        Name: "TransientFailInstance",
                         ConnectionString: "Host=localhost;Database=transient",
                         RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
                     )

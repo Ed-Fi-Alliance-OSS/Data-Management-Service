@@ -18,32 +18,32 @@ internal sealed class MssqlRelationalWriteSessionFactory : IRelationalWriteSessi
     private readonly IsolationLevel _isolationLevel;
 
     public MssqlRelationalWriteSessionFactory(
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         IOptions<DatabaseOptions> databaseOptions
     )
-        : this(dmsInstanceSelection, connectionString => new SqlConnection(connectionString), databaseOptions)
+        : this(dataStoreSelection, connectionString => new SqlConnection(connectionString), databaseOptions)
     { }
 
     internal MssqlRelationalWriteSessionFactory(
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         Func<string, DbConnection> createConnection,
         IOptions<DatabaseOptions> databaseOptions
     )
     {
-        ArgumentNullException.ThrowIfNull(dmsInstanceSelection);
+        ArgumentNullException.ThrowIfNull(dataStoreSelection);
         ArgumentNullException.ThrowIfNull(createConnection);
         ArgumentNullException.ThrowIfNull(databaseOptions);
 
         _isolationLevel = databaseOptions.Value.IsolationLevel;
         _openConnectionAsync = async cancellationToken =>
         {
-            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            var selectedInstance = dataStoreSelection.GetSelectedDataStore();
             var connectionString = selectedInstance.ConnectionString;
 
             if (string.IsNullOrWhiteSpace(connectionString))
             {
                 throw new InvalidOperationException(
-                    $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
+                    $"Selected data store '{selectedInstance.Id}' does not have a valid connection string."
                 );
             }
 

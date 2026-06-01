@@ -596,7 +596,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             { "id", new(@"\{id\}") },
             { "vendorId", new(@"\{vendorId\}") },
             { "applicationId", new(@"\{applicationId\}") },
-            { "dmsInstanceId", new(@"\{dmsInstanceId\}") },
+            { "dataStoreId", new(@"\{dataStoreId\}") },
             { "profileId", new(@"\{profileId\}") },
             { "key", new(@"\{key\}") },
             { "secret", new(@"\{secret\}") },
@@ -620,13 +620,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                         var arrayItem = responseJson.AsArray()?[arrayElementIndex];
                         var idValue = arrayItem?[replacement.Key]?.ToString();
 
-                        // Special handling for dmsInstanceId - it's stored in dmsInstanceIds array
-                        if (idValue == null && replacement.Key == "dmsInstanceId")
+                        // Special handling for dataStoreId - it's stored in dataStoreIds array
+                        if (idValue == null && replacement.Key == "dataStoreId")
                         {
-                            var dmsInstanceIds = arrayItem?["dmsInstanceIds"]?.AsArray();
-                            if (dmsInstanceIds != null && dmsInstanceIds.Count > 0)
+                            var dataStoreIds = arrayItem?["dataStoreIds"]?.AsArray();
+                            if (dataStoreIds != null && dataStoreIds.Count > 0)
                             {
-                                idValue = dmsInstanceIds[0]?.ToString();
+                                idValue = dataStoreIds[0]?.ToString();
                             }
                         }
 
@@ -653,13 +653,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                     {
                         var idValue = responseJson[replacement.Key]?.ToString();
 
-                        // Special handling for dmsInstanceId - it's stored in dmsInstanceIds array
-                        if (idValue == null && replacement.Key == "dmsInstanceId")
+                        // Special handling for dataStoreId - it's stored in dataStoreIds array
+                        if (idValue == null && replacement.Key == "dataStoreId")
                         {
-                            var dmsInstanceIds = responseJson["dmsInstanceIds"]?.AsArray();
-                            if (dmsInstanceIds != null && dmsInstanceIds.Count > 0)
+                            var dataStoreIds = responseJson["dataStoreIds"]?.AsArray();
+                            if (dataStoreIds != null && dataStoreIds.Count > 0)
                             {
-                                idValue = dmsInstanceIds[0]?.ToString();
+                                idValue = dataStoreIds[0]?.ToString();
                             }
                         }
 

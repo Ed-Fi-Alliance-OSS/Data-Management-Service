@@ -200,7 +200,7 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -456,12 +456,12 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlResourceLinksFlag",
+                    DataStoreType: "test",
+                    Name: "MssqlResourceLinksFlag",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

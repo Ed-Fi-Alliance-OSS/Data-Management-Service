@@ -31,12 +31,12 @@ namespace EdFi.DmsConfigurationService.Backend
             };
         }
 
-        public static Dictionary<string, string> CreateDmsInstanceIdsClaim(string dmsInstanceIds)
+        public static Dictionary<string, string> CreateDataStoreIdsClaim(string dataStoreIds)
         {
             return new Dictionary<string, string>
             {
-                { "claim.name", "dmsInstanceIds" },
-                { "claim.value", dmsInstanceIds },
+                { "claim.name", "dataStoreIds" },
+                { "claim.value", dataStoreIds },
                 { "jsonType.label", "String" },
             };
         }

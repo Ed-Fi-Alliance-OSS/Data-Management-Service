@@ -163,7 +163,7 @@ direct-SQL path as an ongoing or permanent alternative.
   `ApiSchemaPath`), selected extensions, `EffectiveSchemaHash`, ApiSchema and claims fingerprints,
   relative ApiSchema manifest path, relative claims directory, expected claims-verification checks, and
   extension namespace prefixes. It must not carry built-in seed-package entries, resource definitions, claim
-  grants, instance IDs, credentials, URLs, Docker state, environment settings, seed file paths, phase progress,
+  grants, data store IDs, credentials, URLs, Docker state, environment settings, seed file paths, phase progress,
   or resume checkpoints.
 - Bootstrap does not inspect arbitrary `-SeedDataPath` XML files to certify authorization completeness or
   derive new claims from payload content. Payload-level authorization or schema mismatches remain
@@ -193,9 +193,9 @@ direct-SQL path as an ongoing or permanent alternative.
   filename prefixes or numeric ordering.
 - Seed loading surfaces the tool's terminal summary or terminal error diagnostics; bootstrap passes those
   diagnostics through rather than inventing a second accounting layer or a DMS-owned result taxonomy.
-- `configure-local-dms-instance.ps1` is the sole phase that creates or selects DMS instance IDs for the
-  run. `SeedLoader` credential bootstrap and every BulkLoadClient invocation receive those instance IDs
-  via in-memory forwarding within a single wrapper invocation, or via explicit `-InstanceId`/`-SchoolYear`
+- `configure-local-dms-instance.ps1` is the sole phase that creates or selects DMS data store IDs for the
+  run. `SeedLoader` credential bootstrap and every BulkLoadClient invocation receive those data store IDs
+  via in-memory forwarding within a single wrapper invocation, or via explicit `-DataStoreId`/`-SchoolYear`
   selectors in a manual phase flow; they must not perform their own CMS instance creation, broad
   target-selection policy, or non-selector-driven discovery pass. The only permitted no-selector case is
   the existing phase-command rerun convenience: if CMS contains exactly one route-unqualified DMS instance
@@ -280,7 +280,7 @@ direct-SQL path as an ongoing or permanent alternative.
    the same provider-to-token-endpoint helper used by `start-local-dms.ps1`, shared `-EnvironmentFile`
    local-settings resolution for CMS, tenant, identity-provider defaults, and Docker-local DMS URL,
    pass-through of terminal tool diagnostics, XSD input selection (`-x` staged directory or `-z` metadata URL),
-   and use of the instance IDs resolved by `configure-local-dms-instance.ps1` without performing CMS instance
+   and use of the data store IDs resolved by `configure-local-dms-instance.ps1` without performing CMS instance
    creation, broad target-selection policy, or non-selector-driven discovery during seed delivery. For
    `Populated`, the invocation path sequences a descriptor pass followed by a resource pass against the
    separated workspace subdirectories using a single in-process SeedLoader credential set.

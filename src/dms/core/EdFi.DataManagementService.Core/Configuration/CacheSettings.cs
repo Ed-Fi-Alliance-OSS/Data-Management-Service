@@ -17,13 +17,13 @@ public class CacheSettings
     public int ProfileCacheExpirationSeconds { get; set; } = 1800; // 30 minutes
 
     /// <summary>
-    /// Enables the TTL-based refresh of cached DMS instance configuration from CMS.
+    /// Enables the TTL-based refresh of cached data store configuration from CMS.
     /// </summary>
-    public bool DmsInstanceCacheRefreshEnabled { get; set; } = true;
+    public bool DataStoreCacheRefreshEnabled { get; set; } = true;
 
     /// <summary>
-    /// The number of seconds between automatic refreshes of the DMS instance cache.
+    /// The number of seconds between automatic refreshes of the data store cache.
     /// Set to 0 or a negative value to keep the cached configuration until the next explicit reload.
     /// </summary>
-    public int DmsInstanceCacheExpirationSeconds { get; set; } = 600; // 10 minutes
+    public int DataStoreCacheExpirationSeconds { get; set; } = 600; // 10 minutes
 }

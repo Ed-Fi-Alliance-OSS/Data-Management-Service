@@ -5,4 +5,4 @@
 
 namespace EdFi.InstanceManagement.Tests.E2E.Models;
 
-public record InstanceResponse(int Id, string InstanceType, string InstanceName);
+public record InstanceResponse(int Id, string DataStoreType, string Name);

@@ -30,7 +30,7 @@ file sealed class TestHostApplicationLifetime : IHostApplicationLifetime
 public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provisioned_Database : DatabaseTestBase
 {
     private MappingSet _mappingSet = null!;
-    private DmsInstance _instance = null!;
+    private DataStore _instance = null!;
     private PostgresqlValidatedResourceKeyMapCache _validatedResourceKeyMapCache = null!;
     private NpgsqlDataSourceCache _dataSourceCache = null!;
     private PostgresqlRuntimeInstanceMappingValidator _validator = null!;
@@ -39,10 +39,10 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provision
     public async Task Setup()
     {
         _mappingSet = CreateMappingSet();
-        _instance = new DmsInstance(
+        _instance = new DataStore(
             Id: 42,
-            InstanceType: "test",
-            InstanceName: "IntegrationDatabase",
+            DataStoreType: "test",
+            Name: "IntegrationDatabase",
             ConnectionString: Configuration.DatabaseConnectionString,
             RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
         );
@@ -95,7 +95,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provision
             _validator.ValidateLoadedInstancesAsync(_mappingSet, CancellationToken.None)
         )!;
 
-        exception!.Message.Should().Contain(_instance.InstanceName);
+        exception!.Message.Should().Contain(_instance.Name);
         exception.Message.Should().Contain(_mappingSet.Key.EffectiveSchemaHash);
         exception.Message.Should().Contain("ResourceKeySeedHash");
         exception.Message.Should().Contain("CorruptedStudent");
@@ -281,16 +281,16 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provision
         );
     }
 
-    private static IDmsInstanceProvider CreateInstanceProvider(
-        params (string? Tenant, DmsInstance Instance)[] entries
+    private static IDataStoreProvider CreateInstanceProvider(
+        params (string? Tenant, DataStore Instance)[] entries
     )
     {
-        var provider = A.Fake<IDmsInstanceProvider>();
+        var provider = A.Fake<IDataStoreProvider>();
         var entriesByTenant = entries
             .GroupBy(entry => entry.Tenant ?? string.Empty)
             .ToDictionary(
                 grouping => grouping.Key,
-                grouping => (IReadOnlyList<DmsInstance>)grouping.Select(entry => entry.Instance).ToArray(),
+                grouping => (IReadOnlyList<DataStore>)grouping.Select(entry => entry.Instance).ToArray(),
                 StringComparer.Ordinal
             );
 
@@ -300,7 +300,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provision
                 (string? tenant) =>
                     entriesByTenant.TryGetValue(tenant ?? string.Empty, out var instances)
                         ? instances
-                        : Array.Empty<DmsInstance>()
+                        : Array.Empty<DataStore>()
             );
 
         return provider;

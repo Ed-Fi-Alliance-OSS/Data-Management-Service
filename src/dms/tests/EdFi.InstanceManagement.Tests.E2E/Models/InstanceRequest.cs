@@ -5,4 +5,4 @@
 
 namespace EdFi.InstanceManagement.Tests.E2E.Models;
 
-public record InstanceRequest(string InstanceType, string InstanceName, string ConnectionString);
+public record InstanceRequest(string DataStoreType, string Name, string ConnectionString);

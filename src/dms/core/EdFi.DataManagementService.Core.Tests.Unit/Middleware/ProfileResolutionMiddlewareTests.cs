@@ -83,7 +83,7 @@ public class ProfileResolutionMiddlewareTests
             ApplicationId: applicationId,
             ClientId: "client123",
             ClientUuid: Guid.NewGuid(),
-            DmsInstanceIds: []
+            DataStoreIds: []
         );
 
     private static RequestInfo CreateRequestInfo(
@@ -118,7 +118,7 @@ public class ProfileResolutionMiddlewareTests
                 ClaimSetName: "TestClaimSet",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: []
+                DataStoreIds: []
             ),
         };
 

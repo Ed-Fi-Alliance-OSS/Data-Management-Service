@@ -28,7 +28,7 @@ client_id=dms-instance-admin
 
 ### List all DMS Instances
 # @name listInstances
-GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 ### Expected: You should see instances named "School Year 2022", "School Year 2023", etc.
@@ -38,9 +38,9 @@ Authorization: bearer {{configToken}}
 ### STEP 3: Verify Route Contexts Were Created
 ### ============================================================================
 
-### List all Route Contexts
+### List all Data Store Contexts
 # @name listRouteContexts
-GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=50
+GET http://localhost:{{configPort}}/v2/dataStoreContexts?offset=0&limit=50
 Authorization: bearer {{configToken}}
 
 ### Expected: You should see route contexts with contextKey="schoolYear" and contextValue="2022", "2023", etc.
@@ -113,7 +113,7 @@ Authorization: bearer {{configToken}}
 @vendorId={{getVendor.response.body.id}}
 
 ### List all DMS Instances
-GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 ### Create Application -- Instance 3 not configurable to see error handling
@@ -127,7 +127,7 @@ Content-Type: application/json
   "applicationName": "School Year instance Test App",
   "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
   "educationOrganizationIds": [255901, 255902],
-  "dmsInstanceIds": [1, 2]
+  "dataStoreIds": [1, 2]
 }
 
 ### ============================================================================

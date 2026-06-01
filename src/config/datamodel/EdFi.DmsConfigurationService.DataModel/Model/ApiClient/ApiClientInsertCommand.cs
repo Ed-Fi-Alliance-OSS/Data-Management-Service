@@ -12,7 +12,7 @@ public class ApiClientInsertCommand
     public required long ApplicationId { get; set; }
     public required string Name { get; set; } = "";
     public required bool IsApproved { get; set; }
-    public long[] DmsInstanceIds { get; set; } = [];
+    public long[] DataStoreIds { get; set; } = [];
 
     public class Validator : AbstractValidator<ApiClientInsertCommand>
     {
@@ -20,9 +20,9 @@ public class ApiClientInsertCommand
         {
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
             RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
-            RuleFor(a => a.DmsInstanceIds)
+            RuleFor(a => a.DataStoreIds)
                 .NotEmpty()
-                .WithMessage("DmsInstanceIds cannot be empty. At least one DMS Instance is required.");
+                .WithMessage("DataStoreIds cannot be empty. At least one Data Store is required.");
         }
     }
 }

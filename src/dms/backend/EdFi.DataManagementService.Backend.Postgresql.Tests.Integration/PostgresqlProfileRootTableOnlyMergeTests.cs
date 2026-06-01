@@ -156,7 +156,7 @@ internal static class PostgresqlProfileRootTableOnlyMergeSupport
         services.AddSingleton<IHostApplicationLifetime, ProfileMergeNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -232,12 +232,12 @@ internal static class PostgresqlProfileRootTableOnlyMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootTableOnlyMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -361,12 +361,12 @@ public class Given_A_Profiled_Put_With_Hidden_Inlined_Column_Preservation
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootTableOnlyMerge",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -496,12 +496,12 @@ public class Given_A_Profiled_Post_Create_New_For_Root_Only_Resource
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootTableOnlyMerge",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -645,12 +645,12 @@ public class Given_A_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootTableOnlyMerge",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -820,12 +820,12 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -851,12 +851,12 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

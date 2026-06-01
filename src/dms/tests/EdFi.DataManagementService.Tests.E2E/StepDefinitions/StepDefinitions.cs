@@ -1744,8 +1744,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return list;
         }
 
-        [Then("the JWT token should contain the dmsInstanceIds claim")]
-        public void ThenTheJwtTokenShouldContainTheDmsInstanceIdsClaim()
+        [Then("the JWT token should contain the dataStoreIds claim")]
+        public void ThenTheJwtTokenShouldContainTheDataStoreIdsClaim()
         {
             // Extract the Bearer token
             var token = GetDmsTokenFromContext().Replace("Bearer ", string.Empty);
@@ -1756,11 +1756,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             var jwtToken = tokenHandler.ReadJwtToken(token);
 
-            // Verify the dmsInstanceIds claim exists
-            var dmsInstanceIdsClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "dmsInstanceIds");
-            dmsInstanceIdsClaim.Should().NotBeNull("JWT token should contain dmsInstanceIds claim");
+            // Verify the dataStoreIds claim exists
+            var dataStoreIdsClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "dataStoreIds");
+            dataStoreIdsClaim.Should().NotBeNull("JWT token should contain dataStoreIds claim");
 
-            _logger.log.Information($"dmsInstanceIds claim value: {dmsInstanceIdsClaim?.Value}");
+            _logger.log.Information($"dataStoreIds claim value: {dataStoreIdsClaim?.Value}");
         }
 
         // Helper class for deserializing the claim set response

@@ -28,133 +28,133 @@ grant_type=client_credentials
 @configAccessToken = {{configToken.response.body.access_token}}
 
 ###############################################################################
-# STEP 2: Create DMS Instances
+# STEP 2: Create Data Stores
 ###############################################################################
 
-### Create Instance 1 - District 255901, School Year 2024
-# @name instance1
-POST {{configUrl}}/v2/dmsInstances/
+### Create Data Store 1 - District 255901, School Year 2024
+# @name dataStore1
+POST {{configUrl}}/v2/dataStores/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceType": "District",
-  "instanceName": "District 255901 - School Year 2024",
+  "dataStoreType": "District",
+  "name": "District 255901 - School Year 2024",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024;"
 }
 
 ###
 
-@instance1Id = {{instance1.response.body.id}}
+@dataStore1Id = {{dataStore1.response.body.id}}
 
-### Create Instance 2 - District 255901, School Year 2025
-# @name instance2
-POST {{configUrl}}/v2/dmsInstances/
+### Create Data Store 2 - District 255901, School Year 2025
+# @name dataStore2
+POST {{configUrl}}/v2/dataStores/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceType": "District",
-  "instanceName": "District 255901 - School Year 2025",
+  "dataStoreType": "District",
+  "name": "District 255901 - School Year 2025",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025;"
 }
 
 ###
 
-@instance2Id = {{instance2.response.body.id}}
+@dataStore2Id = {{dataStore2.response.body.id}}
 
-### Create Instance 3 - District 255902, School Year 2024
-# @name instance3
-POST {{configUrl}}/v2/dmsInstances/
+### Create Data Store 3 - District 255902, School Year 2024
+# @name dataStore3
+POST {{configUrl}}/v2/dataStores/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceType": "District",
-  "instanceName": "District 255902 - School Year 2024",
+  "dataStoreType": "District",
+  "name": "District 255902 - School Year 2024",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024;"
 }
 
 ###
 
-@instance3Id = {{instance3.response.body.id}}
+@dataStore3Id = {{dataStore3.response.body.id}}
 
 ###############################################################################
-# STEP 3: Create Route Contexts for Instances
+# STEP 3: Create Data Store Contexts
 ###############################################################################
 
-### Add route context districtId=255901 to Instance 1
-POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+### Add context districtId=255901 to Data Store 1
+POST {{configUrl}}/v2/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance1Id}},
+  "dataStoreId": {{dataStore1Id}},
   "contextKey": "districtId",
   "contextValue": "255901"
 }
 
 ###
 
-### Add route context schoolYear=2024 to Instance 1
-POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+### Add context schoolYear=2024 to Data Store 1
+POST {{configUrl}}/v2/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance1Id}},
+  "dataStoreId": {{dataStore1Id}},
   "contextKey": "schoolYear",
   "contextValue": "2024"
 }
 
 ###
 
-### Add route context districtId=255901 to Instance 2
-POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+### Add context districtId=255901 to Data Store 2
+POST {{configUrl}}/v2/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance2Id}},
+  "dataStoreId": {{dataStore2Id}},
   "contextKey": "districtId",
   "contextValue": "255901"
 }
 
 ###
 
-### Add route context schoolYear=2025 to Instance 2
-POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+### Add context schoolYear=2025 to Data Store 2
+POST {{configUrl}}/v2/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance2Id}},
+  "dataStoreId": {{dataStore2Id}},
   "contextKey": "schoolYear",
   "contextValue": "2025"
 }
 
 ###
 
-### Add route context districtId=255902 to Instance 3
-POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+### Add context districtId=255902 to Data Store 3
+POST {{configUrl}}/v2/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance3Id}},
+  "dataStoreId": {{dataStore3Id}},
   "contextKey": "districtId",
   "contextValue": "255902"
 }
 
 ###
 
-### Add route context schoolYear=2024 to Instance 3
-POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+### Add context schoolYear=2024 to Data Store 3
+POST {{configUrl}}/v2/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
 {
-  "instanceId": {{instance3Id}},
+  "dataStoreId": {{dataStore3Id}},
   "contextKey": "schoolYear",
   "contextValue": "2024"
 }
@@ -225,7 +225,7 @@ Content-Type: application/json
   "applicationId": {{applicationId}},
   "name": "Manual Test Client",
   "isApproved": true,
-  "dmsInstanceIds": [{{instance1Id}}, {{instance2Id}}, {{instance3Id}}]
+  "dataStoreIds": [{{dataStore1Id}}, {{dataStore2Id}}, {{dataStore3Id}}]
 }
 
 ###

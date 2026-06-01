@@ -153,18 +153,18 @@ public class InstanceSetupStepDefinitions(
         var data = ParseKeyValueTable(table);
 
         var request = new InstanceRequest(
-            InstanceType: data["InstanceType"],
-            InstanceName: data["InstanceName"],
+            DataStoreType: data["DataStoreType"],
+            Name: data["Name"],
             ConnectionString: data["ConnectionString"]
         );
 
         _lastCreatedInstance = await _configClient!.CreateInstanceAsync(request);
-        context.InstanceIds.Add(_lastCreatedInstance.Id);
+        context.DataStoreIds.Add(_lastCreatedInstance.Id);
 
         // Track instance by tenant if working with explicit tenant
         if (!string.IsNullOrEmpty(context.CurrentTenant))
         {
-            context.InstanceIdToTenant[_lastCreatedInstance.Id] = context.CurrentTenant;
+            context.DataStoreIdToTenant[_lastCreatedInstance.Id] = context.CurrentTenant;
         }
     }
 
@@ -174,7 +174,7 @@ public class InstanceSetupStepDefinitions(
         _lastCreatedInstance.Should().NotBeNull("An instance must be created before adding route context");
 
         var request = new RouteContextRequest(
-            InstanceId: _lastCreatedInstance!.Id,
+            DataStoreId: _lastCreatedInstance!.Id,
             ContextKey: contextKey,
             ContextValue: contextValue
         );
@@ -186,7 +186,7 @@ public class InstanceSetupStepDefinitions(
     public void ThenTheInstanceShouldBeCreatedSuccessfully()
     {
         _lastCreatedInstance.Should().NotBeNull();
-        context.InstanceIds.Should().Contain(_lastCreatedInstance!.Id);
+        context.DataStoreIds.Should().Contain(_lastCreatedInstance!.Id);
     }
 
     [Then("{int} instances should be created")]
@@ -195,14 +195,14 @@ public class InstanceSetupStepDefinitions(
         // Count only instances for current tenant if one is set
         if (!string.IsNullOrEmpty(context.CurrentTenant))
         {
-            var tenantInstanceCount = context.InstanceIdToTenant.Count(kvp =>
+            var tenantInstanceCount = context.DataStoreIdToTenant.Count(kvp =>
                 kvp.Value == context.CurrentTenant
             );
             tenantInstanceCount.Should().Be(expectedCount);
         }
         else
         {
-            context.InstanceIds.Should().HaveCount(expectedCount);
+            context.DataStoreIds.Should().HaveCount(expectedCount);
         }
     }
 
@@ -257,27 +257,27 @@ public class InstanceSetupStepDefinitions(
         var edOrgIds = data["EducationOrganizationIds"].Split(',').Select(int.Parse).ToArray();
 
         // Get instances for current tenant if one is set, otherwise use all instances
-        List<int> instanceIds;
+        List<int> dataStoreIds;
         if (!string.IsNullOrEmpty(context.CurrentTenant))
         {
-            instanceIds = context
-                .InstanceIdToTenant.Where(kvp => kvp.Value == context.CurrentTenant)
+            dataStoreIds = context
+                .DataStoreIdToTenant.Where(kvp => kvp.Value == context.CurrentTenant)
                 .Select(kvp => kvp.Key)
                 .ToList();
         }
         else
         {
-            instanceIds = context.InstanceIds;
+            dataStoreIds = context.DataStoreIds;
         }
 
-        instanceIds.Should().NotBeEmpty("Instances must exist before creating application");
+        dataStoreIds.Should().NotBeEmpty("Data stores must exist before creating application");
 
         var request = new ApplicationRequest(
             VendorId: context.VendorId!.Value,
             ApplicationName: data["ApplicationName"],
             ClaimSetName: data["ClaimSetName"],
             EducationOrganizationIds: edOrgIds,
-            DmsInstanceIds: [.. instanceIds]
+            DataStoreIds: [.. dataStoreIds]
         );
 
         var application = await _configClient!.CreateApplicationAsync(request);
@@ -348,28 +348,28 @@ public class InstanceSetupStepDefinitions(
 
             var instance = await tenantClient.CreateInstanceAsync(
                 new InstanceRequest(
-                    InstanceType: "District",
-                    InstanceName: $"District {districtId} - School Year {schoolYear}",
+                    DataStoreType: "District",
+                    Name: $"District {districtId} - School Year {schoolYear}",
                     ConnectionString: connectionString
                 )
             );
 
-            context.InstanceIds.Add(instance.Id);
-            context.InstanceIdToDatabaseName[instance.Id] = databaseName;
-            context.InstanceIdToTenant[instance.Id] = tenantName;
-            context.RouteQualifierToInstanceId[route] = instance.Id;
+            context.DataStoreIds.Add(instance.Id);
+            context.DataStoreIdToDatabaseName[instance.Id] = databaseName;
+            context.DataStoreIdToTenant[instance.Id] = tenantName;
+            context.RouteQualifierToDataStoreId[route] = instance.Id;
 
             // Add route contexts
             await tenantClient.CreateRouteContextAsync(
                 new RouteContextRequest(
-                    InstanceId: instance.Id,
+                    DataStoreId: instance.Id,
                     ContextKey: "districtId",
                     ContextValue: districtId
                 )
             );
             await tenantClient.CreateRouteContextAsync(
                 new RouteContextRequest(
-                    InstanceId: instance.Id,
+                    DataStoreId: instance.Id,
                     ContextKey: "schoolYear",
                     ContextValue: schoolYear
                 )
@@ -387,8 +387,8 @@ public class InstanceSetupStepDefinitions(
         var vendorId = context.VendorIdsByTenant[tenantName];
 
         // Get instance IDs for this tenant
-        var tenantInstanceIds = context
-            .InstanceIdToTenant.Where(kvp => kvp.Value == tenantName)
+        var tenantDataStoreIds = context
+            .DataStoreIdToTenant.Where(kvp => kvp.Value == tenantName)
             .Select(kvp => kvp.Key)
             .ToList();
 
@@ -400,7 +400,7 @@ public class InstanceSetupStepDefinitions(
                 $"District {districtId} Test App",
                 "E2E-NoFurtherAuthRequiredClaimSet",
                 edOrgIds,
-                [.. tenantInstanceIds]
+                [.. tenantDataStoreIds]
             )
         );
 

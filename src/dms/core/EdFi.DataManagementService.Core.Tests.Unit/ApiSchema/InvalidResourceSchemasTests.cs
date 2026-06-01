@@ -58,7 +58,7 @@ public class InvalidResourceSchemasTests
                                 ClaimSetName: "test-claimset",
                                 EducationOrganizationIds: new List<EducationOrganizationId>(),
                                 NamespacePrefixes: new List<NamespacePrefix>(),
-                                DmsInstanceIds: [new DmsInstanceId(1)]
+                                DataStoreIds: [new DataStoreId(1)]
                             )
                         )
                     )
@@ -75,7 +75,7 @@ public class InvalidResourceSchemasTests
             );
 
             // Register DMS Instance Resolution services
-            services.AddTransient<ResolveDmsInstanceMiddleware>();
+            services.AddTransient<ResolveDataStoreMiddleware>();
 
             var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
             A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
@@ -86,40 +86,40 @@ public class InvalidResourceSchemasTests
                             ApplicationId: 1,
                             ClientId: "test-client",
                             ClientUuid: Guid.NewGuid(),
-                            DmsInstanceIds: [1]
+                            DataStoreIds: [1]
                         )
                     )
                 );
             services.AddSingleton<IApplicationContextProvider>(fakeApplicationContextProvider);
 
-            var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._, A<string?>.Ignored))
+            var fakeDataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => fakeDataStoreProvider.GetById(A<long>._, A<string?>.Ignored))
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "test-connection-string",
                         RouteContext: []
                     )
                 );
-            services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
+            services.AddSingleton<IDataStoreProvider>(fakeDataStoreProvider);
 
-            var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
-            A.CallTo(() => fakeDmsInstanceSelection.GetSelectedDmsInstance())
+            var fakeDataStoreSelection = A.Fake<IDataStoreSelection>();
+            A.CallTo(() => fakeDataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "test-connection-string",
                         RouteContext: []
                     )
                 );
-            services.AddSingleton<IDmsInstanceSelection>(fakeDmsInstanceSelection);
+            services.AddSingleton<IDataStoreSelection>(fakeDataStoreSelection);
 
-            services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
-                NullLogger<ResolveDmsInstanceMiddleware>.Instance
+            services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+                NullLogger<ResolveDataStoreMiddleware>.Instance
             );
 
             // Register Profile Resolution services

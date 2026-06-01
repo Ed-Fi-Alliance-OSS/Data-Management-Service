@@ -27,7 +27,7 @@ public interface ITenantValidator
 /// Validates tenants against the Configuration Service.
 /// Checks local cache first, then reloads from Configuration Service on cache-miss.
 /// </summary>
-public class TenantValidator(IDmsInstanceProvider dmsInstanceProvider, ILogger<TenantValidator> logger)
+public class TenantValidator(IDataStoreProvider dataStoreProvider, ILogger<TenantValidator> logger)
     : ITenantValidator
 {
     /// <inheritdoc />
@@ -39,14 +39,14 @@ public class TenantValidator(IDmsInstanceProvider dmsInstanceProvider, ILogger<T
         }
 
         // Check if tenant exists in cache
-        if (dmsInstanceProvider.TenantExists(tenant))
+        if (dataStoreProvider.TenantExists(tenant))
         {
             logger.LogDebug("Tenant {Tenant} found in cache", LoggingSanitizer.SanitizeForLogging(tenant));
             return true;
         }
 
         // Cache miss - attempt to load instances for this tenant from Configuration Service
-        // LoadDmsInstances populates _instancesByTenant, which is what TenantExists checks
+        // LoadDataStores populates _instancesByTenant, which is what TenantExists checks
         logger.LogDebug(
             "Tenant {Tenant} not found in cache, attempting to load from Configuration Service",
             LoggingSanitizer.SanitizeForLogging(tenant)
@@ -56,7 +56,7 @@ public class TenantValidator(IDmsInstanceProvider dmsInstanceProvider, ILogger<T
         {
             // Try to load instances for this specific tenant
             // If the tenant doesn't exist, this will return an empty list or throw
-            var instances = await dmsInstanceProvider.LoadDmsInstances(tenant);
+            var instances = await dataStoreProvider.LoadDataStores(tenant);
 
             // If we got here without an exception, the tenant exists
             // The instances are now cached, so TenantExists will return true

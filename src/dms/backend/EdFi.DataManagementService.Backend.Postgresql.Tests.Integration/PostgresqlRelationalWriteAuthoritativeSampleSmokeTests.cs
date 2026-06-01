@@ -83,7 +83,7 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
         services.AddSingleton<IHostApplicationLifetime, AuthoritativeSampleWriteHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
@@ -880,12 +880,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -923,12 +923,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -966,12 +966,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1013,12 +1013,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -2098,12 +2098,12 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWritePropagatedReferenceIdentityCascade",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWritePropagatedReferenceIdentityCascade",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

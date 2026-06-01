@@ -164,7 +164,7 @@ public class ConfigServiceClient
     }
 
     /// <summary>
-    /// Create a new DMS instance
+    /// Create a new data store
     /// </summary>
     public async Task<InstanceResponse> CreateInstanceAsync(InstanceRequest request)
     {
@@ -173,7 +173,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.PostAsJsonAsync("/v2/dmsInstances", request);
+        var response = await _httpClient.PostAsJsonAsync("/v2/dataStores", request);
         response.EnsureSuccessStatusCode();
 
         var instance =
@@ -184,7 +184,7 @@ public class ConfigServiceClient
     }
 
     /// <summary>
-    /// Create a route context for an instance
+    /// Create a route context for a data store
     /// </summary>
     public async Task<RouteContextResponse> CreateRouteContextAsync(RouteContextRequest request)
     {
@@ -193,7 +193,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.PostAsJsonAsync("/v2/dmsInstanceRouteContexts", request);
+        var response = await _httpClient.PostAsJsonAsync("/v2/dataStoreContexts", request);
         response.EnsureSuccessStatusCode();
 
         var routeContext =
@@ -224,16 +224,16 @@ public class ConfigServiceClient
     }
 
     /// <summary>
-    /// Delete an instance
+    /// Delete a data store
     /// </summary>
-    public async Task DeleteInstanceAsync(int instanceId)
+    public async Task DeleteInstanceAsync(int dataStoreId)
     {
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
             _accessToken
         );
 
-        var response = await _httpClient.DeleteAsync($"/v2/dmsInstances/{instanceId}");
+        var response = await _httpClient.DeleteAsync($"/v2/dataStores/{dataStoreId}");
         response.EnsureSuccessStatusCode();
     }
 

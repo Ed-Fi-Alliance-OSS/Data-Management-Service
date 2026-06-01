@@ -1,28 +1,28 @@
-# API Client and DMS Instance Configuration
+# API Client and Data Store Configuration
 
 ## Overview
 
 The Ed-Fi Data Management Service (DMS) Configuration Service manages API client
-credentials and DMS instance routing through a dedicated configuration database.
+credentials and data store routing through a dedicated configuration database.
 This database stores vendor and application information, API client credentials,
-DMS instance connection strings, and route context mappings for multi-tenant
+data store connection strings, and route context mappings for multi-tenant
 deployments.
 
 All configuration data resides in the `dmscs` (DMS Configuration Service) schema
 within the configuration database.
 
-## Ed-Fi DMS "Instances"
+## Ed-Fi DMS Data Stores
 
-### Instance Storage and Security
+### Data Store Storage and Security
 
-The connection strings for DMS instances are configured in the DMS Configuration
-Service database and stored in the `DmsInstance` table. For security purposes,
+The connection strings for data stores are configured in the DMS Configuration
+Service database and stored in the `DataStore` table. For security purposes,
 connection strings are encrypted using AES encryption to protect database
 credentials from unauthorized access.
 
-### API Client to Instance Association
+### API Client to Data Store Association
 
-Each API client can be associated with one or more DMS instances. In the
+Each API client can be associated with one or more data stores. In the
 simplest case, each API client has access to a single instance, providing a
 streamlined experience where the client uses a fixed API base URL (e.g.,
 `http://localhost:8080/data/ed-fi/students`).
@@ -30,8 +30,8 @@ streamlined experience where the client uses a fixed API base URL (e.g.,
 ### Context-Based Routing
 
 Alternatively, the DMS supports **context-based routing**, which allows a
-single API client to access multiple DMS instances by including route
-qualifiers in the request URL. This approach combines API client/instance
+single API client to access multiple data stores by including route
+qualifiers in the request URL. This approach combines API client/data store
 associations with route context values to determine which database should
 handle each request.
 
@@ -40,19 +40,19 @@ API path (e.g., `http://localhost:8080/255901/2024/data/ed-fi/students`),
 where `255901` and `2024` represent contextual values such as district ID and
 school year.
 
-The `DmsInstanceRouteContext` table stores the context key-value pairs for
-each instance, enabling the DMS API to match incoming route qualifiers
-against configured instances.
+The `DataStoreContext` table stores the context key-value pairs for
+each data store, enabling the DMS API to match incoming route qualifiers
+against configured data stores.
 
 ### Related Tables
 
 ```mermaid
 erDiagram
     Application ||--o{ ApiClient : "has"
-    ApiClient ||--o{ ApiClientDmsInstance : "can access"
-    DmsInstance ||--o{ ApiClientDmsInstance : "accessible by"
-    DmsInstance ||--o{ DmsInstanceRouteContext : "has"
-    DmsInstance ||--o{ DmsInstanceDerivative : "has"
+    ApiClient ||--o{ ApiClientDataStore : "can access"
+    DataStore ||--o{ ApiClientDataStore : "accessible by"
+    DataStore ||--o{ DataStoreContext : "has"
+    DataStore ||--o{ DataStoreDerivative : "has"
 
     Application {
         bigint Id PK
@@ -68,73 +68,73 @@ erDiagram
         uuid ClientUuid
     }
 
-    ApiClientDmsInstance {
+    ApiClientDataStore {
         bigint ApiClientId PK_FK
-        bigint DmsInstanceId PK_FK
+        bigint DataStoreId PK_FK
     }
 
-    DmsInstance {
+    DataStore {
         bigint Id PK
-        varchar InstanceType
-        varchar InstanceName
+        varchar DataStoreType
+        varchar Name
         bytea ConnectionString
     }
 
-    DmsInstanceRouteContext {
+    DataStoreContext {
         bigint Id PK
-        bigint InstanceId FK
+        bigint DataStoreId FK
         varchar ContextKey
         varchar ContextValue
     }
 
-    DmsInstanceDerivative {
+    DataStoreDerivative {
         bigint Id PK
-        bigint InstanceId FK
+        bigint DataStoreId FK
         varchar DerivativeType
         bytea ConnectionString
     }
 ```
 
-#### DmsInstance
+#### DataStore
 
-Stores DMS instance definitions and encrypted connection strings.
+Stores data store definitions and encrypted connection strings.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | BIGINT | Primary key |
-| InstanceType | VARCHAR(50) | Instance classification |
-| InstanceName | VARCHAR(256) | Human-readable instance name |
+| DataStoreType | VARCHAR(50) | Data store classification |
+| Name | VARCHAR(256) | Human-readable data store name |
 | ConnectionString | BYTEA | Encrypted database connection string |
 
-#### DmsInstanceRouteContext
+#### DataStoreContext
 
-Stores context key-value pairs for route-based instance resolution.
+Stores context key-value pairs for route-based data store resolution.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | BIGINT | Primary key |
-| InstanceId | BIGINT | Foreign key to DmsInstance |
+| DataStoreId | BIGINT | Foreign key to DataStore |
 | ContextKey | VARCHAR(256) | Context dimension name |
 | ContextValue | VARCHAR(256) | Context value |
 
-**Constraint:** `UNIQUE (InstanceId, ContextKey)` ensures each instance has
+**Constraint:** `UNIQUE (DataStoreId, ContextKey)` ensures each data store has
 only one value per context key.
 
-#### DmsInstanceDerivative
+#### DataStoreDerivative
 
-Stores derivative instances (read replicas and snapshots) associated with a parent DMS instance.
+Stores derivative data stores (read replicas and snapshots) associated with a parent data store.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | BIGINT | Primary key |
-| InstanceId | BIGINT | Foreign key to parent DmsInstance |
+| DataStoreId | BIGINT | Foreign key to parent DataStore |
 | DerivativeType | VARCHAR(50) | Type of derivative: "ReadReplica" or "Snapshot" |
 | ConnectionString | BYTEA | Encrypted database connection string |
 
-**Foreign Key:** CASCADE DELETE on `InstanceId` - when a parent DmsInstance is
-deleted, all its derivative instances are automatically deleted.
+**Foreign Key:** CASCADE DELETE on `DataStoreId` - when a parent DataStore is
+deleted, all its derivative data stores are automatically deleted.
 
-**Index:** `idx_dmsinstancederivative_instanceid` on InstanceId for efficient
+**Index:** `idx_datastorederivative_datastoreid` on DataStoreId for efficient
 queries.
 
 #### ApiClient
@@ -148,27 +148,27 @@ Stores OAuth client credentials for applications.
 | ClientId | VARCHAR(36) | OAuth client identifier |
 | ClientUuid | UUID | Globally unique client identifier |
 
-#### ApiClientDmsInstance
+#### ApiClientDataStore
 
-Maps API clients to DMS instances they can access (many-to-many).
+Maps API clients to data stores they can access (many-to-many).
 
 | Column | Type | Description |
 |--------|------|-------------|
 | ApiClientId | BIGINT | Foreign key to ApiClient |
-| DmsInstanceId | BIGINT | Foreign key to DmsInstance |
+| DataStoreId | BIGINT | Foreign key to DataStore |
 
-## DMS Instance Derivatives
+## Data Store Derivatives
 
-DMS Instance Derivatives are alternate database instances associated with a parent
-DMS instance, such as read replicas or snapshots. Read replicas distribute query
+Data Store Derivatives are alternate database instances associated with a parent
+data store, such as read replicas or snapshots. Read replicas distribute query
 load, while snapshots preserve point-in-time data for backup, testing, or analysis.
 
 Each derivative type is stored with its own encrypted connection string and is
-automatically deleted when its parent instance is removed (CASCADE DELETE).
+automatically deleted when its parent data store is removed (CASCADE DELETE).
 
 ### Configuration
 
-DMS instance and route context configuration is managed through the DMS
+Data store and route context configuration is managed through the DMS
 Configuration Service REST API. See the
 [Database segmentation documentation](DATABASE-SEGMENTATION-STRATEGY.md) for detailed
 configuration examples and usage patterns.

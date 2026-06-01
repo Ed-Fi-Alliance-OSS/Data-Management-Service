@@ -35,7 +35,7 @@ internal static class ExternalDoublesRegistration
         services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
         services.RemoveAll<IClaimSetProvider>();
         services.RemoveAll<IApplicationContextProvider>();
-        services.RemoveAll<IDmsInstanceProvider>();
+        services.RemoveAll<IDataStoreProvider>();
         services.RemoveAll<IProfileCmsProvider>();
         services.RemoveAll<IStartupProcessExit>();
 
@@ -49,9 +49,9 @@ internal static class ExternalDoublesRegistration
         services.AddSingleton(FakeOidcConfigurationManager.Stable());
         services.AddSingleton(claimSetProvider);
         services.AddSingleton<IApplicationContextProvider>(FakeApplicationContextProvider.Stable());
-        services.AddSingleton<IDmsInstanceProvider>(
-            FakeDmsInstanceProvider.WithSingleInstance(
-                id: ExternalDoublesConstants.StableDmsInstanceId,
+        services.AddSingleton<IDataStoreProvider>(
+            FakeDataStoreProvider.WithSingleInstance(
+                id: ExternalDoublesConstants.StableDataStoreId,
                 connectionString: leasedConnectionString
             )
         );

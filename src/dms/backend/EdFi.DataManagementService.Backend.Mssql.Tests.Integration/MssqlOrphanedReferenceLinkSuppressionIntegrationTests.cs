@@ -177,7 +177,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -453,12 +453,12 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlOrphanedRefLinkSuppression",
+                    DataStoreType: "test",
+                    Name: "MssqlOrphanedRefLinkSuppression",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

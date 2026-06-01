@@ -246,7 +246,7 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -261,12 +261,12 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileAmbiguousStorageCollapsed",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileAmbiguousStorageCollapsed",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -312,12 +312,12 @@ public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identitie
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileAmbiguousStorageCollapsed",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileAmbiguousStorageCollapsed",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

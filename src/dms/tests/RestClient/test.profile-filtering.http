@@ -96,19 +96,19 @@ Authorization: bearer {{configToken}}
 @vendorId={{getVendor.response.body.id}}
 
 ### Step 5: Create a DMS Instance (if not using default)
-# @name createDmsInstance
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStore
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "instanceType": "Test",
-    "instanceName": "Profile Test Instance",
+    "dataStoreType": "Test",
+    "name": "Profile Test Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
-@dmsInstanceId={{createDmsInstance.response.body.id}}
+@dataStoreId={{createDataStore.response.body.id}}
 
 ### Step 6: Create an Application WITH the IncludeOnly profile assigned
 # @name createApplicationWithProfile
@@ -120,7 +120,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Profile Test App",
     "claimSetName": "EdFiSandbox",
-    "dmsInstanceIds": [{{dmsInstanceId}}],
+    "dataStoreIds": [{{dataStoreId}}],
     "profileIds": [{{schoolProfileId}}]
 }
 
@@ -139,7 +139,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "No Profile App",
     "claimSetName": "EdFiSandbox",
-    "dmsInstanceIds": [{{dmsInstanceId}}]
+    "dataStoreIds": [{{dataStoreId}}]
 }
 
 ###

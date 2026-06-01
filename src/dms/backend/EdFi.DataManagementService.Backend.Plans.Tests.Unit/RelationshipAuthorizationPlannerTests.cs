@@ -43,7 +43,7 @@ public class Given_RelationshipAuthorizationPlannerTests
                     new NamespacePrefix("uri://sample-a.org"),
                     new NamespacePrefix("uri://sample-b.org"),
                 ],
-                DmsInstanceIds: []
+                DataStoreIds: []
             )
         );
 

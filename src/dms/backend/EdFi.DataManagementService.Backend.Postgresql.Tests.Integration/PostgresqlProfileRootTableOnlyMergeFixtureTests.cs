@@ -225,7 +225,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         services.AddSingleton<IHostApplicationLifetime, ProfileRootOnlyFixtureNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -342,12 +342,12 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootOnlyFixture",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -775,12 +775,12 @@ public class Given_A_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Root_Scop
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootOnlyFixture",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -922,12 +922,12 @@ public class Given_A_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_Cleara
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootOnlyFixture",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1086,12 +1086,12 @@ public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropa
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootOnlyFixtureSubRefHidden",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootOnlyFixtureSubRefHidden",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1264,12 +1264,12 @@ public class Given_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileRootOnlyFixture",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

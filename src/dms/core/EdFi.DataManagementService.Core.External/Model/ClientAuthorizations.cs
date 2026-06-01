@@ -27,7 +27,7 @@ public record ClientAuthorizations(
     /// </summary>
     List<NamespacePrefix> NamespacePrefixes,
     /// <summary>
-    /// DMS instance identifiers associated with vendor application key and secret
+    /// data store identifiers associated with vendor application key and secret
     /// </summary>
-    List<DmsInstanceId> DmsInstanceIds
+    List<DataStoreId> DataStoreIds
 );

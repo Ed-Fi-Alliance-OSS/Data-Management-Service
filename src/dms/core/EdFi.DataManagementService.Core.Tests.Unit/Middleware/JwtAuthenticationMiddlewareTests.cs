@@ -66,7 +66,7 @@ public class JwtAuthenticationMiddlewareTests
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),
                 NamespacePrefixes: new List<NamespacePrefix>(),
-                DmsInstanceIds: new List<DmsInstanceId>()
+                DataStoreIds: new List<DataStoreId>()
             );
 
             var (middleware, jwtValidationService) = CreateMiddleware();
@@ -337,7 +337,7 @@ public class JwtAuthenticationMiddlewareTests
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),
                 NamespacePrefixes: new List<NamespacePrefix>(),
-                DmsInstanceIds: new List<DmsInstanceId>()
+                DataStoreIds: new List<DataStoreId>()
             );
 
             var (middleware, jwtValidationService) = CreateMiddleware();

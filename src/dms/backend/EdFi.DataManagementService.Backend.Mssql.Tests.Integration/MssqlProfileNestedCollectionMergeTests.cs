@@ -32,7 +32,7 @@ internal static class MssqlProfileNestedSupport
     {
         ServiceCollection services = [];
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -86,12 +86,12 @@ internal static class MssqlProfileNestedSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileNested",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileNested",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -128,12 +128,12 @@ internal static class MssqlProfileNestedSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileNested",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileNested",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )

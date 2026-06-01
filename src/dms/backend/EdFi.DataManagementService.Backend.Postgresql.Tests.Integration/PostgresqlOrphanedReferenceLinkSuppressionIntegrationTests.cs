@@ -199,7 +199,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
         services.AddSingleton<IHostApplicationLifetime, OrphanedRefHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -475,12 +475,12 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlOrphanedRefLinkSuppression",
+                    DataStoreType: "test",
+                    Name: "PostgresqlOrphanedRefLinkSuppression",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

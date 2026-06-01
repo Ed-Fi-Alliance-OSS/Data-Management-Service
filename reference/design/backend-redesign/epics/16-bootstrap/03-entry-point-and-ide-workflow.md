@@ -13,14 +13,14 @@ stack management and service health waiting; schema preparation, claims staging,
 and seed delivery belong to their respective phase commands as specified in `command-boundaries.md`. The IDE
 path reuses the same staged schema workspace and bootstrap ordering as the Docker-hosted path; it is not a
 parallel schema-resolution or auth-initialization design. `configure-local-dms-instance.ps1` is the sole
-phase that creates or selects target DMS instance IDs for the run; downstream phases receive those IDs via
+phase that creates or selects target DMS data store IDs for the run; downstream phases receive those IDs via
 the structured configure result and in-memory forwarding within a single wrapper invocation, or via
-explicit `-InstanceId`/`-SchoolYear` selectors in a manual phase flow. Optional smoke-test credentials are
+explicit `-DataStoreId`/`-SchoolYear` selectors in a manual phase flow. Optional smoke-test credentials are
 CMS-only pre-DMS work anchored to the selected target set, while the DMS-dependent continuation waits for an
 IDE-hosted DMS endpoint only after instance configuration and schema provisioning have completed; when seed
 loading is requested,
 `load-dms-seed-data.ps1` is the next phase to invoke against the healthy endpoint using the resolved
-instance IDs.
+data store IDs.
 Within this story, the source story wording about "skip/resume" is satisfied by safe skip behavior and
 optional same-invocation continuation only. It does not introduce a stopped-then-resume bootstrap contract
 across separate invocations.
@@ -85,24 +85,24 @@ across separate invocations.
 - `-AddSmokeTestCredentials` is a CMS-only operation that runs after CMS readiness and instance selection.
   It is valid with `-InfraOnly` even when `-DmsBaseUrl` is not set.
 - `configure-local-dms-instance.ps1` is the only phase that creates or confirms DMS instance
-  records. It emits a structured success-pipeline result containing selected instance IDs and, when
+  records. It emits a structured success-pipeline result containing selected data store IDs and, when
   available, `CMSReadOnlyAccess` credential details from local identity setup, with human-readable text on
   separate streams. When the thin wrapper orchestrates a full run, it captures those IDs in memory and
   forwards them as internal
-  `-InstanceId` arguments to downstream phases within the same invocation. The wrapper does not expose
-  `-InstanceId` as a public parameter and never parses prose to recover IDs or credentials. When phase
+  `-DataStoreId` arguments to downstream phases within the same invocation. The wrapper does not expose
+  `-DataStoreId` as a public parameter and never parses prose to recover IDs or credentials. When phase
   commands are run separately by a developer, they resolve target instances through their own explicit
-  selectors (`-InstanceId <long[]>` or `-SchoolYear <int[]>`) via a CMS-backed lookup. No disk artifact is
+  selectors (`-DataStoreId <long[]>` or `-SchoolYear <int[]>`) via a CMS-backed lookup. No disk artifact is
   written for downstream instance targeting.
 - Downstream selector resolution rule: when exactly one DMS instance exists in CMS and no selector is
   supplied, auto-select it; when multiple instances exist without an explicit selector, fail fast with a
-  non-zero exit and guidance to supply `-InstanceId` or `-SchoolYear`.
-- `-NoDmsInstance` is only a narrow manual reuse escape hatch:
+  non-zero exit and guidance to supply `-DataStoreId` or `-SchoolYear`.
+- `-NoDataStore` is only a narrow manual reuse escape hatch:
   - valid only when exactly one existing instance is present in the current tenant scope,
   - invalid with `-SchoolYearRange`,
   - ambiguous reuse fails fast with teardown or manual-environment-preparation guidance instead of a second
     target-selection subsystem.
-- The narrowed DMS-916 definition of `-NoDmsInstance` is documented as a deliberate breaking change for
+- The narrowed DMS-916 definition of `-NoDataStore` is documented as a deliberate breaking change for
   existing fresh-stack scripts; migration guidance tells users to rerun without the flag or pre-create the
   intended single target instance. See [`bootstrap-design.md` Section 15](../../design-docs/bootstrap/bootstrap-design.md#15-breaking-changes-and-migration-notes)
   for the consolidated migration reference.
@@ -182,14 +182,14 @@ across separate invocations.
    local identity setup path so the IDE-hosted DMS flow has a stable read-only CMS credential contract
    aligned to the documented localhost values, without expanding this story into broader CMS client
    lifecycle design.
-6. Implement the instance-ID forwarding contract: `configure-local-dms-instance.ps1` emits a structured
-   success-pipeline result containing selected instance IDs and, when available, `CMSReadOnlyAccess`
+6. Implement the data-store-ID forwarding contract: `configure-local-dms-instance.ps1` emits a structured
+   success-pipeline result containing selected data store IDs and, when available, `CMSReadOnlyAccess`
    credential details from local identity setup; the thin wrapper (`bootstrap-local-dms.ps1`) captures
-   those IDs in memory during a single invocation and forwards them as internal `-InstanceId` arguments to
+   those IDs in memory during a single invocation and forwards them as internal `-DataStoreId` arguments to
    `provision-dms-schema.ps1` and
-   `load-dms-seed-data.ps1`. The wrapper must not expose `-InstanceId` as a public parameter and must not
+   `load-dms-seed-data.ps1`. The wrapper must not expose `-DataStoreId` as a public parameter and must not
    parse human-readable output. When phase commands are run separately, those commands resolve target
-   instances through their own explicit `-InstanceId <long[]>` or `-SchoolYear <int[]>` selectors using a
+   instances through their own explicit `-DataStoreId <long[]>` or `-SchoolYear <int[]>` selectors using a
    CMS-backed lookup. Selector resolution rule: auto-select when
    exactly one DMS instance exists and no selector is supplied; fail fast with a non-zero exit and
    corrective guidance when zero or multiple instances exist without an explicit selector. No run-context
@@ -206,16 +206,16 @@ across separate invocations.
    documented workflow is actionable once the local-development credential is inserted from printed
    guidance or identity setup output, and remains aligned with the local identity setup
    `CMSReadOnlyAccess` client contract unless the provisioning scripts are intentionally changed.
-10. Update the `-NoDmsInstance` rerun behavior to the narrowed DMS-916 escape hatch: valid only when exactly
+10. Update the `-NoDataStore` rerun behavior to the narrowed DMS-916 escape hatch: valid only when exactly
    one existing instance is present in the current tenant scope and `-SchoolYearRange` is not set. Ambiguity
    or zero matches fail fast with teardown or manual-environment-preparation guidance. Later phases resolve
-   their targets via the in-memory instance IDs forwarded by the wrapper (single-invocation path) or via
-   explicit `-InstanceId`/`-SchoolYear` selectors (manual phase-flow path); they must not perform their own
+   their targets via the in-memory data store IDs forwarded by the wrapper (single-invocation path) or via
+   explicit `-DataStoreId`/`-SchoolYear` selectors (manual phase-flow path); they must not perform their own
    CMS instance creation, broad target-selection policy, or non-selector-driven discovery pass.
 11. Carry the repo-local bootstrap-workspace lifecycle hygiene through this slice by keeping
    `eng/docker-compose/.bootstrap/` documented as scratch-only state. The `.gitignore` entry itself is owned
    by Story 00 because that story is the first slice that writes generated staging artifacts.
-12. Document the narrowed `-NoDmsInstance` semantics as a deliberate breaking change for existing fresh-stack
+12. Document the narrowed `-NoDataStore` semantics as a deliberate breaking change for existing fresh-stack
    scripts and provide the migration guidance on the local bootstrap surface.
 
 ## Invocation Examples
@@ -281,7 +281,7 @@ pwsh eng/docker-compose/load-dms-seed-data.ps1 -EnvironmentFile "./.env.local" -
 
 # Selector resolution: auto-select (one instance), explicit selector (multiple instances)
 pwsh eng/docker-compose/provision-dms-schema.ps1                                             # auto-select
-pwsh eng/docker-compose/provision-dms-schema.ps1 -InstanceId 1 # explicit
+pwsh eng/docker-compose/provision-dms-schema.ps1 -DataStoreId 1 # explicit
 pwsh eng/docker-compose/provision-dms-schema.ps1 -SchoolYear 2025,2026                      # year filter
 # Multiple instances, no selector: non-zero exit with corrective guidance.
 ```

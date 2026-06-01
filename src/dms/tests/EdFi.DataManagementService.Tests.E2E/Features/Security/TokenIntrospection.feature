@@ -107,9 +107,9 @@ Feature: JWT Token Introspection
 
     @DMS-823 @relational-backend
     @relational-ci-shard-3
-    Scenario: Verify JWT token contains dmsInstanceIds claim
+    Scenario: Verify JWT token contains dataStoreIds claim
       Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-      Then the JWT token should contain the dmsInstanceIds claim
+      Then the JWT token should contain the dataStoreIds claim
 
   Rule: Token introspection endpoint returns authorization information
 

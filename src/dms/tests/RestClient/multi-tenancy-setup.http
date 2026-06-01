@@ -116,132 +116,132 @@ Authorization: bearer {{configToken}}
 
 ### Create Instance for Tenant 1 - School Year 2024
 # @name createInstance1_2024
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant1Name}}
 
 {
-    "instanceType": "SchoolYear",
-    "instanceName": "District A - School Year 2024",
+    "dataStoreType": "SchoolYear",
+    "name": "District A - School Year 2024",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2024;"
 }
 
 ###
-@instance1_2024_Id = {{createInstance1_2024.response.body.id}}
+@dataStore1_2024_Id = {{createInstance1_2024.response.body.id}}
 
 ### Create Instance for Tenant 1 - School Year 2025
 # @name createInstance1_2025
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant1Name}}
 
 {
-    "instanceType": "SchoolYear",
-    "instanceName": "District A - School Year 2025",
+    "dataStoreType": "SchoolYear",
+    "name": "District A - School Year 2025",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2025;"
 }
 
 ###
-@instance1_2025_Id = {{createInstance1_2025.response.body.id}}
+@dataStore1_2025_Id = {{createInstance1_2025.response.body.id}}
 
 
 ### ============================================================================
-### STEP 5: Create Route Contexts for Tenant 1 (Explicit Routing)
+### STEP 5: Create Data Store Contexts for Tenant 1 (Explicit Routing)
 ### ============================================================================
-### Route contexts enable URL-based routing: /{schoolYear}/data/ed-fi/{resource}
-### Skip this section if using implicit routing (single instance per credential)
+### Data store contexts enable URL-based routing: /{schoolYear}/data/ed-fi/{resource}
+### Skip this section if using implicit routing (single data store per credential)
 
-### Route Context for Instance 1 - School Year 2024
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+### Context for Data Store 1 - School Year 2024
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant1Name}}
 
 {
-    "instanceId": {{instance1_2024_Id}},
+    "dataStoreId": {{dataStore1_2024_Id}},
     "contextKey": "schoolYear",
     "contextValue": "2024"
 }
 
-### Route Context for Instance 1 - School Year 2025
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+### Context for Data Store 1 - School Year 2025
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant1Name}}
 
 {
-    "instanceId": {{instance1_2025_Id}},
+    "dataStoreId": {{dataStore1_2025_Id}},
     "contextKey": "schoolYear",
     "contextValue": "2025"
 }
 
 
 ### ============================================================================
-### STEP 6: Create DMS Instances for Tenant 2
+### STEP 6: Create Data Stores for Tenant 2
 ### ============================================================================
 ### Create databases first:
 ###   docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_dms_districtb_2024;"
 ###   docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_dms_districtb_2025;"
 
-### Create Instance for Tenant 2 - School Year 2024
+### Create Data Store for Tenant 2 - School Year 2024
 # @name createInstance2_2024
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant2Name}}
 
 {
-    "instanceType": "SchoolYear",
-    "instanceName": "District B - School Year 2024",
+    "dataStoreType": "SchoolYear",
+    "name": "District B - School Year 2024",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districtb_2024;"
 }
 
 ###
-@instance2_2024_Id = {{createInstance2_2024.response.body.id}}
+@dataStore2_2024_Id = {{createInstance2_2024.response.body.id}}
 
-### Create Instance for Tenant 2 - School Year 2025
+### Create Data Store for Tenant 2 - School Year 2025
 # @name createInstance2_2025
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant2Name}}
 
 {
-    "instanceType": "SchoolYear",
-    "instanceName": "District B - School Year 2025",
+    "dataStoreType": "SchoolYear",
+    "name": "District B - School Year 2025",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districtb_2025;"
 }
 
 ###
-@instance2_2025_Id = {{createInstance2_2025.response.body.id}}
+@dataStore2_2025_Id = {{createInstance2_2025.response.body.id}}
 
 
 ### ============================================================================
-### STEP 7: Create Route Contexts for Tenant 2
+### STEP 7: Create Data Store Contexts for Tenant 2
 ### ============================================================================
 
-### Route Context for Instance 2 - School Year 2024
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+### Context for Data Store 2 - School Year 2024
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant2Name}}
 
 {
-    "instanceId": {{instance2_2024_Id}},
+    "dataStoreId": {{dataStore2_2024_Id}},
     "contextKey": "schoolYear",
     "contextValue": "2024"
 }
 
-### Route Context for Instance 2 - School Year 2025
-POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+### Context for Data Store 2 - School Year 2025
+POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: {{tenant2Name}}
 
 {
-    "instanceId": {{instance2_2025_Id}},
+    "dataStoreId": {{dataStore2_2025_Id}},
     "contextKey": "schoolYear",
     "contextValue": "2025"
 }
@@ -251,23 +251,23 @@ Tenant: {{tenant2Name}}
 ### STEP 8: View Configuration
 ### ============================================================================
 
-### List all DMS Instances for Tenant 1
-GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+### List all data stores for Tenant 1
+GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 Tenant: {{tenant1Name}}
 
-### List all DMS Instances for Tenant 2
-GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+### List all data stores for Tenant 2
+GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 Tenant: {{tenant2Name}}
 
-### List all Route Contexts for Tenant 1
-GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=25
+### List all data store contexts for Tenant 1
+GET http://localhost:{{configPort}}/v2/dataStoreContexts?offset=0&limit=25
 Authorization: bearer {{configToken}}
 Tenant: {{tenant1Name}}
 
-### List all Route Contexts for Tenant 2
-GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=25
+### List all data store contexts for Tenant 2
+GET http://localhost:{{configPort}}/v2/dataStoreContexts?offset=0&limit=25
 Authorization: bearer {{configToken}}
 Tenant: {{tenant2Name}}
 
@@ -314,7 +314,7 @@ Tenant: {{tenant1Name}}
     "applicationName": "District A SIS",
     "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
     "educationOrganizationIds": [255901],
-    "dmsInstanceIds": [{{instance1_2024_Id}}, {{instance1_2025_Id}}]
+    "dataStoreIds": [{{dataStore1_2024_Id}}, {{dataStore1_2025_Id}}]
 }
 
 ###
@@ -364,7 +364,7 @@ Tenant: {{tenant2Name}}
     "applicationName": "District B SIS",
     "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
     "educationOrganizationIds": [255902],
-    "dmsInstanceIds": [{{instance2_2024_Id}}, {{instance2_2025_Id}}]
+    "dataStoreIds": [{{dataStore2_2024_Id}}, {{dataStore2_2025_Id}}]
 }
 
 ###

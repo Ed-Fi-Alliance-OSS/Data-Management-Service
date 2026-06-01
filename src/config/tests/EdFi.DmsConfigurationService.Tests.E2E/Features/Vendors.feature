@@ -3,11 +3,11 @@ Feature: Vendors endpoints
         Background:
             Given valid credentials
               And token received
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store",
                         "connectionString": "Server=localhost;Database=TestDb;"
                     }
                   """
@@ -328,7 +328,7 @@ Feature: Vendors endpoints
                    "applicationName": "Demo application",
                    "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -347,7 +347,7 @@ Feature: Vendors endpoints
                                 2,
                                 3
                             ],
-                            "dmsInstanceIds": [{dmsInstanceId}],
+                            "dataStoreIds": [{dataStoreId}],
                             "profileIds": [],
                             "enabled": true
                         }

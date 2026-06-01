@@ -17,20 +17,20 @@ Feature: Authorization
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
                     }
                   """
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store",
                         "connectionString": "Server=localhost;Database=TestDb;"
                     }
                   """
 
         Scenario: 01 Ensure clients can GET applications
             Given the system has these "applications"
-                  | vendorId  | applicationName | claimSetName | dmsInstanceId  |
-                  | _vendorId | application01   | claim01      | _dmsInstanceId |
-                  | _vendorId | application02   | claim01      | _dmsInstanceId |
+                  | vendorId  | applicationName | claimSetName | dataStoreId  |
+                  | _vendorId | application01   | claim01      | _dataStoreId |
+                  | _vendorId | application02   | claim01      | _dataStoreId |
 
              When a GET request is made to "/v2/applications"
              Then it should respond with 200
@@ -43,7 +43,7 @@ Feature: Authorization
                    "applicationName": "Demo application",
                    "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -62,7 +62,7 @@ Feature: Authorization
                     "vendorId": {vendorId},
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
-                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "dataStoreIds": [{dataStoreId}],
                     "profileIds": [],
                     "enabled": true
                   }
@@ -75,7 +75,7 @@ Feature: Authorization
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 03",
                    "claimSetName": "ClaimScenario03",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -86,7 +86,7 @@ Feature: Authorization
                       "vendorId": {vendorId},
                       "applicationName": "Demo application 03 Update",
                       "claimSetName": "ClaimScenario03Update",
-                      "dmsInstanceIds": [{dmsInstanceId}]
+                      "dataStoreIds": [{dataStoreId}]
                       }
                   """
              Then it should respond with 204
@@ -98,7 +98,7 @@ Feature: Authorization
                    "vendorId": {vendorId},
                    "applicationName": "Delete application 04",
                    "claimSetName": "ClaimScenario05",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -119,11 +119,11 @@ Feature: Authorization
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
                     }
                   """
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store",
                         "connectionString": "Server=localhost;Database=TestDb;"
                     }
                   """
@@ -131,9 +131,9 @@ Feature: Authorization
         Scenario: 05 Ensure clients can GET applications with read only scope
             Given client "CMSReadOnlyAccess" credentials with "edfi_admin_api/readonly_access" scope
               And the system has these "applications"
-                  | vendorId  | applicationName | claimSetName | dmsInstanceId  |
-                  | _vendorId | application03   | claim01      | _dmsInstanceId |
-                  | _vendorId | application04   | claim01      | _dmsInstanceId |
+                  | vendorId  | applicationName | claimSetName | dataStoreId  |
+                  | _vendorId | application03   | claim01      | _dataStoreId |
+                  | _vendorId | application04   | claim01      | _dataStoreId |
               And token received
              When a GET request is made to "/v2/applications"
              Then it should respond with 200
@@ -147,7 +147,7 @@ Feature: Authorization
                    "vendorId": {vendorId},
                    "applicationName": "Unauthorized application 06",
                    "claimSetName": "ClaimScenario08",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 403

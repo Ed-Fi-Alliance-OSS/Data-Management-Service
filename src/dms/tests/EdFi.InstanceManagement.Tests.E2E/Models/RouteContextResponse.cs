@@ -5,4 +5,4 @@
 
 namespace EdFi.InstanceManagement.Tests.E2E.Models;
 
-public record RouteContextResponse(int Id, int InstanceId, string ContextKey, string ContextValue);
+public record RouteContextResponse(int Id, int DataStoreId, string ContextKey, string ContextValue);

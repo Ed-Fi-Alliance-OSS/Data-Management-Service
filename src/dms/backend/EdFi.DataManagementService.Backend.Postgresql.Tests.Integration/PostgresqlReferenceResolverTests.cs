@@ -516,12 +516,12 @@ public class Given_PostgresqlReferenceResolver
     )
     {
         using var scope = _serviceProvider.CreateScope();
-        var instanceSelection = scope.ServiceProvider.GetRequiredService<IDmsInstanceSelection>();
-        instanceSelection.SetSelectedDmsInstance(
-            new DmsInstance(
+        var instanceSelection = scope.ServiceProvider.GetRequiredService<IDataStoreSelection>();
+        instanceSelection.SetSelectedDataStore(
+            new DataStore(
                 Id: 1,
-                InstanceType: "test",
-                InstanceName: "PostgresqlReferenceResolverIntegration",
+                DataStoreType: "test",
+                Name: "PostgresqlReferenceResolverIntegration",
                 ConnectionString: _database.ConnectionString,
                 RouteContext: []
             )
@@ -546,7 +546,7 @@ public class Given_PostgresqlReferenceResolver
         services.AddSingleton<IHostApplicationLifetime, TestHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.AddTestReadableProfileProjector();
         services.AddPostgresqlReferenceResolver();

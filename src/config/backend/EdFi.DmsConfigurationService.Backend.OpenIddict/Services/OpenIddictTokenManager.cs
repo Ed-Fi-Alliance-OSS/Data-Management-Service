@@ -340,7 +340,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 audience,
                 signingKeyResult.SecurityKey,
                 signingKeyResult.KeyId,
-                dmsInstanceIds: applicationInfo.DmsInstanceIds
+                dataStoreIds: applicationInfo.DataStoreIds
             );
 
             // Store token in database

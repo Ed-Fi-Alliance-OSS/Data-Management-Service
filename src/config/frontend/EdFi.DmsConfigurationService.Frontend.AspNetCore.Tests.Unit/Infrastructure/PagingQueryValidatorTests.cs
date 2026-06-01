@@ -70,11 +70,11 @@ public class Given_PagingQueryValidators
     }
 
     [Test]
-    public void Limit_accepts_large_values_for_dms_instance()
+    public void Limit_accepts_large_values_for_data_store()
     {
-        var scenario = new ValidationScenario<FrontendDmsInstanceQuery>(
-            new DmsInstancePagingQueryValidator(),
-            new FrontendDmsInstanceQuery { Limit = 1000 },
+        var scenario = new ValidationScenario<FrontendDataStoreQuery>(
+            new DataStorePagingQueryValidator(),
+            new FrontendDataStoreQuery { Limit = 1000 },
             true
         );
         var result = scenario.Validate();

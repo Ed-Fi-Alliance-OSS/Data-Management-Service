@@ -66,12 +66,12 @@ public class PipelineOrderingTests
                 NullLogger<JwtAuthenticationMiddleware>.Instance
             );
 
-            services.AddTransient<ResolveDmsInstanceMiddleware>();
+            services.AddTransient<ResolveDataStoreMiddleware>();
             services.AddSingleton<IApplicationContextProvider>(A.Fake<IApplicationContextProvider>());
-            services.AddSingleton<IDmsInstanceProvider>(A.Fake<IDmsInstanceProvider>());
-            services.AddSingleton<IDmsInstanceSelection>(A.Fake<IDmsInstanceSelection>());
-            services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
-                NullLogger<ResolveDmsInstanceMiddleware>.Instance
+            services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
+            services.AddSingleton<IDataStoreSelection>(A.Fake<IDataStoreSelection>());
+            services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+                NullLogger<ResolveDataStoreMiddleware>.Instance
             );
 
             var appSettingsOptions = Options.Create(
@@ -133,9 +133,9 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_parse_path_after_resolve_dms_instance()
+        public void It_places_parse_path_after_resolve_data_store()
         {
-            var resolveIndex = _stepTypes.IndexOf(typeof(ResolveDmsInstanceMiddleware));
+            var resolveIndex = _stepTypes.IndexOf(typeof(ResolveDataStoreMiddleware));
             var parsePathIndex = _stepTypes.IndexOf(typeof(ParsePathMiddleware));
 
             resolveIndex.Should().BeGreaterThanOrEqualTo(0);
@@ -143,7 +143,7 @@ public class PipelineOrderingTests
                 .Should()
                 .BeGreaterThan(
                     resolveIndex,
-                    "ParsePathMiddleware must come after ResolveDmsInstanceMiddleware"
+                    "ParsePathMiddleware must come after ResolveDataStoreMiddleware"
                 );
         }
 
@@ -268,12 +268,12 @@ public class PipelineOrderingTests
                 NullLogger<JwtAuthenticationMiddleware>.Instance
             );
 
-            services.AddTransient<ResolveDmsInstanceMiddleware>();
+            services.AddTransient<ResolveDataStoreMiddleware>();
             services.AddSingleton<IApplicationContextProvider>(A.Fake<IApplicationContextProvider>());
-            services.AddSingleton<IDmsInstanceProvider>(A.Fake<IDmsInstanceProvider>());
-            services.AddSingleton<IDmsInstanceSelection>(A.Fake<IDmsInstanceSelection>());
-            services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
-                NullLogger<ResolveDmsInstanceMiddleware>.Instance
+            services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
+            services.AddSingleton<IDataStoreSelection>(A.Fake<IDataStoreSelection>());
+            services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+                NullLogger<ResolveDataStoreMiddleware>.Instance
             );
 
             var appSettingsOptions = Options.Create(
@@ -396,12 +396,12 @@ public class PipelineOrderingTests
                 NullLogger<JwtAuthenticationMiddleware>.Instance
             );
 
-            services.AddTransient<ResolveDmsInstanceMiddleware>();
+            services.AddTransient<ResolveDataStoreMiddleware>();
             services.AddSingleton<IApplicationContextProvider>(A.Fake<IApplicationContextProvider>());
-            services.AddSingleton<IDmsInstanceProvider>(A.Fake<IDmsInstanceProvider>());
-            services.AddSingleton<IDmsInstanceSelection>(A.Fake<IDmsInstanceSelection>());
-            services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
-                NullLogger<ResolveDmsInstanceMiddleware>.Instance
+            services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
+            services.AddSingleton<IDataStoreSelection>(A.Fake<IDataStoreSelection>());
+            services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+                NullLogger<ResolveDataStoreMiddleware>.Instance
             );
 
             var appSettingsOptions = Options.Create(

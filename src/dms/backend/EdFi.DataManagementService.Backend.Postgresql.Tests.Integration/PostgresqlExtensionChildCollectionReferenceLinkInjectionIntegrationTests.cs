@@ -202,7 +202,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
         services.AddSingleton<IHostApplicationLifetime, ExtensionChildCollectionHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -518,12 +518,12 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlExtChildCollectionLinkInjection",
+                    DataStoreType: "test",
+                    Name: "PostgresqlExtChildCollectionLinkInjection",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

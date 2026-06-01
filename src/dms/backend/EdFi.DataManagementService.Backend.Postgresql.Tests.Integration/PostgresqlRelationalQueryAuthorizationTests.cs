@@ -1675,7 +1675,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         services.AddSingleton<IHostApplicationLifetime, PostgresqlRelationalQueryHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -1723,12 +1723,12 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalQueryAuthorization",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalQueryAuthorization",
                     ConnectionString: Database.ConnectionString,
                     RouteContext: []
                 )

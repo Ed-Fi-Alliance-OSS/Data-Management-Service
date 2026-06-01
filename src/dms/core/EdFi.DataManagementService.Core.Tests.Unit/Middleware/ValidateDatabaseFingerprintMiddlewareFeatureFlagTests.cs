@@ -29,12 +29,12 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
     internal static (
         ValidateDatabaseFingerprintMiddleware middleware,
         IDatabaseFingerprintReader fingerprintReader,
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         IServiceProvider serviceProvider
     ) CreateMiddleware(bool enableFingerprintValidation)
     {
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
-        var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+        var dataStoreSelection = A.Fake<IDataStoreSelection>();
         var logger = A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>();
         var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
 
@@ -56,8 +56,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         );
 
         var serviceProvider = A.Fake<IServiceProvider>();
-        A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
-            .Returns(dmsInstanceSelection);
+        A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
         var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
         var middleware = new ValidateDatabaseFingerprintMiddleware(
@@ -67,7 +66,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
             logger
         );
 
-        return (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider);
+        return (middleware, fingerprintReader, dataStoreSelection, serviceProvider);
     }
 
     private static RequestInfo CreateRequestInfoWithAuthorizations(
@@ -96,7 +95,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: [new DmsInstanceId(1)]
+                DataStoreIds: [new DataStoreId(1)]
             ),
         };
     }
@@ -108,16 +107,16 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled;
         private IDatabaseFingerprintReader _fingerprintReader = null!;
-        private IDmsInstanceSelection _dmsInstanceSelection = null!;
+        private IDataStoreSelection _dataStoreSelection = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: false
             );
             _fingerprintReader = fingerprintReader;
-            _dmsInstanceSelection = dmsInstanceSelection;
+            _dataStoreSelection = dataStoreSelection;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             await middleware.Execute(
@@ -143,9 +142,9 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         }
 
         [Test]
-        public void It_does_not_interact_with_dms_instance_selection()
+        public void It_does_not_interact_with_data_store_selection()
         {
-            A.CallTo(_dmsInstanceSelection).MustNotHaveHappened();
+            A.CallTo(_dataStoreSelection).MustNotHaveHappened();
         }
 
         [Test]
@@ -172,18 +171,18 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "Server=test;Database=testdb",
                         RouteContext: []
                     )
@@ -233,18 +232,18 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "Server=test;Database=unprovisioned",
                         RouteContext: []
                     )
@@ -308,19 +307,19 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
+            var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
             _fingerprintReader = fingerprintReader;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: null,
                         RouteContext: []
                     )
@@ -382,22 +381,22 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public void Setup()
         {
-            var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
-            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+            var dataStoreSelection = A.Fake<IDataStoreSelection>();
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
                 .Returns(
-                    new DmsInstance(
+                    new DataStore(
                         Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
                         ConnectionString: "Server=test;Database=testdb",
                         RouteContext: []
                     )
                 );
 
             var serviceProvider = A.Fake<IServiceProvider>();
-            A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
-                .Returns(dmsInstanceSelection);
+            A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection)))
+                .Returns(dataStoreSelection);
 
             var appSettings = Options.Create(
                 new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }

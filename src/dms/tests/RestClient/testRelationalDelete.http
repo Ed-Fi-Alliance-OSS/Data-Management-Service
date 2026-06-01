@@ -65,19 +65,19 @@ Authorization: bearer {{configToken}}
 ### 1.3 Create a DMS instance pointing at the RELATIONAL database
 # The connection string MUST target the dedicated relational database provisioned by
 # provision-relational-e2e-database.ps1 — NOT the default edfi_datamanagementservice.
-# @name createDmsInstance
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStore
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "instanceType": "Test",
-    "instanceName": "DMS-1011 Relational Instance",
+    "dataStoreType": "Test",
+    "name": "DMS-1011 Relational Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password={{postgresPassword}};database={{relationalDbName}};"
 }
 
 ###
-@dmsInstanceId={{createDmsInstance.response.body.id}}
+@dataStoreId={{createDataStore.response.body.id}}
 
 ### 1.4 Create an application with the NoFurtherAuthorizationRequired claim set
 # (matches what the E2E relational-backend runs use — avoids namespace-authz noise while
@@ -92,7 +92,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "DMS-1011 Relational Demo",
     "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
     "educationOrganizationIds": [ 255, 255901 ],
-    "dmsInstanceIds": [ {{dmsInstanceId}} ]
+    "dataStoreIds": [ {{dataStoreId}} ]
 }
 
 ###

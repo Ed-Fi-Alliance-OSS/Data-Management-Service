@@ -59,8 +59,8 @@ internal class ValidateResourceKeySeedMiddleware(
         }
 
         var selectedInstance = requestInfo
-            .ScopedServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .GetSelectedDmsInstance();
+            .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .GetSelectedDataStore();
         // ConnectionString is guaranteed non-null by ValidateDatabaseFingerprintMiddleware,
         // which runs before this step and short-circuits with 503 if the connection string is missing.
         var connectionString = selectedInstance.ConnectionString!;
@@ -93,9 +93,9 @@ internal class ValidateResourceKeySeedMiddleware(
         {
             logger.LogError(
                 ex,
-                "Resource key seed validation failed with an unexpected error for instance {InstanceId} ({InstanceName}). TraceId: {TraceId}",
+                "Resource key seed validation failed with an unexpected error for data store {DataStoreId} ({Name}). TraceId: {TraceId}",
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
 
@@ -123,10 +123,10 @@ internal class ValidateResourceKeySeedMiddleware(
                 // Use SanitizeForConsole for the diff report to preserve tuple
                 // punctuation (parentheses, commas, brackets) needed for readability.
                 logger.LogError(
-                    "Resource key seed mismatch for instance {InstanceId} ({InstanceName}). "
+                    "Resource key seed mismatch for data store {DataStoreId} ({Name}). "
                         + "Diff report: {DiffReport}. TraceId: {TraceId}",
                     selectedInstance.Id,
-                    LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                    LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                     LoggingSanitizer.SanitizeForConsole(failure.DiffReport),
                     LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
                 );

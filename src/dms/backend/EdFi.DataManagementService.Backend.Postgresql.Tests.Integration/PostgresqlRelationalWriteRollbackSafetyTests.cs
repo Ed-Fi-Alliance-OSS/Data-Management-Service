@@ -186,7 +186,7 @@ file static class RollbackSafetyIntegrationTestSupport
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddSingleton<RollbackSafetyCommandRecorder>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -378,12 +378,12 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteRollbackSafety",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteRollbackSafety",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// </summary>
 internal sealed class ValidateStartupInstancesTask(
     IOptions<AppSettings> appSettings,
-    IDmsInstanceProvider dmsInstanceProvider,
+    IDataStoreProvider dataStoreProvider,
     IConnectionStringProvider connectionStringProvider,
     DatabaseFingerprintProvider fingerprintProvider,
     IResourceKeyValidator resourceKeyValidator,
@@ -50,7 +50,7 @@ internal sealed class ValidateStartupInstancesTask(
             return;
         }
 
-        var loadedTenantKeys = dmsInstanceProvider.GetLoadedTenantKeys();
+        var loadedTenantKeys = dataStoreProvider.GetLoadedTenantKeys();
         if (loadedTenantKeys.Count == 0)
         {
             logger.LogDebug("No loaded tenants found; skipping startup instance validation");
@@ -63,7 +63,7 @@ internal sealed class ValidateStartupInstancesTask(
         foreach (var tenantKey in loadedTenantKeys)
         {
             string? tenant = string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
-            var instances = dmsInstanceProvider.GetAll(tenant);
+            var instances = dataStoreProvider.GetAll(tenant);
 
             foreach (var instance in instances)
             {
@@ -76,11 +76,11 @@ internal sealed class ValidateStartupInstancesTask(
                     // No connection string means we can't cache anything — the
                     // request-time middleware independently checks for this and returns 503.
                     logger.LogCritical(
-                        "Instance {InstanceId} ({InstanceName}) for tenant {Tenant} has no connection string configured. "
+                        "Data store {DataStoreId} ({Name}) for tenant {Tenant} has no connection string configured. "
                             + "Requests routed to this instance will receive 503. "
                             + "Check the instance configuration in the DMS Configuration Service",
                         instance.Id,
-                        LoggingSanitizer.SanitizeForLogging(instance.InstanceName),
+                        LoggingSanitizer.SanitizeForLogging(instance.Name),
                         LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")
                     );
                     totalFailed++;
@@ -124,7 +124,7 @@ internal sealed class ValidateStartupInstancesTask(
     /// 503 for that instance. Only <see cref="OperationCanceledException"/> propagates.
     /// </summary>
     private async Task<bool> ValidateInstanceAsync(
-        DmsInstance instance,
+        DataStore instance,
         string? tenant,
         string connectionString,
         CancellationToken cancellationToken
@@ -132,7 +132,7 @@ internal sealed class ValidateStartupInstancesTask(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string sanitizedName = LoggingSanitizer.SanitizeForLogging(instance.InstanceName);
+        string sanitizedName = LoggingSanitizer.SanitizeForLogging(instance.Name);
         string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
 
         try
@@ -144,8 +144,8 @@ internal sealed class ValidateStartupInstancesTask(
             {
                 // Null result is permanently cached; middleware will return 503.
                 logger.LogCritical(
-                    "Database not provisioned (no dms.EffectiveSchema row) for instance "
-                        + "{InstanceId} ({InstanceName}) tenant {Tenant}. "
+                    "Database not provisioned (no dms.EffectiveSchema row) for data store "
+                        + "{DataStoreId} ({Name}) tenant {Tenant}. "
                         + "Requests routed to this instance will receive 503. "
                         + "Run 'ddl provision' to initialize the database schema",
                     instance.Id,
@@ -168,8 +168,8 @@ internal sealed class ValidateStartupInstancesTask(
                 // Wrong-hash fingerprint is already cached; middleware will
                 // compare hashes and return 503.
                 logger.LogCritical(
-                    "EffectiveSchemaHash mismatch for instance "
-                        + "{InstanceId} ({InstanceName}) tenant {Tenant}: "
+                    "EffectiveSchemaHash mismatch for data store "
+                        + "{DataStoreId} ({Name}) tenant {Tenant}: "
                         + "database has {DbHash}, process expects {ExpectedHash}. "
                         + "Requests routed to this instance will receive 503. "
                         + "The database must be reprovisioned with 'ddl provision' against a fresh database",
@@ -201,8 +201,8 @@ internal sealed class ValidateStartupInstancesTask(
             {
                 // Failure is permanently cached; middleware will return 503.
                 logger.LogCritical(
-                    "Resource key seed mismatch for instance "
-                        + "{InstanceId} ({InstanceName}) tenant {Tenant}. "
+                    "Resource key seed mismatch for data store "
+                        + "{DataStoreId} ({Name}) tenant {Tenant}. "
                         + "Diff: {DiffReport}. "
                         + "Requests routed to this instance will receive 503. "
                         + "The database must be reprovisioned with 'ddl provision' against a fresh database",
@@ -223,8 +223,8 @@ internal sealed class ValidateStartupInstancesTask(
             // Malformed fingerprint is permanently cached; middleware will return 503.
             logger.LogCritical(
                 ex,
-                "Malformed dms.EffectiveSchema fingerprint for instance "
-                    + "{InstanceId} ({InstanceName}) tenant {Tenant}. "
+                "Malformed dms.EffectiveSchema fingerprint for data store "
+                    + "{DataStoreId} ({Name}) tenant {Tenant}. "
                     + "Requests routed to this instance will receive 503. "
                     + "Restart DMS after repairing the database",
                 instance.Id,
@@ -239,8 +239,8 @@ internal sealed class ValidateStartupInstancesTask(
             // retry on first request. Log but don't fail startup.
             logger.LogCritical(
                 ex,
-                "Startup validation failed for instance "
-                    + "{InstanceId} ({InstanceName}) tenant {Tenant}: {ErrorMessage}. "
+                "Startup validation failed for data store "
+                    + "{DataStoreId} ({Name}) tenant {Tenant}: {ErrorMessage}. "
                     + "Requests routed to this instance will be retried on first access",
                 instance.Id,
                 sanitizedName,
@@ -251,7 +251,7 @@ internal sealed class ValidateStartupInstancesTask(
         }
 
         logger.LogDebug(
-            "Startup validation passed for instance {InstanceId} ({InstanceName}) tenant '{Tenant}'",
+            "Startup validation passed for data store {DataStoreId} ({Name}) tenant '{Tenant}'",
             instance.Id,
             sanitizedName,
             sanitizedTenant

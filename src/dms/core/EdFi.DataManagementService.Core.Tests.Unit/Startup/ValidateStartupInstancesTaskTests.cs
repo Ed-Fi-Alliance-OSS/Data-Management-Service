@@ -61,7 +61,7 @@ public class ValidateStartupInstancesTaskTests
 
     private static ValidateStartupInstancesTask CreateTask(
         bool useRelational,
-        IDmsInstanceProvider? instanceProvider = null,
+        IDataStoreProvider? instanceProvider = null,
         IConnectionStringProvider? connectionStringProvider = null,
         DatabaseFingerprintProvider? fingerprintProvider = null,
         IResourceKeyValidator? resourceKeyValidator = null,
@@ -69,7 +69,7 @@ public class ValidateStartupInstancesTaskTests
         IEffectiveSchemaSetProvider? schemaSetProvider = null
     )
     {
-        instanceProvider ??= A.Fake<IDmsInstanceProvider>();
+        instanceProvider ??= A.Fake<IDataStoreProvider>();
         connectionStringProvider ??= A.Fake<IConnectionStringProvider>();
         fingerprintProvider ??= new DatabaseFingerprintProvider(A.Fake<IDatabaseFingerprintReader>());
         resourceKeyValidator ??= A.Fake<IResourceKeyValidator>();
@@ -95,7 +95,7 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_skips_validation()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var task = CreateTask(useRelational: false, instanceProvider: instanceProvider);
 
             await task.ExecuteAsync(CancellationToken.None);
@@ -111,7 +111,7 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_without_errors()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(Array.Empty<string>());
 
             var task = CreateTask(useRelational: true, instanceProvider: instanceProvider);
@@ -129,13 +129,13 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_without_throwing()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
-                .Returns([new DmsInstance(1, "Type", "TestInstance", null, [])]);
+                .Returns([new DataStore(1, "Type", "TestInstance", null, [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns(null);
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
@@ -160,7 +160,7 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_successfully()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
             var resourceKeyValidator = A.Fake<IResourceKeyValidator>();
@@ -171,7 +171,7 @@ public class ValidateStartupInstancesTaskTests
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
-                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+                .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
@@ -212,13 +212,13 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_without_throwing()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
-                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+                .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
                 .Returns((DatabaseFingerprint?)null);
@@ -244,13 +244,13 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_without_throwing()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
-                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+                .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
                 .ThrowsAsync(new DatabaseFingerprintValidationException("bad data"));
@@ -276,7 +276,7 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_without_throwing()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
             var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
@@ -292,7 +292,7 @@ public class ValidateStartupInstancesTaskTests
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
-                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+                .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
@@ -319,13 +319,13 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_without_throwing()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
-                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+                .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
                 .ThrowsAsync(new TimeoutException("connection timed out"));
@@ -351,7 +351,7 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_completes_without_throwing()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
             var resourceKeyValidator = A.Fake<IResourceKeyValidator>();
@@ -362,7 +362,7 @@ public class ValidateStartupInstancesTaskTests
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
-                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+                .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
@@ -403,7 +403,7 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_validates_both_without_throwing()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
             var resourceKeyValidator = A.Fake<IResourceKeyValidator>();
@@ -415,8 +415,8 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
             A.CallTo(() => instanceProvider.GetAll(null))
                 .Returns([
-                    new DmsInstance(1, "Type", "BadInstance", "Server=bad", []),
-                    new DmsInstance(2, "Type", "GoodInstance", "Server=good", []),
+                    new DataStore(1, "Type", "BadInstance", "Server=bad", []),
+                    new DataStore(2, "Type", "GoodInstance", "Server=good", []),
                 ]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=bad");
             A.CallTo(() => connectionStringProvider.GetConnectionString(2, null)).Returns("Server=good");
@@ -471,7 +471,7 @@ public class ValidateStartupInstancesTaskTests
         [Test]
         public async Task It_validates_all_instances_across_tenants()
         {
-            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var instanceProvider = A.Fake<IDataStoreProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
             var resourceKeyValidator = A.Fake<IResourceKeyValidator>();
@@ -482,9 +482,9 @@ public class ValidateStartupInstancesTaskTests
 
             A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "tenantA", "tenantB" });
             A.CallTo(() => instanceProvider.GetAll("tenantA"))
-                .Returns([new DmsInstance(1, "Type", "Instance1", "Server=a", [])]);
+                .Returns([new DataStore(1, "Type", "Instance1", "Server=a", [])]);
             A.CallTo(() => instanceProvider.GetAll("tenantB"))
-                .Returns([new DmsInstance(2, "Type", "Instance2", "Server=b", [])]);
+                .Returns([new DataStore(2, "Type", "Instance2", "Server=b", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, "tenantA")).Returns("Server=a");
             A.CallTo(() => connectionStringProvider.GetConnectionString(2, "tenantB")).Returns("Server=b");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);

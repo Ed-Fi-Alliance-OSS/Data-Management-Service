@@ -26,7 +26,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         services.AddLogging();
         services.AddSingleton(A.Fake<IReadableProfileProjector>());
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddMssqlReferenceResolver();
 
         using var serviceProvider = BuildServiceProvider(services);

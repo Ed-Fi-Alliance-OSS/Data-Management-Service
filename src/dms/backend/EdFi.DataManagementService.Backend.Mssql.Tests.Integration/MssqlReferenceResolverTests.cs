@@ -513,12 +513,12 @@ public class Given_MssqlReferenceResolver
     )
     {
         using var scope = _serviceProvider.CreateScope();
-        var instanceSelection = scope.ServiceProvider.GetRequiredService<IDmsInstanceSelection>();
-        instanceSelection.SetSelectedDmsInstance(
-            new DmsInstance(
+        var instanceSelection = scope.ServiceProvider.GetRequiredService<IDataStoreSelection>();
+        instanceSelection.SetSelectedDataStore(
+            new DataStore(
                 Id: 1,
-                InstanceType: "test",
-                InstanceName: "MssqlReferenceResolverIntegration",
+                DataStoreType: "test",
+                Name: "MssqlReferenceResolverIntegration",
                 ConnectionString: _database.ConnectionString,
                 RouteContext: []
             )
@@ -541,7 +541,7 @@ public class Given_MssqlReferenceResolver
         var services = new ServiceCollection();
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddTestReadableProfileProjector();
         services.AddMssqlReferenceResolver();
 

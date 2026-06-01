@@ -153,7 +153,7 @@ Existing Pipeline:
   2. CoreExceptionLoggingMiddleware
   3. TenantValidationMiddleware
   4. JwtAuthenticationMiddleware
-  5. ResolveDmsInstanceMiddleware
+  5. ResolveDataStoreMiddleware
   6. ApiSchemaValidationMiddleware
   7. ProvideApiSchemaMiddleware
   8. ParsePathMiddleware
@@ -165,7 +165,7 @@ With Profile Support:
   2. CoreExceptionLoggingMiddleware
   3. TenantValidationMiddleware
   4. JwtAuthenticationMiddleware
-  5. ResolveDmsInstanceMiddleware
+  5. ResolveDataStoreMiddleware
   6. ApiSchemaValidationMiddleware
   7. ProvideApiSchemaMiddleware
   8. ParsePathMiddleware

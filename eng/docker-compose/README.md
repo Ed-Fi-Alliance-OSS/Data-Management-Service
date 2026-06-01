@@ -323,7 +323,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d25590
 Key testing steps:
 
 1. **Get Config Service Token** - Authenticates with the configuration service
-2. **Create DMS Instances** - Sets up 3 instances with different route contexts:
+2. **Create Data Stores** - Sets up 3 data stores with different route contexts:
    * Instance 1: District 255901, School Year 2024
    * Instance 2: District 255901, School Year 2025
    * Instance 3: District 255902, School Year 2024
@@ -369,7 +369,7 @@ When you make requests to:
 
   ```powershell
   docker logs docker-compose-dms-1 | grep "Successfully fetched"
-  # Should show: "Successfully fetched 4 DMS instances" (or your expected count)
+  # Should show: "Successfully fetched 4 data stores" (or your expected count)
   ```
 
 * Verify route contexts are created correctly in the Configuration Service
@@ -466,15 +466,15 @@ Use the automated setup script (from `eng/docker-compose` directory):
 
 ```powershell
 $instances = @(
-    @{ InstanceId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
-    @{ InstanceId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
-    @{ InstanceId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
+    @{ DataStoreId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
+    @{ DataStoreId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
+    @{ DataStoreId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
 )
 
 .\setup-instance-kafka-connectors.ps1 -Instances $instances
 ```
 
-This creates separate Debezium connectors with instance-specific topics.
+This creates separate Debezium connectors with data-store-specific topics.
 
 #### 3. Verify Topics Were Created
 

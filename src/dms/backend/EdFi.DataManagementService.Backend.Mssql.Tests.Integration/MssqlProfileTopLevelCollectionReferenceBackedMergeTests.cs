@@ -178,7 +178,7 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -355,12 +355,12 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
     private static void SetInstanceSelection(IServiceScope scope, MssqlGeneratedDdlTestDatabase database)
     {
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlReferenceBackedTopLevelCollectionMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlReferenceBackedTopLevelCollectionMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )

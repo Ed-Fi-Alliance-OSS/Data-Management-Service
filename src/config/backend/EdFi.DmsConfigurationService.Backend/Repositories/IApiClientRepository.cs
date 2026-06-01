@@ -36,9 +36,9 @@ public record ApiClientInsertResult
     public record FailureApplicationNotFound() : ApiClientInsertResult();
 
     /// <summary>
-    /// Referenced DMS instance not found exception thrown and caught
+    /// Referenced Data store not found exception thrown and caught
     /// </summary>
-    public record FailureDmsInstanceNotFound() : ApiClientInsertResult();
+    public record FailureDataStoreNotFound() : ApiClientInsertResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -99,9 +99,9 @@ public record ApiClientUpdateResult
     public record FailureApplicationNotFound() : ApiClientUpdateResult();
 
     /// <summary>
-    /// Referenced DMS instance not found exception thrown and caught
+    /// Referenced Data store not found exception thrown and caught
     /// </summary>
-    public record FailureDmsInstanceNotFound() : ApiClientUpdateResult();
+    public record FailureDataStoreNotFound() : ApiClientUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

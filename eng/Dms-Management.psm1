@@ -526,7 +526,7 @@ function Add-Vendor {
     .PARAMETER AccessToken
         The Keycloak bearer token for API authorization. Mandatory.
 
-    .PARAMETER DmsInstanceIds
+    .PARAMETER DataStoreIds
         Array of DMS instance IDs to associate with this application. Optional.
 
     .OUTPUTS
@@ -536,7 +536,7 @@ function Add-Vendor {
             - Secret: The application's secret.
 
     .EXAMPLE
-        $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp" -DmsInstanceIds @(1,2)
+        $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp" -DataStoreIds @(1,2)
         Write-Host "App ID: $($creds.Id)"
         Write-Host "App Key: $($creds.Key)"
         Write-Host "App Secret: $($creds.Secret)"
@@ -563,7 +563,7 @@ function Add-Application {
         $EducationOrganizationIds = @(255901, 19255901),
 
         [long[]]
-        $DmsInstanceIds = @(),
+        $DataStoreIds = @(),
 
         [string]$Tenant = ""
     )
@@ -573,7 +573,7 @@ function Add-Application {
         applicationName = $ApplicationName
         claimSetName    = $ClaimSetName
         educationOrganizationIds = $EducationOrganizationIds
-        dmsInstanceIds = $DmsInstanceIds
+        dataStoreIds = $DataStoreIds
     }
 
     $headers = @{ Authorization = "Bearer $AccessToken" }
@@ -697,11 +697,11 @@ function Get-CurrentSchoolYear {
 .PARAMETER CmsUrl
     The base URL of the Config server (e.g., http://localhost:8081).
 
-.PARAMETER InstanceType
-    The type of instance (e.g., "Production", "Development", "Staging"). Defaults to "Local".
+.PARAMETER DataStoreType
+    The type of data store (e.g., "Production", "Development", "Staging"). Defaults to "Local".
 
-.PARAMETER InstanceName
-    The name of the DMS instance. Defaults to "Local DMS Instance".
+.PARAMETER Name
+    The name of the data store. Defaults to "Local Data Store".
 
 .PARAMETER PostgresPassword
     The PostgreSQL password (mandatory).
@@ -726,27 +726,27 @@ function Get-CurrentSchoolYear {
     to enable multi-tenant routing.
 
 .OUTPUTS
-    [long] Returns the DMS Instance ID of the newly created instance.
+    [long] Returns the data store ID of the newly created data store.
 
 .EXAMPLE
-    # Create DMS Instance
-    $instanceId = Add-DmsInstance -AccessToken $token -PostgresPassword "secret123"
+    # Create data store
+    $dataStoreId = Add-DataStore -AccessToken $token -PostgresPassword "secret123"
 
 .EXAMPLE
-    # Create DMS Instance with tenant
-    $instanceId = Add-DmsInstance -AccessToken $token -PostgresPassword "secret123" -Tenant "Tenant1"
+    # Create data store with tenant
+    $dataStoreId = Add-DataStore -AccessToken $token -PostgresPassword "secret123" -Tenant "Tenant1"
 #>
-function Add-DmsInstance {
+function Add-DataStore {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
         [string]$CmsUrl = "http://localhost:8081",
 
         [ValidateNotNullOrEmpty()]
-        [string]$InstanceType = "Local",
+        [string]$DataStoreType = "Local",
 
         [ValidateNotNullOrEmpty()]
-        [string]$InstanceName = "Local DMS Instance",
+        [string]$Name = "Local Data Store",
 
         [Parameter(Mandatory = $true)]
         [string]$PostgresPassword,
@@ -771,9 +771,9 @@ function Add-DmsInstance {
     # Build connection string from individual parameters
     $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$PostgresUser;password=$PostgresPassword;database=$PostgresDbName;"
 
-    $dmsInstanceData = @{
-        instanceType = $InstanceType
-        instanceName = $InstanceName
+    $dataStoreData = @{
+        dataStoreType = $DataStoreType
+        name          = $Name
         connectionString = $ConnectionString
     }
 
@@ -784,10 +784,10 @@ function Add-DmsInstance {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/dmsInstances"
+        RelativeUrl  = "v2/dataStores"
         Method       = "Post"
         ContentType  = "application/json"
-        Body         = ConvertTo-Json -InputObject $dmsInstanceData -Depth 10
+        Body         = ConvertTo-Json -InputObject $dataStoreData -Depth 10
         Headers      = $headers
     }
 
@@ -823,9 +823,9 @@ function Add-DmsInstance {
     Array of DMS Instance objects.
 
 .EXAMPLE
-    $instances = Get-DmsInstances -AccessToken $token
+    $instances = Get-DataStore -AccessToken $token
 #>
-function Get-DmsInstances {
+function Get-DataStore {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
@@ -848,7 +848,7 @@ function Get-DmsInstances {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/dmsInstances?offset=$Offset&limit=$Limit"
+        RelativeUrl  = "v2/dataStores?offset=$Offset&limit=$Limit"
         Method       = "Get"
         ContentType  = "application/json"
         Headers      = $headers
@@ -861,16 +861,16 @@ function Get-DmsInstances {
 
 <#
 .SYNOPSIS
-    Creates a DMS Instance Route Context by sending a POST request to the Configuration Service.
+    Creates a Data Store Context by sending a POST request to the Configuration Service.
 
 .DESCRIPTION
-    Adds a route context (key-value pair) to an existing DMS Instance.
+    Adds a context (key-value pair) to an existing Data Store.
 
 .PARAMETER CmsUrl
     The base URL of the Config server (e.g., http://localhost:8081).
 
-.PARAMETER InstanceId
-    The ID of the DMS Instance to which this route context will be added (mandatory).
+.PARAMETER DataStoreId
+    The ID of the Data Store to which this context will be added (mandatory).
 
 .PARAMETER ContextKey
     The context key (e.g., "schoolYear", "districtId"). Mandatory.
@@ -886,20 +886,20 @@ function Get-DmsInstances {
     to enable multi-tenant routing.
 
 .OUTPUTS
-    [long] Returns the Route Context ID of the newly created route context.
+    [long] Returns the Context ID of the newly created context.
 
 .EXAMPLE
-    # Add schoolYear route context to an instance
-    $routeContextId = Add-DmsInstanceRouteContext -AccessToken $token -InstanceId 1 -ContextKey "schoolYear" -ContextValue "2024"
+    # Add schoolYear context to a data store
+    $contextId = Add-DataStoreContext -AccessToken $token -DataStoreId 1 -ContextKey "schoolYear" -ContextValue "2024"
 #>
-function Add-DmsInstanceRouteContext {
+function Add-DataStoreContext {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
         [string]$CmsUrl = "http://localhost:8081",
 
         [Parameter(Mandatory = $true)]
-        [long]$InstanceId,
+        [long]$DataStoreId,
 
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
@@ -916,7 +916,7 @@ function Add-DmsInstanceRouteContext {
     )
 
     $routeContextData = @{
-        instanceId   = $InstanceId
+        dataStoreId  = $DataStoreId
         contextKey   = $ContextKey
         contextValue = $ContextValue
     }
@@ -928,7 +928,7 @@ function Add-DmsInstanceRouteContext {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/dmsInstanceRouteContexts"
+        RelativeUrl  = "v2/dataStoreContexts"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $routeContextData -Depth 10
@@ -980,7 +980,7 @@ function Add-DmsInstanceRouteContext {
     to enable multi-tenant routing.
 
 .OUTPUTS
-    Array of hashtables containing InstanceId and Year for each created instance.
+    Array of hashtables containing DataStoreId and Year for each created instance.
 
 .EXAMPLE
     # Create instances for years 2022-2026
@@ -1028,13 +1028,13 @@ function Add-DmsSchoolYearInstances {
     Write-Host "Creating DMS Instances for school years $StartYear to $EndYear..." -ForegroundColor Cyan
 
     for ($year = $StartYear; $year -le $EndYear; $year++) {
-        Write-Host "  Creating instance for School Year $year..." -ForegroundColor Yellow
+        Write-Verbose "  Creating data store for School Year $year..."
 
         # Create DMS Instance
-        $instanceId = Add-DmsInstance `
+        $dataStoreId = Add-DataStore `
             -CmsUrl $CmsUrl `
-            -InstanceType "SchoolYear" `
-            -InstanceName "School Year $year" `
+            -DataStoreType "SchoolYear" `
+            -Name "School Year $year" `
             -PostgresPassword $PostgresPassword `
             -PostgresDbName $PostgresDbName `
             -PostgresHost $PostgresHost `
@@ -1043,12 +1043,12 @@ function Add-DmsSchoolYearInstances {
             -AccessToken $AccessToken `
             -Tenant $Tenant
 
-        Write-Host "    Instance created with ID: $instanceId" -ForegroundColor Green
+        Write-Verbose "    Data store created with ID: $dataStoreId"
 
         # Add route context for school year
-        $routeContextId = Add-DmsInstanceRouteContext `
+        $routeContextId = Add-DataStoreContext `
             -CmsUrl $CmsUrl `
-            -InstanceId $instanceId `
+            -DataStoreId $dataStoreId `
             -ContextKey "schoolYear" `
             -ContextValue $year.ToString() `
             -AccessToken $AccessToken `
@@ -1057,13 +1057,13 @@ function Add-DmsSchoolYearInstances {
         Write-Host "    Route context created with ID: $routeContextId (schoolYear=$year)" -ForegroundColor Green
 
         $createdInstances += @{
-            InstanceId = $instanceId
+            DataStoreId = $dataStoreId
             Year = $year
             RouteContextId = $routeContextId
         }
     }
 
-    Write-Host "Successfully created $($createdInstances.Count) DMS Instances with school year route contexts" -ForegroundColor Green
+    Write-Verbose "Successfully created $($createdInstances.Count) data stores with school year contexts"
 
     return $createdInstances
 }
@@ -1338,7 +1338,7 @@ function Remove-CmsApplication {
 .PARAMETER NamespacePrefixes
     The ordered, de-duplicated namespace prefix array (mandatory). Build with Get-SeedLoaderNamespacePrefixes.
 
-.PARAMETER DmsInstanceIds
+.PARAMETER DataStoreIds
     The DMS instance IDs to bind the application to (mandatory).
 
 .PARAMETER Tenant
@@ -1356,7 +1356,7 @@ function Remove-CmsApplication {
 
 .EXAMPLE
     $prefixes = Get-SeedLoaderNamespacePrefixes
-    $creds = New-SeedLoaderCredentials -NamespacePrefixes $prefixes -DmsInstanceIds @(1)
+    $creds = New-SeedLoaderCredentials -NamespacePrefixes $prefixes -DataStoreIds @(1)
 #>
 function New-SeedLoaderCredentials {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function returns a key/secret credential pair and matches the exported bootstrap API.')]
@@ -1379,7 +1379,7 @@ function New-SeedLoaderCredentials {
         [string[]]$NamespacePrefixes,
 
         [Parameter(Mandatory)]
-        [long[]]$DmsInstanceIds,
+        [long[]]$DataStoreIds,
 
         # Education organization IDs to associate with the SeedLoader vendor. Resources whose
         # claims use the RelationshipsWithEdOrgsAndPeople authorization strategy (Section,
@@ -1442,7 +1442,7 @@ function New-SeedLoaderCredentials {
         -VendorId $vendorId `
         -AccessToken $token `
         -EducationOrganizationIds $EducationOrganizationIds `
-        -DmsInstanceIds $DmsInstanceIds `
+        -DataStoreIds $DataStoreIds `
         -Tenant $Tenant
 
     # Close the OpenIddict CDC race: on a cold stack the just-created application is in the DB
@@ -1522,4 +1522,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Add-DmsInstanceRouteContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody

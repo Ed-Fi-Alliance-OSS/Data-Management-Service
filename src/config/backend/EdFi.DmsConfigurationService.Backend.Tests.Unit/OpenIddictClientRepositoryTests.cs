@@ -51,13 +51,13 @@ public class OpenIddictClientRepositoryTests
     }
 
     [TestFixture]
-    public class Given_CreateClientAsync_With_DmsInstanceIds : OpenIddictClientRepositoryTests
+    public class Given_CreateClientAsync_With_DataStoreIds : OpenIddictClientRepositoryTests
     {
         [Test]
-        public async Task It_should_include_dmsInstanceIds_claim_when_provided()
+        public async Task It_should_include_dataStoreIds_claim_when_provided()
         {
             // Arrange
-            var dmsInstanceIds = new long[] { 3, 1, 2 }; // Unsorted to test sorting
+            var dataStoreIds = new long[] { 3, 1, 2 }; // Unsorted to test sorting
 
             A.CallTo(() =>
                     _dataRepository.FindRoleIdByNameAsync(
@@ -94,7 +94,7 @@ public class OpenIddictClientRepositoryTests
                 "test-scope",
                 "uri://test",
                 "100,200",
-                dmsInstanceIds
+                dataStoreIds
             );
 
             // Assert
@@ -106,16 +106,16 @@ public class OpenIddictClientRepositoryTests
             );
             protocolMappers.Should().NotBeNull();
 
-            var dmsInstanceIdsClaim = protocolMappers!.Find(m =>
-                m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds"
+            var dataStoreIdsClaim = protocolMappers!.Find(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "dataStoreIds"
             );
 
-            dmsInstanceIdsClaim.Should().NotBeNull("dmsInstanceIds claim should be present");
-            dmsInstanceIdsClaim!["claim.value"].Should().Be("1,2,3", "IDs should be sorted");
+            dataStoreIdsClaim.Should().NotBeNull("dataStoreIds claim should be present");
+            dataStoreIdsClaim!["claim.value"].Should().Be("1,2,3", "IDs should be sorted");
         }
 
         [Test]
-        public async Task It_should_not_include_dmsInstanceIds_claim_when_null()
+        public async Task It_should_not_include_dataStoreIds_claim_when_null()
         {
             // Arrange
             A.CallTo(() =>
@@ -153,7 +153,7 @@ public class OpenIddictClientRepositoryTests
                 "test-scope",
                 "uri://test",
                 "100,200",
-                null // No dmsInstanceIds
+                null // No dataStoreIds
             );
 
             // Assert
@@ -165,18 +165,18 @@ public class OpenIddictClientRepositoryTests
             );
             protocolMappers.Should().NotBeNull();
 
-            var dmsInstanceIdsClaim = protocolMappers!.Find(m =>
-                m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds"
+            var dataStoreIdsClaim = protocolMappers!.Find(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "dataStoreIds"
             );
 
-            dmsInstanceIdsClaim.Should().BeNull("dmsInstanceIds claim should not be present when null");
+            dataStoreIdsClaim.Should().BeNull("dataStoreIds claim should not be present when null");
         }
 
         [Test]
-        public async Task It_should_handle_empty_dmsInstanceIds_array()
+        public async Task It_should_handle_empty_dataStoreIds_array()
         {
             // Arrange
-            var dmsInstanceIds = Array.Empty<long>();
+            var dataStoreIds = Array.Empty<long>();
 
             A.CallTo(() =>
                     _dataRepository.FindRoleIdByNameAsync(
@@ -213,7 +213,7 @@ public class OpenIddictClientRepositoryTests
                 "test-scope",
                 "uri://test",
                 "100,200",
-                dmsInstanceIds
+                dataStoreIds
             );
 
             // Assert
@@ -225,24 +225,24 @@ public class OpenIddictClientRepositoryTests
             );
             protocolMappers.Should().NotBeNull();
 
-            var dmsInstanceIdsClaim = protocolMappers!.Find(m =>
-                m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds"
+            var dataStoreIdsClaim = protocolMappers!.Find(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "dataStoreIds"
             );
 
-            dmsInstanceIdsClaim.Should().NotBeNull("dmsInstanceIds claim should be present even when empty");
-            dmsInstanceIdsClaim!["claim.value"].Should().Be("", "Empty array should result in empty string");
+            dataStoreIdsClaim.Should().NotBeNull("dataStoreIds claim should be present even when empty");
+            dataStoreIdsClaim!["claim.value"].Should().Be("", "Empty array should result in empty string");
         }
     }
 
     [TestFixture]
-    public class Given_UpdateClientAsync_With_DmsInstanceIds : OpenIddictClientRepositoryTests
+    public class Given_UpdateClientAsync_With_DataStoreIds : OpenIddictClientRepositoryTests
     {
         [Test]
-        public async Task It_should_merge_dmsInstanceIds_claim_when_provided()
+        public async Task It_should_merge_dataStoreIds_claim_when_provided()
         {
             // Arrange
             var clientUuid = Guid.NewGuid().ToString();
-            var dmsInstanceIds = new long[] { 5, 3, 4 };
+            var dataStoreIds = new long[] { 5, 3, 4 };
 
             var existingProtocolMappers = JsonSerializer.Serialize(
                 new List<Dictionary<string, string>>
@@ -289,7 +289,7 @@ public class OpenIddictClientRepositoryTests
                 "Updated Client",
                 "test-scope",
                 "200,300",
-                dmsInstanceIds
+                dataStoreIds
             );
 
             // Assert
@@ -301,27 +301,27 @@ public class OpenIddictClientRepositoryTests
             );
             protocolMappers.Should().NotBeNull();
 
-            var dmsInstanceIdsClaim = protocolMappers!.Find(m =>
-                m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds"
+            var dataStoreIdsClaim = protocolMappers!.Find(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "dataStoreIds"
             );
 
-            dmsInstanceIdsClaim.Should().NotBeNull("dmsInstanceIds claim should be present");
-            dmsInstanceIdsClaim!["claim.value"].Should().Be("3,4,5", "IDs should be sorted");
+            dataStoreIdsClaim.Should().NotBeNull("dataStoreIds claim should be present");
+            dataStoreIdsClaim!["claim.value"].Should().Be("3,4,5", "IDs should be sorted");
         }
 
         [Test]
-        public async Task It_should_update_existing_dmsInstanceIds_claim()
+        public async Task It_should_update_existing_dataStoreIds_claim()
         {
             // Arrange
             var clientUuid = Guid.NewGuid().ToString();
-            var newDmsInstanceIds = new long[] { 10, 20 };
+            var newDataStoreIds = new long[] { 10, 20 };
 
             var existingProtocolMappers = JsonSerializer.Serialize(
                 new List<Dictionary<string, string>>
                 {
                     new() { { "claim.name", "namespacePrefixes" }, { "claim.value", "uri://test" } },
                     new() { { "claim.name", "educationOrganizationIds" }, { "claim.value", "100" } },
-                    new() { { "claim.name", "dmsInstanceIds" }, { "claim.value", "1,2,3" } }, // Old value
+                    new() { { "claim.name", "dataStoreIds" }, { "claim.value", "1,2,3" } }, // Old value
                 }
             );
 
@@ -362,7 +362,7 @@ public class OpenIddictClientRepositoryTests
                 "Updated Client",
                 "test-scope",
                 "200,300",
-                newDmsInstanceIds
+                newDataStoreIds
             );
 
             // Assert
@@ -374,16 +374,16 @@ public class OpenIddictClientRepositoryTests
             );
             protocolMappers.Should().NotBeNull();
 
-            var dmsInstanceIdsClaims = protocolMappers!
-                .Where(m => m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds")
+            var dataStoreIdsClaims = protocolMappers!
+                .Where(m => m.ContainsKey("claim.name") && m["claim.name"] == "dataStoreIds")
                 .ToList();
 
-            dmsInstanceIdsClaims.Should().HaveCount(1, "Should have only one dmsInstanceIds claim");
-            dmsInstanceIdsClaims[0]["claim.value"].Should().Be("10,20", "Should have new sorted IDs");
+            dataStoreIdsClaims.Should().HaveCount(1, "Should have only one dataStoreIds claim");
+            dataStoreIdsClaims[0]["claim.value"].Should().Be("10,20", "Should have new sorted IDs");
         }
 
         [Test]
-        public async Task It_should_not_modify_dmsInstanceIds_when_null()
+        public async Task It_should_not_modify_dataStoreIds_when_null()
         {
             // Arrange
             var clientUuid = Guid.NewGuid().ToString();
@@ -393,7 +393,7 @@ public class OpenIddictClientRepositoryTests
                 {
                     new() { { "claim.name", "namespacePrefixes" }, { "claim.value", "uri://test" } },
                     new() { { "claim.name", "educationOrganizationIds" }, { "claim.value", "100" } },
-                    new() { { "claim.name", "dmsInstanceIds" }, { "claim.value", "1,2,3" } },
+                    new() { { "claim.name", "dataStoreIds" }, { "claim.value", "1,2,3" } },
                 }
             );
 
@@ -434,7 +434,7 @@ public class OpenIddictClientRepositoryTests
                 "Updated Client",
                 "test-scope",
                 "200,300",
-                null // Don't update dmsInstanceIds
+                null // Don't update dataStoreIds
             );
 
             // Assert
@@ -446,13 +446,13 @@ public class OpenIddictClientRepositoryTests
             );
             protocolMappers.Should().NotBeNull();
 
-            var dmsInstanceIdsClaim = protocolMappers!.Find(m =>
-                m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds"
+            var dataStoreIdsClaim = protocolMappers!.Find(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "dataStoreIds"
             );
 
-            // When null is passed, the existing dmsInstanceIds should be preserved
-            dmsInstanceIdsClaim.Should().NotBeNull("Existing dmsInstanceIds claim should be preserved");
-            dmsInstanceIdsClaim!["claim.value"].Should().Be("1,2,3", "Original value should be unchanged");
+            // When null is passed, the existing dataStoreIds should be preserved
+            dataStoreIdsClaim.Should().NotBeNull("Existing dataStoreIds claim should be preserved");
+            dataStoreIdsClaim!["claim.value"].Should().Be("1,2,3", "Original value should be unchanged");
         }
     }
 

@@ -11,7 +11,7 @@
 param(
     [string]$EnvironmentFile,
     [string]$BootstrapManifestPath,
-    [long[]]$InstanceId = @(),
+    [long[]]$DataStoreId = @(),
     [int[]]$SchoolYear = @(),
     [string]$DmsBaseUrl,
     [ValidateSet("keycloak", "self-contained")]
@@ -584,7 +584,7 @@ function Assert-SeedSelectionInputs {
         [hashtable]$Manifest,
         [string]$SeedTemplate,
         [string]$SeedDataPath,
-        [long[]]$InstanceId = @(),
+        [long[]]$DataStoreId = @(),
         [int[]]$SchoolYear = @()
     )
 
@@ -592,13 +592,13 @@ function Assert-SeedSelectionInputs {
         throw "-SeedTemplate and -SeedDataPath are mutually exclusive. Provide at most one."
     }
 
-    if ($InstanceId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
-        throw "-InstanceId and -SchoolYear are mutually exclusive. -SchoolYear drives both instance selection and the /{year} URL segment for BulkLoadClient; -InstanceId targets a specific instance without per-year URL routing. Pass only one."
+    if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
+        throw "-DataStoreId and -SchoolYear are mutually exclusive. -SchoolYear drives both data store selection and the /{year} URL segment for BulkLoadClient; -DataStoreId targets a specific instance without per-year URL routing. Pass only one."
     }
 
-    if ($InstanceId.Count -gt 1) {
-        $idList = ($InstanceId | ForEach-Object { Format-LogSafeText ([string]$_) }) -join ", "
-        throw "Multiple -InstanceId values ($idList) are not supported. The route-unqualified -InstanceId path issues a single bulk-load pass against the unqualified base URL; a credential authorized for multiple instances cannot be disambiguated without a route qualifier. Pass one -InstanceId per run, or use -SchoolYear for multi-instance per-year loading."
+    if ($DataStoreId.Count -gt 1) {
+        $idList = ($DataStoreId | ForEach-Object { Format-LogSafeText ([string]$_) }) -join ", "
+        throw "Multiple -DataStoreId values ($idList) are not supported. The route-unqualified -DataStoreId path issues a single bulk-load pass against the unqualified base URL; a credential authorized for multiple data stores cannot be disambiguated without a route qualifier. Pass one -DataStoreId per run, or use -SchoolYear for multi-data store per-year loading."
     }
 
     $selectionMode = $Manifest["schema"]["selectionMode"]
@@ -1122,52 +1122,52 @@ function Wait-DmsHealthy {
     }
 }
 
-function Resolve-SeedTargetInstances {
+function Resolve-SeedTargetDataStores {
     <#
     .SYNOPSIS
-    Resolves which DMS instance IDs to target for seed delivery.
+    Resolves which data store IDs to target for seed delivery.
     Rules (in priority order):
-      - Explicit -InstanceId: each id is looked up; rejected when the instance carries any
-        dmsInstanceRouteContexts entries because DMS-1152 does not compose arbitrary qualifier
+      - Explicit -DataStoreId: each id is looked up; rejected when the instance carries any
+        dataStoreContexts entries because DMS-1152 does not compose arbitrary qualifier
         URLs from a bare id (use -SchoolYear or another selector once added).
-      - Explicit -SchoolYear: list instances; match by dmsInstanceRouteContexts[contextKey=schoolYear, contextValue=$year].
+      - Explicit -SchoolYear: list instances; match by dataStoreContexts[contextKey=schoolYear, contextValue=$year].
         A year with zero matches throws with the year named.
       - Neither selector with exactly one instance: auto-select.
       - Neither selector with zero instances: throw with guidance.
       - Neither selector with multiple: throw with (id, name) list and instructions.
-    Returns @{ InstanceIds = [long[]] }
+    Returns @{ DataStoreIds = [long[]] }
     #>
     param(
         [string]$CmsUrl,
         [string]$AccessToken,
-        [long[]]$InstanceId = @(),
+        [long[]]$DataStoreId = @(),
         [int[]]$SchoolYear = @(),
         [string]$Tenant = ""
     )
 
-    # CMS instance list is needed for every branch now; explicit -InstanceId must verify the
+    # CMS instance list is needed for every branch now; explicit -DataStoreId must verify the
     # instance exists and has zero route qualifiers, because DMS rejects requests whose URL
-    # qualifier count does not match the instance's dmsInstanceRouteContexts.
-    $instances = @(Get-DmsInstances -CmsUrl $CmsUrl -AccessToken $AccessToken -Tenant $Tenant)
+    # qualifier count does not match the instance's dataStoreContexts.
+    $instances = @(Get-DataStore -CmsUrl $CmsUrl -AccessToken $AccessToken -Tenant $Tenant)
 
-    if ($InstanceId.Count -gt 0) {
-        foreach ($explicitId in $InstanceId) {
+    if ($DataStoreId.Count -gt 0) {
+        foreach ($explicitId in $DataStoreId) {
             $matchedInstance = $instances | Where-Object { [long]$_.id -eq [long]$explicitId } | Select-Object -First 1
             if ($null -eq $matchedInstance) {
-                throw "DMS instance $(Format-LogSafeText $explicitId) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'. Verify the instance id and tenant scope before re-running."
+                throw "Data store $(Format-LogSafeText $explicitId) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'. Verify the data store id and tenant scope before re-running."
             }
 
             $routeContexts = @()
-            if ($matchedInstance.dmsInstanceRouteContexts -is [System.Collections.IEnumerable]) {
-                $routeContexts = @($matchedInstance.dmsInstanceRouteContexts)
+            if ($matchedInstance.dataStoreContexts -is [System.Collections.IEnumerable]) {
+                $routeContexts = @($matchedInstance.dataStoreContexts)
             }
             if ($routeContexts.Count -gt 0) {
                 $contextKeys = ($routeContexts | ForEach-Object { [string]$_.contextKey }) -join ", "
-                throw "DMS instance $(Format-LogSafeText $explicitId) carries $($routeContexts.Count) route context(s) ($(Format-LogSafeText $contextKeys)). -InstanceId targets only route-unqualified instances in DMS-1152; use -SchoolYear (or the matching selector) so the request URL can include the required qualifier segments."
+                throw "Data store $(Format-LogSafeText $explicitId) carries $($routeContexts.Count) route context(s) ($(Format-LogSafeText $contextKeys)). -DataStoreId targets only route-unqualified data stores in DMS-1152; use -SchoolYear (or the matching selector) so the request URL can include the required qualifier segments."
             }
         }
         return @{
-            InstanceIds = [long[]]$InstanceId
+            DataStoreIds = [long[]]$DataStoreId
         }
     }
 
@@ -1177,8 +1177,8 @@ function Resolve-SeedTargetInstances {
             $matchedInstances = @($instances | Where-Object {
                 $inst = $_
                 $hasMatch = $false
-                if ($inst.dmsInstanceRouteContexts -is [System.Collections.IEnumerable]) {
-                    foreach ($rc in @($inst.dmsInstanceRouteContexts)) {
+                if ($inst.dataStoreContexts -is [System.Collections.IEnumerable]) {
+                    foreach ($rc in @($inst.dataStoreContexts)) {
                         if ($rc.contextKey -eq "schoolYear" -and $rc.contextValue -eq [string]$year) {
                             $hasMatch = $true
                             break
@@ -1189,45 +1189,45 @@ function Resolve-SeedTargetInstances {
             })
 
             if ($matchedInstances.Count -eq 0) {
-                throw "No DMS instance found with route context schoolYear=$(Format-LogSafeText $year). Ensure instances were created before running seed delivery."
+                throw "No data store found with route context schoolYear=$(Format-LogSafeText $year). Ensure data stores were created before running seed delivery."
             }
             if ($matchedInstances.Count -gt 1) {
                 $ids = ($matchedInstances | ForEach-Object { $_.id }) -join ", "
-                throw "Multiple DMS instances found with route context schoolYear=$(Format-LogSafeText $year) (instance ids: $(Format-LogSafeText $ids)). Use -InstanceId to disambiguate, or clean up duplicate CMS state before re-running."
+                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Use -DataStoreId to disambiguate, or clean up duplicate CMS state before re-running."
             }
             $matchedIds.Add([long]$matchedInstances[0].id)
         }
 
         $uniqueIds = @($matchedIds | Sort-Object -Unique)
         return @{
-            InstanceIds = [long[]]$uniqueIds
+            DataStoreIds = [long[]]$uniqueIds
         }
     }
 
     # No selector; auto-select if exactly one instance.
     if ($instances.Count -eq 0) {
-        throw "No DMS instances found in CMS. Run configure-local-dms-instance.ps1 to create instances, then re-run seed delivery."
+        throw "No DMS data stores found in CMS. Run configure-local-dms-instance.ps1 to create data stores, then re-run seed delivery."
     }
 
     if ($instances.Count -gt 1) {
         $listing = ($instances | ForEach-Object {
-            "  id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.instanceName)"
+            "  id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.name)"
         }) -join "`n"
-        throw "Multiple DMS instances exist; cannot auto-select. Pass -InstanceId or -SchoolYear to target specific instances:`n$listing"
+        throw "Multiple data stores exist; cannot auto-select. Pass -DataStoreId or -SchoolYear to target specific data stores:`n$listing"
     }
 
-    $soleInstance = $instances[0]
+    $soleDataStore = $instances[0]
     $soleRouteContexts = @()
-    if ($soleInstance.dmsInstanceRouteContexts -is [System.Collections.IEnumerable]) {
-        $soleRouteContexts = @($soleInstance.dmsInstanceRouteContexts)
+    if ($soleDataStore.dataStoreContexts -is [System.Collections.IEnumerable]) {
+        $soleRouteContexts = @($soleDataStore.dataStoreContexts)
     }
     if ($soleRouteContexts.Count -gt 0) {
         $contextKeys = ($soleRouteContexts | ForEach-Object { [string]$_.contextKey }) -join ", "
-        throw "Single DMS instance $(Format-LogSafeText $soleInstance.id) carries $($soleRouteContexts.Count) route context(s) ($(Format-LogSafeText $contextKeys)). Auto-select cannot compose the required URL qualifier segments. Pass -SchoolYear (or the matching selector) to target this instance with the correct route."
+        throw "Single data store $(Format-LogSafeText $soleDataStore.id) carries $($soleRouteContexts.Count) route context(s) ($(Format-LogSafeText $contextKeys)). Auto-select cannot compose the required URL qualifier segments. Pass -SchoolYear (or the matching selector) to target this data store with the correct route."
     }
 
     return @{
-        InstanceIds = [long[]]@([long]$soleInstance.id)
+        DataStoreIds = [long[]]@([long]$soleDataStore.id)
     }
 }
 
@@ -1537,7 +1537,7 @@ Assert-SeedSelectionInputs `
     -Manifest $manifest `
     -SeedTemplate $SeedTemplate `
     -SeedDataPath $SeedDataPath `
-    -InstanceId $InstanceId `
+    -DataStoreId $DataStoreId `
     -SchoolYear $SchoolYear
 
 # Validate the local seed path now too; a typo in -SeedDataPath should surface here, not
@@ -1705,11 +1705,11 @@ Write-Host "Verifying CMS has the SeedLoader claim set loaded..."
 Assert-CmsSeedLoaderClaimSetLoaded -CmsUrl $cmsUrl -AccessToken $cmsToken -Tenant $tenant
 
 # --- Step 5: Instance selector resolution ---
-Write-Host "Resolving target DMS instances..."
-$targets = Resolve-SeedTargetInstances `
+Write-Host "Resolving target data stores..."
+$targets = Resolve-SeedTargetDataStores `
     -CmsUrl $cmsUrl `
     -AccessToken $cmsToken `
-    -InstanceId $InstanceId `
+    -DataStoreId $DataStoreId `
     -SchoolYear $SchoolYear `
     -Tenant $tenant
 
@@ -1725,7 +1725,7 @@ Write-Host "Creating SeedLoader credentials (in-memory only)..."
 $creds = New-SeedLoaderCredentials `
     -CmsUrl $cmsUrl `
     -NamespacePrefixes $nsPrefixes `
-    -DmsInstanceIds $targets.InstanceIds `
+    -DataStoreIds $targets.DataStoreIds `
     -Tenant $tenant `
     -AdminToken $cmsToken
 

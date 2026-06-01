@@ -53,7 +53,7 @@ public class Given_Authorization_Data_Provider_When_Building_An_Application_Requ
             vendorId: 1,
             claimSetName: _claimSetName,
             educationOrganizationIds: [255901],
-            dmsInstanceId: 2
+            dataStoreId: 2
         );
 
         _requestDocument = JsonDocument.Parse(requestJson);

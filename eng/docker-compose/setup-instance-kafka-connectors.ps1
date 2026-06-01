@@ -8,10 +8,10 @@
     Sets up Debezium connectors for topic-per-instance architecture in E2E tests
 
 .DESCRIPTION
-    This script creates individual Debezium connectors for each DMS instance,
-    enabling topic-per-instance message segregation. Each connector:
-    - Watches a specific instance database
-    - Publishes to instance-specific topics (e.g., edfi.dms.{instanceId}.document)
+    This script creates individual Debezium connectors for each data store,
+    enabling topic-per-data-store message segregation. Each connector:
+    - Watches a specific data store database
+    - Publishes to data-store-specific topics (e.g., edfi.dms.{DataStoreId}.document)
     - Maintains separate replication slots and publications
 
 .PARAMETER EnvironmentFile
@@ -19,14 +19,14 @@
 
 .PARAMETER Instances
     Array of instance configurations. Each instance should have:
-    - InstanceId: Numeric ID for the instance
+    - DataStoreId: Numeric ID for the data store
     - DatabaseName: Name of the PostgreSQL database for this instance
 
 .EXAMPLE
     $instances = @(
-        @{ InstanceId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
-        @{ InstanceId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
-        @{ InstanceId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
+        @{ DataStoreId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
+        @{ DataStoreId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
+        @{ DataStoreId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
     )
     .\setup-instance-kafka-connectors.ps1 -Instances $instances
 #>
@@ -69,23 +69,23 @@ function IsReady([string] $Url) {
     return $false
 }
 
-function Setup-InstanceConnector {
+function Initialize-DataStoreConnector {
     param (
-        [int]$InstanceId,
+        [int]$DataStoreId,
         [string]$DatabaseName,
         [string]$ConnectBaseUrl,
         [string]$PostgresPassword,
         [string]$TemplateContent
     )
 
-    $connectorName = "postgresql-source-instance-$InstanceId"
+    $connectorName = "postgresql-source-datastore-$DataStoreId"
     $connectorUrl = "$ConnectBaseUrl/$connectorName"
 
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "Setting up connector for Instance $InstanceId" -ForegroundColor Cyan
-    Write-Host "  Database: $DatabaseName" -ForegroundColor Gray
-    Write-Host "  Topic: edfi.dms.$InstanceId.document" -ForegroundColor Gray
-    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Information -MessageData "`n========================================"
+    Write-Information -MessageData "Setting up connector for data store $DataStoreId"
+    Write-Information -MessageData "  Database: $DatabaseName"
+    Write-Information -MessageData "  Topic: edfi.dms.$DataStoreId.document"
+    Write-Information -MessageData "========================================"
 
     # Check if connector already exists and delete it
     try {
@@ -104,18 +104,18 @@ function Setup-InstanceConnector {
 
     # Generate connector configuration from template
     $connectorConfig = $TemplateContent
-    $connectorConfig = $connectorConfig.Replace("{{INSTANCE_ID}}", $InstanceId)
+    $connectorConfig = $connectorConfig.Replace("{{DATASTORE_ID}}", $DataStoreId)
     $connectorConfig = $connectorConfig.Replace("{{DATABASE_NAME}}", $DatabaseName)
     $connectorConfig = $connectorConfig.Replace("{{POSTGRES_PASSWORD}}", $PostgresPassword)
 
     # Install the connector
     try {
-        Write-Host "Installing connector configuration..." -ForegroundColor Cyan
+        Write-Information -MessageData "Installing connector configuration..."
         $response = Invoke-RestMethod -Method Post -Uri $ConnectBaseUrl -ContentType "application/json" -Body $connectorConfig
 
-        Write-Host "Connector installed successfully!" -ForegroundColor Green
-        Write-Host "  Connector Name: $($response.name)" -ForegroundColor Gray
-        Write-Host "  Topic Prefix: edfi.dms.$InstanceId" -ForegroundColor Gray
+        Write-Information -MessageData "Connector installed successfully!"
+        Write-Information -MessageData "  Connector Name: $($response.name)"
+        Write-Information -MessageData "  Topic Prefix: edfi.dms.$DataStoreId"
 
         # Wait a moment for connector to initialize
         Start-Sleep -Seconds 2
@@ -196,8 +196,8 @@ $failureCount = 0
 
 foreach ($instance in $Instances) {
     try {
-        Setup-InstanceConnector `
-            -InstanceId $instance.InstanceId `
+        Initialize-DataStoreConnector `
+            -DataStoreId $instance.DataStoreId `
             -DatabaseName $instance.DatabaseName `
             -ConnectBaseUrl $connectBaseUrl `
             -PostgresPassword $postgresPassword `
@@ -206,8 +206,8 @@ foreach ($instance in $Instances) {
         $successCount++
     }
     catch {
-        Write-Host "`nFailed to setup connector for instance $($instance.InstanceId)" -ForegroundColor Red
-        Write-Host $_.Exception.Message -ForegroundColor Red
+        Write-Information -MessageData "`nFailed to setup connector for data store $($instance.DataStoreId)"
+        Write-Information -MessageData $_.Exception.Message
         $failureCount++
     }
 }

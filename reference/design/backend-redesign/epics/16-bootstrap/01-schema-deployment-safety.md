@@ -83,8 +83,8 @@ successor story.
 ## Tasks
 
 1. Supply `provision-dms-schema.ps1` with target instance details from `configure-local-dms-instance.ps1`:
-   within a single wrapper invocation, accept in-memory instance IDs forwarded by `bootstrap-local-dms.ps1`;
-   in a manual phase flow, resolve target instances through explicit `-InstanceId <long[]>` or
+   within a single wrapper invocation, accept in-memory data store IDs forwarded by `bootstrap-local-dms.ps1`;
+   in a manual phase flow, resolve target instances through explicit `-DataStoreId <long[]>` or
    `-SchoolYear <int[]>` selectors via CMS-backed lookup (auto-select when exactly one match, fail fast
    on zero or multiple without an explicit selector). The CMS-backed lookup and database connection defaults
    come from the shared `-EnvironmentFile` local-settings resolver. Supply the staged schema context produced by

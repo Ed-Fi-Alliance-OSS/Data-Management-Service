@@ -32,7 +32,7 @@ public class ApiClientModuleTests
     private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
-    private readonly IDmsInstanceRepository _dmsInstanceRepository = A.Fake<IDmsInstanceRepository>();
+    private readonly IDataStoreRepository _dataStoreRepository = A.Fake<IDataStoreRepository>();
     private readonly IIdentityProviderRepository _identityProviderRepository =
         A.Fake<IIdentityProviderRepository>();
 
@@ -68,7 +68,7 @@ public class ApiClientModuleTests
                     .AddTransient((_) => _apiClientRepository)
                     .AddTransient((_) => _applicationRepository)
                     .AddTransient((_) => _vendorRepository)
-                    .AddTransient((_) => _dmsInstanceRepository)
+                    .AddTransient((_) => _dataStoreRepository)
                     .AddTransient((_) => _identityProviderRepository);
             });
         });
@@ -93,7 +93,7 @@ public class ApiClientModuleTests
                             ClaimSetName = "TestClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1, 2],
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -112,8 +112,8 @@ public class ApiClientModuleTests
                     )
                 );
 
-            A.CallTo(() => _dmsInstanceRepository.GetExistingDmsInstanceIds(A<long[]>.Ignored))
-                .Returns(new DmsInstanceIdsExistResult.Success([1L]));
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
 
             A.CallTo(() =>
                     _identityProviderRepository.CreateClientAsync(
@@ -149,7 +149,7 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test API Client",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         },
                     ])
                 );
@@ -165,7 +165,7 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test API Client",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -181,7 +181,7 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test API Client",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -227,7 +227,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Test API Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -247,7 +247,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Updated API Client",
                       "isApproved": false,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -303,7 +303,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Test API Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -349,7 +349,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Test API Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -401,7 +401,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Disabled Client",
                       "isApproved": false,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -430,8 +430,8 @@ public class ApiClientModuleTests
                         A<ApiClientInsertCommand>.Ignored,
                         A<ApiClientCommand>.That.Matches(command =>
                             command.ClientUuid == createdClientUuid
-                            && command.DmsInstanceIds.Length == 1
-                            && command.DmsInstanceIds[0] == 1
+                            && command.DataStoreIds.Length == 1
+                            && command.DataStoreIds[0] == 1
                         )
                     )
                 )
@@ -478,7 +478,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Updated API Client",
                       "isApproved": false,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -518,7 +518,7 @@ public class ApiClientModuleTests
                    "applicationId": 0,
                    "name": "",
                    "isApproved": true,
-                   "dmsInstanceIds": []
+                   "dataStoreIds": []
                 }
                 """;
 
@@ -536,7 +536,7 @@ public class ApiClientModuleTests
             // Verify the validation errors are present
             actualResponse!["validationErrors"]!["ApplicationId"].Should().NotBeNull();
             actualResponse!["validationErrors"]!["Name"].Should().NotBeNull();
-            actualResponse!["validationErrors"]!["DmsInstanceIds"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["DataStoreIds"].Should().NotBeNull();
         }
 
         [Test]
@@ -550,7 +550,7 @@ public class ApiClientModuleTests
                    "applicationId": 1,
                    "name": "This name is way too long and exceeds the maximum allowed length of fifty characters",
                    "isApproved": true,
-                   "dmsInstanceIds": [1]
+                   "dataStoreIds": [1]
                 }
                 """;
 
@@ -617,7 +617,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Updated Name",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -675,7 +675,7 @@ public class ApiClientModuleTests
                             ClaimSetName = "TestClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -693,8 +693,8 @@ public class ApiClientModuleTests
                     )
                 );
 
-            A.CallTo(() => _dmsInstanceRepository.GetExistingDmsInstanceIds(A<long[]>.Ignored))
-                .Returns(new DmsInstanceIdsExistResult.Success([1L]));
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
 
             A.CallTo(() =>
                     _identityProviderRepository.CreateClientAsync(
@@ -736,7 +736,7 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -779,7 +779,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Test Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -799,7 +799,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Updated",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -863,7 +863,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Updated",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -901,8 +901,8 @@ public class ApiClientModuleTests
                     )
                 );
 
-            A.CallTo(() => _dmsInstanceRepository.GetExistingDmsInstanceIds(A<long[]>.Ignored))
-                .Returns(new DmsInstanceIdsExistResult.Success([1L]));
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
 
             A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
                 .Returns(
@@ -915,7 +915,7 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -936,7 +936,7 @@ public class ApiClientModuleTests
                       "applicationId": 999,
                       "name": "Test Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -984,7 +984,7 @@ public class ApiClientModuleTests
                       "applicationId": 999,
                       "name": "Updated Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -1018,7 +1018,7 @@ public class ApiClientModuleTests
     }
 
     [TestFixture]
-    public class Given_Invalid_DmsInstance_Reference : ApiClientModuleTests
+    public class Given_Invalid_DataStore_Reference : ApiClientModuleTests
     {
         [SetUp]
         public void Setup()
@@ -1033,7 +1033,7 @@ public class ApiClientModuleTests
                             ClaimSetName = "TestClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -1051,8 +1051,8 @@ public class ApiClientModuleTests
                     )
                 );
 
-            A.CallTo(() => _dmsInstanceRepository.GetExistingDmsInstanceIds(A<long[]>.Ignored))
-                .Returns(new DmsInstanceIdsExistResult.Success([]));
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([]));
 
             A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
                 .Returns(
@@ -1065,14 +1065,14 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
         }
 
         [Test]
-        public async Task It_returns_bad_request_for_nonexistent_dms_instance_on_insert()
+        public async Task It_returns_bad_request_for_nonexistent_data_store_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1086,7 +1086,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Test Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [999, 888]
+                      "dataStoreIds": [999, 888]
                     }
                     """,
                     Encoding.UTF8,
@@ -1107,8 +1107,8 @@ public class ApiClientModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "DmsInstanceIds": [
-                      "The following DmsInstanceIds were not found in database: 999, 888"
+                    "DataStoreIds": [
+                      "The following DataStoreIds were not found in database: 999, 888"
                     ]
                   },
                   "errors": []
@@ -1119,7 +1119,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_bad_request_for_nonexistent_dms_instance_on_update()
+        public async Task It_returns_bad_request_for_nonexistent_data_store_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1134,7 +1134,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Updated Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [999, 888]
+                      "dataStoreIds": [999, 888]
                     }
                     """,
                     Encoding.UTF8,
@@ -1155,8 +1155,8 @@ public class ApiClientModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "DmsInstanceIds": [
-                      "The following DmsInstanceIds were not found in database: 999, 888"
+                    "DataStoreIds": [
+                      "The following DataStoreIds were not found in database: 999, 888"
                     ]
                   },
                   "errors": []
@@ -1183,7 +1183,7 @@ public class ApiClientModuleTests
                             ClaimSetName = "TestClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -1201,8 +1201,8 @@ public class ApiClientModuleTests
                     )
                 );
 
-            A.CallTo(() => _dmsInstanceRepository.GetExistingDmsInstanceIds(A<long[]>.Ignored))
-                .Returns(new DmsInstanceIdsExistResult.Success([1L]));
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
 
             A.CallTo(() =>
                     _identityProviderRepository.CreateClientAsync(
@@ -1234,7 +1234,7 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );
@@ -1272,7 +1272,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Test Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -1300,7 +1300,7 @@ public class ApiClientModuleTests
                       "applicationId": 1,
                       "name": "Updated Client",
                       "isApproved": true,
-                      "dmsInstanceIds": [1]
+                      "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -1330,7 +1330,7 @@ public class ApiClientModuleTests
                             ClientUuid = Guid.NewGuid(),
                             Name = "Test API Client",
                             IsApproved = true,
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                         }
                     )
                 );

@@ -4,7 +4,7 @@ param(
     [string]$OutputDir = (Join-Path (Get-Location) "zap-reports"),
     [string]$SysAdminId = "DmsConfigurationService",
     [string]$SysAdminSecret = "ValidClientSecret1234567890!Abcd",
-    [string]$DmsInstanceConnectionString = "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
+    [string]$DataStoreConnectionString = "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
     [string]$ZapImage = "ghcr.io/zaproxy/zaproxy:stable",
     [string]$CmsOpenApiPath = "/metadata/specifications",
     [string]$HostAlias = "host.docker.internal",
@@ -34,7 +34,8 @@ function New-ConfigToken
 function New-DmsClient
 {
     param(
-        [string]$ConfigToken
+        [string]$ConfigToken,
+        [string]$ConnectionString
     )
 
     $vendorBody = @{
@@ -47,19 +48,19 @@ function New-DmsClient
     $vendor = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v2/vendors" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $vendorBody
 
     $instanceBody = @{
-        instanceType = "Test"
-        instanceName = "ZAP Instance $(Get-Random -Minimum 1000 -Maximum 9999999)"
-        connectionString = $DmsInstanceConnectionString
+        dataStoreType = "Test"
+        name          = "ZAP Instance $(Get-Random -Minimum 1000 -Maximum 9999999)"
+        connectionString = $ConnectionString
     } | ConvertTo-Json
 
-    $instance = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v2/dmsInstances" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $instanceBody
+    $instance = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v2/dataStores" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $instanceBody
 
     $applicationBody = @{
         vendorId = $vendor.id
         applicationName = "ZAP App $(Get-Random -Minimum 1000 -Maximum 9999999)"
         claimSetName = "E2E-RelationshipsWithEdOrgsOnlyClaimSet"
         educationOrganizationIds = @(255, 255901)
-        dmsInstanceIds = @($instance.id)
+        dataStoreIds = @($instance.id)
     } | ConvertTo-Json
 
     $application = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v2/applications" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $applicationBody
@@ -161,7 +162,7 @@ Write-Host "Requesting CMS admin token..."
 $configToken = New-ConfigToken
 
 Write-Host "Provisioning DMS client..."
-$client = New-DmsClient -ConfigToken $configToken
+$client = New-DmsClient -ConfigToken $configToken -ConnectionString $DataStoreConnectionString
 
 Write-Host "Requesting DMS token..."
 $dmsAuth = New-DmsToken -ClientId $client.ClientId -ClientSecret $client.ClientSecret

@@ -12,11 +12,11 @@ Feature: ApiClients endpoints
                         "namespacePrefixes": "uri://ed-fi-e2e.org"
                     }
                   """
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store",
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
@@ -26,7 +26,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 01",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
 
@@ -42,7 +42,7 @@ Feature: ApiClients endpoints
                           "clientUuid": "{clientUuid}",
                           "name": "Test Application 01",
                           "isApproved": true,
-                          "dmsInstanceIds": [{dmsInstanceId}]
+                          "dataStoreIds": [{dataStoreId}]
                       }]
                   """
 
@@ -53,7 +53,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 02",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a GET request is made to "/v2/apiClients/{clientId}"
@@ -67,7 +67,7 @@ Feature: ApiClients endpoints
                     "clientUuid": "{clientUuid}",
                     "name": "Test Application 02",
                     "isApproved": true,
-                    "dmsInstanceIds": [{dmsInstanceId}]
+                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
 
@@ -82,14 +82,14 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 04",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance 2",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store 2",
                         "connectionString": "Server=test2;Database=TestDb2;"
                     }
                   """
@@ -99,7 +99,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "My Custom API Client",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -115,11 +115,11 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 05 Verify error handling when posting apiClient with non-existent application
-            Given a POST request is made to "/v2/dmsInstances" with
+            Given a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance 2",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store 2",
                         "connectionString": "Server=test2;Database=TestDb2;"
                     }
                   """
@@ -129,7 +129,7 @@ Feature: ApiClients endpoints
                    "applicationId": 99999,
                    "name": "Test Client",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -149,14 +149,14 @@ Feature: ApiClients endpoints
                   }
                   """
 
-        Scenario: 06 Verify error handling when posting apiClient with non-existent DmsInstanceIds
+        Scenario: 06 Verify error handling when posting apiClient with non-existent DataStoreIds
             Given a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 06",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a POST request is made to "/v2/apiClients" with
@@ -165,7 +165,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client",
                    "isApproved": false,
-                   "dmsInstanceIds": [99999, 88888]
+                   "dataStoreIds": [99999, 88888]
                   }
                   """
              Then it should respond with 400
@@ -177,22 +177,22 @@ Feature: ApiClients endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                        "DmsInstanceIds": [
-                            "The following DmsInstanceIds were not found in database: 99999, 88888"
+                        "DataStoreIds": [
+                            "The following DataStoreIds were not found in database: 99999, 88888"
                         ]
                     },
                     "errors": []
                   }
                   """
 
-        Scenario: 07 Ensure clients can not POST apiClient with empty DmsInstanceIds
+        Scenario: 07 Ensure clients can not POST apiClient with empty DataStoreIds
             Given a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 07",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a POST request is made to "/v2/apiClients" with
@@ -201,7 +201,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Another API Client",
                    "isApproved": true,
-                   "dmsInstanceIds": []
+                   "dataStoreIds": []
                   }
                   """
              Then it should respond with 400
@@ -213,8 +213,8 @@ Feature: ApiClients endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                        "DmsInstanceIds": [
-                            "DmsInstanceIds cannot be empty. At least one DMS Instance is required."
+                        "DataStoreIds": [
+                            "DataStoreIds cannot be empty. At least one Data Store is required."
                         ]
                     },
                     "errors": []
@@ -228,14 +228,14 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 08",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance 3",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store 3",
                         "connectionString": "Server=test3;Database=TestDb3;"
                     }
                   """
@@ -245,7 +245,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Original Client Name",
                    "isApproved": false,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a PUT request is made to "/v2/apiClients/{apiClientId}" with
@@ -255,7 +255,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Updated Client Name",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 204
@@ -267,14 +267,14 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 09",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance 4",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store 4",
                         "connectionString": "Server=test4;Database=TestDb4;"
                     }
                   """
@@ -284,7 +284,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Original Name",
                    "isApproved": false,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a PUT request is made to "/v2/apiClients/{apiClientId}" with
@@ -294,7 +294,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "New Name After Update",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a GET request is made to "/v2/apiClients/{clientId}"
@@ -308,7 +308,7 @@ Feature: ApiClients endpoints
                     "clientUuid": "{clientUuid}",
                     "name": "New Name After Update",
                     "isApproved": true,
-                    "dmsInstanceIds": [{dmsInstanceId}]
+                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
 
@@ -319,7 +319,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 10",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a PUT request is made to "/v2/apiClients/99999" with
@@ -329,7 +329,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 404
@@ -341,7 +341,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 11",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/apiClients" with
@@ -350,7 +350,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client 11",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a PUT request is made to "/v2/apiClients/{apiClientId}" with
@@ -360,7 +360,7 @@ Feature: ApiClients endpoints
                    "applicationId": 99999,
                    "name": "Test Client",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -380,14 +380,14 @@ Feature: ApiClients endpoints
                   }
                   """
 
-        Scenario: 12 Verify error handling when updating apiClient with non-existent DmsInstanceIds
+        Scenario: 12 Verify error handling when updating apiClient with non-existent DataStoreIds
             Given a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 12",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/apiClients" with
@@ -396,7 +396,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client 12",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a PUT request is made to "/v2/apiClients/{apiClientId}" with
@@ -406,7 +406,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client",
                    "isApproved": true,
-                   "dmsInstanceIds": [99999, 88888]
+                   "dataStoreIds": [99999, 88888]
                   }
                   """
              Then it should respond with 400
@@ -418,22 +418,22 @@ Feature: ApiClients endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                        "DmsInstanceIds": [
-                            "The following DmsInstanceIds were not found in database: 99999, 88888"
+                        "DataStoreIds": [
+                            "The following DataStoreIds were not found in database: 99999, 88888"
                         ]
                     },
                     "errors": []
                   }
                   """
 
-        Scenario: 13 Verify error handling when updating apiClient with empty DmsInstanceIds
+        Scenario: 13 Verify error handling when updating apiClient with empty DataStoreIds
             Given a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 13",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/apiClients" with
@@ -442,7 +442,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client 13",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a PUT request is made to "/v2/apiClients/{apiClientId}" with
@@ -452,7 +452,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client",
                    "isApproved": false,
-                   "dmsInstanceIds": []
+                   "dataStoreIds": []
                   }
                   """
              Then it should respond with 400
@@ -464,8 +464,8 @@ Feature: ApiClients endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                        "DmsInstanceIds": [
-                            "DmsInstanceIds cannot be empty. At least one DMS Instance is required."
+                        "DataStoreIds": [
+                            "DataStoreIds cannot be empty. At least one Data Store is required."
                         ]
                     },
                     "errors": []
@@ -479,7 +479,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 14",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/apiClients" with
@@ -488,7 +488,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Client To Delete",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a DELETE request is made to "/v2/apiClients/{apiClientId}"
@@ -501,7 +501,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 15",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/apiClients" with
@@ -510,7 +510,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Client To Delete 2",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a DELETE request is made to "/v2/apiClients/{apiClientId}"
@@ -524,7 +524,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 16",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a DELETE request is made to "/v2/apiClients/99999"
@@ -537,7 +537,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 17",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/apiClients" with
@@ -546,7 +546,7 @@ Feature: ApiClients endpoints
                    "applicationId": {applicationId},
                    "name": "Test Client for Reset",
                    "isApproved": true,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a PUT request is made to "/v2/apiClients/{apiClientId}/reset-credential" with
@@ -573,7 +573,7 @@ Feature: ApiClients endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Application 18",
                    "claimSetName": "TestClaim01",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a PUT request is made to "/v2/apiClients/99999/reset-credential" with

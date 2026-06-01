@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Old.Postgresql.Startup;
 
 internal sealed class PostgresqlRuntimeInstanceMappingValidator(
-    IDmsInstanceProvider dmsInstanceProvider,
+    IDataStoreProvider dataStoreProvider,
     IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader,
     PostgresqlValidatedResourceKeyMapCache validatedResourceKeyMapCache,
     ILogger<PostgresqlRuntimeInstanceMappingValidator> logger
@@ -32,13 +32,13 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
         var instanceCount = 0;
         var failures = new List<string>();
 
-        foreach (var tenantKey in dmsInstanceProvider.GetLoadedTenantKeys())
+        foreach (var tenantKey in dataStoreProvider.GetLoadedTenantKeys())
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             string? tenant = string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
 
-            foreach (var instance in dmsInstanceProvider.GetAll(tenant))
+            foreach (var instance in dataStoreProvider.GetAll(tenant))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 instanceCount++;
@@ -87,7 +87,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
 
     private async Task<bool> ValidateInstanceAsync(
         MappingSet mappingSet,
-        DmsInstance instance,
+        DataStore instance,
         string? tenant,
         CancellationToken cancellationToken
     )
@@ -107,7 +107,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
         )
         {
             logger.LogDebug(
-                "Reused cached PostgreSQL runtime validation for DMS instance {InstanceId}",
+                "Reused cached PostgreSQL runtime validation for data store {DataStoreId}",
                 instance.Id
             );
 
@@ -146,7 +146,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
         validatedResourceKeyMapCache.Set(connectionString, mappingSet);
 
         logger.LogInformation(
-            "Validated PostgreSQL runtime mapping fingerprint for DMS instance {InstanceId}",
+            "Validated PostgreSQL runtime mapping fingerprint for data store {DataStoreId}",
             instance.Id
         );
 
@@ -155,7 +155,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
 
     private async Task<PostgresqlDatabaseFingerprint> ReadFingerprintOrThrowAsync(
         string connectionString,
-        DmsInstance instance,
+        DataStore instance,
         string? tenant,
         MappingSetKey mappingSetKey,
         CancellationToken cancellationToken
@@ -203,7 +203,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
     private static void ValidateEffectiveSchemaHashOrThrow(
         PostgresqlDatabaseFingerprint fingerprint,
         MappingSetKey mappingSetKey,
-        DmsInstance instance,
+        DataStore instance,
         string? tenant
     )
     {
@@ -229,7 +229,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
         string connectionString,
         PostgresqlDatabaseFingerprint fingerprint,
         MappingSet mappingSet,
-        DmsInstance instance,
+        DataStore instance,
         string? tenant,
         CancellationToken cancellationToken
     )
@@ -442,15 +442,11 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
         return differences.Count == 0 ? null : string.Join(", ", differences);
     }
 
-    private static string CreateContextPrefix(
-        DmsInstance instance,
-        string? tenant,
-        MappingSetKey mappingSetKey
-    )
+    private static string CreateContextPrefix(DataStore instance, string? tenant, MappingSetKey mappingSetKey)
     {
         var tenantLabel = tenant is null ? "(default)" : Sanitize(tenant);
 
-        return $"DMS instance '{Sanitize(instance.InstanceName)}' (ID {instance.Id}, tenant '{tenantLabel}') "
+        return $"Data store '{Sanitize(instance.Name)}' (ID {instance.Id}, tenant '{tenantLabel}') "
             + $"expected mapping {FormatMappingSetKey(mappingSetKey)}";
     }
 
