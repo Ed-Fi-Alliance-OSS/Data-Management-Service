@@ -354,7 +354,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 );
             }
 
-            var projected = RelationalWriteMergeSupport.ProjectCurrentRows(rootTable, hydrated.Rows);
+            var projected = RelationalWriteMergeSupport.ProjectCurrentRows(
+                rootTable,
+                hydrated.TableModel,
+                hydrated.Rows
+            );
             projectedCurrentRootRow = projected[0];
             // Key the current-row projection by the hydrated row's own table model, not the
             // write-plan root model. The hydration (read) projection omits non-hydration columns
@@ -428,8 +432,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var storedScope = request.ProfileAppliedContext is null
             ? null
             : ProfileMemberGovernanceRules.LookupStoredScope(request.ProfileAppliedContext, scopeAddress);
-        var hydratedRows = TryFindHydratedRowsForTable(request.CurrentState, tablePlan);
-        var currentRowProjection = BuildCurrentSeparateScopeRowProjection(tablePlan, hydratedRows);
+        var hydratedTableRows = TryFindHydratedRowsForTable(request.CurrentState, tablePlan);
+        var currentRowProjection = BuildCurrentSeparateScopeRowProjection(tablePlan, hydratedTableRows);
         var extensionRow = TryLocateRootExtensionRow(request, tablePlan);
         var scopedRequestNode = TryResolveScopedRequestNode(request.WritableRequestBody, tablePlan);
 
@@ -3156,38 +3160,41 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         }
     }
 
-    private static IReadOnlyList<object?[]>? TryFindHydratedRowsForTable(
+    private static HydratedTableRows? TryFindHydratedRowsForTable(
         RelationalWriteCurrentState? currentState,
         TableWritePlan tablePlan
     ) =>
-        currentState
-            ?.TableRowsInDependencyOrder.FirstOrDefault(hydrated =>
-                hydrated.TableModel.Table.Equals(tablePlan.TableModel.Table)
-            )
-            ?.Rows;
+        currentState?.TableRowsInDependencyOrder.FirstOrDefault(hydrated =>
+            hydrated.TableModel.Table.Equals(tablePlan.TableModel.Table)
+        );
 
     private static CurrentSeparateScopeRowProjection? BuildCurrentSeparateScopeRowProjection(
         TableWritePlan tablePlan,
-        IReadOnlyList<object?[]>? hydratedRows
+        HydratedTableRows? hydrated
     )
     {
-        if (hydratedRows is null || hydratedRows.Count == 0)
+        if (hydrated is null || hydrated.Rows.Count == 0)
         {
             return null;
         }
 
-        if (hydratedRows.Count != 1)
+        if (hydrated.Rows.Count != 1)
         {
             throw new InvalidOperationException(
                 $"Separate table '{ProfileBindingClassificationCore.FormatTable(tablePlan)}' has "
-                    + $"{hydratedRows.Count} current rows for profiled separate-scope merge; expected zero or one."
+                    + $"{hydrated.Rows.Count} current rows for profiled separate-scope merge; expected zero or one."
             );
         }
 
-        var projectedCurrentRow = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydratedRows)[0];
+        // Index the hydrated row by the model it was materialized from, not the write-plan model.
+        var projectedCurrentRow = RelationalWriteMergeSupport.ProjectCurrentRows(
+            tablePlan,
+            hydrated.TableModel,
+            hydrated.Rows
+        )[0];
         var currentRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
-            tablePlan.TableModel,
-            hydratedRows[0]
+            hydrated.TableModel,
+            hydrated.Rows[0]
         );
 
         return new CurrentSeparateScopeRowProjection(projectedCurrentRow, currentRowByColumnName);

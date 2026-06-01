@@ -1705,7 +1705,11 @@ internal sealed class ProfileCollectionWalker
                 )
                 .ToArray();
 
-            var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydrated.Rows);
+            var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(
+                tablePlan,
+                hydrated.TableModel,
+                hydrated.Rows
+            );
 
             for (var rowIndex = 0; rowIndex < projectedAll.Length; rowIndex++)
             {
@@ -1867,7 +1871,11 @@ internal sealed class ProfileCollectionWalker
                 )
                 .ToArray();
 
-            var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, hydrated.Rows);
+            var projectedAll = RelationalWriteMergeSupport.ProjectCurrentRows(
+                tablePlan,
+                hydrated.TableModel,
+                hydrated.Rows
+            );
 
             // Group projected rows by their parent identity. >1 row per (table, parent)
             // is a fail-closed shape error: a 1:1 separate scope cannot have a duplicate

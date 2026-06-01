@@ -178,16 +178,18 @@ internal static class ProfileTestDoubles
     /// <summary>
     /// Build a single-scalar-binding root plan whose root table model also carries the two
     /// synthesized change-version mirror columns (<c>ContentVersion</c>,
-    /// <c>ContentLastModifiedAt</c>) appended after the client column. The mirror columns are
-    /// non-writable and carry no write binding, matching the model produced by the change-version
-    /// mirror derivation pass. The hydration (read) projection omits them, so a current-state
-    /// hydrated row has fewer columns than this write-plan root model.
+    /// <c>ContentLastModifiedAt</c>). The mirror columns are non-writable and carry no write binding,
+    /// matching the model produced by the change-version mirror derivation pass. They are positioned
+    /// <em>before</em> the client column to model the post-canonicalization layout (mirror columns are
+    /// not last), so the binding column's write-plan ordinal is shifted relative to the hydration
+    /// (read) projection that omits the mirror columns. A current-state hydrated row built from that
+    /// projection is shorter than the write-plan column list, so indexing it by write-plan ordinals
+    /// overshoots the row.
     /// </summary>
     internal static ResourceWritePlan BuildSingleScalarBindingRootPlanWithMirrorColumns(
         string scalarRelativePath = "$.firstName"
     )
     {
-        var scalarColumn = Column("FirstName", ColumnKind.Scalar, StringType());
         var contentVersionColumn = Column(
             "ContentVersion",
             ColumnKind.MirroredContentVersion,
@@ -206,9 +208,10 @@ internal static class ProfileTestDoubles
         {
             IsWritable = false,
         };
+        var scalarColumn = Column("FirstName", ColumnKind.Scalar, StringType());
         var rootModel = RootTable(
             "Student",
-            [scalarColumn, contentVersionColumn, contentLastModifiedAtColumn]
+            [contentVersionColumn, contentLastModifiedAtColumn, scalarColumn]
         );
         var scalarBinding = new WriteColumnBinding(
             scalarColumn,
