@@ -18,13 +18,10 @@ public enum NamespaceAuthorizationOperation
     ReadMany,
 
     /// <summary>
-    /// Pure create: proposed-value check only. Production POST planning does not use this — POST may
-    /// resolve as upsert-as-update, so the write paths intentionally plan <see cref="Update"/> (stored
-    /// then proposed). Retained as the complete operation taxonomy and exercised by planner unit tests.
+    /// PUT and POST (create or upsert-as-update): stored-value check then proposed-value check. POST
+    /// resolves as either a create or an upsert-as-update, so both write verbs plan the same
+    /// stored-then-proposed pair rather than a create-only proposed check.
     /// </summary>
-    Create,
-
-    /// <summary>PUT and POST upsert-as-update: stored-value check then proposed-value check.</summary>
     Update,
 
     /// <summary>DELETE: stored-value check only.</summary>

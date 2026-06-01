@@ -305,23 +305,6 @@ public class Given_NamespaceAuthorizationPlanner
     }
 
     [Test]
-    public void It_emits_a_single_proposed_check_for_create()
-    {
-        var resource = RootNamespaceResource();
-
-        var outcome = NamespaceAuthorizationPlanner.Plan(
-            resource,
-            NamespaceAuthorizationOperation.Create,
-            TwoPrefixContext()
-        );
-
-        var plan = outcome.Should().BeOfType<NamespaceAuthorizationPlanOutcome.Plan>().Subject;
-        plan.Checks.Should().HaveCount(1);
-        plan.Checks[0].Index.Should().Be(0);
-        plan.Checks[0].ValueSource.Should().Be(NamespaceAuthorizationCheckValueSource.Proposed);
-    }
-
-    [Test]
     public void It_emits_ordered_stored_then_proposed_checks_for_update()
     {
         var resource = RootNamespaceResource();

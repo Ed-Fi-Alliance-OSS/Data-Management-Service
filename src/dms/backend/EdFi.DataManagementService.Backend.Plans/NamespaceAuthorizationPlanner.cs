@@ -141,15 +141,6 @@ public static class NamespaceAuthorizationPlanner
                     namespaceColumn
                 ),
             ],
-            NamespaceAuthorizationOperation.Create =>
-            [
-                new NamespaceAuthorizationCheckSpec(
-                    0,
-                    NamespaceAuthorizationCheckValueSource.Proposed,
-                    rootTable,
-                    namespaceColumn
-                ),
-            ],
             NamespaceAuthorizationOperation.Update =>
             [
                 new NamespaceAuthorizationCheckSpec(

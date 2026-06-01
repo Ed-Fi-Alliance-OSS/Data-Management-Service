@@ -318,10 +318,12 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                         failure
                     ),
                 onInvalidAuthorizationFailure: failureMessage =>
-                    RelationalWriteExecutorResults.BuildUnknownFailureResult(
+                    RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                         request.OperationKind,
-                        failureMessage
+                        [failureMessage]
                     ),
+                onStaleTarget: () =>
+                    RelationalWriteExecutorResults.BuildStaleTargetResult(request.OperationKind),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -430,6 +432,7 @@ internal static class StoredNamespaceAuthorizationExecution
         RelationalWriteNamespaceAuthorization namespaceAuthorization,
         Func<NamespaceAuthorizationFailure, TResult> onNotAuthorized,
         Func<string, TResult> onInvalidAuthorizationFailure,
+        Func<TResult> onStaleTarget,
         CancellationToken cancellationToken = default
     )
         where TResult : class
@@ -457,6 +460,7 @@ internal static class StoredNamespaceAuthorizationExecution
             ),
             NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 onInvalidAuthorizationFailure(invalidFailure.FailureMessage),
+            NamespaceAuthorizationExecutionResult.StaleTarget => onStaleTarget(),
             _ => throw new InvalidOperationException(
                 $"Unsupported namespace authorization execution result '{executionResult.GetType().Name}'."
             ),

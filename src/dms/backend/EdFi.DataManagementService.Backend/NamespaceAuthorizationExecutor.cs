@@ -29,6 +29,13 @@ public abstract record NamespaceAuthorizationExecutionResult
 
     public sealed record InvalidAuthorizationFailure(string FailureMessage)
         : NamespaceAuthorizationExecutionResult;
+
+    /// <summary>
+    /// The stored target row no longer exists: it was deleted between the unlocked target lookup and the
+    /// stored namespace check. Read callers re-resolve the target and surface the resulting 404; locked
+    /// write/delete callers never observe this because they row-lock the target before the check.
+    /// </summary>
+    public sealed record StaleTarget : NamespaceAuthorizationExecutionResult;
 }
 
 public interface INamespaceAuthorizationExecutor
@@ -49,16 +56,13 @@ public interface INamespaceAuthorizationExecutor
 /// later statement (e.g. the proposed check of a PUT) is forced to execute and surfaces as a
 /// <see cref="DbException"/>.
 /// <para>
-/// This executor intentionally has no stale-target result, and callers intentionally do not retry it.
-/// A row concurrently deleted between the target lookup and this check matches none of the stored-row
-/// <c>WHEN EXISTS</c> branches and falls through to namespace mismatch (see
-/// <c>NamespaceAuthorizationSqlCompiler.AppendStoredCheckSql</c>), i.e. it fails closed as an
-/// authorization denial. That is deliberate and safe: the only observable difference is a 403 instead
-/// of a 404 for a resource that no longer exists. This is unlike relationship authorization, which
-/// surfaces a stale-target result and is retried because it anchors its decision to a content version;
-/// namespace authorization reports no content version, so there is nothing to re-anchor and nothing to
-/// gain from retrying. Do not add a stale-target branch here or retry namespace checks to "fix" the
-/// 403-vs-404 distinction.
+/// A stored-row check whose target no longer exists raises the <c>StoredTargetMissing</c> AUTH1 kind
+/// (see <c>NamespaceAuthorizationSqlCompiler.AppendStoredCheckSql</c>), which this executor maps to
+/// <see cref="NamespaceAuthorizationExecutionResult.StaleTarget"/> rather than to a namespace-mismatch
+/// denial. The unlocked GET-by-id read boundary retries on that result and re-resolves the target so a
+/// row deleted between the target lookup and this check surfaces as a 404 instead of a 403. Locked
+/// write and delete callers row-lock the target before this check runs, so they never observe the stale
+/// result; they map it defensively to a write-conflict/not-exists outcome.
 /// </para>
 /// </remarks>
 internal sealed class NamespaceAuthorizationExecutor(
@@ -101,6 +105,20 @@ internal sealed class NamespaceAuthorizationExecutor(
                 .ConfigureAwait(false);
         }
         catch (DbException ex)
+            when (NamespaceAuthorizationProviderFailureMapper.IsStaleStoredTargetFailure(
+                    dialect,
+                    ex,
+                    _providerFailureExtractor,
+                    plannedCheckValueSources
+                )
+            )
+        {
+            // The stored target row vanished between the unlocked lookup and this check. Surface a
+            // stale-target result so the read boundary can re-resolve the target instead of mapping the
+            // missing row to a namespace-mismatch denial.
+            return new NamespaceAuthorizationExecutionResult.StaleTarget();
+        }
+        catch (DbException ex)
             when (NamespaceAuthorizationProviderFailureMapper.TryMapNamespaceAuthorizationFailure(
                     dialect,
                     ex,
@@ -122,7 +140,7 @@ internal sealed class NamespaceAuthorizationExecutor(
             )
         {
             return new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                NamespaceAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata
             );
         }
     }

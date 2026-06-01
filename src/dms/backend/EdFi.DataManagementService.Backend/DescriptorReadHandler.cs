@@ -701,20 +701,17 @@ internal sealed class DescriptorReadHandler(
             return DescriptorReadAuthorizationPreflightOutcome.Proceed.NoAuthorization;
         }
 
-        NamespacePrefixParameterization namespacePrefixParameterization;
-
-        try
-        {
-            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
-                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
-            );
-        }
-        catch (NamespacePrefixLimitExceededException ex)
+                out var namespacePrefixParameterization,
+                out var prefixCapExceededMessage
+            )
+        )
         {
             return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError([
-                NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
+                prefixCapExceededMessage,
             ]);
         }
 

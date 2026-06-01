@@ -51,6 +51,11 @@ public class Given_NamespaceAuthorizationSqlCompiler
             .Contain(
                 "WHEN EXISTS (SELECT 1 FROM \"edfi\".\"GradebookEntry\" r WHERE r.\"DocumentId\" = @documentId AND (r.\"Namespace\" IS NULL OR r.\"Namespace\" = '')) THEN \"dms\".\"throw_error\"('AUTH1', 'ns1|0|u')"
             );
+        // A target row missing entirely raises the stale stored-target kind ('s') rather than mismatch.
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "WHEN NOT EXISTS (SELECT 1 FROM \"edfi\".\"GradebookEntry\" r WHERE r.\"DocumentId\" = @documentId) THEN \"dms\".\"throw_error\"('AUTH1', 'ns1|0|s')"
+            );
         plan.AuthorizationSql.Should().Contain("ELSE \"dms\".\"throw_error\"('AUTH1', 'ns1|0|m')");
         plan.ParametersInOrder.Select(static p => p.ParameterName)
             .Should()
@@ -82,6 +87,10 @@ public class Given_NamespaceAuthorizationSqlCompiler
         plan.AuthorizationSql.Should()
             .Contain(
                 "WHEN EXISTS (SELECT 1 FROM [edfi].[GradebookEntry] r WHERE r.[DocumentId] = @documentId AND (r.[Namespace] IS NULL OR r.[Namespace] = '')) THEN CAST('AUTH1 - ns1|0|u' AS INT)"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "WHEN NOT EXISTS (SELECT 1 FROM [edfi].[GradebookEntry] r WHERE r.[DocumentId] = @documentId) THEN CAST('AUTH1 - ns1|0|s' AS INT)"
             );
         plan.AuthorizationSql.Should().Contain("ELSE CAST('AUTH1 - ns1|0|m' AS INT)");
         plan.ParametersInOrder.Select(static p => p.ParameterName)
@@ -226,10 +235,11 @@ public class Given_NamespaceAuthorizationSqlCompiler
             )
         );
 
-        // No relationship-discriminator payloads should ever leak into namespace SQL.
+        // No relationship-discriminator payloads should ever leak into namespace SQL. The stored check
+        // emits the 's' (stale stored-target) kind in addition to 'u' and 'm'.
         plan.AuthorizationSql.Should().NotContain("'1|");
-        plan.AuthorizationSql.Should().NotMatchRegex(@"AUTH1[^']*\bns1\|0\|[^urm]");
-        plan.AuthorizationSql.Should().NotMatchRegex(@"AUTH1[^']*\bns1\|1\|[^urm]");
+        plan.AuthorizationSql.Should().NotMatchRegex(@"AUTH1[^']*\bns1\|0\|[^urms]");
+        plan.AuthorizationSql.Should().NotMatchRegex(@"AUTH1[^']*\bns1\|1\|[^urms]");
     }
 
     [Test]

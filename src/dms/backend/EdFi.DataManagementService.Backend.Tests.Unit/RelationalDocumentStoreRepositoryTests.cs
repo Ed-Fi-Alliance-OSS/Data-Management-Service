@@ -1072,6 +1072,73 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_retries_and_returns_not_found_when_the_get_by_id_namespace_target_is_stale()
+    {
+        // The stored namespace check reports the target row vanished after the unlocked target lookup.
+        // The read boundary must re-resolve the target rather than treat the missing row as a namespace
+        // mismatch; the re-resolved lookup no longer finds the row, so the GET surfaces a 404.
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-bbbbbbbbbbbb"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsNextFromSequence(
+                new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L),
+                new RelationalReadTargetLookupResult.NotFound()
+            );
+        A.CallTo(() =>
+                _namespaceAuthorizationExecutor.ExecuteAsync(
+                    A<NamespaceAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<NamespaceAuthorizationExecutionResult>(
+                    new NamespaceAuthorizationExecutionResult.StaleTarget()
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_returns_a_namespace_uninitialized_403_when_stored_namespace_is_null()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-cccccccccccc"));
@@ -5170,6 +5237,61 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_forwards_relationship_no_claims_with_proposed_namespace_authorization_to_the_write_executor_for_a_mixed_strategy_put()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid, CreateCommittedReadbackEtag("Mixed"))
+                    )
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateNamespaceAndRelationshipWriteMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Mixed"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]);
+        // Empty claim EducationOrganizationIds make the relationship strategy resolve to NoClaims; the
+        // configured namespace prefixes make the stored and proposed namespace checks participate. PUT
+        // must defer the stored relationship NoClaims into the proposed-relationship slot so the
+        // namespace checks (AND-composed ahead of the relationship OR-group) get to deny first — routing
+        // NoClaims through the stored slot would surface the relationship denial before the proposed
+        // namespace check runs.
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
+        _capturedExecutorRequest
+            .ProposedRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
+        _capturedExecutorRequest.StoredNamespaceAuthorization.Should().NotBeNull();
+        _capturedExecutorRequest.ProposedNamespaceAuthorization.Should().NotBeNull();
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_forwards_authorized_post_relationship_plans_to_the_write_executor_after_target_lookup()
     {
         var committedEtag = CreateCommittedReadbackEtag("Authorized High");
@@ -7160,7 +7282,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_fails_closed_with_unknown_failure_when_namespace_auth1_is_malformed_and_does_not_delete()
+    public async Task It_fails_closed_with_security_configuration_when_namespace_auth1_is_malformed_and_does_not_delete()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
@@ -7182,7 +7304,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.UnknownFailure>();
+        result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>();
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }

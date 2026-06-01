@@ -4799,9 +4799,10 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_fails_closed_to_unknown_failure_when_the_namespace_auth1_payload_cannot_be_mapped()
+    public async Task It_fails_closed_to_security_configuration_when_the_namespace_auth1_payload_cannot_be_mapped()
     {
-        // An emitted index with no matching planned check is unmappable; fail closed rather than allow.
+        // An emitted index with no matching planned check is unmappable; fail closed as a
+        // security-configuration error (matching relationship authorization) rather than allow.
         UseNamespaceProviderFailureExtractor("ns1|9|m");
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
             new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
@@ -4813,7 +4814,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeOfType<RelationalWriteExecutorResult.Upsert>()
             .Which.Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>();
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }

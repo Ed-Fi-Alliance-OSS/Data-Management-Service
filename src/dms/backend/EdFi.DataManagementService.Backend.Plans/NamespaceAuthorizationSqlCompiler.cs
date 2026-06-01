@@ -184,11 +184,17 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
             );
             writer.AppendLine();
 
-            // Otherwise → 'm'. This covers both "row exists, namespace not null, but no prefix matches"
-            // and "no row at all": a target concurrently deleted between the lookup and this check
-            // matches neither EXISTS branch and intentionally fails closed as a namespace mismatch
-            // denial. Namespace authorization has no stale-target result by design (see
-            // NamespaceAuthorizationExecutor remarks); do not add a missing-row branch here.
+            // No row for the target DocumentId at all → 's' (stale). The target was deleted between the
+            // unlocked target lookup and this check. Read paths re-resolve the target and surface the
+            // resulting 404 rather than a namespace mismatch; locked write/delete paths row-lock the
+            // target before this check, so they never reach this branch.
+            writer.Append("WHEN NOT EXISTS (");
+            AppendStoredRowByDocumentId(writer, check, spec.DocumentIdParameterName);
+            writer.Append(") THEN ");
+            AppendAuth1Throw(writer, check.Index, NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing);
+            writer.AppendLine();
+
+            // Otherwise → 'm'. The row exists with a non-null namespace that matches no configured prefix.
             writer.Append("ELSE ");
             AppendAuth1Throw(writer, check.Index, NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch);
             writer.AppendLine();
@@ -284,14 +290,23 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
         Action<SqlWriter> appendNamespacePredicate
     )
     {
+        AppendStoredRowByDocumentId(writer, check, documentIdParameterName);
+        writer.Append(" AND ");
+        appendNamespacePredicate(writer);
+    }
+
+    private static void AppendStoredRowByDocumentId(
+        SqlWriter writer,
+        NamespaceAuthorizationCheckSpec check,
+        string documentIdParameterName
+    )
+    {
         writer.Append("SELECT 1 FROM ");
         writer.AppendRelation(new SqlRelationRef.PhysicalTable(check.RootTable));
         writer.Append($" {RootAlias} WHERE {RootAlias}.");
         writer.AppendQuoted("DocumentId");
         writer.Append(" = ");
         writer.AppendParameter(documentIdParameterName);
-        writer.Append(" AND ");
-        appendNamespacePredicate(writer);
     }
 
     private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(

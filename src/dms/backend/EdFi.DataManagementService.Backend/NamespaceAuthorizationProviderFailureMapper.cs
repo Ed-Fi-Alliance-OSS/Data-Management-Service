@@ -49,6 +49,37 @@ internal static class NamespaceAuthorizationProviderFailureMapper
     }
 
     /// <summary>
+    /// Whether <paramref name="exception"/> carries a namespace AUTH1 payload reporting that the stored
+    /// target row no longer exists (<see cref="NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing"/>).
+    /// The executor maps this to a stale-target result so unlocked read paths re-resolve the target
+    /// rather than treating the missing row as a namespace-mismatch denial.
+    /// </summary>
+    /// <remarks>
+    /// The payload is only treated as stale when its emitted index is in range and the indexed planned
+    /// check is a stored-value check — the only shape the SQL compiler ever emits the stale kind from. A
+    /// malformed payload (out-of-range index, or the stale kind paired with a proposed check) returns
+    /// <see langword="false"/> so it falls through to the invalid-metadata security-configuration mapping
+    /// rather than being silently converted into a stale-target retry or a write conflict.
+    /// </remarks>
+    public static bool IsStaleStoredTargetFailure(
+        SqlDialect dialect,
+        DbException exception,
+        IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
+        IReadOnlyList<NamespaceAuthorizationCheckValueSource> plannedCheckValueSources
+    )
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        ArgumentNullException.ThrowIfNull(providerFailureExtractor);
+        ArgumentNullException.ThrowIfNull(plannedCheckValueSources);
+
+        return TryDispatchNamespacePayload(dialect, exception, providerFailureExtractor, out var payload)
+            && payload is { FailureKind: NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing }
+            && payload.EmittedAuth1Index < plannedCheckValueSources.Count
+            && plannedCheckValueSources[payload.EmittedAuth1Index]
+                is NamespaceAuthorizationCheckValueSource.Stored;
+    }
+
+    /// <summary>
     /// Whether <paramref name="exception"/> is an AUTH1 provider failure this namespace executor should
     /// fail closed on (a namespace <c>ns1|…</c> payload — mappable or not — or any malformed/unknown
     /// AUTH1 payload). A relationship <c>1|…</c> payload returns <see langword="false"/> so it rethrows,

@@ -31,7 +31,7 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
             case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
                 break;
 
-            // NoClaims is deferred from POST preflight so the proposed namespace check can run
+            // NoClaims is deferred from POST or PUT preflight so the proposed namespace check can run
             // first (namespace AND-composes before the relationship OR-group per auth.md). The
             // namespace orchestrator runs ahead of this one in the executor, so reaching this
             // branch means namespace authorized — surface the deferred denial now.

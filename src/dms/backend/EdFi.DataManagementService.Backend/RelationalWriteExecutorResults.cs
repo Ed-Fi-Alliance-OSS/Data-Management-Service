@@ -86,6 +86,28 @@ internal static class RelationalWriteExecutorResults
         };
     }
 
+    /// <summary>
+    /// Maps a stale-target namespace authorization result to a write conflict (POST) or not-exists (PUT)
+    /// outcome, mirroring the single-record relationship authorization stale-target mapping. Locked write
+    /// paths row-lock the target before the namespace check, so this is a defensive mapping for a row
+    /// that vanished despite the lock rather than an expected outcome.
+    /// </summary>
+    public static RelationalWriteExecutorResult BuildStaleTargetResult(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureNotExists()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
     public static RelationalWriteExecutorResult BuildNoClaimsRelationshipAuthorizationResult(
         RelationalWriteOperationKind operationKind,
         RelationshipAuthorizationResult.NoClaims noClaims

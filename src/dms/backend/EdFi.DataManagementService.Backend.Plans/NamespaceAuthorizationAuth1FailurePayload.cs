@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -25,6 +24,14 @@ public enum NamespaceAuthorizationAuth1FailureKind
 
     /// <summary>The proposed namespace value is null or empty.</summary>
     ProposedNamespaceMissing,
+
+    /// <summary>
+    /// The stored target row no longer exists. The row was deleted between the unlocked target lookup
+    /// and the stored namespace check, so the check has nothing to authorize. Read paths re-resolve the
+    /// target and surface the resulting 404; locked write/delete paths never observe this because the
+    /// row is row-locked before the check runs.
+    /// </summary>
+    StoredTargetMissing,
 }
 
 /// <summary>
@@ -68,8 +75,6 @@ public static class NamespaceAuthorizationAuth1FailurePayloadCodec
     public const string ProviderFailureCode = "AUTH1";
     public const string PayloadDiscriminator = "ns1";
 
-    private const string MssqlPayloadMarker = "AUTH1 - ";
-
     public static string Encode(NamespaceAuthorizationAuth1FailurePayload payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
@@ -108,48 +113,6 @@ public static class NamespaceAuthorizationAuth1FailurePayloadCodec
         return true;
     }
 
-    public static bool TryParseProviderFailure(
-        SqlDialect dialect,
-        string? providerErrorCode,
-        string providerMessage,
-        out NamespaceAuthorizationAuth1FailurePayload? payload
-    )
-    {
-        if (!TryExtractProviderPayload(dialect, providerErrorCode, providerMessage, out var payloadText))
-        {
-            payload = null;
-            return false;
-        }
-
-        return TryParsePayload(payloadText, out payload);
-    }
-
-    public static bool TryExtractProviderPayload(
-        SqlDialect dialect,
-        string? providerErrorCode,
-        string providerMessage,
-        out string payloadText
-    )
-    {
-        payloadText = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(providerMessage))
-        {
-            return false;
-        }
-
-        return dialect switch
-        {
-            SqlDialect.Pgsql => TryExtractPostgresqlPayload(
-                providerErrorCode,
-                providerMessage,
-                out payloadText
-            ),
-            SqlDialect.Mssql => TryExtractMssqlPayload(providerMessage, out payloadText),
-            _ => false,
-        };
-    }
-
     private static bool TryParseNonNegativeInt(string text, out int value)
     {
         if (int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value) && value >= 0)
@@ -167,6 +130,7 @@ public static class NamespaceAuthorizationAuth1FailurePayloadCodec
             NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch => "m",
             NamespaceAuthorizationAuth1FailureKind.StoredNamespaceUninitialized => "u",
             NamespaceAuthorizationAuth1FailureKind.ProposedNamespaceMissing => "r",
+            NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing => "s",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failureKind),
                 failureKind,
@@ -190,58 +154,12 @@ public static class NamespaceAuthorizationAuth1FailurePayloadCodec
             case "r":
                 failureKind = NamespaceAuthorizationAuth1FailureKind.ProposedNamespaceMissing;
                 return true;
+            case "s":
+                failureKind = NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing;
+                return true;
             default:
                 failureKind = NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch;
                 return false;
         }
     }
-
-    private static bool TryExtractPostgresqlPayload(
-        string? providerErrorCode,
-        string providerMessage,
-        out string payloadText
-    )
-    {
-        if (!string.Equals(providerErrorCode, ProviderFailureCode, StringComparison.Ordinal))
-        {
-            payloadText = string.Empty;
-            return false;
-        }
-
-        payloadText = providerMessage;
-        return true;
-    }
-
-    private static bool TryExtractMssqlPayload(string providerMessage, out string payloadText)
-    {
-        payloadText = string.Empty;
-        var markerIndex = providerMessage.IndexOf(MssqlPayloadMarker, StringComparison.Ordinal);
-
-        if (markerIndex < 0)
-        {
-            return false;
-        }
-
-        var payloadStartIndex = markerIndex + MssqlPayloadMarker.Length;
-        var payloadEndIndex = payloadStartIndex;
-
-        while (
-            payloadEndIndex < providerMessage.Length
-            && IsMssqlPayloadCharacter(providerMessage[payloadEndIndex])
-        )
-        {
-            payloadEndIndex++;
-        }
-
-        if (payloadEndIndex == payloadStartIndex)
-        {
-            return false;
-        }
-
-        payloadText = providerMessage[payloadStartIndex..payloadEndIndex];
-        return true;
-    }
-
-    private static bool IsMssqlPayloadCharacter(char value) =>
-        value is >= '0' and <= '9' || value is >= 'a' and <= 'z' || value is '|' or ':' or ',';
 }

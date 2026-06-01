@@ -16,6 +16,16 @@ namespace EdFi.DataManagementService.Backend.External;
 public static class NamespaceAuthorizationSecurityConfigurationMessages
 {
     /// <summary>
+    /// The namespace authorization failure payload returned by the authorization provider (the AUTH1
+    /// <c>ns1|index|kind</c> metadata) is invalid and cannot be mapped to the configured namespace
+    /// authorization plan. Mirrors the relationship authorization invalid-payload diagnostic so a
+    /// malformed namespace AUTH1 payload fails closed as a security-configuration (HTTP 500) rather than
+    /// a generic unknown failure.
+    /// </summary>
+    public const string InvalidAuthorizationMetadata =
+        "The namespace authorization failure payload returned by the authorization provider is invalid and cannot be mapped to the configured namespace authorization plan.";
+
+    /// <summary>
     /// A resource is configured with <c>NamespaceBased</c> but no Namespace securable element resolves
     /// to a root-table column.
     /// </summary>

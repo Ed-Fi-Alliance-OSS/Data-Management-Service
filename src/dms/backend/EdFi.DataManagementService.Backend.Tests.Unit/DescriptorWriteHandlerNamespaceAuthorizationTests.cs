@@ -593,7 +593,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_maps_invalid_namespace_authorization_metadata_to_an_unknown_failure_for_post()
+    public async Task It_maps_invalid_namespace_authorization_metadata_to_a_security_configuration_failure_for_post()
     {
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
@@ -614,7 +614,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpsertResult.UnknownFailure>();
+        result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
     }
 
     [Test]
@@ -697,7 +697,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_maps_invalid_namespace_authorization_metadata_to_an_unknown_failure_for_put()
+    public async Task It_maps_invalid_namespace_authorization_metadata_to_a_security_configuration_failure_for_put()
     {
         var documentId = 345L;
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -725,7 +725,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpdateResult.UnknownFailure>();
+        result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
     }
 
     [Test]
@@ -873,7 +873,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_maps_invalid_namespace_authorization_metadata_to_an_unknown_failure()
+    public async Task It_maps_invalid_namespace_authorization_metadata_to_a_security_configuration_failure()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow()]);
@@ -892,7 +892,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<DeleteResult.UnknownFailure>();
+        result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>();
     }
 
     [Test]

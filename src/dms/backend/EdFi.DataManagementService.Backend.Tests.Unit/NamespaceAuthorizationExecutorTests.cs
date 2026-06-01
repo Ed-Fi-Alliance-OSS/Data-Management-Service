@@ -303,6 +303,115 @@ public class Given_NamespaceAuthorizationExecutor
         result.Should().BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>();
     }
 
+    [Test]
+    public async Task It_maps_a_stale_stored_target_auth1_failure_to_a_stale_target_result()
+    {
+        // 'ns1|0|s' is the stale stored-target kind: the row was deleted between the unlocked target
+        // lookup and the stored check, so the executor surfaces StaleTarget instead of a denial.
+        var payloadText = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing
+            )
+        );
+        var commandExecutor = new RecordingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            exceptionToThrow: new StubDbException("PostgreSQL provider exception")
+        );
+        var sut = new NamespaceAuthorizationExecutor(
+            commandExecutor,
+            new StubRelationshipAuthorizationProviderFailureExtractor(
+                NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+                payloadText
+            )
+        );
+
+        var result = await sut.ExecuteAsync(
+            new NamespaceAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 351L,
+                ProposedNamespace: null,
+                [StoredCheck(0)],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    _twoPrefixes,
+                    "namespacePrefixes"
+                )
+            )
+        );
+
+        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.StaleTarget>();
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_stale_payload_index_is_out_of_range()
+    {
+        // 'ns1|9|s' has no matching planned check; the stale kind must not bypass the invalid-metadata
+        // fail-closed path just because it decodes to StoredTargetMissing.
+        var commandExecutor = new RecordingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            exceptionToThrow: new StubDbException("PostgreSQL provider exception")
+        );
+        var sut = new NamespaceAuthorizationExecutor(
+            commandExecutor,
+            new StubRelationshipAuthorizationProviderFailureExtractor(
+                NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+                "ns1|9|s"
+            )
+        );
+
+        var result = await sut.ExecuteAsync(
+            new NamespaceAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 352L,
+                ProposedNamespace: null,
+                [StoredCheck(0)],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    _twoPrefixes,
+                    "namespacePrefixes"
+                )
+            )
+        );
+
+        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>();
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_stale_payload_targets_a_proposed_check_index()
+    {
+        // 'ns1|1|s' points at the proposed check of an update plan. The compiler only ever raises the
+        // stale kind from a stored check, so a stale kind on a proposed index is malformed and must fail
+        // closed as invalid metadata rather than become a stale-target result.
+        var commandExecutor = new RecordingRelationalCommandExecutor(
+            SqlDialect.Pgsql,
+            exceptionToThrow: new StubDbException("PostgreSQL provider exception")
+        );
+        var sut = new NamespaceAuthorizationExecutor(
+            commandExecutor,
+            new StubRelationshipAuthorizationProviderFailureExtractor(
+                NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+                "ns1|1|s"
+            )
+        );
+
+        var result = await sut.ExecuteAsync(
+            new NamespaceAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 353L,
+                ProposedNamespace: "uri://ed-fi.org/Thing",
+                [StoredCheck(0), ProposedCheck(1)],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    _twoPrefixes,
+                    "namespacePrefixes"
+                )
+            )
+        );
+
+        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>();
+    }
+
     [TestCase("ns1|bad|m")] // malformed index
     [TestCase("ns1|0|x")] // unknown failure kind
     [TestCase("v2|0|m")] // unknown AUTH1 discriminator

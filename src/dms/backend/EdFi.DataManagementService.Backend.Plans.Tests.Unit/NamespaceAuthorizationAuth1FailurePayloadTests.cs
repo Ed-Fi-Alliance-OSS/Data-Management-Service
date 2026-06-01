@@ -30,6 +30,7 @@ public class Given_NamespaceAuthorizationAuth1FailurePayloadCodec
     [TestCase(0, NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch, "ns1|0|m")]
     [TestCase(3, NamespaceAuthorizationAuth1FailureKind.StoredNamespaceUninitialized, "ns1|3|u")]
     [TestCase(5, NamespaceAuthorizationAuth1FailureKind.ProposedNamespaceMissing, "ns1|5|r")]
+    [TestCase(2, NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing, "ns1|2|s")]
     public void It_should_round_trip_each_failure_kind(
         int emittedIndex,
         NamespaceAuthorizationAuth1FailureKind kind,
@@ -50,29 +51,40 @@ public class Given_NamespaceAuthorizationAuth1FailurePayloadCodec
     }
 
     [Test]
-    public void It_should_extract_postgresql_and_sql_server_wrappers_then_use_the_same_payload_parser()
+    public void It_should_dispatch_postgresql_and_sql_server_provider_failures_to_the_same_namespace_payload()
     {
+        // Production routes provider failures through the shared dispatcher rather than codec-specific
+        // wrappers, so the namespace payload is recovered identically from the PostgreSQL SqlState
+        // transport and the SQL Server message transport.
         var payloadText = "ns1|7|m";
         var sqlServerMessage =
             $"Conversion failed when converting the varchar value 'AUTH1 - {payloadText}' to data type int.";
 
-        var postgresqlParsed = NamespaceAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+        var postgresqlDispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
             SqlDialect.Pgsql,
             NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
             payloadText,
-            out var postgresqlPayload
+            out var postgresqlResult
         );
-        var sqlServerParsed = NamespaceAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+        var sqlServerDispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
             SqlDialect.Mssql,
             null,
             sqlServerMessage,
-            out var sqlServerPayload
+            out var sqlServerResult
         );
 
-        postgresqlParsed.Should().BeTrue();
-        sqlServerParsed.Should().BeTrue();
+        postgresqlDispatched.Should().BeTrue();
+        sqlServerDispatched.Should().BeTrue();
+        var postgresqlPayload = postgresqlResult
+            .Should()
+            .BeOfType<RelationalAuthorizationAuth1DispatchResult.Namespace>()
+            .Subject.Payload;
+        var sqlServerPayload = sqlServerResult
+            .Should()
+            .BeOfType<RelationalAuthorizationAuth1DispatchResult.Namespace>()
+            .Subject.Payload;
         sqlServerPayload.Should().BeEquivalentTo(postgresqlPayload);
-        sqlServerPayload!.EmittedAuth1Index.Should().Be(7);
+        sqlServerPayload.EmittedAuth1Index.Should().Be(7);
         sqlServerPayload.FailureKind.Should().Be(NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch);
     }
 
@@ -98,30 +110,30 @@ public class Given_NamespaceAuthorizationAuth1FailurePayloadCodec
     }
 
     [Test]
-    public void It_should_not_extract_a_payload_when_postgresql_error_code_is_not_AUTH1()
+    public void It_should_not_dispatch_a_payload_when_postgresql_error_code_is_not_AUTH1()
     {
-        var parsed = NamespaceAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
             SqlDialect.Pgsql,
             "P0001",
             "ns1|0|m",
-            out var payload
+            out var result
         );
 
-        parsed.Should().BeFalse();
-        payload.Should().BeNull();
+        dispatched.Should().BeFalse();
+        result.Should().BeNull();
     }
 
     [Test]
-    public void It_should_not_extract_a_payload_when_sql_server_message_lacks_the_AUTH1_marker()
+    public void It_should_not_dispatch_a_payload_when_sql_server_message_lacks_the_AUTH1_marker()
     {
-        var parsed = NamespaceAuthorizationAuth1FailurePayloadCodec.TryParseProviderFailure(
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
             SqlDialect.Mssql,
             null,
             "Some unrelated SQL Server error message.",
-            out var payload
+            out var result
         );
 
-        parsed.Should().BeFalse();
-        payload.Should().BeNull();
+        dispatched.Should().BeFalse();
+        result.Should().BeNull();
     }
 }

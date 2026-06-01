@@ -93,11 +93,16 @@ internal sealed class ProposedNamespaceAuthorizationOrchestrator(
                 ),
             NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 new ProposedNamespaceAuthorizationBoundary(
-                    RelationalWriteExecutorResults.BuildUnknownFailureResult(
+                    RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                         request.OperationKind,
-                        invalidFailure.FailureMessage
+                        [invalidFailure.FailureMessage]
                     )
                 ),
+            // Proposed-value checks bind no stored DocumentId, so they never raise the stale stored-target
+            // kind; map it defensively to the same write-conflict/not-exists shape the stored path uses.
+            NamespaceAuthorizationExecutionResult.StaleTarget => new ProposedNamespaceAuthorizationBoundary(
+                RelationalWriteExecutorResults.BuildStaleTargetResult(request.OperationKind)
+            ),
             _ => throw new InvalidOperationException(
                 $"Unsupported namespace authorization execution result '{executionResult.GetType().Name}'."
             ),

@@ -842,22 +842,17 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        NamespacePrefixParameterization namespacePrefixParameterization;
-
-        try
-        {
-            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
-                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
-            );
-        }
-        catch (NamespacePrefixLimitExceededException ex)
+                out var namespacePrefixParameterization,
+                out var prefixCapExceededMessage
+            )
+        )
         {
             return new DeleteAuthorizationPreflightResult.Stop(
-                new DeleteResult.DeleteFailureSecurityConfiguration([
-                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
-                ])
+                new DeleteResult.DeleteFailureSecurityConfiguration([prefixCapExceededMessage])
             );
         }
 
@@ -884,9 +879,12 @@ public sealed class RelationalDocumentStoreRepository(
                 documentId,
                 storedNamespaceAuthorization,
                 onNotAuthorized: failure => new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
-                onInvalidAuthorizationFailure: failureMessage => new DeleteResult.UnknownFailure(
-                    failureMessage
-                )
+                onInvalidAuthorizationFailure: failureMessage => new DeleteResult.DeleteFailureSecurityConfiguration([
+                    failureMessage,
+                ]),
+                // The target is row-locked before this check, so a stale target is not expected; map it
+                // to not-exists defensively for the rare case where the lock did not hold.
+                onStaleTarget: () => new DeleteResult.DeleteFailureNotExists()
             )
             .ConfigureAwait(false);
     }
@@ -1249,22 +1247,17 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        NamespacePrefixParameterization namespacePrefixParameterization;
-
-        try
-        {
-            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
-                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
-            );
-        }
-        catch (NamespacePrefixLimitExceededException ex)
+                out var namespacePrefixParameterization,
+                out var prefixCapExceededMessage
+            )
+        )
         {
             return new QueryAuthorizationResolution.Complete(
-                new QueryResult.QueryFailureSecurityConfiguration([
-                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
-                ])
+                new QueryResult.QueryFailureSecurityConfiguration([prefixCapExceededMessage])
             );
         }
 
@@ -1493,22 +1486,17 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        NamespacePrefixParameterization namespacePrefixParameterization;
-
-        try
-        {
-            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
-                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
-            );
-        }
-        catch (NamespacePrefixLimitExceededException ex)
+                out var namespacePrefixParameterization,
+                out var prefixCapExceededMessage
+            )
+        )
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                new UpsertResult.UpsertFailureSecurityConfiguration([
-                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
-                ])
+                new UpsertResult.UpsertFailureSecurityConfiguration([prefixCapExceededMessage])
             );
         }
 
@@ -1758,22 +1746,17 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        NamespacePrefixParameterization namespacePrefixParameterization;
-
-        try
-        {
-            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
-                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
-            );
-        }
-        catch (NamespacePrefixLimitExceededException ex)
+                out var namespacePrefixParameterization,
+                out var prefixCapExceededMessage
+            )
+        )
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                new UpdateResult.UpdateFailureSecurityConfiguration([
-                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
-                ])
+                new UpdateResult.UpdateFailureSecurityConfiguration([prefixCapExceededMessage])
             );
         }
 
@@ -1868,10 +1851,24 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedNamespaceAuthorization
                 ),
 
-            RelationshipAuthorizationResult.NoClaims noClaims =>
-                new WriteGuardRailPreflightResult<UpdateResult>.Continue(
+            // NamespaceBased AND-composes before the relationship OR group (auth.md,
+            // 08-namespace-auth-strategy.md). When a namespace check is planned, defer the stored
+            // relationship NoClaims denial into the proposed-relationship slot so the stored-then-proposed
+            // namespace checks get to deny first; ProposedRelationshipAuthorizationOrchestrator emits the
+            // NoClaims denial only after the proposed namespace check authorizes. With no namespace check
+            // planned, keep NoClaims in the stored slot so the stored boundary emits it after the target
+            // lock, preserving the existing 404-over-403 ordering for a missing PUT target.
+            RelationshipAuthorizationResult.NoClaims noClaims => storedNamespaceAuthorization is null
+            && proposedNamespaceAuthorization is null
+                ? new WriteGuardRailPreflightResult<UpdateResult>.Continue(
                     noClaims,
                     null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization
+                )
+                : new WriteGuardRailPreflightResult<UpdateResult>.Continue(
+                    null,
+                    noClaims,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization
                 ),
@@ -2499,22 +2496,17 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        NamespacePrefixParameterization namespacePrefixParameterization;
-
-        try
-        {
-            namespacePrefixParameterization = NamespacePrefixParameterizationFactory.Create(
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
-                NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
-            );
-        }
-        catch (NamespacePrefixLimitExceededException ex)
+                out var namespacePrefixParameterization,
+                out var prefixCapExceededMessage
+            )
+        )
         {
             return new GetByIdAuthorizationPreflightResult.Stop(
-                new GetResult.GetFailureSecurityConfiguration([
-                    NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount),
-                ])
+                new GetResult.GetFailureSecurityConfiguration([prefixCapExceededMessage])
             );
         }
 
@@ -2742,10 +2734,18 @@ public sealed class RelationalDocumentStoreRepository(
             ),
             NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 new GetAuthorizationOutcome(
-                    new GetResult.UnknownFailure(invalidFailure.FailureMessage),
+                    new GetResult.GetFailureSecurityConfiguration([invalidFailure.FailureMessage]),
                     null,
                     false
                 ),
+            // The stored target row was deleted between the unlocked target lookup and this check.
+            // Request a retry so the read boundary re-resolves the target; a target that is still gone on
+            // the next attempt surfaces as a 404 rather than a namespace mismatch.
+            NamespaceAuthorizationExecutionResult.StaleTarget => new GetAuthorizationOutcome(
+                null,
+                null,
+                RetryTargetResolution: true
+            ),
             _ => throw new InvalidOperationException(
                 $"Unsupported namespace authorization execution result '{executionResult.GetType().Name}'."
             ),
