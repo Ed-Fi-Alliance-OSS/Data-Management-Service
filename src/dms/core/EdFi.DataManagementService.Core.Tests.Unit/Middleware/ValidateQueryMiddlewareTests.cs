@@ -1117,4 +1117,80 @@ public class ValidateQueryMiddlewareTests
             _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Mixed_Case_Pagination_Parameter : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
+        {
+            return new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithStartQueryFieldMapping()
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+        }
+
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
+        {
+            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            {
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
+                PathComponents = new(
+                    ProjectEndpointName: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            docRefContext.ResourceSchema = new ResourceSchema(
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
+            );
+            return docRefContext;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // A pagination parameter in non-canonical casing is not parsed as pagination and
+            // must not be silently dropped; it falls through to ordinary query-field matching.
+            var queryParameters = new Dictionary<string, string> { { "Limit", "-1" } };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters,
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_should_send_bad_request()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_report_the_invalid_query_field()
+        {
+            _requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be("The query field 'Limit' is not valid for this resource.");
+        }
+    }
 }

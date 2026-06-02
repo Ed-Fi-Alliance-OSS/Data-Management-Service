@@ -18,13 +18,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : IPipelineStep
 {
-    private static readonly string[] _reservedQueryParameters =
-    [
-        "limit",
-        "offset",
-        "totalCount",
-        .. ChangeVersionParameterValidator.ReservedParameterNames,
-    ];
+    private static readonly string[] _paginationQueryParameters = ["limit", "offset", "totalCount"];
 
     /// <summary>
     /// Finds and sets PaginationParameters on the requestInfo by parsing the client request.
@@ -203,9 +197,13 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
 
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
 
-        IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms =
-            requestInfo.FrontendRequest.QueryParameters.ExceptBy(
-                _reservedQueryParameters,
+        // Pagination parameters are matched case-sensitively, consistent with how they are
+        // parsed above; change-version parameters are matched case-insensitively, consistent
+        // with how the validator looks them up.
+        IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms = requestInfo
+            .FrontendRequest.QueryParameters.ExceptBy(_paginationQueryParameters, (term) => term.Key)
+            .ExceptBy(
+                ChangeVersionParameterValidator.ReservedParameterNames,
                 (term) => term.Key,
                 StringComparer.OrdinalIgnoreCase
             );
