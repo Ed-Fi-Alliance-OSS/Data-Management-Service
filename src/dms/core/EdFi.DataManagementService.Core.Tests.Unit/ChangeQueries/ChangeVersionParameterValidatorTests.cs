@@ -168,6 +168,9 @@ public class ChangeVersionParameterValidatorTests
         [Test]
         public void It_reports_the_max_error() =>
             _result.Errors.Should().ContainSingle().Which.Should().Be(MaxError);
+
+        [Test]
+        public void It_leaves_max_unset() => _result.Range.MaxChangeVersion.Should().BeNull();
     }
 
     [TestFixture]
@@ -185,6 +188,9 @@ public class ChangeVersionParameterValidatorTests
         [Test]
         public void It_reports_the_max_error() =>
             _result.Errors.Should().ContainSingle().Which.Should().Be(MaxError);
+
+        [Test]
+        public void It_leaves_max_unset() => _result.Range.MaxChangeVersion.Should().BeNull();
     }
 
     [TestFixture]
