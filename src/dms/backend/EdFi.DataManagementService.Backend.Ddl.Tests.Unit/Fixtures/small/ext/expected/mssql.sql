@@ -142,6 +142,8 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -413,6 +415,8 @@ IF OBJECT_ID(N'edfi.School', N'U') IS NULL
 CREATE TABLE [edfi].[School]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_School_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_School_NK] UNIQUE ([SchoolId])
@@ -490,6 +494,14 @@ FOREIGN KEY ([School_DocumentId])
 REFERENCES [edfi].[School] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_ContentVersion'
+)
+CREATE INDEX [IX_School_ContentVersion] ON [edfi].[School] ([ContentVersion]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -427,6 +429,8 @@ CREATE SCHEMA IF NOT EXISTS "auth";
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganizationId" integer NOT NULL,
     "LocalEducationAgencyId" integer NOT NULL,
     CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId"),
@@ -436,6 +440,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganizationId" integer NOT NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
@@ -511,6 +517,10 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ContentVersion" ON "edfi"."LocalEducationAgency" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
 SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"

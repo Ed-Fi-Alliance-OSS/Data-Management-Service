@@ -142,6 +142,8 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -411,6 +413,8 @@ IF OBJECT_ID(N'edfi.ProfileRootOnlyMergeItem', N'U') IS NULL
 CREATE TABLE [edfi].[ProfileRootOnlyMergeItem]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProfileRootOnlyMergeItem_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProfileRootOnlyMergeItem_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [PrimarySchoolTypeDescriptor_DescriptorId_Present] bit NULL,
     [PrimarySchoolTypeDescriptor_Unified_DescriptorId] bigint NULL,
     [SecondarySchoolTypeDescriptor_DescriptorId_Present] bit NULL,
@@ -433,6 +437,8 @@ IF OBJECT_ID(N'edfi.Student', N'U') IS NULL
 CREATE TABLE [edfi].[Student]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [FirstName] nvarchar(75) NOT NULL,
     [StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
@@ -488,6 +494,22 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_Discriminator_ContentVersion'
+)
+CREATE INDEX [IX_Descriptor_Discriminator_ContentVersion] ON [dms].[Descriptor] ([Discriminator], [ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_ContentVersion'
+)
+CREATE INDEX [IX_ProfileRootOnlyMergeItem_ContentVersion] ON [edfi].[ProfileRootOnlyMergeItem] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified_DescriptorId'
 )
 CREATE INDEX [IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified_DescriptorId] ON [edfi].[ProfileRootOnlyMergeItem] ([PrimarySchoolTypeDescriptor_Unified_DescriptorId]);
@@ -499,6 +521,14 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_StudentReference_DocumentId_StudentReference_StudentUniqueId'
 )
 CREATE INDEX [IX_ProfileRootOnlyMergeItem_StudentReference_DocumentId_StudentReference_StudentUniqueId] ON [edfi].[ProfileRootOnlyMergeItem] ([StudentReference_DocumentId], [StudentReference_StudentUniqueId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_ContentVersion'
+)
+CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_ProfileRootOnlyMergeItem_ReferentialIdentity]

@@ -145,6 +145,26 @@ internal static class ConstraintNaming
     }
 
     /// <summary>
+    /// Builds an explicit (design-defined) index name following the <c>IX_{TableName}_{Col1}[_Col2…]</c>
+    /// convention, with columns listed in index key order. Used for change-version support indexes.
+    /// </summary>
+    internal static string BuildExplicitIndexName(DbTableName table, IReadOnlyList<DbColumnName> keyColumns)
+    {
+        ArgumentNullException.ThrowIfNull(keyColumns);
+
+        if (keyColumns.Count == 0)
+        {
+            throw new ArgumentException(
+                "Explicit index must include at least one key column.",
+                nameof(keyColumns)
+            );
+        }
+
+        string[] columnTokens = [.. keyColumns.Select(c => c.Value)];
+        return BuildName("IX", table, columnTokens);
+    }
+
+    /// <summary>
     /// Builds an authorization index name following the <c>IX_{TableName}_{Col1}[_Col2…]_Auth</c>
     /// convention. The trailing <c>_Auth</c> token keeps these distinct from FK-support indexes
     /// that may target the same key column.

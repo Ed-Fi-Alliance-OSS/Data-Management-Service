@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -427,6 +429,8 @@ CREATE SCHEMA IF NOT EXISTS "sample";
 CREATE TABLE IF NOT EXISTS "edfi"."Program"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ProgramName" varchar(20) NOT NULL,
     CONSTRAINT "PK_Program" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Program_NK" UNIQUE ("ProgramName"),
@@ -436,6 +440,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId")
@@ -688,6 +694,10 @@ BEGIN
         ON UPDATE NO ACTION;
     END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPeriod_ParentCollectionItemId_School_DocumentId" ON "edfi"."SchoolAddressPeriod" ("ParentCollectionItemId", "School_DocumentId");
 

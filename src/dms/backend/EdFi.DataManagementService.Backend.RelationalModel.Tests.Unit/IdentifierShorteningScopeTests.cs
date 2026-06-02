@@ -211,6 +211,101 @@ public class Given_Trigger_Name_Shortening_Collision_Across_Tables_For_Mssql
     }
 }
 
+/// <summary>
+/// Verifies that identifier shortening rewrites a DocumentStamping trigger's
+/// <see cref="DbTriggerInfo.MirrorStampTargetTable"/> consistently with every other table
+/// reference, including when the trigger's own table is unaffected (the mirror target points at a
+/// different, shortened table — the root for a child / extension trigger).
+/// </summary>
+[TestFixture]
+public class Given_DocumentStamping_Trigger_With_Shortened_Mirror_Stamp_Target_Table
+{
+    private DerivedRelationalModelSet _result = null!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new MirrorStampTargetShorteningPass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
+        // Map only the resource-root table name to a shorter identifier. The mirror-stamp target on
+        // both triggers references that root, so both must be shortened to match it.
+        var dialectRules = new MappedDialectRules(
+            SqlDialect.Pgsql,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["School"] = "Sch" }
+        );
+
+        _result = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+    }
+
+    /// <summary>
+    /// It should shorten the mirror-stamp target on the root trigger together with its own table.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_the_mirror_stamp_target_on_the_root_trigger()
+    {
+        var rootTrigger = _result.TriggersInCreateOrder.Single(trigger =>
+            trigger.Name.Value == "TR_RootStamp"
+        );
+        rootTrigger.Table.Name.Should().Be("Sch");
+        rootTrigger.MirrorStampTargetTable.Should().NotBeNull();
+        rootTrigger.MirrorStampTargetTable!.Value.Name.Should().Be("Sch");
+    }
+
+    /// <summary>
+    /// It should shorten the mirror-stamp target on a child trigger whose own table is unchanged.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_the_mirror_stamp_target_on_a_child_trigger_with_unchanged_table()
+    {
+        var childTrigger = _result.TriggersInCreateOrder.Single(trigger =>
+            trigger.Name.Value == "TR_ChildStamp"
+        );
+        childTrigger.Table.Name.Should().Be("Student");
+        childTrigger.MirrorStampTargetTable.Should().NotBeNull();
+        childTrigger.MirrorStampTargetTable!.Value.Name.Should().Be("Sch");
+    }
+}
+
+file sealed class MirrorStampTargetShorteningPass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        var schema = new DbSchemaName("edfi");
+        var rootTable = new DbTableName(schema, "School");
+        var childTable = new DbTableName(schema, "Student");
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_RootStamp"),
+                rootTable,
+                [],
+                [],
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: rootTable
+            )
+        );
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_ChildStamp"),
+                childTable,
+                [],
+                [],
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: rootTable
+            )
+        );
+    }
+}
+
 file sealed class IndexShorteningCollisionAcrossTablesPass : IRelationalModelSetPass
 {
     /// <summary>

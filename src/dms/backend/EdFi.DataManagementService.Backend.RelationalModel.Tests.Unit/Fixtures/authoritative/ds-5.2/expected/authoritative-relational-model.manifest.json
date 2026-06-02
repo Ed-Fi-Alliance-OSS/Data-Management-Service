@@ -100,6 +100,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "School_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -326,6 +350,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -703,6 +751,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -1147,6 +1219,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -1747,6 +1843,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Assessment_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -2232,6 +2352,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -2876,6 +3020,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Namespace_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -3396,6 +3564,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -5926,6 +6118,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Code",
                 "kind": "Scalar",
                 "type": {
@@ -6236,6 +6452,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -6920,6 +7160,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Calendar_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -7287,6 +7551,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -7704,6 +7992,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -8823,6 +9135,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "School_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -9199,6 +9535,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -9715,6 +10075,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -11594,6 +11978,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "CommunityProvider_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -11902,6 +12310,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -13999,6 +14431,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -14251,6 +14707,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -16873,6 +17353,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -17686,6 +18190,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -19789,6 +20317,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -21250,6 +21802,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "CredentialFieldDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -22059,6 +22635,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "CrisisTypeDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -22318,6 +22918,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -22750,6 +23374,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -23720,6 +24368,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "School_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -24584,6 +25256,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -26026,6 +26722,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -26252,6 +26972,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganizationNetwork_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -26452,6 +27196,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -28372,6 +29140,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -28569,6 +29361,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -30687,6 +31503,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "ProgramEvaluationElement_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -31124,6 +31964,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "FeederSchool_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -31359,6 +32223,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -31637,6 +32525,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -31978,6 +32890,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -32713,6 +33649,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -33582,6 +34542,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SchoolYear_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -33895,6 +34879,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -35998,6 +37006,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -37228,6 +38260,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -38789,6 +39845,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -40606,6 +41686,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SourceLearningStandard_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -40907,6 +42011,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -42035,6 +43163,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "FiscalYear_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -42495,6 +43647,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "LocalAccount_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -42730,6 +43906,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "LocalAccount_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -42955,6 +44155,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -43242,6 +44466,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -45836,6 +47084,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "LocalAccount_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -46061,6 +47333,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -46369,6 +47665,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -46771,6 +48091,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Code",
                 "kind": "Scalar",
                 "type": {
@@ -47054,6 +48398,30 @@
                 "type": {
                   "kind": "String",
                   "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -48346,6 +49714,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -49006,6 +50398,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Code",
                 "kind": "Scalar",
                 "type": {
@@ -49274,6 +50690,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -51299,6 +52739,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SourceSystemDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -51575,6 +53039,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "PostSecondaryInstitution_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -51828,6 +53316,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -54080,6 +55592,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Code",
                 "kind": "Scalar",
                 "type": {
@@ -54348,6 +55884,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -55326,6 +56886,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "ProgramEvaluation_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -55921,6 +57505,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "ProgramProgram_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -56473,6 +58081,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -57182,6 +58814,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Code",
                 "kind": "Scalar",
                 "type": {
@@ -57702,6 +59358,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -59374,6 +61054,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -60243,6 +61947,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "CurrentSchoolYear",
                 "kind": "Scalar",
                 "type": {
@@ -60363,6 +62091,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -62938,6 +64690,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -63398,6 +65174,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -65027,6 +66827,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SchoolYear_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -65809,6 +67633,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Code",
                 "kind": "Scalar",
                 "type": {
@@ -66171,6 +68019,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Staff_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -66411,6 +68283,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Cohort_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -66641,6 +68537,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -66989,6 +68909,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -67540,6 +69484,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -68396,6 +70364,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Credential_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -68948,6 +70940,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Staff_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -69167,6 +71183,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -69452,6 +71492,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -70181,6 +72245,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Section_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -70526,6 +72614,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -74641,6 +76753,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "OperationalStatusDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -76794,6 +78930,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -78977,6 +81137,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -79310,6 +81494,30 @@
                 "type": {
                   "kind": "String",
                   "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -79810,6 +82018,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -80713,6 +82945,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -83112,6 +85368,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -83954,6 +86234,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Cohort_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -84404,6 +86708,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -85448,6 +87776,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Contact_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -85741,6 +88093,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -86309,6 +88685,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "DisciplineIncident_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -86657,6 +89057,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -86988,6 +89412,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -91209,6 +93657,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -91454,6 +93926,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -91860,6 +94356,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -92672,6 +95192,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -93511,6 +96055,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "CohortCohort_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -94095,6 +96663,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Intervention_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -94424,6 +97016,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -95518,6 +98134,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -96398,6 +99038,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -97264,6 +99928,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -98007,6 +100695,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -98431,6 +101143,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -100158,6 +102894,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -101569,6 +104329,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -102024,6 +104808,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -102789,6 +105597,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -103431,6 +106263,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -104214,6 +107070,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Section_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -104809,6 +107689,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -106537,6 +109441,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -107136,6 +110064,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -107930,6 +110882,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Student_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -108559,6 +111535,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -110081,6 +113081,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Course_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -110311,6 +113335,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -110575,6 +113623,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -111251,6 +114323,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Namespace_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -111917,6 +115013,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -112126,6 +115246,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -112346,6 +115490,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -112893,6 +116061,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Section_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -113149,6 +116341,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -113471,6 +116687,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Namespace_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -113774,6 +117014,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },
@@ -114133,6 +117397,30 @@
                 }
               },
               {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Survey_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -114299,6 +117587,30 @@
               {
                 "name": "DocumentId",
                 "kind": "ParentKeyPart",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentLastModifiedAt",
+                "kind": "MirroredContentLastModifiedAt",
+                "type": {
+                  "kind": "DateTime"
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ContentVersion",
+                "kind": "MirroredContentVersion",
                 "type": {
                   "kind": "Int64"
                 },

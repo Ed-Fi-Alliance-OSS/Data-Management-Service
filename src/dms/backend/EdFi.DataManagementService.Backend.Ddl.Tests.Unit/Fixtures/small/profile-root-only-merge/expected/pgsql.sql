@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -426,6 +428,8 @@ CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "PrimarySchoolTypeDescriptor_DescriptorId_Present" boolean NULL,
     "PrimarySchoolTypeDescriptor_Unified_DescriptorId" bigint NULL,
     "SecondarySchoolTypeDescriptor_DescriptorId_Present" boolean NULL,
@@ -447,6 +451,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "FirstName" varchar(75) NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
@@ -522,9 +528,15 @@ BEGIN
     END IF;
 END $$;
 
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"."Descriptor" ("Discriminator", "ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_ContentVersion" ON "edfi"."ProfileRootOnlyMergeItem" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescrip_5313ae7036" ON "edfi"."ProfileRootOnlyMergeItem" ("PrimarySchoolTypeDescriptor_Unified_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_StudentReference_Documen_443e258273" ON "edfi"."ProfileRootOnlyMergeItem" ("StudentReference_DocumentId", "StudentReference_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProfileRootOnlyMergeItem_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

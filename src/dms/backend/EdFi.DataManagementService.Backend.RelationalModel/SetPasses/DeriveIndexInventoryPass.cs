@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.RelationalModel.Constraints;
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
@@ -39,6 +40,49 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         {
             DeriveIndexesForTable(abstractTable.TableModel, context.IndexInventory);
         }
+
+        DeriveDescriptorContentVersionIndex(context);
+    }
+
+    /// <summary>
+    /// Derives the shared <c>dms.Descriptor</c> composite change-version index
+    /// (<c>IX_Descriptor_Discriminator_ContentVersion</c>) once, when the content-version mirror feature is
+    /// active and the schema contains any descriptor resource. The columns themselves live on the
+    /// core-owned <c>dms.Descriptor</c> table; this index is derived into the inventory and rendered by the
+    /// relational DDL emitter against <c>dms.Descriptor</c>.
+    /// </summary>
+    private static void DeriveDescriptorContentVersionIndex(RelationalModelSetBuilderContext context)
+    {
+        if (!context.ContentVersionMirrorDerivationHasRun)
+        {
+            return;
+        }
+
+        var hasDescriptorResource = context.ConcreteResourcesInNameOrder.Exists(resource =>
+            resource.StorageKind == ResourceStorageKind.SharedDescriptorTable
+        );
+
+        if (!hasDescriptorResource)
+        {
+            return;
+        }
+
+        var descriptorTable = new DbTableName(new DbSchemaName("dms"), "Descriptor");
+        IReadOnlyList<DbColumnName> keyColumns =
+        [
+            new DbColumnName("Discriminator"),
+            RelationalNameConventions.ContentVersionColumnName,
+        ];
+
+        context.IndexInventory.Add(
+            new DbIndexInfo(
+                new DbIndexName(ConstraintNaming.BuildExplicitIndexName(descriptorTable, keyColumns)),
+                descriptorTable,
+                keyColumns,
+                IsUnique: false,
+                DbIndexKind.Explicit
+            )
+        );
     }
 
     /// <summary>
@@ -102,6 +146,28 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
                     columns,
                     IsUnique: false,
                     DbIndexKind.ForeignKeySupport
+                )
+            );
+        }
+
+        // Single-column change-version support index for the row-local ContentVersion mirror. Only resource
+        // root tables carry the MirroredContentVersion column, so this naturally targets roots only.
+        var mirrorContentVersionColumn = table.Columns.FirstOrDefault(column =>
+            column.Kind == ColumnKind.MirroredContentVersion
+        );
+
+        if (mirrorContentVersionColumn is not null)
+        {
+            IReadOnlyList<DbColumnName> contentVersionColumns = [mirrorContentVersionColumn.ColumnName];
+            tableIndexes.Add(
+                new DbIndexInfo(
+                    new DbIndexName(
+                        ConstraintNaming.BuildExplicitIndexName(table.Table, contentVersionColumns)
+                    ),
+                    table.Table,
+                    contentVersionColumns,
+                    IsUnique: false,
+                    DbIndexKind.Explicit
                 )
             );
         }

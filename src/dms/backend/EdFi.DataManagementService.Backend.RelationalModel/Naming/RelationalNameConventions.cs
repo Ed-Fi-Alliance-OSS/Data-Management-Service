@@ -52,6 +52,16 @@ public static class RelationalNameConventions
     public static DbColumnName OrdinalColumnName { get; } = new("Ordinal");
 
     /// <summary>
+    /// The synthesized root-table column that mirrors <c>dms.Document.ContentVersion</c> for the row.
+    /// </summary>
+    public static DbColumnName ContentVersionColumnName { get; } = new("ContentVersion");
+
+    /// <summary>
+    /// The synthesized root-table column that mirrors <c>dms.Document.ContentLastModifiedAt</c> for the row.
+    /// </summary>
+    public static DbColumnName ContentLastModifiedAtColumnName { get; } = new("ContentLastModifiedAt");
+
+    /// <summary>
     /// The standard stable row-identity column name used by persisted collection and extension child tables.
     /// </summary>
     public static DbColumnName CollectionItemIdColumnName { get; } = new("CollectionItemId");

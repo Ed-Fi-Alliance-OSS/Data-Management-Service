@@ -142,6 +142,8 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -413,6 +415,8 @@ IF OBJECT_ID(N'edfi.ParentResource', N'U') IS NULL
 CREATE TABLE [edfi].[ParentResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ParentResource_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [ParentResourceId] int NOT NULL,
     CONSTRAINT [PK_ParentResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_ParentResource_NK] UNIQUE ([ParentResourceId])
@@ -542,6 +546,14 @@ IF NOT EXISTS (
     WHERE s.name = N'aligned' AND t.name = N'ParentResourceExtensionParentChildrenExtensionChildren' AND i.name = N'IX_ParentResourceExtensionParentChildrenExtensionChildren_ParentCollectionItemId_ParentResource_DocumentId'
 )
 CREATE INDEX [IX_ParentResourceExtensionParentChildrenExtensionChildren_ParentCollectionItemId_ParentResource_DocumentId] ON [aligned].[ParentResourceExtensionParentChildrenExtensionChildren] ([ParentCollectionItemId], [ParentResource_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ParentResource' AND i.name = N'IX_ParentResource_ContentVersion'
+)
+CREATE INDEX [IX_ParentResource_ContentVersion] ON [edfi].[ParentResource] ([ContentVersion]);
 
 GO
 CREATE OR ALTER TRIGGER [aligned].[TR_ParentResourceExtensionParent_Stamp]

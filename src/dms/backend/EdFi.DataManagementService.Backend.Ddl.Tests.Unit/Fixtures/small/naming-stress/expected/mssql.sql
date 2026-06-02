@@ -142,6 +142,8 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -411,6 +413,8 @@ IF OBJECT_ID(N'edfi.NamingStressItem', N'U') IS NULL
 CREATE TABLE [edfi].[NamingStressItem]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_NamingStressItem_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_NamingStressItem_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [NamingStressItemId] int NOT NULL,
     [Order] int NULL,
     [ShortName] nvarchar(60) NULL,
@@ -431,6 +435,14 @@ FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'NamingStressItem' AND i.name = N'IX_NamingStressItem_ContentVersion'
+)
+CREATE INDEX [IX_NamingStressItem_ContentVersion] ON [edfi].[NamingStressItem] ([ContentVersion]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_NamingStressItem_ReferentialIdentity]

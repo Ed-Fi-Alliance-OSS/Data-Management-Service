@@ -404,7 +404,15 @@ public static class DerivedModelSetManifestEmitter
                     break;
 
                 case TriggerKindParameters.DocumentStamping:
-                    // DocumentStamping has no additional properties
+                    writer.WritePropertyName("mirror_stamp_target_table");
+                    WriteTableReference(
+                        writer,
+                        trigger.MirrorStampTargetTable
+                            ?? throw new InvalidOperationException(
+                                $"DocumentStamping trigger '{trigger.Name.Value}' requires a non-null "
+                                    + "MirrorStampTargetTable."
+                            )
+                    );
                     break;
 
                 case TriggerKindParameters.AuthHierarchyMaintenance auth:

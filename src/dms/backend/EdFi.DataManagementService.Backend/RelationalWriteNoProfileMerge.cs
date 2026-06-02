@@ -317,7 +317,11 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                     tableWritePlan.TableModel.Table,
                     out var hydratedTableRows
                 )
-                    ? RelationalWriteMergeSupport.ProjectCurrentRows(tableWritePlan, hydratedTableRows.Rows)
+                    ? RelationalWriteMergeSupport.ProjectCurrentRows(
+                        tableWritePlan,
+                        hydratedTableRows.TableModel,
+                        hydratedTableRows.Rows
+                    )
                     : ImmutableArray<RelationalWriteMergedTableRow>.Empty;
 
                 currentRowsByTable.Add(tableWritePlan.TableModel.Table, projectedRows);

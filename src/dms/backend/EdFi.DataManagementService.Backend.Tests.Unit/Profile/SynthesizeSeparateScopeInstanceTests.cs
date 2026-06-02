@@ -577,7 +577,11 @@ public class Given_SynthesizeSeparateScopeInstance_update_with_sibling_scope_sta
         object?[] row
     )
     {
-        var projected = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, [row])[0];
+        var projected = RelationalWriteMergeSupport.ProjectCurrentRows(
+            tablePlan,
+            tablePlan.TableModel,
+            [row]
+        )[0];
         var byColumn = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(tablePlan.TableModel, row);
         return new CurrentSeparateScopeRowProjection(projected, byColumn);
     }
@@ -1170,7 +1174,11 @@ internal sealed record SeparateScopeInstanceScenario(
         object?[] row
     )
     {
-        var projected = RelationalWriteMergeSupport.ProjectCurrentRows(tablePlan, [row])[0];
+        var projected = RelationalWriteMergeSupport.ProjectCurrentRows(
+            tablePlan,
+            tablePlan.TableModel,
+            [row]
+        )[0];
         var byColumn = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(tablePlan.TableModel, row);
         return new CurrentSeparateScopeRowProjection(projected, byColumn);
     }
@@ -1364,6 +1372,7 @@ internal sealed record AlignedSeparateScopeInstanceScenario(
     {
         var projected = RelationalWriteMergeSupport.ProjectCurrentRows(
             tablePlan,
+            tablePlan.TableModel,
             [
                 [ParentItemId, "Red"],
             ]

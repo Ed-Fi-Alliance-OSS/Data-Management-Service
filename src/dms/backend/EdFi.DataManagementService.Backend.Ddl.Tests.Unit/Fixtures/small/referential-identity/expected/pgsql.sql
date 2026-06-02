@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
 
@@ -427,6 +429,8 @@ CREATE SCHEMA IF NOT EXISTS "auth";
 CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EventTimestamp" timestamp with time zone NOT NULL,
     CONSTRAINT "PK_DateTimeKeyResource" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_DateTimeKeyResource_NK" UNIQUE ("EventTimestamp")
@@ -435,6 +439,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
 CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "DecimalKey" numeric(9,2) NOT NULL,
     CONSTRAINT "PK_DecimalKeyResource" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_DecimalKeyResource_NK" UNIQUE ("DecimalKey"),
@@ -444,6 +450,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
 CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "DecimalKeyReference_DocumentId" bigint NOT NULL,
     "DecimalKeyReference_DecimalKey" numeric(9,2) NOT NULL,
     "RefResourceId" varchar(64) NOT NULL,
@@ -455,6 +463,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
 CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EdOrgDependentResourceReference_DocumentId" bigint NOT NULL,
     "EdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NOT NULL,
     "EdOrgDependentResourceReference_EducationOrganizationId" integer NOT NULL,
@@ -467,6 +477,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
 CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" integer NOT NULL,
     "EdOrgDependentResourceId" varchar(64) NOT NULL,
@@ -479,6 +491,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
 CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "StudentUniqueId_Unified" varchar(32) NOT NULL,
     "ResourceAReference_DocumentId" bigint NOT NULL,
     "ResourceAReference_ResourceAId" varchar(64) NOT NULL,
@@ -496,6 +510,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
 CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "StudentReference_DocumentId" bigint NOT NULL,
     "StudentReference_StudentUniqueId" varchar(32) NOT NULL,
     "ResourceAId" varchar(64) NOT NULL,
@@ -508,6 +524,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
 CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "StudentReference_DocumentId" bigint NOT NULL,
     "StudentReference_StudentUniqueId" varchar(32) NOT NULL,
     "ResourceBId" varchar(64) NOT NULL,
@@ -520,6 +538,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "EducationOrganizationId" integer NOT NULL,
     "NameOfInstitution" varchar(75) NULL,
     "SchoolId" integer NOT NULL,
@@ -531,6 +551,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "FirstName" varchar(75) NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
@@ -541,6 +563,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "SchoolReference_DocumentId" bigint NOT NULL,
     "SchoolReference_SchoolId" integer NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
@@ -908,19 +932,41 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_DateTimeKeyResource_ContentVersion" ON "edfi"."DateTimeKeyResource" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_DecimalKeyResource_ContentVersion" ON "edfi"."DecimalKeyResource" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_ContentVersion" ON "edfi"."DecimalRefResource" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_DecimalKeyReference_DocumentId_1972800496" ON "edfi"."DecimalRefResource" ("DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey");
+
+CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_ContentVersion" ON "edfi"."EdOrgDependentChildResource" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_EdOrgDependentResourc_42d6c19595" ON "edfi"."EdOrgDependentChildResource" ("EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_ContentVersion" ON "edfi"."EdOrgDependentResource" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_EducationOrganization_Docu_abaf527b99" ON "edfi"."EdOrgDependentResource" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ContentVersion" ON "edfi"."KeyUnifiedResource" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceAReference_DocumentId__1b15ae82f2" ON "edfi"."KeyUnifiedResource" ("ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "StudentUniqueId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceBReference_DocumentId__9ec2040deb" ON "edfi"."KeyUnifiedResource" ("ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_ResourceA_ContentVersion" ON "edfi"."ResourceA" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_ResourceA_StudentReference_DocumentId_StudentRefe_661e48fb55" ON "edfi"."ResourceA" ("StudentReference_DocumentId", "StudentReference_StudentUniqueId");
 
+CREATE INDEX IF NOT EXISTS "IX_ResourceB_ContentVersion" ON "edfi"."ResourceB" ("ContentVersion");
+
 CREATE INDEX IF NOT EXISTS "IX_ResourceB_StudentReference_DocumentId_StudentRefe_59f7d306df" ON "edfi"."ResourceB" ("StudentReference_DocumentId", "StudentReference_StudentUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ContentVersion" ON "edfi"."StudentSchoolAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolReference_Document_73243293fa" ON "edfi"."StudentSchoolAssociation" ("SchoolReference_DocumentId", "SchoolReference_SchoolId");
 

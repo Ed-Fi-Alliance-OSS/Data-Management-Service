@@ -115,8 +115,17 @@ internal static class RelationalWriteMergeSupport
         };
     }
 
+    /// <summary>
+    /// Projects hydrated current-state rows into binding-indexed merged rows. The hydrated row is
+    /// indexed by ordinals resolved against <paramref name="hydratedRowTableModel"/> — the model the
+    /// row was materialized from — not the write plan's table model. These differ on resource root
+    /// tables: the write-plan model carries the change-version mirror columns, but the hydration (read)
+    /// projection omits them, and column canonicalization leaves non-mirror columns positioned after
+    /// the mirrors, so write-plan ordinals would be shifted (and overshoot the shorter hydrated row).
+    /// </summary>
     internal static ImmutableArray<RelationalWriteMergedTableRow> ProjectCurrentRows(
         TableWritePlan tableWritePlan,
+        DbTableModel hydratedRowTableModel,
         IReadOnlyList<object?[]> hydratedRows
     )
     {
@@ -131,7 +140,7 @@ internal static class RelationalWriteMergeSupport
             for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
             {
                 var binding = tableWritePlan.ColumnBindings[bindingIndex];
-                var columnOrdinal = FindColumnOrdinal(tableWritePlan.TableModel, binding.Column.ColumnName);
+                var columnOrdinal = FindColumnOrdinal(hydratedRowTableModel, binding.Column.ColumnName);
                 bindingValues[bindingIndex] = new FlattenedWriteValue.Literal(
                     NormalizeHydratedValue(binding.Column, hydratedRow[columnOrdinal])
                 );

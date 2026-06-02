@@ -142,6 +142,8 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -413,6 +415,8 @@ IF OBJECT_ID(N'edfi.DateTimeKeyResource', N'U') IS NULL
 CREATE TABLE [edfi].[DateTimeKeyResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DateTimeKeyResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DateTimeKeyResource_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [EventTimestamp] datetime2(7) NOT NULL,
     CONSTRAINT [PK_DateTimeKeyResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_DateTimeKeyResource_NK] UNIQUE ([EventTimestamp])
@@ -422,6 +426,8 @@ IF OBJECT_ID(N'edfi.DecimalKeyResource', N'U') IS NULL
 CREATE TABLE [edfi].[DecimalKeyResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DecimalKeyResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DecimalKeyResource_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [DecimalKey] decimal(9,2) NOT NULL,
     CONSTRAINT [PK_DecimalKeyResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_DecimalKeyResource_NK] UNIQUE ([DecimalKey]),
@@ -432,6 +438,8 @@ IF OBJECT_ID(N'edfi.DecimalRefResource', N'U') IS NULL
 CREATE TABLE [edfi].[DecimalRefResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DecimalRefResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DecimalRefResource_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [DecimalKeyReference_DocumentId] bigint NOT NULL,
     [DecimalKeyReference_DecimalKey] decimal(9,2) NOT NULL,
     [RefResourceId] nvarchar(64) NOT NULL,
@@ -444,6 +452,8 @@ IF OBJECT_ID(N'edfi.EdOrgDependentChildResource', N'U') IS NULL
 CREATE TABLE [edfi].[EdOrgDependentChildResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EdOrgDependentChildResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EdOrgDependentChildResource_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [EdOrgDependentResourceReference_DocumentId] bigint NOT NULL,
     [EdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
     [EdOrgDependentResourceReference_EducationOrganizationId] int NOT NULL,
@@ -457,6 +467,8 @@ IF OBJECT_ID(N'edfi.EdOrgDependentResource', N'U') IS NULL
 CREATE TABLE [edfi].[EdOrgDependentResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EdOrgDependentResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EdOrgDependentResource_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] int NOT NULL,
     [EdOrgDependentResourceId] nvarchar(64) NOT NULL,
@@ -470,6 +482,8 @@ IF OBJECT_ID(N'edfi.KeyUnifiedResource', N'U') IS NULL
 CREATE TABLE [edfi].[KeyUnifiedResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_KeyUnifiedResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_KeyUnifiedResource_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [StudentUniqueId_Unified] nvarchar(32) NOT NULL,
     [ResourceAReference_DocumentId] bigint NOT NULL,
     [ResourceAReference_ResourceAId] nvarchar(64) NOT NULL,
@@ -488,6 +502,8 @@ IF OBJECT_ID(N'edfi.ResourceA', N'U') IS NULL
 CREATE TABLE [edfi].[ResourceA]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ResourceA_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ResourceA_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [StudentReference_DocumentId] bigint NOT NULL,
     [StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
     [ResourceAId] nvarchar(64) NOT NULL,
@@ -501,6 +517,8 @@ IF OBJECT_ID(N'edfi.ResourceB', N'U') IS NULL
 CREATE TABLE [edfi].[ResourceB]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ResourceB_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ResourceB_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [StudentReference_DocumentId] bigint NOT NULL,
     [StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
     [ResourceBId] nvarchar(64) NOT NULL,
@@ -514,6 +532,8 @@ IF OBJECT_ID(N'edfi.School', N'U') IS NULL
 CREATE TABLE [edfi].[School]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_School_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [EducationOrganizationId] int NOT NULL,
     [NameOfInstitution] nvarchar(75) NULL,
     [SchoolId] int NOT NULL,
@@ -526,6 +546,8 @@ IF OBJECT_ID(N'edfi.Student', N'U') IS NULL
 CREATE TABLE [edfi].[Student]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [FirstName] nvarchar(75) NOT NULL,
     [StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
@@ -537,6 +559,8 @@ IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [SchoolReference_DocumentId] bigint NOT NULL,
     [SchoolReference_SchoolId] int NOT NULL,
     [StudentUniqueId] nvarchar(32) NOT NULL,
@@ -796,9 +820,41 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'DateTimeKeyResource' AND i.name = N'IX_DateTimeKeyResource_ContentVersion'
+)
+CREATE INDEX [IX_DateTimeKeyResource_ContentVersion] ON [edfi].[DateTimeKeyResource] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'DecimalKeyResource' AND i.name = N'IX_DecimalKeyResource_ContentVersion'
+)
+CREATE INDEX [IX_DecimalKeyResource_ContentVersion] ON [edfi].[DecimalKeyResource] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'DecimalRefResource' AND i.name = N'IX_DecimalRefResource_ContentVersion'
+)
+CREATE INDEX [IX_DecimalRefResource_ContentVersion] ON [edfi].[DecimalRefResource] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'DecimalRefResource' AND i.name = N'IX_DecimalRefResource_DecimalKeyReference_DocumentId_DecimalKeyReference_DecimalKey'
 )
 CREATE INDEX [IX_DecimalRefResource_DecimalKeyReference_DocumentId_DecimalKeyReference_DecimalKey] ON [edfi].[DecimalRefResource] ([DecimalKeyReference_DocumentId], [DecimalKeyReference_DecimalKey]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentChildResource' AND i.name = N'IX_EdOrgDependentChildResource_ContentVersion'
+)
+CREATE INDEX [IX_EdOrgDependentChildResource_ContentVersion] ON [edfi].[EdOrgDependentChildResource] ([ContentVersion]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -812,9 +868,25 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentResource' AND i.name = N'IX_EdOrgDependentResource_ContentVersion'
+)
+CREATE INDEX [IX_EdOrgDependentResource_ContentVersion] ON [edfi].[EdOrgDependentResource] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'EdOrgDependentResource' AND i.name = N'IX_EdOrgDependentResource_EducationOrganization_DocumentId'
 )
 CREATE INDEX [IX_EdOrgDependentResource_EducationOrganization_DocumentId] ON [edfi].[EdOrgDependentResource] ([EducationOrganization_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ContentVersion'
+)
+CREATE INDEX [IX_KeyUnifiedResource_ContentVersion] ON [edfi].[KeyUnifiedResource] ([ContentVersion]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -836,6 +908,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ResourceA' AND i.name = N'IX_ResourceA_ContentVersion'
+)
+CREATE INDEX [IX_ResourceA_ContentVersion] ON [edfi].[ResourceA] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ResourceA' AND i.name = N'IX_ResourceA_StudentReference_DocumentId'
 )
 CREATE INDEX [IX_ResourceA_StudentReference_DocumentId] ON [edfi].[ResourceA] ([StudentReference_DocumentId]);
@@ -844,9 +924,41 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ResourceB' AND i.name = N'IX_ResourceB_ContentVersion'
+)
+CREATE INDEX [IX_ResourceB_ContentVersion] ON [edfi].[ResourceB] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'ResourceB' AND i.name = N'IX_ResourceB_StudentReference_DocumentId'
 )
 CREATE INDEX [IX_ResourceB_StudentReference_DocumentId] ON [edfi].[ResourceB] ([StudentReference_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_ContentVersion'
+)
+CREATE INDEX [IX_School_ContentVersion] ON [edfi].[School] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'Student' AND i.name = N'IX_Student_ContentVersion'
+)
+CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_ContentVersion'
+)
+CREATE INDEX [IX_StudentSchoolAssociation_ContentVersion] ON [edfi].[StudentSchoolAssociation] ([ContentVersion]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
