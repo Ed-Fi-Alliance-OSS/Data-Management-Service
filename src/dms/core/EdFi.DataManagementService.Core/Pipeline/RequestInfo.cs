@@ -92,6 +92,13 @@ internal class RequestInfo(
     public QueryElement[] QueryElements { get; set; } = [];
 
     /// <summary>
+    /// The parsed and validated change-version window from the minChangeVersion /
+    /// maxChangeVersion query parameters. ChangeVersionRange.None when neither is
+    /// supplied. Set by ValidateQueryMiddleware before query-field matching.
+    /// </summary>
+    public ChangeVersionRange ChangeVersionRange { get; set; } = ChangeVersionRange.None;
+
+    /// <summary>
     /// Collection of authorization strategy filters, each specifying
     /// collection of filters and filter operator
     /// </summary>
