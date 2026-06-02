@@ -298,12 +298,12 @@ function Invoke-ConfigureLocalDmsInstance {
 
     if ($NoDmsInstance) {
         Write-Information "Selecting existing route-unqualified DMS instance from CMS." -InformationAction Continue
-        $instances = @(Get-DmsInstances -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
+        $instances = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
         $selectedInstance = Get-ExistingCompatibleInstance -Instances $instances -Tenant $tenant
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DmsInstanceIds @([long]$selectedInstance.id) -Tenant $tenant | Out-Null
+            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedInstance.id) -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -325,11 +325,11 @@ function Invoke-ConfigureLocalDmsInstance {
             -PostgresUser $postgresUser `
             -Tenant $tenant
 
-        $instanceIds = @($instances | ForEach-Object { [long]$_.InstanceId })
+        $instanceIds = @($instances | ForEach-Object { [long]$_.DataStoreId })
         $routeContexts = @(
             $instances | ForEach-Object {
                 [pscustomobject]@{
-                    InstanceId = [long]$_.InstanceId
+                    DataStoreId = [long]$_.DataStoreId
                     ContextKey = "schoolYear"
                     ContextValue = [string]$_.Year
                 }
@@ -339,7 +339,7 @@ function Invoke-ConfigureLocalDmsInstance {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DmsInstanceIds $instanceIds -Tenant $tenant | Out-Null
+            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds $instanceIds -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -352,20 +352,20 @@ function Invoke-ConfigureLocalDmsInstance {
     }
 
     Write-Information "Creating default route-unqualified DMS instance." -InformationAction Continue
-    $instanceId = Add-DmsInstance `
+    $instanceId = Add-DataStore `
         -CmsUrl $cmsUrl `
         -AccessToken $configToken `
         -PostgresPassword $postgresPassword `
         -PostgresDbName $postgresDbName `
         -PostgresUser $postgresUser `
-        -InstanceName "Local Development Instance" `
-        -InstanceType "Development" `
+        -Name "Local Development Instance" `
+        -DataStoreType "Development" `
         -Tenant $tenant
 
     if ($AddSmokeTestCredentials) {
         Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
         Write-Information "Creating smoke test credentials." -InformationAction Continue
-        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DmsInstanceIds @([long]$instanceId) -Tenant $tenant | Out-Null
+        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$instanceId) -Tenant $tenant | Out-Null
         Write-Information "Smoke test credentials created." -InformationAction Continue
     }
 

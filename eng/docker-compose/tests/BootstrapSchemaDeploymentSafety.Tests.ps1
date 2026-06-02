@@ -445,7 +445,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -494,7 +494,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 3
@@ -560,7 +560,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     1..500 | ForEach-Object {
                         [pscustomobject]@{
@@ -588,7 +588,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 $target = [pscustomobject]@{
                     id = 1
                     instanceName = "Target"
@@ -621,7 +621,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 10
@@ -652,13 +652,13 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances { return @() }
+            function Get-DataStore { return @() }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile } |
                 Should -Throw -ExpectedMessage "*No DMS instances found*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
 
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -719,7 +719,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 5
@@ -750,7 +750,7 @@ exit $ExitCode
             . $script:repo.ProvisionScript
 
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 5
@@ -773,7 +773,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 77
@@ -795,7 +795,7 @@ exit $ExitCode
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 77
@@ -820,8 +820,8 @@ exit $ExitCode
             New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
             @"
 function Get-SmokeTestCredentials {
-    param([string] `$ConfigServiceUrl, [long[]] `$DmsInstanceIds, [string] `$Tenant)
-    Add-Content -LiteralPath '$capturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DmsInstanceIds -join ',') tenant=`$Tenant`"
+    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
+    Add-Content -LiteralPath '$capturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
 }
 Export-ModuleMember -Function Get-SmokeTestCredentials
 "@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
@@ -830,7 +830,7 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 param([string] $Tenant)
                 $Tenant | Should -Be "tenant-a"
                 return @(
@@ -853,8 +853,8 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
             @"
 function Get-SmokeTestCredentials {
-    param([string] `$ConfigServiceUrl, [long[]] `$DmsInstanceIds, [string] `$Tenant)
-    Add-Content -LiteralPath '$capturePath' -Value `"smoke ids=`$(`$DmsInstanceIds -join ',') tenant=`$Tenant`"
+    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
+    Add-Content -LiteralPath '$capturePath' -Value `"smoke ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
 }
 Export-ModuleMember -Function Get-SmokeTestCredentials
 "@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
@@ -1083,7 +1083,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1116,7 +1116,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1149,7 +1149,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1184,7 +1184,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1216,7 +1216,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1248,7 +1248,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1274,7 +1274,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1310,7 +1310,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1341,7 +1341,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1380,7 +1380,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1413,7 +1413,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 99
@@ -1451,7 +1451,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1481,7 +1481,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1513,7 +1513,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 7
@@ -1655,7 +1655,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
                 function Add-CmsClient { }
                 function Get-CmsToken { return "token" }
-                function Get-DmsInstances {
+                function Get-DataStore {
                     return @(
                         [pscustomobject]@{
                             id = 1
@@ -1702,7 +1702,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
                 function Add-CmsClient { }
                 function Get-CmsToken { return "token" }
-                function Get-DmsInstances {
+                function Get-DataStore {
                     return @(
                         [pscustomobject]@{
                             id = 1
@@ -1773,7 +1773,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { throw "Add-CmsClient must not be called during provisioning." }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1798,7 +1798,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { throw "Add-CmsClient must not be called during provisioning." }
             function Get-CmsToken { throw "401 Unauthorized: invalid_client" }
-            function Get-DmsInstances { return @() }
+            function Get-DataStore { return @() }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
                 Should -Throw -ExpectedMessage "*configure-local-dms-instance.ps1*"
@@ -1816,7 +1816,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1846,7 +1846,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1875,7 +1875,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -1920,7 +1920,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -2156,7 +2156,7 @@ $extracted
                     '${POSTGRES_PASSWORD};database=' + $DatabaseName + ';'
                 function Add-CmsClient { }
                 function Get-CmsToken { return "token" }
-                function Get-DmsInstances {
+                function Get-DataStore {
                     return @(
                         [pscustomobject]@{
                             id = 1
@@ -2228,7 +2228,7 @@ $extracted
 
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -2333,7 +2333,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=configure-side-secret
                 }
                 return "token"
             }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -2384,7 +2384,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
                 }
                 return "token"
             }
-            function Get-DmsInstances {
+            function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
@@ -2426,7 +2426,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 
             function Add-CmsClient { throw "Add-CmsClient must not be called during provisioning." }
             function Get-CmsToken { throw "401 Unauthorized" }
-            function Get-DmsInstances { return @() }
+            function Get-DataStore { return @() }
 
             $thrownMessage = $null
             try {

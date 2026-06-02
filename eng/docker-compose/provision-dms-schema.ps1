@@ -817,7 +817,7 @@ function Invoke-ProvisionDmsSchema {
         throw "Bootstrap admin client '$(Format-LogSafeText $bootstrapAdmin.ClientId)' could not be authenticated against $(Format-LogSafeText $cmsUrl). Run configure-local-dms-instance.ps1 first to register the bootstrap admin client, or refresh its credentials. Underlying error: $(Format-LogSafeText ($_.Exception.Message))"
     }
 
-    $instances = @(Get-DmsInstances -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant -Limit 500)
+    $instances = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant -Limit 500)
     if ($instances.Count -ge 500) {
         throw "DMS instance count reached the CMS query page size (500); pagination is not implemented in this bootstrap provisioning path. Reduce CMS instances or implement paging before provisioning."
     }
