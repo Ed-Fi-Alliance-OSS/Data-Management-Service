@@ -131,6 +131,7 @@ try {
         else {
             ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDataStore -AddExtensionSecurityMetadata -SkipConnectorSetup
         }
+    }
     finally {
         if ($null -eq $previousUseApiSchemaPath) {
             $env:USE_API_SCHEMA_PATH = $null
