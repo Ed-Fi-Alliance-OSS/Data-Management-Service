@@ -30,6 +30,114 @@ function ReadValuesFromEnvFile {
     return $envFile
 }
 
+function Resolve-LocalSettingsEnvironmentFile {
+    <#
+    .SYNOPSIS
+    Single source of truth for resolving the -EnvironmentFile parameter that every story-aligned
+    phase command (start, configure, provision, seed) accepts. Returns the absolute path to a
+    readable env file or throws if it cannot be located.
+
+    .DESCRIPTION
+    Resolution precedence (highest first):
+      1. The supplied -Path, when non-empty:
+         - absolute paths are kept as-is;
+         - relative paths are resolved against the caller's current working directory.
+      2. <docker-compose>/.env when present.
+      3. <docker-compose>/.env.example as a developer fallback.
+
+    A missing file always throws. This is intentionally narrower than ReadValuesFromEnvFile
+    so phase commands fail fast on a typo rather than silently fall through to ambient process
+    environment defaults.
+
+    .PARAMETER Path
+    Caller-supplied env file path. May be empty (use defaults) or relative.
+
+    .PARAMETER DockerComposeRoot
+    Optional override for the docker-compose root directory used for default lookup. Defaults
+    to this module's directory (eng/docker-compose). Tests pass an isolated copy.
+    #>
+    param(
+        [string]$Path,
+        [string]$DockerComposeRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) {
+        $DockerComposeRoot = $PSScriptRoot
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        $defaultEnv = Join-Path $DockerComposeRoot ".env"
+        $fallbackEnv = Join-Path $DockerComposeRoot ".env.example"
+        $Path = if (Test-Path -LiteralPath $defaultEnv -PathType Leaf) {
+            $defaultEnv
+        }
+        else {
+            $fallbackEnv
+        }
+    }
+    elseif (-not [System.IO.Path]::IsPathRooted($Path)) {
+        $Path = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))
+    }
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Environment file not found: $Path."
+    }
+
+    return [System.IO.Path]::GetFullPath($Path)
+}
+
+function Get-EnvValue {
+    <#
+    .SYNOPSIS
+    Shared helper that returns the value of an env-file key when present and non-blank,
+    otherwise the documented default. Equivalent to the duplicated Get-EnvValueOrDefault
+    helpers in configure-local-dms-instance.ps1 and provision-dms-schema.ps1, lifted into
+    the shared module so the precedence rule is single-sourced.
+
+    Precedence: explicit env-file value > documented default. Process environment variables
+    are deliberately not consulted - direct phase invocation must not depend on ambient state.
+    #>
+    param(
+        [hashtable]$EnvValues,
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [string]$DefaultValue = ""
+    )
+
+    if ($null -eq $EnvValues) {
+        return $DefaultValue
+    }
+
+    if ($EnvValues.ContainsKey($Name) -and -not [string]::IsNullOrWhiteSpace([string]$EnvValues[$Name])) {
+        return [string]$EnvValues[$Name]
+    }
+
+    return $DefaultValue
+}
+
+
+function Resolve-BootstrapAdminClient {
+    <#
+    .SYNOPSIS
+        Returns the bootstrap admin client id and secret used by configure-local-dms-instance.ps1
+        and provision-dms-schema.ps1 to acquire a CMS admin token. Reads
+        DMS_BOOTSTRAP_ADMIN_CLIENT_ID / DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET from the env file and
+        falls back to the historical local-dev defaults so the standard developer flow needs no
+        env-file changes. Single-sources the two values so configure (which registers) and
+        provision (which authenticates) always agree on the client.
+    .PARAMETER EnvValues
+        Hashtable returned by ReadValuesFromEnvFile.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    return [pscustomobject]@{
+        ClientId     = Get-EnvValue -EnvValues $EnvValues -Name "DMS_BOOTSTRAP_ADMIN_CLIENT_ID" -DefaultValue "dms-instance-admin"
+        ClientSecret = Get-EnvValue -EnvValues $EnvValues -Name "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
+    }
+}
+
 function Resolve-CmsBaseUrl {
     <#
     .SYNOPSIS
@@ -335,7 +443,12 @@ function Resolve-BootstrapDerivedEnv {
     Write-DerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
         -TargetPath $DerivedTargetPath `
-        -KeyOverrides @{ FAILURE_RATIO = "0.95" } `
+        -KeyOverrides @{
+            FAILURE_RATIO = "0.95"
+            NEED_DATABASE_SETUP = "false"
+            DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+            AppSettings__DeployDatabaseOnStartup = "false"
+        } `
         -SchemaPackageExclusions $exclusions
 
     return $DerivedTargetPath

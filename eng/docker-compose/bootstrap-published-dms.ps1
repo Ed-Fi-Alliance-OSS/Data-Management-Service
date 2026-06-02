@@ -24,6 +24,11 @@
     The shared wrapper body lives in `bootstrap-wrapper.psm1`; this entry script only
     selects the target start script (`start-published-dms.ps1`).
 
+    Precondition: the wrapper requires staged bootstrap schema and claims workspaces. Run
+    `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1` for the current checkout first;
+    the wrapper fails fast when the staged workspace is absent rather than starting an
+    unprovisionable stack.
+
 .PARAMETER LoadSeedData
     When supplied, invokes `load-dms-seed-data.ps1` after `start-published-dms.ps1` completes.
 
@@ -66,11 +71,16 @@
     also passed to the seed phase via `-SchoolYear`.
 
 .EXAMPLE
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+    pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-published-dms.ps1
-    Default happy path: starts the published stack, no seed loading.
+    Common happy path: stage the schema and claims workspaces, then start the published stack
+    and provision schemas, no seed loading. The wrapper requires a staged bootstrap workspace
+    and fails fast if the prepare commands have not been run for the current checkout.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+    pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-published-dms.ps1 -LoadSeedData -SeedDataPath ./my-seed-xml/
     Prepare an ApiSchemaPath-mode bootstrap manifest, then start the stack and load
     developer-supplied XML interchange files. Package-backed -SeedTemplate Minimal/Populated
@@ -102,6 +112,10 @@ param(
     [Switch]$EnableConfig,
 
     [Switch]$AddExtensionSecurityMetadata,
+
+    [Switch]$NoDmsInstance,
+
+    [Switch]$AddSmokeTestCredentials,
 
     [string]$SchoolYearRange = ""
 )

@@ -3,6 +3,25 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+<#
+.SYNOPSIS
+    Post-bootstrap startup phase for the published DMS Docker stack.
+.DESCRIPTION
+    This script is the post-bootstrap startup phase. The wrapper
+    bootstrap-published-dms.ps1 orchestrates prepare -> infra -> configure -> provision ->
+    this script, so by the time the wrapper calls into here a .bootstrap/ workspace and
+    a provisioned database already exist.
+
+    Direct invocation is supported for diagnostics and partial-phase orchestration
+    (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
+    script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
+    schema provisioning will NOT happen here. Legacy direct-start database provisioning
+    remains controlled by the supplied environment file's NEED_DATABASE_SETUP value.
+
+    See command-boundaries.md Section 3 for the phase contract and
+    01-schema-deployment-safety.md for the DMS-1151 story.
+#>
+
 [CmdletBinding()]
 param (
     # Stop services instead of starting them
@@ -33,8 +52,8 @@ param (
     $AddSmokeTestCredentials,
 
     # Load seed data via the direct-SQL database-template path. Retained pending the implementation
-    # gate in bootstrap-design.md §6.4 line 1250: removal is gated on Story 04 XSD-staging
-    # verification. The new API-based seed path — load-dms-seed-data.ps1 + bootstrap-*-dms.ps1 —
+    # gate in bootstrap-design.md section 6.4 line 1250: removal is gated on Story 04 XSD-staging
+    # verification. The new API-based seed path, via load-dms-seed-data.ps1 + bootstrap-*-dms.ps1,
     # is the forward contract; the slice that closes the gate owns this switch's removal.
     [Switch]
     $LoadSeedData,
@@ -51,6 +70,19 @@ param (
     # School year range for multi-instance setup (format: StartYear-EndYear, e.g., "2022-2026")
     [string]
     $SchoolYearRange = "",
+
+    # Start only infrastructure required before schema provisioning
+    [Switch]
+    $InfraOnly,
+
+    # Start only the DMS service after external schema provisioning
+    [Switch]
+    $DmsOnly,
+
+    # Skip registering the default Debezium source connector. Used by harnesses that create
+    # their own connectors after provisioning instance-specific databases.
+    [Switch]
+    $SkipConnectorSetup,
 
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
@@ -70,11 +102,11 @@ Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
-        # Caller supplied an explicit relative path — resolve against the caller's CWD.
+        # Caller supplied an explicit relative path - resolve against the caller's CWD.
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $originalLocation.Path $EnvironmentFile))
     }
     else {
-        # Default value — resolve against the script directory so that invoking the
+        # Default value - resolve against the script directory so that invoking the
         # script from any CWD (e.g. the repo root) still finds eng/docker-compose/.env.
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $EnvironmentFile))
     }
@@ -83,11 +115,13 @@ $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 Push-Location $PSScriptRoot
 try {
 Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
+$bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
 
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
+$dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
 Write-Output "Identity Provider $IdentityProvider"
 if($IdentityProvider -eq "keycloak")
@@ -105,6 +139,18 @@ elseif ($IdentityProvider -eq "self-contained") {
 }
 
 if (-not $d) {
+    if ($InfraOnly -and $DmsOnly) {
+        throw "Parameters -InfraOnly and -DmsOnly are mutually exclusive."
+    }
+
+    if (($InfraOnly -or $DmsOnly) -and $LoadSeedData) {
+        throw "Parameter -LoadSeedData cannot be used with -InfraOnly or -DmsOnly."
+    }
+
+    if ($DmsOnly -and ($NoDmsInstance -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
+        throw "Parameters -NoDmsInstance, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
+    }
+
     if ($NoDmsInstance -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
         throw "Parameters -NoDmsInstance and -SchoolYearRange are mutually exclusive. Use -NoDmsInstance for manual instance creation, or use -SchoolYearRange to auto-create instances."
     }
@@ -132,7 +178,7 @@ if ($EnableKafkaUI) {
 }
 
 # Include configuration service if enabled or if using self-contained identity provider
-if ($EnableConfig -or $IdentityProvider -eq "self-contained") {
+if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained") {
     $files += @("-f", "published-config.yml")
 }
 
@@ -157,6 +203,88 @@ else {
     if (! $existingNetwork) {
         docker network create dms
     }
+
+    $upArgs = @(
+        "--detach"
+    )
+
+    function Wait-HttpEndpointHealthy {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Url,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Name,
+
+            [int]
+            $TimeoutSeconds = 60
+        )
+
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while ($true) {
+            try {
+                $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec 5 -ErrorAction Stop
+                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                    return
+                }
+            }
+            catch {
+                $null = $_
+            }
+
+            if ([datetime]::UtcNow -ge $deadline) {
+                throw "$Name health check timed out after $TimeoutSeconds seconds. Endpoint: $(Format-LogSafeText $Url)"
+            }
+
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    if ($DmsOnly) {
+        Write-Output "Starting published DMS service only with startup database provisioning disabled..."
+        $dmsServices = @("dms")
+        if ($EnableSwaggerUI) {
+            $dmsServices += "swagger-ui"
+        }
+        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
+        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
+        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
+        try {
+            $env:NEED_DATABASE_SETUP = "false"
+            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+            $env:AppSettings__DeployDatabaseOnStartup = "false"
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs $dmsServices
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
+            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
+            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to start published DMS service, with exit code $LASTEXITCODE."
+        }
+
+        Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
+        Write-Output "DMS service is healthy."
+
+        if (-not $SkipConnectorSetup) {
+            # Register the Debezium source connector now that the schema has been provisioned and
+            # the DMS service is up. The connector infrastructure (kafka-postgresql-source) was
+            # started during the -InfraOnly phase; setup-connectors.ps1 verifies it reaches the
+            # RUNNING state and throws on failure.
+            Write-Output "Running connector setup..."
+            ./setup-connectors.ps1 $EnvironmentFile
+        }
+        else {
+            Write-Output "Skipping default connector setup."
+        }
+
+        return
+    }
+
     if($IdentityProvider -eq "keycloak")
     {
         Write-Output "Starting Keycloak first..."
@@ -177,11 +305,88 @@ else {
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
 
+    Write-Output "Starting Postgresql..."
+    docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs db
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
+    }
+    Start-Sleep 20
+
+    if ($InfraOnly) {
+        if($IdentityProvider -eq "self-contained")
+        {
+            Write-Output "Init db public and private keys for OpenIddict..."
+            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile
+        }
+
+        Write-Output "Starting Configuration Service..."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs config
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Configuration Service. Exit code $LASTEXITCODE"
+        }
+
+        Wait-HttpEndpointHealthy -Url "$($cmsUrl.TrimEnd('/'))/health" -Name "Configuration Service"
+        Write-Output "Configuration Service is healthy."
+
+        if($IdentityProvider -eq "self-contained")
+        {
+            Write-Output "Starting self-contained initialization script..."
+            ./setup-openiddict.ps1 -InsertData -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+        }
+
+        Write-Output "Starting Kafka connector infrastructure..."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka-postgresql-source
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Kafka connector infrastructure. Exit code $LASTEXITCODE"
+        }
+
+        # Connector registration is intentionally deferred to the -DmsOnly phase. The Debezium
+        # source connector snapshots dms.document on registration; those tables do not exist
+        # until provision-dms-schema.ps1 runs, so registering here would start the connector
+        # task in a failed state. setup-connectors.ps1 runs after schema provisioning completes.
+
+        if ($EnableKafkaUI) {
+            Write-Output "Starting Kafka UI..."
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs kafka-ui
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
+            }
+        }
+
+        Write-Output "Infrastructure phase complete. DMS service was not started."
+        return
+    }
+
 
     Write-Output "Starting published DMS"
-    $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
-    docker compose $files --env-file $EnvironmentFile -p dms-published up -d
-    $env:NEED_DATABASE_SETUP = $envValues["NEED_DATABASE_SETUP"]
+    if ($bootstrapManifestPresent) {
+        # DMS-1151: schema provisioning is owned by provision-dms-schema.ps1 in the
+        # story-aligned bootstrap flow. Force the legacy Backend.Installer entrypoint off
+        # when a bootstrap manifest is present so a stale NEED_DATABASE_SETUP=true value
+        # in the env file or process environment cannot reactivate it. Direct, non-bootstrap
+        # startup remains backward compatible with the env-file NEED_DATABASE_SETUP value.
+        Write-Output "Bootstrap manifest detected; starting published DMS with startup database provisioning disabled."
+        $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
+        $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
+        $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
+        try {
+            $env:NEED_DATABASE_SETUP = "false"
+            $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+            $env:AppSettings__DeployDatabaseOnStartup = "false"
+            docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
+            [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
+            [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+        }
+    }
+    else {
+        Write-Output "No bootstrap manifest detected; starting published DMS with database startup provisioning controlled by the environment file."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs
+    }
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start Published Docker environment, with exit code $LASTEXITCODE."
@@ -220,20 +425,22 @@ else {
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
 
-    Write-Output "Running connector setup..."
-    ./setup-connectors.ps1 $EnvironmentFile
+    if (-not $SkipConnectorSetup) {
+        Write-Output "Running connector setup..."
+        ./setup-connectors.ps1 $EnvironmentFile
+    }
+    else {
+        Write-Output "Skipping default connector setup."
+    }
 
     if($AddSmokeTestCredentials)
     {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
-        $credentials = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
-
+        $null = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
 
         Write-Output "Smoke test credentials created successfully!"
-        Write-Output "Key: $($credentials.Key)"
-        Write-Output "Secret: $($credentials.Secret)"
-        Write-Output "These credentials can be used for smoke testing the DMS API."
+        Write-Output "Credential values were returned to the caller and were not written to logs."
     }
 
     if(-not $NoDmsInstance -or $SchoolYearRange)

@@ -38,7 +38,17 @@ if ($d) {
 else {
     Write-Output "Starting all services, without the DMS"
     docker compose $files --env-file $EnvironmentFile up -d
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start PostgreSQL and Kafka services. Exit code $LASTEXITCODE"
+    }
 
-    Start-Sleep 20
-    ./setup-connectors.ps1 $EnvironmentFile
+    # Connector registration is intentionally deferred. The Debezium PostgreSQL source connector
+    # snapshots dms.document the moment it is registered, so registering it here - before the
+    # IDE-hosted DMS has started and deployed the schema - snapshots an empty (or missing) table and
+    # leaves the connector silently not streaming changes. This script starts only PostgreSQL and
+    # Kafka for the local-debugger workflow, so the schema does not exist yet.
+    Write-Output ""
+    Write-Output "PostgreSQL and Kafka are starting. Kafka connector registration is deferred."
+    Write-Output "After DMS is running and schema deployment is complete, register the source connector with:"
+    Write-Output "    ./setup-connectors.ps1 $EnvironmentFile"
 }

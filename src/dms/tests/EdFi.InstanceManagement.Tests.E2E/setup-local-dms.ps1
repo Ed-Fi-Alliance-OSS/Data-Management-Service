@@ -17,14 +17,35 @@
     moves E2E runtime loading onto the staged bootstrap workspace.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata -SkipConnectorSetup
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
 [CmdletBinding()]
 param(
     [switch]
     $SkipDockerBuild
 )
+
+function Test-DmsDocumentTablePresent {
+    <#
+    .SYNOPSIS
+    Returns $true when the dms.document table exists in the given PostgreSQL database. Throws
+    when the existence query itself cannot be run, so a failed psql invocation is never read as
+    "table absent". Used to turn a silently-empty schema deploy into a hard setup failure.
+    #>
+    param(
+        [string]
+        $Database
+    )
+
+    $regclass = (docker exec dms-postgresql psql -U postgres -d $Database -tAc "SELECT to_regclass('dms.document');" | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query database '$Database' for the dms.document table (psql exit code $LASTEXITCODE)."
+    }
+
+    return -not [string]::IsNullOrWhiteSpace($regclass)
+}
 
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for Instance Management E2E Testing
@@ -88,12 +109,53 @@ try {
 
     Write-Output "Using DLL-backed schema packages for E2E. Bootstrap loose-file runtime loading is Story 04."
 
-    # Run the start script - NO instance creation
-    if ($SkipDockerBuild) {
-        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+    $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
+    $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
+    $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
+    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
+    try {
+        # .env.routeContext.e2e carries the Story 04 loose-file schema settings, but this
+        # transitional E2E setup still runs from DLL-backed SCHEMA_PACKAGES. Process env
+        # values win over docker compose --env-file entries, so clear stale overrides
+        # left by teardown, force the Story 04 path off, and keep the DMS entrypoint
+        # installer off because this harness provisions the main database explicitly below.
+        $env:USE_API_SCHEMA_PATH = "false"
+        $env:API_SCHEMA_PATH = ""
+        $env:SCHEMA_PACKAGES = $null
+        $env:NEED_DATABASE_SETUP = "false"
+
+        # Run the start script - NO instance creation
+        if ($SkipDockerBuild) {
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata -SkipConnectorSetup
+        }
+        else {
+            ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata -SkipConnectorSetup
+        }
     }
-    else {
-        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -NoDmsInstance -AddExtensionSecurityMetadata
+    finally {
+        if ($null -eq $previousUseApiSchemaPath) {
+            $env:USE_API_SCHEMA_PATH = $null
+        } else {
+            $env:USE_API_SCHEMA_PATH = $previousUseApiSchemaPath
+        }
+
+        if ($null -eq $previousApiSchemaPath) {
+            $env:API_SCHEMA_PATH = $null
+        } else {
+            $env:API_SCHEMA_PATH = $previousApiSchemaPath
+        }
+
+        if ($null -eq $previousSchemaPackages) {
+            $env:SCHEMA_PACKAGES = $null
+        } else {
+            $env:SCHEMA_PACKAGES = $previousSchemaPackages
+        }
+
+        if ($null -eq $previousNeedDatabaseSetup) {
+            $env:NEED_DATABASE_SETUP = $null
+        } else {
+            $env:NEED_DATABASE_SETUP = $previousNeedDatabaseSetup
+        }
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -110,22 +172,82 @@ try {
         "edfi_datamanagementservice_d255902_sy2024"
     )
 
+    # Drop-then-create each database so the run starts from a known-empty state. Failures are
+    # surfaced (no 2>&1 | Out-Null swallowing) so a stale database can never silently mask a
+    # setup problem.
     foreach ($db in $databases) {
-        docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE $db;" 2>&1 | Out-Null
+        docker exec dms-postgresql psql -U postgres -c "DROP DATABASE IF EXISTS $db;"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to drop existing database '$db' (psql exit code $LASTEXITCODE)."
+        }
+        docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE $db;"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create database '$db' (psql exit code $LASTEXITCODE)."
+        }
         Write-Host "  Created database: $db" -ForegroundColor Green
     }
+
+    # Deploy the DMS schema into the main database so it can seed the per-instance test
+    # databases below. This E2E harness is the non-bootstrap transitional path and uses
+    # DLL-backed schema packages, so it disables the DMS container entrypoint installer above
+    # and provisions the (legacy/relational-disabled) schema itself by running the same
+    # Backend.Installer as a one-shot container on the shared 'dms' network. Without this,
+    # every per-instance request 500s with "relation \"dms.document\" does not exist".
+    Write-Host "`nDeploying DMS schema to main database..." -ForegroundColor Cyan
+
+    Import-Module ./env-utility.psm1 -Force
+    $routeContextEnvValues = ReadValuesFromEnvFile "./.env.routeContext.e2e"
+    $postgresPassword = Get-EnvValue -EnvValues $routeContextEnvValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
+    $adminConnectionString = "host=dms-postgresql;port=5432;username=postgres;password=$postgresPassword;database=edfi_datamanagementservice;"
+
+    # Resolve the locally-built DMS image from the running service container so the installer
+    # runs the exact binaries (including /app/Installer) that the DMS container ships.
+    $dmsImage = docker ps -a --filter "name=dms-local-dms-1" --format "{{.Image}}" | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($dmsImage)) {
+        throw "Unable to resolve the DMS image from container 'dms-local-dms-1'. Ensure the DMS stack started successfully."
+    }
+
+    docker run --rm --network dms --entrypoint dotnet $dmsImage `
+        Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c $adminConnectionString
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to deploy DMS schema to the main database. Installer exited with code $LASTEXITCODE."
+    }
+    Write-Host "  Schema deployed to main database" -ForegroundColor Green
+
+    # The installer can exit 0 without producing the expected objects (e.g. a no-op against the
+    # wrong database). Assert the schema actually landed before exporting it, otherwise every
+    # per-instance database would be seeded from an empty dump and the run would 500 at test time.
+    if (-not (Test-DmsDocumentTablePresent -Database "edfi_datamanagementservice")) {
+        throw "Schema verification failed: 'dms.document' is missing from the main database after running the installer."
+    }
+    Write-Host "  Verified dms.document exists in main database" -ForegroundColor Green
 
     # Export schema from main database
     Write-Host "`nExporting schema from main database..." -ForegroundColor Cyan
     $tempSchemaFile = [System.IO.Path]::GetTempFileName()
     docker exec dms-postgresql pg_dump -U postgres -d edfi_datamanagementservice --schema-only > $tempSchemaFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to export schema from the main database. pg_dump exited with code $LASTEXITCODE."
+    }
+    if ((Get-Item -LiteralPath $tempSchemaFile).Length -eq 0) {
+        throw "Schema export produced an empty file. The main database schema is missing or pg_dump failed silently."
+    }
     Write-Host "  Schema exported successfully" -ForegroundColor Green
 
     # Apply schema to each test database
     Write-Host "`nApplying schema to test databases..." -ForegroundColor Cyan
     foreach ($db in $databases) {
-        Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d $db
-        Write-Host "  Schema applied to: $db" -ForegroundColor Green
+        # ON_ERROR_STOP=1 makes psql abort and return non-zero on the first failed statement,
+        # so a partially-applied schema fails the run immediately instead of being detected only
+        # by the dms.document postcondition below.
+        Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -v ON_ERROR_STOP=1 -U postgres -d $db
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to apply schema to test database '$db' (psql exit code $LASTEXITCODE)."
+        }
+        if (-not (Test-DmsDocumentTablePresent -Database $db)) {
+            throw "Schema verification failed: 'dms.document' is missing from test database '$db' after applying the exported schema."
+        }
+        Write-Host "  Schema applied and verified: $db" -ForegroundColor Green
     }
 
     # Clean up temp file

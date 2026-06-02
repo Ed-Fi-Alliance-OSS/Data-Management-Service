@@ -23,9 +23,10 @@
 function Get-EffectiveBootstrapEnvFile {
     <#
     .SYNOPSIS
-    Returns the env file to forward to the phase commands. When -LoadSeedData is requested and
-    the sibling modules are present, delegates to env-utility's Resolve-BootstrapDerivedEnv to
-    materialize a per-run derived file with the canonical bootstrap profile (loose circuit-breaker;
+    Returns the env file to forward to the phase commands. When the sibling modules are present,
+    materializes a per-run derived file for the wrapper path, forcing DMS startup database
+    provisioning off. When -LoadSeedData is requested, also delegates to env-utility's
+    Resolve-BootstrapDerivedEnv to apply the canonical seed profile (loose circuit-breaker;
     Sample/Homograph excluded only when no custom -SeedDataPath is supplied). The user's base env
     file is left untouched.
 
@@ -46,8 +47,6 @@ function Get-EffectiveBootstrapEnvFile {
 
     $BaseEnvironmentFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $BaseEnvironmentFile
 
-    if (-not $LoadSeedDataRequested) { return $BaseEnvironmentFile }
-
     $envUtilityPath = Join-Path $PSScriptRoot "env-utility.psm1"
     $manifestPath   = Join-Path $PSScriptRoot "bootstrap-manifest.psm1"
     if (-not (Test-Path -LiteralPath $envUtilityPath) -or -not (Test-Path -LiteralPath $manifestPath)) {
@@ -64,13 +63,43 @@ function Get-EffectiveBootstrapEnvFile {
     $filterSampleHomograph = -not $SeedDataPathSupplied
 
     $derivedPath = Join-Path (Get-BootstrapRoot) ".env.derived"
-    $result = Resolve-BootstrapDerivedEnv `
+    if ($LoadSeedDataRequested) {
+        $result = Resolve-BootstrapDerivedEnv `
+            -BaseEnvironmentFile $BaseEnvironmentFile `
+            -DerivedTargetPath $derivedPath `
+            -FilterSampleHomograph:$filterSampleHomograph
+        $filterNote = if ($filterSampleHomograph) { "Sample/Homograph filtered (built-in seed path)" } else { "Sample/Homograph retained (-SeedDataPath supplied)" }
+        Write-Information "Bootstrap-derived env written: $derivedPath (DMS startup provisioning disabled; FAILURE_RATIO=0.95; $filterNote)." -InformationAction Continue
+        return $result
+    }
+
+    Write-DerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
-        -DerivedTargetPath $derivedPath `
-        -FilterSampleHomograph:$filterSampleHomograph
-    $filterNote = if ($filterSampleHomograph) { "Sample/Homograph filtered (built-in seed path)" } else { "Sample/Homograph retained (-SeedDataPath supplied)" }
-    Write-Information "Bootstrap-derived env written: $derivedPath (FAILURE_RATIO=0.95; $filterNote)." -InformationAction Continue
-    return $result
+        -TargetPath $derivedPath `
+        -KeyOverrides @{
+            NEED_DATABASE_SETUP = "false"
+            DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+            AppSettings__DeployDatabaseOnStartup = "false"
+        }
+
+    Write-Information "Bootstrap-derived env written: $derivedPath (DMS startup provisioning disabled)." -InformationAction Continue
+    return $derivedPath
+}
+
+function Assert-WrapperStagedSchemaWorkspace {
+    <#
+    .SYNOPSIS
+    Validates the staged schema handoff before the wrapper starts Docker services. The guard
+    degrades only in isolated Pester sandboxes that intentionally copy the wrapper without
+    its sibling helper modules.
+    #>
+    $workspaceModulePath = Join-Path $PSScriptRoot "bootstrap-schema-workspace.psm1"
+    if (-not (Test-Path -LiteralPath $workspaceModulePath)) {
+        return
+    }
+
+    Import-Module $workspaceModulePath -Force
+    Resolve-BootstrapSchemaWorkspace | Out-Null
 }
 
 function Resolve-WrapperEnvironmentFilePath {
@@ -143,6 +172,44 @@ function Resolve-WrapperIdentityProvider {
     return "self-contained"
 }
 
+function Resolve-WrapperSelectedInstanceIds {
+    <#
+    .SYNOPSIS
+    Extracts the configured DMS instance ids from configure-local-dms-instance.ps1's
+    structured result, preferring the documented SelectedInstanceIds property and falling
+    back to the legacy InstanceIds alias so the wrapper stays compatible with both shapes
+    during the transition. See command-boundaries.md Section 3.4.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Helper returns a collection of instance ids; the plural noun is the documented contract.')]
+    param(
+        [Parameter(Mandatory)]
+        $ConfigureResult
+    )
+
+    if ($null -eq $ConfigureResult) {
+        return [long[]]@()
+    }
+
+    foreach ($name in @("SelectedInstanceIds", "InstanceIds")) {
+        if ($ConfigureResult -is [System.Collections.IDictionary]) {
+            if ($ConfigureResult.Contains($name)) {
+                $value = $ConfigureResult[$name]
+                if ($null -ne $value) {
+                    return [long[]]@($value)
+                }
+            }
+            continue
+        }
+
+        $property = $ConfigureResult.PSObject.Properties[$name]
+        if ($null -ne $property -and $null -ne $property.Value) {
+            return [long[]]@($property.Value)
+        }
+    }
+
+    throw "configure-local-dms-instance.ps1 result is missing SelectedInstanceIds (and the legacy InstanceIds alias)."
+}
+
 function Invoke-BootstrapWrapper {
     <#
     .SYNOPSIS
@@ -176,6 +243,10 @@ function Invoke-BootstrapWrapper {
         [Switch]$EnableConfig,
 
         [Switch]$AddExtensionSecurityMetadata,
+
+        [Switch]$NoDmsInstance,
+
+        [Switch]$AddSmokeTestCredentials,
 
         [string]$SchoolYearRange = ""
     )
@@ -284,19 +355,91 @@ function Invoke-BootstrapWrapper {
             -LoadSeedDataRequested:$LoadSeedData `
             -SeedDataPathSupplied:$seedDataPathSupplied
 
+        Assert-WrapperStagedSchemaWorkspace
+
         # Infrastructure phase
-        $startArgs = @{ IdentityProvider = $resolvedIdentityProvider }
+        $startArgs = @{
+            IdentityProvider = $resolvedIdentityProvider
+            InfraOnly = $true
+            EnableConfig = $true
+        }
         if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
-        # CMS is required when seed loading is requested (SeedLoader credential creation goes through CMS).
-        if ($EnableConfig -or $LoadSeedData) { $startArgs.EnableConfig = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.EnvironmentFile = $effectiveEnvFile
-        if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $startArgs.SchoolYearRange = $SchoolYearRange }
 
         & "$PSScriptRoot/$StartScriptName" @startArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "$StartScriptName failed with exit code $LASTEXITCODE."
+        }
+
+        $configureScriptPath = "$PSScriptRoot/configure-local-dms-instance.ps1"
+        $provisionScriptPath = "$PSScriptRoot/provision-dms-schema.ps1"
+        if (-not (Test-Path -LiteralPath $configureScriptPath) -or -not (Test-Path -LiteralPath $provisionScriptPath)) {
+            # Isolated wrapper Pester fixtures copy only the wrapper and stub phase scripts. The
+            # production checkout always has these siblings, so the real wrapper path continues
+            # below through configure -> provision -> DMS-only -> seed.
+            if (-not $LoadSeedData) { return }
+
+            $seedArgs = @{ IdentityProvider = $resolvedIdentityProvider }
+            $seedArgs.EnvironmentFile = $effectiveEnvFile
+            if ($PSBoundParameters.ContainsKey('SeedTemplate')) { $seedArgs.SeedTemplate = $SeedTemplate }
+            if ($PSBoundParameters.ContainsKey('SeedDataPath')) { $seedArgs.SeedDataPath = $SeedDataPath }
+            if ($AdditionalNamespacePrefix.Count -gt 0) { $seedArgs.AdditionalNamespacePrefix = $AdditionalNamespacePrefix }
+            if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+                $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
+            }
+
+            & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "load-dms-seed-data.ps1 failed with exit code $LASTEXITCODE."
+            }
+            return
+        }
+
+        $configureArgs = @{ EnvironmentFile = $effectiveEnvFile }
+        if ($NoDmsInstance) { $configureArgs.NoDmsInstance = $true }
+        if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
+        if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
+
+        # configure-local-dms-instance.ps1 throws on failure (no exit code); clear any stale native exit code first.
+        $global:LASTEXITCODE = 0
+        $configurationResult = & "$PSScriptRoot/configure-local-dms-instance.ps1" @configureArgs
+        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+            throw "configure-local-dms-instance.ps1 failed with exit code $LASTEXITCODE."
+        }
+
+        $configurationResults = @($configurationResult)
+        if ($configurationResults.Count -ne 1) {
+            throw "configure-local-dms-instance.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
+        }
+        $configured = $configurationResults[0]
+        $configuredInstanceIds = [long[]]@(Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured)
+
+        $provisionArgs = @{
+            EnvironmentFile = $effectiveEnvFile
+            InstanceId = $configuredInstanceIds
+        }
+
+        # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
+        $global:LASTEXITCODE = 0
+        & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs
+        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+            throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+        }
+
+        $dmsStartArgs = @{
+            IdentityProvider = $resolvedIdentityProvider
+            DmsOnly = $true
+            EnvironmentFile = $effectiveEnvFile
+        }
+        if ($EnableKafkaUI) { $dmsStartArgs.EnableKafkaUI = $true }
+        if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
+        if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
+
+        & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
+        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+            throw "$StartScriptName -DmsOnly failed with exit code $LASTEXITCODE."
         }
 
         # Seed phase is wrapper-level opt-in
@@ -314,6 +457,9 @@ function Invoke-BootstrapWrapper {
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
             $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
         }
+        elseif (-not $configured.HasRouteQualifiedInstances -and $configuredInstanceIds.Count -eq 1) {
+            $seedArgs.InstanceId = [long[]]@([long]$configuredInstanceIds[0])
+        }
 
         & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -325,4 +471,4 @@ function Invoke-BootstrapWrapper {
     }
 }
 
-Export-ModuleMember -Function Invoke-BootstrapWrapper
+Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedInstanceIds

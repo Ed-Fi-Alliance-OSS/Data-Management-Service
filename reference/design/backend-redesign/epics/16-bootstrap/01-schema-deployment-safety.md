@@ -18,6 +18,27 @@ Under the strong DMS-916 reading, the staged schema workspace also defines the e
 footprint expected for the run, so changing the selected extension set changes the target schema that must
 be provisioned or validated.
 
+To make provisioning a true pre-start phase, the start scripts expose `-InfraOnly` / `-DmsOnly` split-startup
+switches, and the bootstrap wrapper drives them (infra → configure → provision → DMS-only) so schema
+provisioning always runs before DMS serves requests. The wrapper is the recommended developer entry point;
+see `command-boundaries.md` §3.3 and §4 for the switch and entry-point contract.
+
+## Scope Boundary With Story 04
+
+DMS-1151 provisions schemas into the selected instance target databases. It does NOT activate the staged
+`.bootstrap/ApiSchema` workspace as the DMS runtime schema source. `USE_API_SCHEMA_PATH`,
+`API_SCHEMA_PATH`, and the `bootstrap-dms.yml` mount that flip Docker-hosted and IDE-hosted DMS onto the
+staged workspace are deferred to Story 04 / DMS-1154. The acceptance criterion that "the schema files
+hashed in bootstrap are the same files later read by Docker-hosted DMS and by IDE-hosted DMS" is therefore
+satisfied at the file-content level by DMS-1151 but not at the runtime-binding level until Story 04
+lands. `Get-ProvisionIdeGuidance` labels the staged-runtime values it emits as deferred to DMS-1154 for
+exactly this reason.
+
+DMS-1151 also restricts schema provisioning to PostgreSQL: `provision-dms-schema.ps1` hard-codes
+`--dialect pgsql`, and MSSQL connection-string keysets are rejected at `Resolve-TargetDialect`. MSSQL
+provisioning is out of scope for this story; the bootstrap epic may revisit dialect support in a
+successor story.
+
 ## Acceptance Criteria
 
 - Before any DMS host starts, `provision-dms-schema.ps1` consumes the selected `ApiSchema*.json` files

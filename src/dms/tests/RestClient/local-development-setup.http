@@ -58,7 +58,11 @@
 #    "ConnectionStrings": {
 #        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 #    },
-# 7. Run these steps from top to bottom.
+# 7. After DMS has started and deployed its schema, register the Kafka source connector. The Debezium
+#    PostgreSQL source connector snapshots `dms.document` on registration, so it must run only after
+#    the schema exists - `start-all-services.ps1` deliberately does not register it. In
+#    `eng/docker-compose`, run: `./setup-connectors.ps1`
+# 8. Run these steps from top to bottom.
 
 @configPort=5126
 @dmsPort=5198

@@ -82,6 +82,38 @@ function Format-LogSafeText {
     return $builder.ToString()
 }
 
+function Format-LogSafePath {
+    <#
+    .SYNOPSIS
+    Sanitizes a filesystem path for safe inclusion in log/guidance output. Strips only control
+    characters (newlines, tabs, etc.) that enable log forging, while preserving every printable
+    character so paths survive intact - including backslashes, spaces, parentheses, '#', and any
+    other path-legal punctuation. Use Format-LogSafeText for untrusted/external values where the
+    stricter whitelist is appropriate.
+    #>
+    param(
+        $Value
+    )
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrEmpty($text)) {
+        return ""
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in $text.ToCharArray()) {
+        if (-not [char]::IsControl($character)) {
+            $null = $builder.Append($character)
+        }
+    }
+
+    return $builder.ToString()
+}
+
 function New-BootstrapManifest {
     <#
     .SYNOPSIS
@@ -581,6 +613,15 @@ function Invoke-BootstrapStartupConfiguration {
         }
     }
 
+    if (-not $bootstrapMode -and -not $IsTeardown) {
+        # DMS-1151: surface the post-bootstrap contract. The wrapper produces .bootstrap/ before
+        # invoking the start scripts, so a missing manifest at non-teardown time means the caller
+        # is either invoking the start script directly (legitimate for diagnostics or partial-phase
+        # orchestration) or has stepped out of sequence. The warning is informational, not blocking
+        # - Story 03 owns the eventual hard contract.
+        Write-Warning "No bootstrap manifest detected at .bootstrap/. The DMS-1151 pre-start phases (prepare -> configure -> provision) have not produced a staged workspace. The bootstrap-(local|published)-dms.ps1 wrapper is the documented entry point; direct invocation of this script is supported only for diagnostic or partial-phase workflows. Bootstrap schema provisioning will NOT be run by this script; legacy direct-start database provisioning remains controlled by the supplied environment file's NEED_DATABASE_SETUP value."
+    }
+
     if ($bootstrapMode) {
         Write-Output "Bootstrap manifest detected and validated. Staged schema and claims runtime startup remains deferred to Story 04; current bootstrap-present startup falls back to built-in DLL-backed schema assemblies."
         if ($AddExtensionSecurityMetadata) {
@@ -630,6 +671,7 @@ Export-ModuleMember -Function `
     Get-BootstrapRoot, `
     Get-BootstrapWorkspaceMismatchMessage, `
     Format-LogSafeText, `
+    Format-LogSafePath, `
     New-BootstrapManifest, `
     Read-BootstrapManifest, `
     Read-RequiredJsonBoolean, `
