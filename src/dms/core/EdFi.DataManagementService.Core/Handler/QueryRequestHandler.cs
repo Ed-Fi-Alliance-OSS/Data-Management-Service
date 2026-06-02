@@ -64,6 +64,15 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            QueryFailureNamespaceNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: NamespaceAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.NamespaceFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             QueryFailureRetryable => new FrontendResponse(

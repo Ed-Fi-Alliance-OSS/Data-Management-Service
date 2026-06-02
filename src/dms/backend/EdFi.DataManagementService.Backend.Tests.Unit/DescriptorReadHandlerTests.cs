@@ -99,7 +99,7 @@ public class Given_DescriptorReadHandler
             .Should()
             .BeEquivalentTo(
                 new GetResult.GetFailureNotImplemented(
-                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
                 )
             );
         commandExecutor.Commands.Should().BeEmpty();
@@ -130,7 +130,11 @@ public class Given_DescriptorReadHandler
         var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
 
         var failure = result.Should().BeOfType<GetResult.UnknownFailure>().Subject;
-        failure.FailureMessage.Should().Contain("dms.Descriptor.Namespace must not be null.");
+        // The row reader treats Namespace as nullable so a stored null can flow into the
+        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
+        // required column, so the reader's invariant message names it when the LEFT JOIN finds
+        // no descriptor row.
+        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
         failure.FailureMessage.Should().Contain("DocumentId 101");
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
     }
@@ -285,7 +289,7 @@ public class Given_DescriptorReadHandler
             .Should()
             .BeEquivalentTo(
                 new QueryResult.QueryFailureNotImplemented(
-                    "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+                    "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
                 )
             );
         commandExecutor.Commands.Should().BeEmpty();
@@ -431,7 +435,9 @@ public class Given_DescriptorReadHandler
         var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
 
         var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
-        failure.FailureMessage.Should().Contain("dms.Descriptor.Namespace must not be null.");
+        // See sibling GET-by-id test: Namespace is read nullably so CodeValue is now the first
+        // required column whose null value the reader trips on when the LEFT JOIN finds no row.
+        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
         failure.FailureMessage.Should().Contain("DocumentId 101");
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
     }

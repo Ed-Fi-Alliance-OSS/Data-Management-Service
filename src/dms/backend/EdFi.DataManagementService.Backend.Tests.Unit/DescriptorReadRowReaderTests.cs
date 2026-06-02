@@ -82,7 +82,6 @@ public class Given_DescriptorReadRowReader
         result.Discriminator.Should().BeNull();
     }
 
-    [TestCase("Namespace")]
     [TestCase("CodeValue")]
     [TestCase("ShortDescription")]
     public async Task It_classifies_required_descriptor_nulls_as_invariant_failures(string columnName)
@@ -114,6 +113,38 @@ public class Given_DescriptorReadRowReader
             .Contain($"dms.Descriptor.{columnName} must not be null.")
             .And.Contain("DocumentId 303")
             .And.Contain("ResourceKeyId=13");
+    }
+
+    [Test]
+    public async Task It_returns_a_null_namespace_when_the_descriptor_row_has_a_null_namespace()
+    {
+        // Namespace is read nullably so the namespace-authorization path (DescriptorReadHandler)
+        // can surface the stored-namespace-uninitialized 403. Without this, an invariant
+        // exception would mask the namespace 403 as an UnknownFailure 500.
+        var row = RelationalAccessTestData
+            .CreateRow(
+                ("DocumentId", 304L),
+                ("DocumentUuid", Guid.Parse("bbbbbbbb-1111-2222-3333-dddddddddddd")),
+                ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 16, 0, 0, TimeSpan.Zero)),
+                ("ResourceKeyId", (short)13),
+                ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
+                ("CodeValue", "Magnet"),
+                ("ShortDescription", "Magnet"),
+                ("Description", "Magnet school type"),
+                ("EffectiveBeginDate", new DateOnly(2025, 1, 1)),
+                ("EffectiveEndDate", null)
+            )
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+
+        row["Namespace"] = null;
+
+        await using var reader = CreateReader(row);
+
+        var result = await DescriptorReadRowReader.ReadSingleOrDefaultAsync(reader);
+
+        result.Should().NotBeNull();
+        result!.Namespace.Should().BeNull();
+        result.CodeValue.Should().Be("Magnet");
     }
 
     [Test]

@@ -360,6 +360,60 @@ public class GetByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Namespace_Not_Authorized : GetByIdHandlerTests
+    {
+        internal static readonly NamespaceAuthorizationFailure Failure = new(
+            NamespaceAuthorizationFailureKind.NamespaceMismatch,
+            NamespaceAuthorizationFailureValueSource.Stored,
+            EmittedAuth1Index: 0,
+            StrategyName: AuthorizationStrategyNameConstants.NamespaceBased,
+            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(new GetFailureNamespaceNotAuthorized(Failure));
+            }
+        }
+
+        private static readonly string _traceId = "namespace-get-403";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_namespace_failure_to_the_canonical_namespace_problem_details_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = NamespaceAuthorizationFailureResponse.ForFailure(Failure, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Descriptor_Relational_Request_That_Returns_Failure_Not_Implemented
         : GetByIdHandlerTests
     {
@@ -369,8 +423,8 @@ public class GetByIdHandlerTests
                 "Relational descriptor GET authorization is not implemented for resource "
                 + "'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. "
                 + "Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no "
-                + "authorization strategies or only 'NoFurtherAuthorizationRequired' are currently "
-                + "supported.";
+                + "authorization strategies or with 'NamespaceBased' and/or "
+                + "'NoFurtherAuthorizationRequired' are currently supported.";
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {

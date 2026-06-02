@@ -86,6 +86,13 @@ public record UpsertResult
         : UpsertResult();
 
     /// <summary>
+    /// A failure because proposed-value namespace authorization denied the POST/upsert. Carries the
+    /// namespace failure metadata so Core can build the §2.9-§2.12 ProblemDetails response.
+    /// </summary>
+    public record UpsertFailureNamespaceNotAuthorized(NamespaceAuthorizationFailure NamespaceFailure)
+        : UpsertResult();
+
+    /// <summary>
     /// A failure because the requested POST/upsert operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

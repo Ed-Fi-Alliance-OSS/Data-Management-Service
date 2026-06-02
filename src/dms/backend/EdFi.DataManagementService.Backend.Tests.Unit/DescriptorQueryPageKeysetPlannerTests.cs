@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -291,6 +292,38 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_assign_collision_free_parameter_names_when_a_query_field_collides_with_a_namespace_authorization_parameter()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "namespacePrefixes",
+                        "$.namespacePrefixes",
+                        "collides with auth parameter",
+                        "string",
+                        new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")),
+                        new PreprocessedDescriptorQueryValue.Raw("collides with auth parameter")
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            CreateNamespaceAuthorization(SqlDialect.Pgsql, ["uri://ed-fi.org/"])
+        );
+
+        // The authorization parameter keeps the bare name; the colliding query field is suffixed so the
+        // single-binding namespace LIKE and the query predicate never share a parameter.
+        keyset.ParameterValues.Keys.Should().Contain("namespacePrefixes");
+        keyset.ParameterValues.Keys.Should().Contain("namespacePrefixes_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("LIKE ANY(@namespacePrefixes)");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@namespacePrefixes_2");
+    }
+
+    [Test]
     [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" r")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document] r")]
     public void It_should_plan_descriptor_total_count_sql_without_optional_joins_when_only_resource_type_discrimination_is_required(
@@ -444,6 +477,189 @@ public class Given_DescriptorQueryPageKeysetPlanner
                 "Descriptor query page planning requires preprocessing results in the continue state.*"
             );
     }
+
+    [Test]
+    public void It_should_emit_pgsql_descriptor_namespace_filter_in_page_and_total_count_sql_when_authorization_is_supplied()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var authorization = CreateNamespaceAuthorization(
+            SqlDialect.Pgsql,
+            ["uri://ed-fi.org/", "uri://gbisd.edu/"]
+        );
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            authorization
+        );
+
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset
+            .Plan.TotalCountSql!.Should()
+            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
+        keyset
+            .Plan.TotalCountSql.Should()
+            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+    }
+
+    [Test]
+    public void It_should_emit_mssql_descriptor_namespace_filter_in_page_and_total_count_sql_when_authorization_is_supplied()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql);
+        var authorization = CreateNamespaceAuthorization(
+            SqlDialect.Mssql,
+            ["uri://ed-fi.org/", "uri://gbisd.edu/"]
+        );
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            authorization
+        );
+
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = r.[DocumentId]");
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain(
+                "(d.[Namespace] IS NOT NULL AND ("
+                    + "d.[Namespace] LIKE @namespacePrefixes_0 ESCAPE '\\' "
+                    + "OR d.[Namespace] LIKE @namespacePrefixes_1 ESCAPE '\\'"
+                    + "))"
+            );
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset
+            .Plan.TotalCountSql!.Should()
+            .Contain("(d.[Namespace] IS NOT NULL AND (d.[Namespace] LIKE @namespacePrefixes_0");
+    }
+
+    [Test]
+    public void It_should_bind_pgsql_namespace_prefix_array_parameter_value_to_the_escaped_like_patterns()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var authorization = CreateNamespaceAuthorization(
+            SqlDialect.Pgsql,
+            ["uri://ed-fi.org/", "uri://gbisd.edu/"]
+        );
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            authorization
+        );
+
+        keyset.ParameterValues.Should().ContainKey("namespacePrefixes");
+        keyset
+            .ParameterValues["namespacePrefixes"]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<string>>()
+            .Which.Should()
+            .Equal("uri://ed-fi.org/%", "uri://gbisd.edu/%");
+    }
+
+    [Test]
+    public void It_should_bind_mssql_scalar_namespace_prefix_parameter_values_in_order()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql);
+        var authorization = CreateNamespaceAuthorization(
+            SqlDialect.Mssql,
+            ["uri://ed-fi.org/", "uri://gbisd.edu/"]
+        );
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            authorization
+        );
+
+        keyset.ParameterValues["namespacePrefixes_0"].Should().Be("uri://ed-fi.org/%");
+        keyset.ParameterValues["namespacePrefixes_1"].Should().Be("uri://gbisd.edu/%");
+    }
+
+    [Test]
+    public void It_should_compose_descriptor_namespace_filter_with_a_descriptor_column_predicate_in_pgsql()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var authorization = CreateNamespaceAuthorization(SqlDialect.Pgsql, ["uri://ed-fi.org/"]);
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "codeValue",
+                        "$.codeValue",
+                        "Alternative",
+                        "string",
+                        new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")),
+                        new PreprocessedDescriptorQueryValue.Raw("Alternative")
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            authorization
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("d.\"CodeValue\" = @codeValue");
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+    }
+
+    [Test]
+    public void It_should_leave_descriptor_page_sql_unchanged_when_no_authorization_is_supplied()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("Namespace");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("namespacePrefixes");
+        keyset.ParameterValues.Keys.Should().NotContain("namespacePrefixes");
+    }
+
+    private static PageDocumentIdAuthorizationSpec CreateNamespaceAuthorization(
+        SqlDialect dialect,
+        IReadOnlyList<string> namespacePrefixes
+    ) =>
+        new(
+            Strategies: [],
+            NamespaceChecks:
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    NamespaceAuthorizationCheckValueSource.Stored,
+                    new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+                    new DbColumnName("Namespace")
+                ),
+            ],
+            NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
+                dialect,
+                namespacePrefixes,
+                "namespacePrefixes"
+            )
+        );
 
     private static PreprocessedDescriptorQueryElement CreateElement(
         string queryFieldName,

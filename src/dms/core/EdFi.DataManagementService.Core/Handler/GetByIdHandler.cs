@@ -108,6 +108,15 @@ internal class GetByIdHandler(
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            GetFailureNamespaceNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: NamespaceAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.NamespaceFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

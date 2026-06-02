@@ -3,8 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend;
@@ -25,39 +24,66 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
         ArgumentNullException.ThrowIfNull(mergeResult);
         ArgumentNullException.ThrowIfNull(writeSession);
 
-        if (request.ProposedRelationshipAuthorization is not null)
+        switch (request.ProposedRelationshipAuthorization)
         {
-            var finalizedRootRow = BuildFinalizedRootRowBuffer(request, mergeResult);
-            var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
-                request.ProposedRelationshipAuthorization,
-                finalizedRootRow,
-                RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(request.OperationKind),
-                request.TargetContext
-            );
+            case null:
+            case RelationshipAuthorizationResult.NoAuthorizationRequired:
+            case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
+                break;
 
-            switch (extractionResult)
-            {
-                case ProposedRelationshipAuthorizationExtractionResult.Ready ready:
-                    mergeResult = mergeResult with
-                    {
-                        ProposedRelationshipAuthorizationRuntimeCheck = ready.RuntimeCheck,
-                    };
-                    break;
+            // NoClaims is deferred from POST or PUT preflight so the proposed namespace check can run
+            // first (namespace AND-composes before the relationship OR-group per auth.md). The
+            // namespace orchestrator runs ahead of this one in the executor, so reaching this
+            // branch means namespace authorized — surface the deferred denial now.
+            case RelationshipAuthorizationResult.NoClaims noClaims:
+                return new ProposedRelationshipAuthorizationBoundary(
+                    mergeResult,
+                    RelationalWriteExecutorResults.BuildNoClaimsRelationshipAuthorizationResult(
+                        request.OperationKind,
+                        noClaims
+                    )
+                );
 
-                case ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan invalid:
-                    return new ProposedRelationshipAuthorizationBoundary(
-                        mergeResult,
-                        RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
-                            request.OperationKind,
-                            [invalid.FailureMessage]
-                        )
-                    );
+            case RelationshipAuthorizationResult.Authorized authorized:
+                var finalizedRootRow = RelationalWriteFinalizedRootRow.Build(request, mergeResult);
+                var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
+                    authorized,
+                    finalizedRootRow,
+                    RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
+                        request.OperationKind
+                    ),
+                    request.TargetContext
+                );
 
-                default:
-                    throw new InvalidOperationException(
-                        $"Unsupported proposed relationship authorization extraction result '{extractionResult.GetType().Name}'."
-                    );
-            }
+                switch (extractionResult)
+                {
+                    case ProposedRelationshipAuthorizationExtractionResult.Ready ready:
+                        mergeResult = mergeResult with
+                        {
+                            ProposedRelationshipAuthorizationRuntimeCheck = ready.RuntimeCheck,
+                        };
+                        break;
+
+                    case ProposedRelationshipAuthorizationExtractionResult.InvalidAuthorizationPlan invalid:
+                        return new ProposedRelationshipAuthorizationBoundary(
+                            mergeResult,
+                            RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+                                request.OperationKind,
+                                [invalid.FailureMessage]
+                            )
+                        );
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unsupported proposed relationship authorization extraction result '{extractionResult.GetType().Name}'."
+                        );
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported proposed relationship authorization result '{request.ProposedRelationshipAuthorization.GetType().Name}'."
+                );
         }
 
         await AuthorizeAsync(request, mergeResult, writeSession, cancellationToken).ConfigureAwait(false);
@@ -91,55 +117,6 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
         request.OperationKind is RelationalWriteOperationKind.Post
         && request.TargetContext is RelationalWriteTargetContext.CreateNew
         && request.WritePrecondition is not WritePrecondition.IfMatch;
-
-    private static RootWriteRowBuffer BuildFinalizedRootRowBuffer(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteMergeResult mergeResult
-    )
-    {
-        var rootTable = GetRootTableWritePlan(request.WritePlan);
-        var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
-            tableState.TableWritePlan.TableModel.Table.Equals(rootTable.TableModel.Table)
-        );
-
-        if (rootTableState is null)
-        {
-            throw new InvalidOperationException(
-                $"Relational write merge result did not include the root table '{rootTable.TableModel.Table}'."
-            );
-        }
-
-        if (rootTableState.MergedRows.Length != 1)
-        {
-            throw new InvalidOperationException(
-                $"Relational write merge result for root table '{rootTable.TableModel.Table}' "
-                    + $"included {rootTableState.MergedRows.Length} merged rows; expected exactly one."
-            );
-        }
-
-        return new RootWriteRowBuffer(rootTableState.TableWritePlan, rootTableState.MergedRows[0].Values);
-    }
-
-    private static TableWritePlan GetRootTableWritePlan(ResourceWritePlan writePlan)
-    {
-        var rootPlans = writePlan
-            .TablePlansInDependencyOrder.Where(static plan =>
-                plan.TableModel.IdentityMetadata.TableKind is DbTableKind.Root
-            )
-            .Take(2)
-            .ToArray();
-
-        return rootPlans.Length switch
-        {
-            1 => rootPlans[0],
-            0 => throw new InvalidOperationException(
-                $"Write plan for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' does not contain a root table plan."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Write plan for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' contains multiple root table plans."
-            ),
-        };
-    }
 }
 
 internal sealed record ProposedRelationshipAuthorizationBoundary(

@@ -849,6 +849,51 @@ public class UpsertHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Namespace_Not_Authorized : UpsertHandlerTests
+    {
+        internal static readonly NamespaceAuthorizationFailure Failure = new(
+            NamespaceAuthorizationFailureKind.NamespaceMismatch,
+            NamespaceAuthorizationFailureValueSource.Proposed,
+            EmittedAuth1Index: 0,
+            StrategyName: "NamespaceBased",
+            ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
+        );
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(new UpsertFailureNamespaceNotAuthorized(Failure));
+            }
+        }
+
+        private static readonly string _traceId = "namespace-post-403";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await upsertHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_namespace_denial_to_the_canonical_problem_details_403()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = NamespaceAuthorizationFailureResponse.ForFailure(Failure, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode.DeepEquals(_requestInfo.FrontendResponse.Body, expected).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Implemented : UpsertHandlerTests
     {
         private readonly Repository _repository = new();

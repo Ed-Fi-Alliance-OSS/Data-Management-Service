@@ -21,9 +21,9 @@ Implement the namespace-based authorization strategy for all CRUD operations per
   - First, authorize using the currently stored namespace value (abort if unauthorized).
   - Second, authorize using the new namespace value from the request body (abort if unauthorized).
 - DELETE: An authorization check is executed against the stored namespace value before deletion. If unauthorized, the delete does not happen and a 403 Forbidden response is returned.
-- The namespace column to check is resolved from the resource's Namespace securable element in ApiSchema.json. The column is directly available on whichever table owns the reference, with no transitive joins needed. For non-nested paths this is the root resource table; for array-nested paths this is the child collection table that owns the reference.
+- Runtime NamespaceBased authorization checks the namespace assigned to the root entity per `auth.md`; resolve a usable root resource table namespace column and fail closed if one is not available. Array-nested Namespace securable paths are still resolved for physical column/index emission on the child collection table that owns the reference, but that index/resolution requirement does not make those child tables runtime authorization subjects.
 - When authorization fails, an AUTH1 error is thrown with the strategy index in the message (e.g., 'Unauthorized, index: 0'), aborting the batch and allowing C# to map the failure to the correct strategy for ProblemDetails.
-- Auth checks are batched in the same DB roundtrip as other statements (reconstitution, insert, delete, etc.) to match the roundtrip targets in the design doc.
+- Auth checks execute before mutation/reconstitution exposure and preserve auth-before-precondition ordering. Provider-command co-batching with persistence or hydration remains a backend-wide roundtrip optimization, not a required deliverable for this story, as long as the same correctness boundary is preserved.
 - Works for both PostgreSQL and SQL Server:
   - PostgreSQL: Use `LIKE ANY(ARRAY[...])` with parameterized prefix values.
   - SQL Server: When the client has fewer than 2,000 namespace prefixes, use parameterized OR chains of LIKE clauses. When >= 2,000, throw an error (no TVP is used for namespace prefixes).
@@ -83,7 +83,7 @@ Remove the DMS-1057 TODO comments in:
   - `DeleteDocumentById`
   - the non-If-Match DELETE execution branch in `DeleteDocumentByIdAsync`
 
-The restored behavior should run in the same transactional/roundtrip shape as the write operation:
+The restored behavior should run in the same transactional/session correctness shape as the write operation:
 
 - POST create: authorize the proposed namespace from the request body before insert.
 - POST upsert-as-update: authorize the stored namespace first, then authorize the proposed namespace before update.

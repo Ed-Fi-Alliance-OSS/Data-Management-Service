@@ -152,7 +152,7 @@ public class Given_RelationshipAuthorizationStrategyClassifier
         var classification = Classify(
             CreateMappingSet(_queryResource),
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-            AuthorizationStrategyNameConstants.NamespaceBased,
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
             AuthorizationStrategyNameConstants.OwnershipBased,
             AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
         );
@@ -161,18 +161,18 @@ public class Given_RelationshipAuthorizationStrategyClassifier
         classification
             .SupportedStrategies.Select(static strategy => strategy.Kind)
             .Should()
-            .Equal(RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly);
+            .Equal(
+                RelationshipAuthorizationStrategyKind.RelationshipsWithEdOrgsOnly,
+                RelationshipAuthorizationStrategyKind.RelationshipsWithStudentsOnly
+            );
         classification
             .KnownButNotEnabledStrategies.Select(static strategy => strategy.Kind)
             .Should()
-            .Equal(
-                RelationshipAuthorizationStrategyKind.NamespaceBased,
-                RelationshipAuthorizationStrategyKind.OwnershipBased
-            );
+            .Equal(RelationshipAuthorizationStrategyKind.OwnershipBased);
         classification
             .KnownButNotEnabledStrategies.Select(static strategy => strategy.RelationshipLocalOrder)
             .Should()
-            .Equal(1, 2);
+            .Equal(2);
         classification.NoFurtherAuthorizationRequiredStrategies.Should().ContainSingle();
         classification.SecurityConfigurationFailures.Should().BeEmpty();
     }
@@ -282,7 +282,7 @@ public class Given_RelationshipAuthorizationStrategyClassifier
     {
         var classification = Classify(
             CreateMappingSet(_queryResource),
-            AuthorizationStrategyNameConstants.NamespaceBased,
+            AuthorizationStrategyNameConstants.OwnershipBased,
             "CustomAuthorizationStrategy"
         );
 
@@ -293,13 +293,36 @@ public class Given_RelationshipAuthorizationStrategyClassifier
         classification
             .KnownButNotEnabledStrategies[0]
             .Kind.Should()
-            .Be(RelationshipAuthorizationStrategyKind.NamespaceBased);
+            .Be(RelationshipAuthorizationStrategyKind.OwnershipBased);
         classification.SecurityConfigurationFailures.Should().ContainSingle();
         classification
             .SecurityConfigurationFailures[0]
             .FailureKind.Should()
             .Be(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy);
         classification.SecurityConfigurationFailures[0].RelationshipLocalOrder.Should().Be(1);
+    }
+
+    [Test]
+    public void It_no_longer_classifies_NamespaceBased_as_known_but_not_enabled()
+    {
+        // NamespaceBased is now routed through the relational authorization orchestrator's namespace
+        // bucket and never reaches the relationship classifier; if a configured strategy with that name
+        // does leak through, it must be treated as an unknown invalid strategy rather than a known
+        // out-of-scope one.
+        var classification = Classify(
+            CreateMappingSet(_queryResource),
+            AuthorizationStrategyNameConstants.NamespaceBased
+        );
+
+        classification
+            .Outcome.Should()
+            .Be(RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError);
+        classification.KnownButNotEnabledStrategies.Should().BeEmpty();
+        classification.SecurityConfigurationFailures.Should().ContainSingle();
+        classification
+            .SecurityConfigurationFailures[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy);
     }
 
     [Test]

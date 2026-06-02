@@ -104,8 +104,9 @@ Feature: Create a Descriptor
                     }
                   """
 
-        # Ignored because we do not have namespace security for descriptors yet. DMS-81
-        @API-009 @ignore
+        @API-009
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 04 Post a Descriptor using an invalid namespace
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -120,11 +121,13 @@ Feature: Create a Descriptor
               And the response body is
                   """
                     {
-                        "detail": "Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org').",
+                        "detail": "Access to the requested data could not be authorized. The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org').",
                         "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
                         "title": "Authorization Denied",
                         "status": 403,
-                        "correlationId": null
+                        "correlationId": null,
+                        "validationErrors": {},
+                        "errors": []
                     }
                   """
 

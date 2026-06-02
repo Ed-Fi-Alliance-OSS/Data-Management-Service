@@ -21,7 +21,9 @@ public sealed record DescriptorWriteRequest
         JsonNode requestBody,
         DocumentUuid documentUuid,
         ReferentialId? referentialId,
-        TraceId traceId
+        TraceId traceId,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
+        RelationalAuthorizationContext? relationalAuthorizationContext = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -30,6 +32,9 @@ public sealed record DescriptorWriteRequest
         DocumentUuid = documentUuid;
         ReferentialId = referentialId;
         TraceId = traceId;
+        AuthorizationStrategyEvaluators = authorizationStrategyEvaluators ?? [];
+        RelationalAuthorizationContext =
+            relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
     }
 
     /// <summary>
@@ -63,6 +68,19 @@ public sealed record DescriptorWriteRequest
     public TraceId TraceId { get; init; }
 
     /// <summary>
+    /// The effective POST/PUT authorization strategies already resolved by Core.
+    /// </summary>
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; }
+
+    /// <summary>
+    /// Request-scoped authorization inputs (namespace prefixes and claim education organization ids)
+    /// used by backend-planned namespace authorization. Carried alongside the evaluators because the
+    /// evaluators preserve raw strategy names with empty filter providers in relational mode and do not
+    /// carry the namespace prefixes the planner needs.
+    /// </summary>
+    public RelationalAuthorizationContext RelationalAuthorizationContext { get; init; }
+
+    /// <summary>
     /// Typed write precondition forwarded from Core for descriptor write flows.
     /// </summary>
     public WritePrecondition WritePrecondition
@@ -84,7 +102,8 @@ public sealed record DescriptorDeleteRequest
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
-        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
+        RelationalAuthorizationContext? relationalAuthorizationContext = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -92,6 +111,8 @@ public sealed record DescriptorDeleteRequest
         DocumentUuid = documentUuid;
         TraceId = traceId;
         AuthorizationStrategyEvaluators = authorizationStrategyEvaluators ?? [];
+        RelationalAuthorizationContext =
+            relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
     }
 
     /// <summary>
@@ -118,6 +139,14 @@ public sealed record DescriptorDeleteRequest
     /// The effective DELETE authorization strategies already resolved by Core.
     /// </summary>
     public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; }
+
+    /// <summary>
+    /// Request-scoped authorization inputs (namespace prefixes and claim education organization ids)
+    /// used by backend-planned namespace authorization. Carried alongside the evaluators because the
+    /// evaluators preserve raw strategy names with empty filter providers in relational mode and do not
+    /// carry the namespace prefixes the planner needs.
+    /// </summary>
+    public RelationalAuthorizationContext RelationalAuthorizationContext { get; init; }
 
     /// <summary>
     /// Typed write precondition forwarded from Core for descriptor delete flows.

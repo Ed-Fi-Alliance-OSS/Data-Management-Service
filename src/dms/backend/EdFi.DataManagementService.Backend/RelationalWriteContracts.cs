@@ -555,7 +555,9 @@ public sealed record RelationalWriteExecutorRequest
         BackendProfileWriteContext? profileWriteContext = null,
         WritePrecondition? writePrecondition = null,
         RelationshipAuthorizationResult? storedRelationshipAuthorization = null,
-        RelationshipAuthorizationResult.Authorized? proposedRelationshipAuthorization = null
+        RelationshipAuthorizationResult? proposedRelationshipAuthorization = null,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -626,6 +628,8 @@ public sealed record RelationalWriteExecutorRequest
         WritePrecondition = writePrecondition ?? new WritePrecondition.None();
         StoredRelationshipAuthorization = storedRelationshipAuthorization;
         ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
+        StoredNamespaceAuthorization = storedNamespaceAuthorization;
+        ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
     }
 
     /// <summary>
@@ -698,10 +702,36 @@ public sealed record RelationalWriteExecutorRequest
 
     /// <summary>
     /// Operation-neutral proposed-value relationship authorization plan, when required.
-    /// The current executor executes this for POST and carries PUT plans for stored-gated orchestration.
+    /// Accepts <see cref="RelationshipAuthorizationResult.Authorized"/> for executable proposed
+    /// checks and <see cref="RelationshipAuthorizationResult.NoClaims"/> for deferred denials that
+    /// must surface only after proposed namespace authorization has had its chance to deny.
     /// </summary>
-    public RelationshipAuthorizationResult.Authorized? ProposedRelationshipAuthorization { get; init; }
+    public RelationshipAuthorizationResult? ProposedRelationshipAuthorization { get; init; }
+
+    /// <summary>
+    /// Stored-value namespace authorization for existing-target writes, when <c>NamespaceBased</c>
+    /// participates. Evaluated inside the locked-target boundary before any precondition. Null when
+    /// no stored namespace authorization applies.
+    /// </summary>
+    public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; init; }
+
+    /// <summary>
+    /// Proposed-value namespace authorization for this write, when <c>NamespaceBased</c> participates.
+    /// Evaluated after merge finalizes the root row and before persist/commit. Null when no proposed
+    /// namespace authorization applies.
+    /// </summary>
+    public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; init; }
 }
+
+/// <summary>
+/// Namespace authorization inputs threaded from the repository write preflight into the executor.
+/// </summary>
+/// <param name="Checks">The planned namespace authorization checks in emission order.</param>
+/// <param name="NamespacePrefixParameterization">The dialect-specific namespace prefix parameterization.</param>
+public sealed record RelationalWriteNamespaceAuthorization(
+    IReadOnlyList<NamespaceAuthorizationCheckSpec> Checks,
+    NamespacePrefixParameterization NamespacePrefixParameterization
+);
 
 /// <summary>
 /// Backend-local classification of one executor attempt.

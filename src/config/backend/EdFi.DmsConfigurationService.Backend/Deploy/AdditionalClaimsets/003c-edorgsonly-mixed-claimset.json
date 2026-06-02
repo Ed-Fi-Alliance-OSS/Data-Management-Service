@@ -35,7 +35,7 @@
             },
             {
               "authStrategyId": 1,
-              "name": "NamespaceBased",
+              "name": "OwnershipBased",
               "isInheritedFromParent": false
             }
           ]
@@ -51,7 +51,7 @@
             },
             {
               "authStrategyId": 2,
-              "name": "NamespaceBased",
+              "name": "OwnershipBased",
               "isInheritedFromParent": false
             }
           ]
@@ -67,7 +67,7 @@
             },
             {
               "authStrategyId": 2,
-              "name": "NamespaceBased",
+              "name": "OwnershipBased",
               "isInheritedFromParent": false
             }
           ]
@@ -83,7 +83,7 @@
             },
             {
               "authStrategyId": 1,
-              "name": "NamespaceBased",
+              "name": "OwnershipBased",
               "isInheritedFromParent": false
             }
           ]
@@ -99,7 +99,7 @@
             },
             {
               "authStrategyId": 9,
-              "name": "NamespaceBased",
+              "name": "OwnershipBased",
               "isInheritedFromParent": false
             }
           ]

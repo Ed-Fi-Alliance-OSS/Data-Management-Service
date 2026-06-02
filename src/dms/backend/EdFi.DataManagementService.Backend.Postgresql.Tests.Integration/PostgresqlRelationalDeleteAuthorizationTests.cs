@@ -447,7 +447,7 @@ public class Given_A_Postgresql_Relational_Delete_Authorization_With_A_Synthetic
             .Subject;
         notImplemented
             .FailureMessage.Should()
-            .Contain(RelationshipAuthorizationCrudTestSupport.NamespaceBased);
+            .Contain(RelationshipAuthorizationCrudTestSupport.OwnershipBased);
         var securityConfiguration = securityConfigurationResult
             .Should()
             .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()

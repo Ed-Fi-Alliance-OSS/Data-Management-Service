@@ -110,7 +110,7 @@ public sealed record PageDocumentIdAuthorizationStrategy(
 );
 
 /// <summary>
-/// Optional DMS-1055 authorization inputs for page-<c>DocumentId</c> query compilation.
+/// Optional authorization inputs for page-<c>DocumentId</c> query compilation.
 /// </summary>
 /// <param name="Strategies">
 /// Effective relationship authorization strategies. Strategies are combined with OR.
@@ -119,10 +119,20 @@ public sealed record PageDocumentIdAuthorizationStrategy(
 /// Dialect-specific claim EdOrg parameterization shared by SQL emission and runtime binding. Required when
 /// <paramref name="Strategies" /> is non-empty; ignored when the strategy list is empty.
 /// </param>
+/// <param name="NamespaceChecks">
+/// Namespace authorization checks. The compiler emits each as a root-table <c>IS NOT NULL</c> + prefix-LIKE
+/// predicate and AND-combines them into a single outer group placed before the relationship OR group.
+/// </param>
+/// <param name="NamespacePrefixParameterization">
+/// Dialect-specific namespace prefix parameterization shared by SQL emission and runtime binding. Required
+/// when <paramref name="NamespaceChecks" /> is non-empty; ignored otherwise.
+/// </param>
 public sealed record PageDocumentIdAuthorizationSpec(
     IReadOnlyList<PageDocumentIdAuthorizationStrategy> Strategies,
     AuthorizationClaimEducationOrganizationIdParameterization? ClaimEducationOrganizationIdParameterization =
-        null
+        null,
+    IReadOnlyList<NamespaceAuthorizationCheckSpec>? NamespaceChecks = null,
+    NamespacePrefixParameterization? NamespacePrefixParameterization = null
 );
 
 /// <summary>

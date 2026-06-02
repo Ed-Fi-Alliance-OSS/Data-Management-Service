@@ -42,7 +42,7 @@ public static class FailureResponse
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
     private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
 
-    private static JsonObject CreateBaseJsonObject(
+    internal static JsonObject CreateBaseJsonObject(
         string detail,
         string type,
         string title,

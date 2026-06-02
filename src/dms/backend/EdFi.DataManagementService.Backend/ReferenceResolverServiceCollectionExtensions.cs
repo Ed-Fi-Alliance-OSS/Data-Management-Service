@@ -77,6 +77,9 @@ public static class ReferenceResolverServiceCollectionExtensions
             )
         );
         services.TryAdd(
+            ServiceDescriptor.Scoped<INamespaceAuthorizationExecutor, NamespaceAuthorizationExecutor>()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<
                 IRelationshipAuthorizationProviderFailureExtractor,
                 DefaultRelationshipAuthorizationProviderFailureExtractor

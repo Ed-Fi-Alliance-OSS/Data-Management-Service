@@ -90,7 +90,10 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             static column => column
         );
         var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
-        var parameterNamesByIndex = DeriveParameterNames(preprocessingResult.QueryElementsInOrder);
+        var parameterNamesByIndex = DeriveParameterNames(
+            preprocessingResult.QueryElementsInOrder,
+            authorization
+        );
         var predicates = new QueryValuePredicate[preprocessingResult.QueryElementsInOrder.Count];
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
         {
@@ -136,6 +139,10 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 authorizationClaimParameterization
             );
         }
+        NamespacePrefixParameterValueBinder.Bind(
+            parameterValues,
+            authorization?.NamespacePrefixParameterization
+        );
 
         var querySpec = new PageDocumentIdQuerySpec(
             RootTable: rootTable.Table,
@@ -308,7 +315,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     private static IReadOnlyList<string> DeriveParameterNames(
-        IReadOnlyList<PreprocessedRelationalQueryElement> queryElementsInOrder
+        IReadOnlyList<PreprocessedRelationalQueryElement> queryElementsInOrder,
+        PageDocumentIdAuthorizationSpec? authorization
     )
     {
         var seeds = queryElementsInOrder
@@ -325,7 +333,14 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             )
             .ToArray();
 
-        return QueryParameterNameAllocator.Allocate(seeds, [OffsetParameterName, LimitParameterName]);
+        return QueryParameterNameAllocator.Allocate(
+            seeds,
+            [
+                OffsetParameterName,
+                LimitParameterName,
+                .. QueryParameterNameAllocator.CollectAuthorizationParameterNames(authorization),
+            ]
+        );
     }
 
     private static IReadOnlyDictionary<

@@ -11,7 +11,13 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalReadGuardrails
 {
-    public static bool HasOnlyNoFurtherAuthorizationRequired(
+    /// <summary>
+    /// Descriptors authorize against the shared <c>dms.Descriptor</c> root-table Namespace column, so the
+    /// only effective strategies they can evaluate are <c>NamespaceBased</c> and
+    /// <c>NoFurtherAuthorizationRequired</c>. Any other strategy (relationship, ownership, custom view)
+    /// has no descriptor-applicable filter and must fail closed before any database work.
+    /// </summary>
+    public static bool HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired(
         IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
     )
     {
@@ -20,7 +26,31 @@ internal static class RelationalReadGuardrails
         return authorizationStrategyEvaluators.All(static evaluator =>
             string.Equals(
                 evaluator.AuthorizationStrategyName,
+                AuthorizationStrategyNameConstants.NamespaceBased,
+                StringComparison.Ordinal
+            )
+            || string.Equals(
+                evaluator.AuthorizationStrategyName,
                 AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                StringComparison.Ordinal
+            )
+        );
+    }
+
+    /// <summary>
+    /// Whether <c>NamespaceBased</c> is among the effective strategies, indicating that backend-planned
+    /// namespace authorization must run for the request.
+    /// </summary>
+    public static bool ContainsNamespaceBased(
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    )
+    {
+        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+
+        return authorizationStrategyEvaluators.Any(static evaluator =>
+            string.Equals(
+                evaluator.AuthorizationStrategyName,
+                AuthorizationStrategyNameConstants.NamespaceBased,
                 StringComparison.Ordinal
             )
         );
@@ -43,7 +73,8 @@ internal static class RelationalReadGuardrails
 
         return $"Relational {operationLabel} authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "
             + $"when effective {effectiveAuthorizationActionLabel} authorization requires filtering. Effective strategies: "
-            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
+            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or with "
+            + $"'{AuthorizationStrategyNameConstants.NamespaceBased}' and/or "
             + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
     }
 

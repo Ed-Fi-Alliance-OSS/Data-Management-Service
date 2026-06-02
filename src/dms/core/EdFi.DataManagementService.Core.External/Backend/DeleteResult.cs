@@ -42,6 +42,13 @@ public abstract record DeleteResult
         : DeleteResult();
 
     /// <summary>
+    /// A failure because stored namespace authorization denied the delete. Carries the namespace
+    /// failure metadata so Core can build the §2.9-§2.12 ProblemDetails response.
+    /// </summary>
+    public record DeleteFailureNamespaceNotAuthorized(NamespaceAuthorizationFailure NamespaceFailure)
+        : DeleteResult();
+
+    /// <summary>
     /// A failure because the requested delete operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
@@ -21,7 +22,9 @@ internal sealed class DescriptorWriteHandler(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
-    ILogger<DescriptorWriteHandler> logger
+    ILogger<DescriptorWriteHandler> logger,
+    IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
+        null
 ) : IDescriptorWriteHandler
 {
     private readonly IRelationalWriteTargetLookupService _targetLookupService =
@@ -34,6 +37,9 @@ internal sealed class DescriptorWriteHandler(
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
+        relationshipAuthorizationProviderFailureExtractor
+        ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
 
     public async Task<UpsertResult> HandlePostAsync(
         DescriptorWriteRequest request,
@@ -49,6 +55,34 @@ internal sealed class DescriptorWriteHandler(
                 "Descriptor POST requires a ReferentialId for target context resolution."
             );
         }
+
+        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
+        // unsupported strategies resolve before any session opens, so a denial issues no DB roundtrip.
+        // The stored and proposed namespace checks run inside the descriptor write session against the
+        // resolved target (see the per-path execution helpers below).
+        var authorizationPreflight = ResolveDescriptorWriteAuthorization(
+            request,
+            NamespaceAuthorizationOperation.Update,
+            "descriptor POST",
+            "POST"
+        );
+
+        switch (authorizationPreflight)
+        {
+            case DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                return new UpsertResult.UpsertFailureNotImplemented(
+                    notImplemented.FailureMessage,
+                    UpsertFailureNotImplementedReason.StrategyNotEnabled
+                );
+            case DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                return new UpsertResult.UpsertFailureSecurityConfiguration(configError.Errors);
+            case DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                return new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
+        }
+
+        var proceed = (DescriptorWriteAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+        var storedNamespaceAuthorization = proceed.StoredNamespaceAuthorization;
+        var proposedNamespaceAuthorization = proceed.ProposedNamespaceAuthorization;
 
         var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(
@@ -87,16 +121,12 @@ internal sealed class DescriptorWriteHandler(
                 return targetContext switch
                 {
                     RelationalWriteTargetContext.CreateNew(var documentUuid) =>
-                        await ExecuteDescriptorWriteInTransactionAsync(
-                                (sessionCommandExecutor, ct) =>
-                                    InsertDescriptorAsync(
-                                        request,
-                                        body,
-                                        documentUuid,
-                                        resourceKeyId,
-                                        sessionCommandExecutor,
-                                        ct
-                                    ),
+                        await ExecuteDescriptorInsertWithProposedNamespaceCheckAsync(
+                                request,
+                                body,
+                                documentUuid,
+                                resourceKeyId,
+                                proposedNamespaceAuthorization,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -108,6 +138,8 @@ internal sealed class DescriptorWriteHandler(
                                 documentId,
                                 documentUuid,
                                 resourceKeyId,
+                                storedNamespaceAuthorization,
+                                proposedNamespaceAuthorization,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -128,7 +160,10 @@ internal sealed class DescriptorWriteHandler(
                     DescriptorPreconditionTargetKind.Post,
                     ifMatch,
                     writeSession,
-                    cancellationToken
+                    cancellationToken,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    body.Namespace
                 )
                 .ConfigureAwait(false);
 
@@ -147,6 +182,16 @@ internal sealed class DescriptorWriteHandler(
                     return new UpsertResult.UnknownFailure(
                         BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
                     );
+
+                case DescriptorLockedPreconditionResult.NamespaceNotAuthorized(var namespaceFailure):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceFailure);
+
+                case DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
+                    var namespaceFailureMessage
+                ):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureSecurityConfiguration([namespaceFailureMessage]);
 
                 case DescriptorLockedPreconditionResult.Mismatch:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -243,6 +288,31 @@ internal sealed class DescriptorWriteHandler(
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
+        // unsupported strategies resolve before any session opens, so a denial issues no DB roundtrip.
+        // The stored and proposed namespace checks run inside the descriptor write session against the
+        // resolved target (see the per-path execution helpers below).
+        var authorizationPreflight = ResolveDescriptorWriteAuthorization(
+            request,
+            NamespaceAuthorizationOperation.Update,
+            "descriptor PUT",
+            "PUT"
+        );
+
+        switch (authorizationPreflight)
+        {
+            case DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                return new UpdateResult.UpdateFailureNotImplemented(notImplemented.FailureMessage);
+            case DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                return new UpdateResult.UpdateFailureSecurityConfiguration(configError.Errors);
+            case DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                return new UpdateResult.UpdateFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
+        }
+
+        var proceed = (DescriptorWriteAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+        var storedNamespaceAuthorization = proceed.StoredNamespaceAuthorization;
+        var proposedNamespaceAuthorization = proceed.ProposedNamespaceAuthorization;
+
         var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
 
         IRelationalWriteSession? writeSession = null;
@@ -263,7 +333,10 @@ internal sealed class DescriptorWriteHandler(
                         DescriptorPreconditionTargetKind.Put,
                         ifMatch,
                         writeSession,
-                        cancellationToken
+                        cancellationToken,
+                        storedNamespaceAuthorization,
+                        proposedNamespaceAuthorization,
+                        body.Namespace
                     )
                     .ConfigureAwait(false);
 
@@ -281,6 +354,16 @@ internal sealed class DescriptorWriteHandler(
                         return new UpdateResult.UnknownFailure(
                             BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
                         );
+
+                    case DescriptorLockedPreconditionResult.NamespaceNotAuthorized(var namespaceFailure):
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureNamespaceNotAuthorized(namespaceFailure);
+
+                    case DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
+                        var namespaceFailureMessage
+                    ):
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureSecurityConfiguration([namespaceFailureMessage]);
 
                     case DescriptorLockedPreconditionResult.Mismatch:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -352,6 +435,8 @@ internal sealed class DescriptorWriteHandler(
                     body,
                     documentId,
                     documentUuid,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -414,21 +499,20 @@ internal sealed class DescriptorWriteHandler(
             LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
         );
 
-        if (
-            !RelationalReadGuardrails.HasOnlyNoFurtherAuthorizationRequired(
-                request.AuthorizationStrategyEvaluators
-            )
-        )
+        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
+        // unsupported strategies resolve before the write session opens, so a denial issues no DB
+        // roundtrip and never locks the target. The stored namespace check itself runs inside the
+        // delete session against the resolved target (see the stored-namespace check below).
+        var authorizationPreflight = AuthorizeDescriptorDeletePreflight(request);
+
+        if (authorizationPreflight is DescriptorDeleteAuthorizationPreflightResult.Stop stop)
         {
-            return new DeleteResult.DeleteFailureNotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    request.Resource,
-                    request.AuthorizationStrategyEvaluators,
-                    "descriptor DELETE",
-                    "DELETE"
-                )
-            );
+            return stop.Result;
         }
+
+        var storedNamespaceAuthorization = (
+            (DescriptorDeleteAuthorizationPreflightResult.Proceed)authorizationPreflight
+        ).StoredNamespaceAuthorization;
 
         // Scope the DELETE by ResourceKeyId so a UUID belonging to a different descriptor
         // (or a non-descriptor document) cannot be deleted through this resource endpoint.
@@ -479,24 +563,79 @@ internal sealed class DescriptorWriteHandler(
             {
                 if (ifMatch is null)
                 {
-                    outcome = await RelationalDeleteExecution
-                        .TryExecuteAsync(
-                            sessionCommandExecutor,
-                            BuildDescriptorDeleteCommand(
-                                sessionCommandExecutor.Dialect,
+                    // The stored namespace check (when configured) AND-composes before the delete and
+                    // must read the resolved target's namespace, so resolve the document first, then
+                    // lock the resolved row before authorizing. Locking between resolve and auth
+                    // closes the race where a concurrent committed delete would let auth fire against
+                    // a stale view and the subsequent delete silently no-op. The public DELETE route
+                    // addresses a server-generated, unique DocumentUuid; clients cannot create or
+                    // replace a descriptor under an arbitrary existing UUID, and descriptor PUT cannot
+                    // change Namespace/CodeValue identity. Deleting by the same DocumentUuid plus
+                    // ResourceKeyId after authorizing the locked row therefore does not allow an
+                    // unauthorized replacement-delete path.
+                    if (storedNamespaceAuthorization is not null)
+                    {
+                        var resolvedDeleteTarget = await RelationalDocumentUuidLookupSupport
+                            .TryResolveDeleteTargetAsync(
+                                sessionCommandExecutor,
+                                request.MappingSet,
+                                request.Resource,
                                 request.DocumentUuid,
-                                resourceKeyId
-                            ),
-                            _writeExceptionClassifier,
-                            _deleteConstraintResolver,
-                            request.MappingSet.Model,
-                            _logger,
-                            request.DocumentUuid,
-                            request.TraceId,
-                            DeleteTargetKind.Descriptor,
-                            cancellationToken
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (resolvedDeleteTarget is null)
+                        {
+                            outcome = new DeleteResult.DeleteFailureNotExists();
+                        }
+                        else if (
+                            !await TryLockDocumentAsync(
+                                    request.MappingSet.Key.Dialect,
+                                    resolvedDeleteTarget.DocumentId,
+                                    writeSession,
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false)
                         )
-                        .ConfigureAwait(false);
+                        {
+                            outcome = new DeleteResult.DeleteFailureNotExists();
+                        }
+                        else
+                        {
+                            var namespaceFailure = MapDeleteNamespaceAuthorizationResult(
+                                await ExecuteDescriptorNamespaceAuthorizationAsync(
+                                        request.MappingSet,
+                                        resolvedDeleteTarget.DocumentId,
+                                        storedNamespaceAuthorization,
+                                        proposedNamespace: null,
+                                        sessionCommandExecutor,
+                                        cancellationToken
+                                    )
+                                    .ConfigureAwait(false)
+                            );
+
+                            outcome =
+                                namespaceFailure
+                                ?? await ExecuteDescriptorDeleteCommandAsync(
+                                        request,
+                                        resourceKeyId,
+                                        sessionCommandExecutor,
+                                        cancellationToken
+                                    )
+                                    .ConfigureAwait(false);
+                        }
+                    }
+                    else
+                    {
+                        outcome = await ExecuteDescriptorDeleteCommandAsync(
+                                request,
+                                resourceKeyId,
+                                sessionCommandExecutor,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                    }
                 }
                 else
                 {
@@ -508,7 +647,8 @@ internal sealed class DescriptorWriteHandler(
                             DescriptorPreconditionTargetKind.Delete,
                             ifMatch,
                             writeSession,
-                            cancellationToken
+                            cancellationToken,
+                            storedNamespaceAuthorization
                         )
                         .ConfigureAwait(false);
 
@@ -522,26 +662,21 @@ internal sealed class DescriptorWriteHandler(
                             new DeleteResult.UnknownFailure(
                                 BuildMissingDescriptorMessage(request.Resource, documentId)
                             ),
+                        DescriptorLockedPreconditionResult.NamespaceNotAuthorized(var namespaceFailure) =>
+                            new DeleteResult.DeleteFailureNamespaceNotAuthorized(namespaceFailure),
+                        DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
+                            var failureMessage
+                        ) => new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage]),
                         DescriptorLockedPreconditionResult.Mismatch =>
                             new DeleteResult.DeleteFailureETagMisMatch(),
-                        DescriptorLockedPreconditionResult.Loaded => await RelationalDeleteExecution
-                            .TryExecuteAsync(
-                                sessionCommandExecutor,
-                                BuildDescriptorDeleteCommand(
-                                    sessionCommandExecutor.Dialect,
-                                    request.DocumentUuid,
-                                    resourceKeyId
-                                ),
-                                _writeExceptionClassifier,
-                                _deleteConstraintResolver,
-                                request.MappingSet.Model,
-                                _logger,
-                                request.DocumentUuid,
-                                request.TraceId,
-                                DeleteTargetKind.Descriptor,
-                                cancellationToken
-                            )
-                            .ConfigureAwait(false),
+                        DescriptorLockedPreconditionResult.Loaded =>
+                            await ExecuteDescriptorDeleteCommandAsync(
+                                    request,
+                                    resourceKeyId,
+                                    sessionCommandExecutor,
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false),
                         _ => throw new InvalidOperationException(
                             $"Unexpected locked descriptor precondition result type '{preconditionResult.GetType().Name}'."
                         ),
@@ -615,7 +750,7 @@ internal sealed class DescriptorWriteHandler(
         }
     }
 
-    private static async Task<DescriptorLockedPreconditionResult> ResolveLockedDescriptorForIfMatchAsync(
+    private async Task<DescriptorLockedPreconditionResult> ResolveLockedDescriptorForIfMatchAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
@@ -623,7 +758,10 @@ internal sealed class DescriptorWriteHandler(
         DescriptorPreconditionTargetKind targetKind,
         WritePrecondition.IfMatch ifMatch,
         IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
+        string? proposedNamespace = null
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
@@ -704,6 +842,28 @@ internal sealed class DescriptorWriteHandler(
 
         if (targetContext is RelationalWriteTargetContext.CreateNew)
         {
+            // POST with If-Match where no existing document was found normally returns ETagMisMatch,
+            // but a configured proposed-value namespace authorization must run first so that a denial
+            // (403) precedes the stale precondition (412). The proposed check is a single statement
+            // against the dialect's namespace authorization SQL and needs no row lookup.
+            if (proposedNamespaceAuthorization is not null)
+            {
+                var preconditionFromProposed = await EvaluateNamespaceAuthorizationAsync(
+                        mappingSet,
+                        documentId: 0L,
+                        proposedNamespaceAuthorization,
+                        proposedNamespace,
+                        sessionCommandExecutor,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (preconditionFromProposed is not null)
+                {
+                    return preconditionFromProposed;
+                }
+            }
+
             return DescriptorLockedPreconditionResult.CreateNew.Instance;
         }
 
@@ -722,6 +882,49 @@ internal sealed class DescriptorWriteHandler(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        // Namespace authorization AND-composes before the If-Match precondition: run the stored and
+        // proposed namespace checks against the locked target so a namespace denial (403) is returned
+        // ahead of a stale-ETag mismatch (412). Only run them once the row is loaded; a missing row
+        // falls through to the existing not-found/not-exists handling.
+        if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded)
+        {
+            if (storedNamespaceAuthorization is not null)
+            {
+                var preconditionFromStored = await EvaluateNamespaceAuthorizationAsync(
+                        mappingSet,
+                        existingTargetContext.DocumentId,
+                        storedNamespaceAuthorization,
+                        proposedNamespace: null,
+                        sessionCommandExecutor,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (preconditionFromStored is not null)
+                {
+                    return preconditionFromStored;
+                }
+            }
+
+            if (proposedNamespaceAuthorization is not null)
+            {
+                var preconditionFromProposed = await EvaluateNamespaceAuthorizationAsync(
+                        mappingSet,
+                        existingTargetContext.DocumentId,
+                        proposedNamespaceAuthorization,
+                        proposedNamespace,
+                        sessionCommandExecutor,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (preconditionFromProposed is not null)
+                {
+                    return preconditionFromProposed;
+                }
+            }
+        }
 
         return lockedCurrentState switch
         {
@@ -786,6 +989,330 @@ internal sealed class DescriptorWriteHandler(
                 $"Descriptor delete does not support SQL dialect '{dialect}'."
             ),
         };
+    }
+
+    private Task<DeleteResult> ExecuteDescriptorDeleteCommandAsync(
+        DescriptorDeleteRequest request,
+        short resourceKeyId,
+        IRelationalCommandExecutor sessionCommandExecutor,
+        CancellationToken cancellationToken
+    ) =>
+        RelationalDeleteExecution.TryExecuteAsync(
+            sessionCommandExecutor,
+            BuildDescriptorDeleteCommand(sessionCommandExecutor.Dialect, request.DocumentUuid, resourceKeyId),
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            request.MappingSet.Model,
+            _logger,
+            request.DocumentUuid,
+            request.TraceId,
+            DeleteTargetKind.Descriptor,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Plans descriptor DELETE namespace authorization through the relational authorization
+    /// orchestrator before the write session opens. Strategies other than <c>NamespaceBased</c> /
+    /// <c>NoFurtherAuthorizationRequired</c> fail closed; the namespace planner terminals
+    /// (no configured prefixes, no usable root column, MSSQL prefix cap) short-circuit with no DB
+    /// roundtrip.
+    /// </summary>
+    private static DescriptorDeleteAuthorizationPreflightResult AuthorizeDescriptorDeletePreflight(
+        DescriptorDeleteRequest request
+    )
+    {
+        if (
+            !RelationalReadGuardrails.HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired(
+                request.AuthorizationStrategyEvaluators
+            )
+        )
+        {
+            return new DescriptorDeleteAuthorizationPreflightResult.Stop(
+                new DeleteResult.DeleteFailureNotImplemented(
+                    RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                        request.Resource,
+                        request.AuthorizationStrategyEvaluators,
+                        "descriptor DELETE",
+                        "DELETE"
+                    )
+                )
+            );
+        }
+
+        if (!RelationalReadGuardrails.ContainsNamespaceBased(request.AuthorizationStrategyEvaluators))
+        {
+            return new DescriptorDeleteAuthorizationPreflightResult.Proceed(null);
+        }
+
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            request.AuthorizationStrategyEvaluators
+        );
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            request.MappingSet,
+            request.MappingSet.GetConcreteResourceModelOrThrow(request.Resource),
+            NamespaceAuthorizationOperation.Delete,
+            configuredAuthorizationStrategies,
+            request.RelationalAuthorizationContext
+        );
+
+        return orchestratorOutcome switch
+        {
+            RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
+                new DescriptorDeleteAuthorizationPreflightResult.Stop(
+                    new DeleteResult.DeleteFailureSecurityConfiguration([
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ])
+                ),
+            RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
+                new DescriptorDeleteAuthorizationPreflightResult.Stop(
+                    new DeleteResult.DeleteFailureNamespaceNotAuthorized(
+                        NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                    )
+                ),
+            RelationalAuthorizationPlanOutcome.Plan plan => AuthorizeDescriptorDeletePlanPreflight(
+                request,
+                plan
+            ),
+            // Limiting strategies to NamespaceBased / NoFurtherAuthorizationRequired above means the
+            // relationship classifier cannot report still-unsupported or security-configuration outcomes
+            // here, but fail closed if a future strategy reaches this point.
+            RelationalAuthorizationPlanOutcome.StillUnsupported
+            or RelationalAuthorizationPlanOutcome.SecurityConfigurationError =>
+                new DescriptorDeleteAuthorizationPreflightResult.Stop(
+                    new DeleteResult.DeleteFailureNotImplemented(
+                        RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                            request.Resource,
+                            request.AuthorizationStrategyEvaluators,
+                            "descriptor DELETE",
+                            "DELETE"
+                        )
+                    )
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static DescriptorDeleteAuthorizationPreflightResult AuthorizeDescriptorDeletePlanPreflight(
+        DescriptorDeleteRequest request,
+        RelationalAuthorizationPlanOutcome.Plan plan
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return new DescriptorDeleteAuthorizationPreflightResult.Proceed(null);
+        }
+
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
+                request.MappingSet.Key.Dialect,
+                request.RelationalAuthorizationContext.NamespacePrefixes,
+                out var namespacePrefixParameterization,
+                out var securityConfigurationMessage
+            )
+        )
+        {
+            return new DescriptorDeleteAuthorizationPreflightResult.Stop(
+                new DeleteResult.DeleteFailureSecurityConfiguration([securityConfigurationMessage])
+            );
+        }
+
+        return new DescriptorDeleteAuthorizationPreflightResult.Proceed(
+            new RelationalWriteNamespaceAuthorization(plan.NamespaceChecks, namespacePrefixParameterization)
+        );
+    }
+
+    /// <summary>
+    /// Runs the namespace authorization checks against the descriptor write session's command executor,
+    /// composing inside the same transaction that resolved/locked the target document.
+    /// </summary>
+    private Task<NamespaceAuthorizationExecutionResult> ExecuteDescriptorNamespaceAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationalWriteNamespaceAuthorization namespaceAuthorization,
+        string? proposedNamespace,
+        IRelationalCommandExecutor sessionCommandExecutor,
+        CancellationToken cancellationToken
+    )
+    {
+        var namespaceExecutor = new NamespaceAuthorizationExecutor(
+            sessionCommandExecutor,
+            _relationshipAuthorizationProviderFailureExtractor
+        );
+
+        return namespaceExecutor.ExecuteAsync(
+            new NamespaceAuthorizationExecutionRequest(
+                mappingSet,
+                documentId,
+                proposedNamespace,
+                namespaceAuthorization.Checks,
+                namespaceAuthorization.NamespacePrefixParameterization
+            ),
+            cancellationToken
+        );
+    }
+
+    private static DeleteResult? MapDeleteNamespaceAuthorizationResult(
+        NamespaceAuthorizationExecutionResult executionResult
+    ) =>
+        MapNamespaceAuthorizationToResult<DeleteResult>(
+            executionResult,
+            static failure => new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
+            static failureMessage => new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage]),
+            static () => new DeleteResult.DeleteFailureNotExists()
+        );
+
+    private abstract record DescriptorDeleteAuthorizationPreflightResult
+    {
+        private DescriptorDeleteAuthorizationPreflightResult() { }
+
+        public sealed record Stop(DeleteResult Result) : DescriptorDeleteAuthorizationPreflightResult;
+
+        public sealed record Proceed(RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization)
+            : DescriptorDeleteAuthorizationPreflightResult;
+    }
+
+    /// <summary>
+    /// Plans descriptor POST/PUT namespace authorization through the relational authorization
+    /// orchestrator. Strategies other than <c>NamespaceBased</c> / <c>NoFurtherAuthorizationRequired</c>
+    /// fail closed; the namespace planner terminals (no configured prefixes, no usable root column,
+    /// MSSQL prefix cap) short-circuit with no DB roundtrip; otherwise the planner's checks are
+    /// split into stored-value (locked target) and proposed-value (request body) authorizations
+    /// re-indexed from zero, each executed as its own single-record statement inside the write
+    /// session.
+    /// </summary>
+    private static DescriptorWriteAuthorizationPreflightOutcome ResolveDescriptorWriteAuthorization(
+        DescriptorWriteRequest request,
+        NamespaceAuthorizationOperation operation,
+        string operationLabel,
+        string actionLabel
+    )
+    {
+        if (
+            !RelationalReadGuardrails.HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired(
+                request.AuthorizationStrategyEvaluators
+            )
+        )
+        {
+            return new DescriptorWriteAuthorizationPreflightOutcome.NotImplemented(
+                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                    request.Resource,
+                    request.AuthorizationStrategyEvaluators,
+                    operationLabel,
+                    actionLabel
+                )
+            );
+        }
+
+        if (!RelationalReadGuardrails.ContainsNamespaceBased(request.AuthorizationStrategyEvaluators))
+        {
+            return DescriptorWriteAuthorizationPreflightOutcome.Proceed.NoAuthorization;
+        }
+
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            request.AuthorizationStrategyEvaluators
+        );
+        var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
+            request.MappingSet,
+            request.MappingSet.GetConcreteResourceModelOrThrow(request.Resource),
+            operation,
+            configuredAuthorizationStrategies,
+            request.RelationalAuthorizationContext
+        );
+
+        return orchestratorOutcome switch
+        {
+            RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
+                new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError([
+                    NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                        RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                    ),
+                ]),
+            RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
+                new DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized(
+                    NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
+                ),
+            RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorWritePlanPreflight(request, plan),
+            // Limiting strategies to NamespaceBased / NoFurtherAuthorizationRequired above means the
+            // relationship classifier cannot report still-unsupported or security-configuration
+            // outcomes here, but fail closed if a future strategy reaches this point.
+            RelationalAuthorizationPlanOutcome.StillUnsupported
+            or RelationalAuthorizationPlanOutcome.SecurityConfigurationError =>
+                new DescriptorWriteAuthorizationPreflightOutcome.NotImplemented(
+                    RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                        request.Resource,
+                        request.AuthorizationStrategyEvaluators,
+                        operationLabel,
+                        actionLabel
+                    )
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static DescriptorWriteAuthorizationPreflightOutcome BuildDescriptorWritePlanPreflight(
+        DescriptorWriteRequest request,
+        RelationalAuthorizationPlanOutcome.Plan plan
+    )
+    {
+        if (plan.NamespaceChecks.Count == 0)
+        {
+            return DescriptorWriteAuthorizationPreflightOutcome.Proceed.NoAuthorization;
+        }
+
+        if (
+            !NamespacePrefixParameterizationPreflight.TryCreate(
+                request.MappingSet.Key.Dialect,
+                request.RelationalAuthorizationContext.NamespacePrefixes,
+                out var namespacePrefixParameterization,
+                out var securityConfigurationMessage
+            )
+        )
+        {
+            return new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError([
+                securityConfigurationMessage,
+            ]);
+        }
+
+        var stored = NamespaceAuthorizationFactory.SplitByValueSource(
+            plan.NamespaceChecks,
+            NamespaceAuthorizationCheckValueSource.Stored,
+            namespacePrefixParameterization
+        );
+        var proposed = NamespaceAuthorizationFactory.SplitByValueSource(
+            plan.NamespaceChecks,
+            NamespaceAuthorizationCheckValueSource.Proposed,
+            namespacePrefixParameterization
+        );
+
+        return new DescriptorWriteAuthorizationPreflightOutcome.Proceed(stored, proposed);
+    }
+
+    private abstract record DescriptorWriteAuthorizationPreflightOutcome
+    {
+        private DescriptorWriteAuthorizationPreflightOutcome() { }
+
+        public sealed record NotImplemented(string FailureMessage)
+            : DescriptorWriteAuthorizationPreflightOutcome;
+
+        public sealed record SecurityConfigurationError(string[] Errors)
+            : DescriptorWriteAuthorizationPreflightOutcome;
+
+        public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
+            : DescriptorWriteAuthorizationPreflightOutcome;
+
+        public sealed record Proceed(
+            RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+            RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization
+        ) : DescriptorWriteAuthorizationPreflightOutcome
+        {
+            public static Proceed NoAuthorization { get; } = new(null, null);
+        }
     }
 
     private async Task<UpsertResult> InsertDescriptorAsync(
@@ -870,30 +1397,6 @@ internal sealed class DescriptorWriteHandler(
             existingDocumentUuid,
             RelationalApiMetadataFormatter.FormatEtag(body)
         );
-    }
-
-    private async Task<TResult> ExecuteDescriptorWriteInTransactionAsync<TResult>(
-        Func<IRelationalCommandExecutor, CancellationToken, Task<TResult>> executeAsync,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var writeSession = await _writeSessionFactory
-            .CreateAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        try
-        {
-            var result = await executeAsync(writeSession.CreateCommandExecutor(), cancellationToken)
-                .ConfigureAwait(false);
-
-            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return result;
-        }
-        catch
-        {
-            await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
-            throw;
-        }
     }
 
     private async Task<UpsertResult> ApplyLockedDescriptorPostUpsertAsync(
@@ -998,15 +1501,23 @@ internal sealed class DescriptorWriteHandler(
         long documentId,
         DocumentUuid existingDocumentUuid,
         short resourceKeyId,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         CancellationToken cancellationToken
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpsertResult>(
             request,
+            body,
             documentId,
+            storedNamespaceAuthorization,
+            proposedNamespaceAuthorization,
             static () => new UpsertResult.UpsertFailureWriteConflict(),
             missingDescriptorDocumentId => new UpsertResult.UnknownFailure(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
             ),
+            static failure => new UpsertResult.UpsertFailureNamespaceNotAuthorized(failure),
+            static failureMessage => new UpsertResult.UpsertFailureSecurityConfiguration([failureMessage]),
+            static () => new UpsertResult.UpsertFailureWriteConflict(),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPostUpsertAsync(
                     request,
@@ -1027,15 +1538,23 @@ internal sealed class DescriptorWriteHandler(
         ExtractedDescriptorBody body,
         long documentId,
         DocumentUuid documentUuid,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         CancellationToken cancellationToken
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpdateResult>(
             request,
+            body,
             documentId,
+            storedNamespaceAuthorization,
+            proposedNamespaceAuthorization,
             static () => new UpdateResult.UpdateFailureNotExists(),
             missingDescriptorDocumentId => new UpdateResult.UnknownFailure(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
             ),
+            static failure => new UpdateResult.UpdateFailureNamespaceNotAuthorized(failure),
+            static failureMessage => new UpdateResult.UpdateFailureSecurityConfiguration([failureMessage]),
+            static () => new UpdateResult.UpdateFailureNotExists(),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPutAsync(
                     request,
@@ -1052,9 +1571,15 @@ internal sealed class DescriptorWriteHandler(
 
     private async Task<TResult> ApplyWithLockedDescriptorCurrentStateAsync<TResult>(
         DescriptorWriteRequest request,
+        ExtractedDescriptorBody body,
         long documentId,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         Func<TResult> missingDocumentResultFactory,
         Func<long, TResult> missingDescriptorResultFactory,
+        Func<NamespaceAuthorizationFailure, TResult> namespaceNotAuthorizedFactory,
+        Func<string, TResult> namespaceAuthorizationInvalidFactory,
+        Func<TResult> namespaceStaleTargetFactory,
         Func<
             PersistedDescriptorState,
             string,
@@ -1064,6 +1589,7 @@ internal sealed class DescriptorWriteHandler(
         > applyLoadedAsync,
         CancellationToken cancellationToken
     )
+        where TResult : class
     {
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
@@ -1091,6 +1617,64 @@ internal sealed class DescriptorWriteHandler(
                     return missingDescriptorResultFactory(documentId);
 
                 case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
+                    // AND-compose stored then proposed namespace authorization against the locked target
+                    // before applying any change. Either denial returns the namespace 403 with no
+                    // INSERT/UPDATE statement, and short-circuits before the no-op or immutable-identity
+                    // checks so 403 wins over those outcomes too.
+                    var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+
+                    if (storedNamespaceAuthorization is not null)
+                    {
+                        var storedResult = await ExecuteDescriptorNamespaceAuthorizationAsync(
+                                request.MappingSet,
+                                documentId,
+                                storedNamespaceAuthorization,
+                                proposedNamespace: null,
+                                sessionCommandExecutor,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        var storedFailure = MapNamespaceAuthorizationToResult(
+                            storedResult,
+                            namespaceNotAuthorizedFactory,
+                            namespaceAuthorizationInvalidFactory,
+                            namespaceStaleTargetFactory
+                        );
+
+                        if (storedFailure is not null)
+                        {
+                            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            return storedFailure;
+                        }
+                    }
+
+                    if (proposedNamespaceAuthorization is not null)
+                    {
+                        var proposedResult = await ExecuteDescriptorNamespaceAuthorizationAsync(
+                                request.MappingSet,
+                                documentId,
+                                proposedNamespaceAuthorization,
+                                body.Namespace,
+                                sessionCommandExecutor,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        var proposedFailure = MapNamespaceAuthorizationToResult(
+                            proposedResult,
+                            namespaceNotAuthorizedFactory,
+                            namespaceAuthorizationInvalidFactory,
+                            namespaceStaleTargetFactory
+                        );
+
+                        if (proposedFailure is not null)
+                        {
+                            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            return proposedFailure;
+                        }
+                    }
+
                     return await applyLoadedAsync(persisted, currentEtag, writeSession, cancellationToken)
                         .ConfigureAwait(false);
 
@@ -1106,6 +1690,129 @@ internal sealed class DescriptorWriteHandler(
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// Opens a write session for a descriptor POST create, runs the configured proposed namespace
+    /// check before the insert, and rolls back without inserting on namespace denial so the create
+    /// path never produces a partially-written document on a 403.
+    /// </summary>
+    private async Task<UpsertResult> ExecuteDescriptorInsertWithProposedNamespaceCheckAsync(
+        DescriptorWriteRequest request,
+        ExtractedDescriptorBody body,
+        DocumentUuid documentUuid,
+        short resourceKeyId,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var writeSession = await _writeSessionFactory
+            .CreateAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            var sessionCommandExecutor = writeSession.CreateCommandExecutor();
+
+            if (proposedNamespaceAuthorization is not null)
+            {
+                var proposedResult = await ExecuteDescriptorNamespaceAuthorizationAsync(
+                        request.MappingSet,
+                        documentId: 0L,
+                        proposedNamespaceAuthorization,
+                        body.Namespace,
+                        sessionCommandExecutor,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                var proposedFailure = MapNamespaceAuthorizationToResult<UpsertResult>(
+                    proposedResult,
+                    static failure => new UpsertResult.UpsertFailureNamespaceNotAuthorized(failure),
+                    static failureMessage => new UpsertResult.UpsertFailureSecurityConfiguration([
+                        failureMessage,
+                    ]),
+                    static () => new UpsertResult.UpsertFailureWriteConflict()
+                );
+
+                if (proposedFailure is not null)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return proposedFailure;
+                }
+            }
+
+            var insertResult = await InsertDescriptorAsync(
+                    request,
+                    body,
+                    documentUuid,
+                    resourceKeyId,
+                    sessionCommandExecutor,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return insertResult;
+        }
+        catch
+        {
+            await TryRollbackAsync(writeSession, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private static TResult? MapNamespaceAuthorizationToResult<TResult>(
+        NamespaceAuthorizationExecutionResult executionResult,
+        Func<NamespaceAuthorizationFailure, TResult> namespaceNotAuthorizedFactory,
+        Func<string, TResult> namespaceAuthorizationInvalidFactory,
+        Func<TResult> staleTargetFactory
+    )
+        where TResult : class =>
+        executionResult switch
+        {
+            NamespaceAuthorizationExecutionResult.Authorized => null,
+            NamespaceAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                namespaceNotAuthorizedFactory(notAuthorized.Failure),
+            NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                namespaceAuthorizationInvalidFactory(invalidFailure.FailureMessage),
+            // Descriptor write/delete paths row-lock the target before the namespace check, so a stale
+            // target is not expected; the caller maps it defensively to its conflict/not-exists outcome.
+            NamespaceAuthorizationExecutionResult.StaleTarget => staleTargetFactory(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported namespace authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
+
+    private async Task<DescriptorLockedPreconditionResult?> EvaluateNamespaceAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationalWriteNamespaceAuthorization namespaceAuthorization,
+        string? proposedNamespace,
+        IRelationalCommandExecutor sessionCommandExecutor,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = await ExecuteDescriptorNamespaceAuthorizationAsync(
+                mappingSet,
+                documentId,
+                namespaceAuthorization,
+                proposedNamespace,
+                sessionCommandExecutor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MapNamespaceAuthorizationToResult<DescriptorLockedPreconditionResult>(
+            result,
+            static failure => new DescriptorLockedPreconditionResult.NamespaceNotAuthorized(failure),
+            static failureMessage => new DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
+                failureMessage
+            ),
+            // The If-Match path locks the target before this check, so a stale target maps to the same
+            // missing-document precondition the caller already resolves to not-exists/conflict.
+            static () => DescriptorLockedPreconditionResult.MissingDocument.Instance
+        );
     }
 
     private static async Task ExecuteWriteCommandAsync(
@@ -1342,6 +2049,10 @@ internal sealed class DescriptorWriteHandler(
                     }
 
                     return new PersistedDescriptorState(
+                        // dms.Descriptor.Namespace is NOT NULL in both the generated PostgreSQL and
+                        // SQL Server DDL, so a persisted descriptor row always carries a namespace.
+                        // Read it required: there is no stored-NULL descriptor namespace to route to
+                        // the namespace-authorization uninitialized branch.
                         Namespace: reader.GetRequiredFieldValue<string>("Namespace"),
                         CodeValue: reader.GetRequiredFieldValue<string>("CodeValue"),
                         Uri: reader.GetRequiredFieldValue<string>("Uri"),
@@ -1397,6 +2108,10 @@ internal sealed class DescriptorWriteHandler(
     }
 
     private sealed record PersistedDescriptorState(
+        // Namespace is non-null: dms.Descriptor.Namespace is NOT NULL in the generated PostgreSQL and
+        // SQL Server DDL, so a persisted descriptor row always has a namespace. (Generic resources can
+        // carry a stored-null namespace that namespace authorization surfaces as the
+        // stored-namespace-uninitialized 403; descriptors cannot reach that state.)
         string Namespace,
         string CodeValue,
         string Uri,
@@ -1452,6 +2167,12 @@ internal sealed class DescriptorWriteHandler(
         }
 
         public sealed record MissingDescriptor(long DocumentId) : DescriptorLockedPreconditionResult;
+
+        public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
+            : DescriptorLockedPreconditionResult;
+
+        public sealed record NamespaceAuthorizationInvalid(string FailureMessage)
+            : DescriptorLockedPreconditionResult;
 
         public sealed record Mismatch : DescriptorLockedPreconditionResult
         {
