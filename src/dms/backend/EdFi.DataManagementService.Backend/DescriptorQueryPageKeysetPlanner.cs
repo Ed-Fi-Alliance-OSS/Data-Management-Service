@@ -38,7 +38,10 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             );
         }
 
-        var parameterNamesByIndex = DeriveParameterNames(preprocessingResult.QueryElementsInOrder);
+        var parameterNamesByIndex = DeriveParameterNames(
+            preprocessingResult.QueryElementsInOrder,
+            authorization
+        );
         var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder, parameterNamesByIndex);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, requestResource);
         var pageQuerySpec = new PageDocumentIdQuerySpec(
@@ -207,7 +210,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     private static IReadOnlyList<string> DeriveParameterNames(
-        IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder
+        IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder,
+        PageDocumentIdAuthorizationSpec? authorization
     )
     {
         var seeds = queryElementsInOrder
@@ -229,7 +233,12 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
 
         return QueryParameterNameAllocator.Allocate(
             seeds,
-            [ResourceKeyIdParameterName, OffsetParameterName, LimitParameterName]
+            [
+                ResourceKeyIdParameterName,
+                OffsetParameterName,
+                LimitParameterName,
+                .. QueryParameterNameAllocator.CollectAuthorizationParameterNames(authorization),
+            ]
         );
     }
 }

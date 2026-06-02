@@ -80,7 +80,7 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// ahead of relationship OR-combined strategies, so its 403 wins over a sibling
 /// known-but-not-enabled relationship strategy.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.StillUnsupported"/> — the relationship classifier reports a
-/// known-but-not-enabled strategy in the non-namespace bucket (403, fail closed).</item>
+/// known-but-not-enabled strategy in the non-namespace bucket (501 NotImplemented, fail closed).</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.Plan"/> — everything else.</item>
 /// </list>
 /// </remarks>

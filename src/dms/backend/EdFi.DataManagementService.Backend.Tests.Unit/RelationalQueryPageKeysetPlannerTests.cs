@@ -397,6 +397,55 @@ public class Given_RelationalQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_assign_collision_free_parameter_names_when_a_query_field_collides_with_a_namespace_authorization_parameter()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var result = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "namespacePrefixes",
+                        "$.namespacePrefixes",
+                        "string",
+                        new RelationalQueryFieldTarget.RootColumn(
+                            new DbColumnName("NamespacePrefixesQueryField")
+                        ),
+                        "collides with auth parameter",
+                        new PreprocessedRelationalQueryValue.Raw("collides with auth parameter")
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            authorization: new PageDocumentIdAuthorizationSpec(
+                Strategies: [],
+                NamespaceChecks:
+                [
+                    new NamespaceAuthorizationCheckSpec(
+                        0,
+                        NamespaceAuthorizationCheckValueSource.Stored,
+                        new DbTableName(new DbSchemaName("edfi"), "AcademicWeek"),
+                        new DbColumnName("Namespace")
+                    ),
+                ],
+                NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    ["uri://ed-fi.org/"],
+                    "namespacePrefixes"
+                )
+            )
+        );
+
+        // The authorization parameter keeps the bare name; the colliding query field is suffixed so the
+        // single-binding namespace LIKE and the query predicate never share a parameter.
+        result.ParameterValues.Keys.Should().Contain("namespacePrefixes");
+        result.ParameterValues.Keys.Should().Contain("namespacePrefixes_2");
+        result.Plan.PageDocumentIdSql.Should().Contain("LIKE ANY(@namespacePrefixes)");
+        result.Plan.PageDocumentIdSql.Should().Contain("@namespacePrefixes_2");
+    }
+
+    [Test]
     public void It_should_reject_empty_page_inputs_already_short_circuited_by_the_repository()
     {
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
@@ -567,6 +616,16 @@ public class Given_RelationalQueryPageKeysetPlanner
                     "SchoolIdUnderscore",
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                CreateColumn(
+                    "NamespacePrefixesQueryField",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                CreateColumn(
+                    "Namespace",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 255)
                 ),
             ],
             []

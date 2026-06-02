@@ -51,6 +51,38 @@ internal static class QueryParameterNameAllocator
         );
     }
 
+    /// <summary>
+    /// Collects the concrete SQL parameter names emitted by the namespace-prefix and claim-EdOrg
+    /// authorization parameterizations on <paramref name="authorization"/>. Query filter parameter
+    /// allocation reserves these alongside the paging names so a query field whose sanitized name
+    /// matches an authorization parameter is disambiguated with a suffix instead of colliding. An
+    /// unreserved collision is rejected downstream as a duplicate filter parameter, surfacing as an
+    /// UnknownFailure instead of a filtered result.
+    /// </summary>
+    public static IReadOnlyList<string> CollectAuthorizationParameterNames(
+        PageDocumentIdAuthorizationSpec? authorization
+    )
+    {
+        if (authorization is null)
+        {
+            return [];
+        }
+
+        List<string> reservedNames = [];
+
+        if (authorization.ClaimEducationOrganizationIdParameterization is { } claimParameterization)
+        {
+            reservedNames.AddRange(claimParameterization.ParameterNamesInOrder);
+        }
+
+        if (authorization.NamespacePrefixParameterization is { } namespacePrefixParameterization)
+        {
+            reservedNames.AddRange(namespacePrefixParameterization.ParameterNamesInOrder);
+        }
+
+        return reservedNames;
+    }
+
     private static string AllocateParameterName(
         string baseName,
         ISet<string> usedNames,

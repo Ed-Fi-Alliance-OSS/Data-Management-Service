@@ -292,6 +292,38 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_assign_collision_free_parameter_names_when_a_query_field_collides_with_a_namespace_authorization_parameter()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "namespacePrefixes",
+                        "$.namespacePrefixes",
+                        "collides with auth parameter",
+                        "string",
+                        new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")),
+                        new PreprocessedDescriptorQueryValue.Raw("collides with auth parameter")
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            CreateNamespaceAuthorization(SqlDialect.Pgsql, ["uri://ed-fi.org/"])
+        );
+
+        // The authorization parameter keeps the bare name; the colliding query field is suffixed so the
+        // single-binding namespace LIKE and the query predicate never share a parameter.
+        keyset.ParameterValues.Keys.Should().Contain("namespacePrefixes");
+        keyset.ParameterValues.Keys.Should().Contain("namespacePrefixes_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("LIKE ANY(@namespacePrefixes)");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@namespacePrefixes_2");
+    }
+
+    [Test]
     [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" r")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document] r")]
     public void It_should_plan_descriptor_total_count_sql_without_optional_joins_when_only_resource_type_discrimination_is_required(
