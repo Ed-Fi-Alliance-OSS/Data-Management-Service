@@ -108,13 +108,12 @@ Feature: Update a Descriptor
 
 
         # Descriptor PUT namespace authorization is covered end-to-end by
-        # Features/Authorization/NamespaceAuthorization.feature scenario 07 (same body
-        # shape, identity preserved, mismatching claim-set namespace prefixes). The
-        # historical "PUT with invalid namespace" scenario at this slot cannot be
-        # exercised against descriptor PUT because changing the Namespace field is an
-        # identity change — descriptor PUT enforces (Namespace, CodeValue) immutability
-        # ahead of namespace authorization, so the response would be a 400 key-change
-        # error, not a 403.
+        # Features/Authorization/NamespaceAuthorization.feature scenario 07 (identity
+        # preserved, mismatching claim-set namespace prefixes), so it is not duplicated
+        # here. Descriptor PUT runs stored and proposed namespace authorization against
+        # the locked target ahead of the immutable-identity check, so a PUT whose
+        # namespace is outside the caller's prefixes responds 403, not a 400 key-change
+        # error.
 
         @API-037
         @relational-backend

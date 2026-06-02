@@ -417,10 +417,10 @@ internal sealed record StoredRelationshipAuthorizationBoundary(
 
 /// <summary>
 /// Runs the stored namespace authorization check for an already-resolved target against a session
-/// command executor and maps the three-case <see cref="NamespaceAuthorizationExecutionResult"/> onto a
-/// caller-specific result. The authorized case is always a null result; the two failure cases are
-/// mapped by the supplied factories, so every call site shares one execution shape and a new execution
-/// result case forces a single edit here.
+/// command executor and maps the four-case <see cref="NamespaceAuthorizationExecutionResult"/> onto a
+/// caller-specific result. The authorized case is always a null result; the three failure cases
+/// (not-authorized, invalid-authorization, stale-target) are mapped by the supplied factories, so every
+/// call site shares one execution shape and a new execution result case forces a single edit here.
 /// </summary>
 internal static class StoredNamespaceAuthorizationExecution
 {

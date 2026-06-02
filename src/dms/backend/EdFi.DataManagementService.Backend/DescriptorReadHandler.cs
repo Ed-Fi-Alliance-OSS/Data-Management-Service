@@ -26,6 +26,10 @@ internal sealed class DescriptorReadHandler(
 {
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
+
+    // The descriptor page query binds a single ResourceKeyId discriminator parameter on top of the paging
+    // parameters; see DescriptorQueryPageKeysetPlanner. Counted into the non-authorization parameter budget.
+    private const int DescriptorQueryResourceKeyParameterCount = 1;
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IReadableProfileProjector _readableProfileProjector =
@@ -47,30 +51,41 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
-        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
-        // unsupported strategies resolve before any SQL roundtrip. The stored namespace check itself
-        // runs in memory against the namespace value materialized by the existing single SELECT.
-        var authorizationPreflight = ResolveDescriptorReadAuthorization(
-            request.MappingSet,
-            request.Resource,
-            request.AuthorizationStrategyEvaluators,
-            request.RelationalAuthorizationContext,
-            NamespaceAuthorizationOperation.ReadSingle,
-            "descriptor GET",
-            "GET"
-        );
+        // StoredDocument reads are internal read-modify-write fetches that bypass per-record
+        // authorization exactly as the generic single-record path does: the caller was already
+        // authorized for the operation that triggered the fetch. Only ExternalResponse reads run the
+        // namespace authorization preflight and the in-memory stored-namespace check below.
+        NamespacePrefixParameterization? namespacePrefixParameterization = null;
 
-        switch (authorizationPreflight)
+        if (request.ReadMode != RelationalGetRequestReadMode.StoredDocument)
         {
-            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
-                return new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage);
-            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                return new GetResult.GetFailureSecurityConfiguration(configError.Errors);
-            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
-                return new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
-        }
+            // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
+            // unsupported strategies resolve before any SQL roundtrip. The stored namespace check itself
+            // runs in memory against the namespace value materialized by the existing single SELECT.
+            var authorizationPreflight = ResolveDescriptorReadAuthorization(
+                request.MappingSet,
+                request.Resource,
+                request.AuthorizationStrategyEvaluators,
+                request.RelationalAuthorizationContext,
+                NamespaceAuthorizationOperation.ReadSingle,
+                "descriptor GET",
+                "GET"
+            );
 
-        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+            switch (authorizationPreflight)
+            {
+                case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                    return new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage);
+                case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                    return new GetResult.GetFailureSecurityConfiguration(configError.Errors);
+                case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                    return new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
+            }
+
+            namespacePrefixParameterization = (
+                (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight
+            ).NamespacePrefixParameterization;
+        }
 
         RelationalCommand command;
 
@@ -126,7 +141,7 @@ internal sealed class DescriptorReadHandler(
         // value without a second SQL roundtrip. The stored-namespace mismatch and uninitialized
         // failure kinds are constructed directly here because no AUTH1 codec mediates the
         // single-record path.
-        if (proceed.NamespacePrefixParameterization is { } namespacePrefixParameterization)
+        if (namespacePrefixParameterization is not null)
         {
             var namespaceFailure = EvaluateStoredNamespace(
                 descriptorRow.Namespace,
@@ -230,6 +245,21 @@ internal sealed class DescriptorReadHandler(
             return new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null);
         }
 
+        // Descriptor queries are namespace-only, but the page query still composes the namespace prefix
+        // list with the query filter, paging, and ResourceKeyId parameters. Fail closed if that exceeds
+        // SQL Server's per-command parameter ceiling rather than letting the query fail at execution.
+        if (
+            BuildDescriptorQueryParameterBudgetFailure(
+                request.MappingSet.Key.Dialect,
+                proceed.NamespacePrefixParameterization,
+                preprocessingResult.QueryElementsInOrder.Count
+            ) is
+            { } parameterBudgetFailure
+        )
+        {
+            return parameterBudgetFailure;
+        }
+
         DescriptorQueryRowsPage queryRowsPage;
 
         try
@@ -273,6 +303,44 @@ internal sealed class DescriptorReadHandler(
                 )
                 : null
         );
+    }
+
+    /// <summary>
+    /// Returns a security-configuration failure when the descriptor page query's namespace prefix
+    /// parameters, plus its query filter, paging, and ResourceKeyId parameters, exceed SQL Server's
+    /// per-command parameter ceiling; otherwise <see langword="null"/>. The dialect gate lives in
+    /// <see cref="AuthorizationParameterBudget.ExceedsCommandParameterLimit"/>.
+    /// </summary>
+    private static QueryResult? BuildDescriptorQueryParameterBudgetFailure(
+        SqlDialect dialect,
+        NamespacePrefixParameterization? namespacePrefixParameterization,
+        int queryFilterParameterCount
+    )
+    {
+        var nonAuthorizationParameterCount =
+            queryFilterParameterCount
+            + AuthorizationParameterBudget.PaginationParameterCount
+            + DescriptorQueryResourceKeyParameterCount;
+
+        if (
+            !AuthorizationParameterBudget.ExceedsCommandParameterLimit(
+                dialect,
+                namespacePrefixParameterization,
+                claimEducationOrganizationIdParameterization: null,
+                nonAuthorizationParameterCount
+            )
+        )
+        {
+            return null;
+        }
+
+        return new QueryResult.QueryFailureSecurityConfiguration([
+            NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
+                namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
+                0,
+                nonAuthorizationParameterCount
+            ),
+        ]);
     }
 
     internal Task<DescriptorQueryRowsPage> ReadQueryRowsAsync(
@@ -706,12 +774,12 @@ internal sealed class DescriptorReadHandler(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError([
-                prefixCapExceededMessage,
+                securityConfigurationMessage,
             ]);
         }
 

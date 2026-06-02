@@ -4651,6 +4651,135 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_an_empty_page_rather_than_a_parameter_budget_failure_when_preprocessing_short_circuits()
+    {
+        // A filter that resolves to no matches (an invalid UUID) short-circuits to an empty page during
+        // preprocessing. The SQL Server parameter-budget guard must run after that short-circuit, so the
+        // empty page wins over a security-configuration failure for a command that never executes — even
+        // though the composed authorization lists would otherwise exceed the per-command parameter ceiling.
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var baseMappingSet = CreateNamespaceAndRootEdOrgMappingSet(_schoolResourceInfo);
+        var mappingSet = baseMappingSet with
+        {
+            Key = baseMappingSet.Key with { Dialect = SqlDialect.Mssql },
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Supported(),
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["id"] = CreateSupportedQueryField(
+                            "id",
+                            "$.id",
+                            "string",
+                            new RelationalQueryFieldTarget.DocumentUuid()
+                        ),
+                    },
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                ),
+            },
+        };
+        string[] namespacePrefixes = [.. Enumerable.Range(0, 1500).Select(index => $"uri://prefix-{index}/")];
+        long[] claimEducationOrganizationIds =
+        [
+            .. Enumerable.Range(0, 1500).Select(index => 100000L + index),
+        ];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: claimEducationOrganizationIds,
+            namespacePrefixes: namespacePrefixes
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], null));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_rather_than_a_parameter_budget_failure_when_planning_short_circuits()
+    {
+        // A scalar root-column filter whose value cannot convert to the column type (1.5 for an integer
+        // column) short-circuits to an empty page during planning, not preprocessing. The SQL Server
+        // parameter-budget guard runs off the final planned parameter count, after planning, so this empty
+        // page also wins over a security-configuration failure for a command that never executes — even
+        // though the composed authorization lists would otherwise exceed the per-command parameter ceiling.
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var baseMappingSet = CreateNamespaceAndRootEdOrgMappingSet(_schoolResourceInfo);
+        var mappingSet = baseMappingSet with
+        {
+            Key = baseMappingSet.Key with { Dialect = SqlDialect.Mssql },
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Supported(),
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["schoolId"] = CreateSupportedQueryField(
+                            "schoolId",
+                            "$.localEducationAgencyId",
+                            "number",
+                            new RelationalQueryFieldTarget.RootColumn(
+                                new DbColumnName("LocalEducationAgencyId")
+                            )
+                        ),
+                    },
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                ),
+            },
+        };
+        string[] namespacePrefixes = [.. Enumerable.Range(0, 1500).Select(index => $"uri://prefix-{index}/")];
+        long[] claimEducationOrganizationIds =
+        [
+            .. Enumerable.Range(0, 1500).Select(index => 100000L + index),
+        ];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("schoolId", "$.localEducationAgencyId", "1.5", "number")],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: claimEducationOrganizationIds,
+            namespacePrefixes: namespacePrefixes
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], null));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_returns_security_configuration_failure_when_query_authorization_strategy_metadata_is_invalid()
     {
         var queryRequest = CreateQueryRequest(

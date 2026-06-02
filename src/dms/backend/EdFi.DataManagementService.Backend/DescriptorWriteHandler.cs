@@ -1111,12 +1111,12 @@ internal sealed class DescriptorWriteHandler(
                 request.MappingSet.Key.Dialect,
                 request.RelationalAuthorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new DescriptorDeleteAuthorizationPreflightResult.Stop(
-                new DeleteResult.DeleteFailureSecurityConfiguration([prefixCapExceededMessage])
+                new DeleteResult.DeleteFailureSecurityConfiguration([securityConfigurationMessage])
             );
         }
 
@@ -1270,12 +1270,12 @@ internal sealed class DescriptorWriteHandler(
                 request.MappingSet.Key.Dialect,
                 request.RelationalAuthorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError([
-                prefixCapExceededMessage,
+                securityConfigurationMessage,
             ]);
         }
 

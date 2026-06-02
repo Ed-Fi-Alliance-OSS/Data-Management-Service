@@ -847,12 +847,12 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new DeleteAuthorizationPreflightResult.Stop(
-                new DeleteResult.DeleteFailureSecurityConfiguration([prefixCapExceededMessage])
+                new DeleteResult.DeleteFailureSecurityConfiguration([securityConfigurationMessage])
             );
         }
 
@@ -1147,6 +1147,32 @@ public sealed class RelationalDocumentStoreRepository(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
+        // Fail closed when the planned page query would bind more parameters than SQL Server allows. Keyed
+        // off the final planned parameter count so it covers every empty-page short-circuit — both
+        // preprocessing (e.g. an invalid-UUID filter) and planning (e.g. an invalid scalar root-column
+        // filter), which both return an empty page above before reaching here — and reflects the exact
+        // command rather than an estimate. The non-authorization count (filter + paging parameters) is the
+        // planned total minus the authorization lists, which the message reports alongside the prefix and
+        // education-organization counts.
+        var nonAuthorizationParameterCount =
+            plannedQuery.ParameterValues.Count
+            - AuthorizationParameterBudget.CountAuthorizationParameters(
+                pageQueryAuthorization?.NamespacePrefixParameterization,
+                pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization
+            );
+        if (
+            BuildQueryParameterBudgetFailure(
+                mappingSet.Key.Dialect,
+                pageQueryAuthorization?.NamespacePrefixParameterization,
+                pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization,
+                nonAuthorizationParameterCount
+            ) is
+            { } parameterBudgetFailure
+        )
+        {
+            return parameterBudgetFailure;
+        }
+
         var hydratedPage = await _documentHydrator
             .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
             .ConfigureAwait(false);
@@ -1252,12 +1278,12 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new QueryAuthorizationResolution.Complete(
-                new QueryResult.QueryFailureSecurityConfiguration([prefixCapExceededMessage])
+                new QueryResult.QueryFailureSecurityConfiguration([securityConfigurationMessage])
             );
         }
 
@@ -1298,33 +1324,6 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationshipAuthorizationResult.Authorized authorized:
-                // NamespaceBased and relationship authorization each cap their own SQL Server parameter
-                // list below 2,000, but a single page query composes both lists, so a client within both
-                // per-list caps can still push the command past SQL Server's per-command parameter ceiling.
-                // Fail closed with a security-configuration result instead of letting the query fail at
-                // execution.
-                if (
-                    namespacePrefixParameterization is not null
-                    && authorized.ClaimEducationOrganizationIdParameterization is not null
-                    && AuthorizationParameterBudget.ExceedsCombinedLimit(
-                        namespacePrefixParameterization,
-                        authorized.ClaimEducationOrganizationIdParameterization
-                    )
-                )
-                {
-                    return new QueryAuthorizationResolution.Complete(
-                        new QueryResult.QueryFailureSecurityConfiguration([
-                            NamespaceAuthorizationSecurityConfigurationMessages.CombinedAuthorizationParameterCapExceeded(
-                                namespacePrefixParameterization.ConfiguredPrefixesInOrder.Count,
-                                authorized
-                                    .ClaimEducationOrganizationIdParameterization
-                                    .ClaimEducationOrganizationIds
-                                    .Count
-                            ),
-                        ])
-                    );
-                }
-
                 return new QueryAuthorizationResolution.Proceed(
                     ComposePageQueryAuthorization(
                         PageDocumentIdAuthorizationSpecAdapter.Adapt(authorized),
@@ -1362,6 +1361,40 @@ public sealed class RelationalDocumentStoreRepository(
                     $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
                 );
         }
+    }
+
+    /// <summary>
+    /// Returns a security-configuration failure when the authorization parameters this query binds, plus
+    /// its filter and paging parameters, exceed SQL Server's per-command parameter ceiling; otherwise
+    /// <see langword="null"/>. Either authorization parameterization may be <see langword="null"/>, so this
+    /// covers the namespace-only, relationship-only, and composed query shapes uniformly.
+    /// </summary>
+    private static QueryResult? BuildQueryParameterBudgetFailure(
+        SqlDialect dialect,
+        NamespacePrefixParameterization? namespacePrefixParameterization,
+        AuthorizationClaimEducationOrganizationIdParameterization? claimEducationOrganizationIdParameterization,
+        int nonAuthorizationParameterCount
+    )
+    {
+        if (
+            !AuthorizationParameterBudget.ExceedsCommandParameterLimit(
+                dialect,
+                namespacePrefixParameterization,
+                claimEducationOrganizationIdParameterization,
+                nonAuthorizationParameterCount
+            )
+        )
+        {
+            return null;
+        }
+
+        return new QueryResult.QueryFailureSecurityConfiguration([
+            NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
+                namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
+                claimEducationOrganizationIdParameterization?.ClaimEducationOrganizationIds.Count ?? 0,
+                nonAuthorizationParameterCount
+            ),
+        ]);
     }
 
     private static PageDocumentIdAuthorizationSpec? ComposePageQueryAuthorization(
@@ -1491,12 +1524,12 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                new UpsertResult.UpsertFailureSecurityConfiguration([prefixCapExceededMessage])
+                new UpsertResult.UpsertFailureSecurityConfiguration([securityConfigurationMessage])
             );
         }
 
@@ -1751,12 +1784,12 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                new UpdateResult.UpdateFailureSecurityConfiguration([prefixCapExceededMessage])
+                new UpdateResult.UpdateFailureSecurityConfiguration([securityConfigurationMessage])
             );
         }
 
@@ -2501,12 +2534,12 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var prefixCapExceededMessage
+                out var securityConfigurationMessage
             )
         )
         {
             return new GetByIdAuthorizationPreflightResult.Stop(
-                new GetResult.GetFailureSecurityConfiguration([prefixCapExceededMessage])
+                new GetResult.GetFailureSecurityConfiguration([securityConfigurationMessage])
             );
         }
 

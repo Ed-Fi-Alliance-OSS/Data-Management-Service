@@ -154,6 +154,29 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     }
 
     [Test]
+    public async Task It_returns_security_configuration_500_for_descriptor_get_by_id_when_a_namespace_prefix_is_empty()
+    {
+        // An empty namespace prefix cannot be parameterized into a LIKE predicate. Rather than escaping as
+        // an uncontrolled 500 from the parameterization factory, it fails closed as a controlled
+        // security-configuration result before any SQL roundtrip.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(namespacePrefixes: [""], authorizationStrategy: NamespaceStrategy())
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(NamespaceAuthorizationSecurityConfigurationMessages.InvalidNamespacePrefix);
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_returns_namespace_403_for_descriptor_get_by_id_when_the_stored_namespace_does_not_match_a_prefix()
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([
@@ -175,6 +198,32 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         var failure = result.Should().BeOfType<GetResult.GetFailureNamespaceNotAuthorized>().Which;
         failure.NamespaceFailure.FailureKind.Should().Be(NamespaceAuthorizationFailureKind.NamespaceMismatch);
         failure.NamespaceFailure.ValueSource.Should().Be(NamespaceAuthorizationFailureValueSource.Stored);
+    }
+
+    [Test]
+    public async Task It_bypasses_namespace_authorization_for_descriptor_get_by_id_stored_document_reads()
+    {
+        // StoredDocument reads are internal read-modify-write fetches that bypass per-record
+        // authorization, mirroring the generic single-record path. A stored namespace that an
+        // external response would reject with a 403 must still be returned for a StoredDocument read.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
+                ),
+            ]),
+        ]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: NamespaceStrategy(),
+                readMode: RelationalGetRequestReadMode.StoredDocument
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
     }
 
     [Test]
@@ -570,13 +619,14 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     private static DescriptorGetByIdRequest CreateGetByIdRequest(
         IReadOnlyList<string> namespacePrefixes,
         AuthorizationStrategyEvaluator authorizationStrategy,
-        SqlDialect dialect = SqlDialect.Pgsql
+        SqlDialect dialect = SqlDialect.Pgsql,
+        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse
     ) =>
         new(
             CreateMappingSet(dialect),
             _descriptorResource,
             _documentUuid,
-            RelationalGetRequestReadMode.ExternalResponse,
+            readMode,
             [authorizationStrategy],
             readableProfileProjectionContext: null,
             new TraceId("descriptor-get-namespace"),
