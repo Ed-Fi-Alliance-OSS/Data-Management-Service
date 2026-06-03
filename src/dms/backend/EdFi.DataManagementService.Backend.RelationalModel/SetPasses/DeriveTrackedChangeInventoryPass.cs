@@ -129,7 +129,10 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
         // Resolve identity paths to their stored columns via the shared resolver, which handles
         // reference-component identity (locally stored identity-part columns) that a plain SourceJsonPath
-        // match would miss.
+        // match would miss. A single identity path can map to multiple binding columns under key
+        // unification (e.g. Section's $.courseOfferingReference.schoolId binds both the CourseOffering and
+        // Session school columns); those are unification variants that ResolveScalarColumnModel unwraps to
+        // the same canonical storage column, so taking the first binding yields one correct value column.
         var identityColumnByPath = BuildIdentityElementMappings(resourceModel, builderContext, resource)
             .GroupBy(mapping => mapping.IdentityJsonPath, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().Column, StringComparer.Ordinal);
@@ -142,6 +145,8 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         var descriptorEdgesByPath = resourceModel
             .DescriptorEdgeSources.GroupBy(edge => edge.DescriptorValuePath.Canonical, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+        var unresolvedPaths = new List<string>();
 
         foreach (var (path, origin) in originByPath)
         {
@@ -165,6 +170,28 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             {
                 AddScalarColumn(scalar, path, origin, valueColumns, valueColumnsByOldName);
             }
+            else
+            {
+                // Every identity and securable (EdOrg / Namespace) path is expected to resolve to a
+                // stored scalar column. Failing loudly mirrors DeriveAuthorizationIndexInventoryPass and
+                // prevents an authorization-incomplete tracked-change table from being derived silently.
+                unresolvedPaths.Add(path);
+            }
+        }
+
+        if (unresolvedPaths.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Tracked-change derivation for resource '{resource.ProjectName}.{resource.ResourceName}' "
+                    + "could not resolve identity/securable path(s) to a stored column: "
+                    + string.Join(
+                        ", ",
+                        unresolvedPaths
+                            .Distinct(StringComparer.Ordinal)
+                            .OrderBy(p => p, StringComparer.Ordinal)
+                    )
+                    + "."
+            );
         }
 
         // Person securable paths (Student / Contact / Staff) -> person DocumentId columns.
@@ -520,7 +547,25 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
             var joinBaseName = BuildPersonJoinBaseName(chain);
             var joinName = joinBaseName;
-            personJoins.TryAdd(joinName, new TrackedChangePersonJoinInfo(joinName, personKind, chain));
+            if (personJoins.TryGetValue(joinName, out var existingJoin))
+            {
+                // Two person paths can legitimately collapse to the same join name when they resolve to the
+                // same chain; a name collision over a *different* chain would otherwise silently keep only
+                // the first path's join, so reject it explicitly.
+                if (existingJoin.PersonKind != personKind || !existingJoin.JoinPath.SequenceEqual(chain))
+                {
+                    throw new InvalidOperationException(
+                        $"Tracked-change derivation for resource "
+                            + $"'{concreteModel.ResourceKey.Resource.ProjectName}."
+                            + $"{concreteModel.ResourceKey.Resource.ResourceName}': person join name "
+                            + $"'{joinName}' resolves to conflicting join paths."
+                    );
+                }
+            }
+            else
+            {
+                personJoins.Add(joinName, new TrackedChangePersonJoinInfo(joinName, personKind, chain));
+            }
 
             // Nullability follows whether the first hop FK is optional (override-driven nullable securables).
             var isOldNullable = FirstStepNullable(concreteModel, chain) ?? false;

@@ -7,6 +7,8 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1177
 
 ## Description
 
+> Note: the tracked-change `CREATE TABLE` DDL and its SQL/manifest golden fixtures were implemented ahead of schedule in DMS-1175 (`12-tracked-change-inventory.md`). This story is reduced to verifying that emission against the acceptance criteria below; the green-field rendering work is already complete.
+
 Emit tracked-change tables from `TrackedChangeTableInfo` for PostgreSQL and SQL Server.
 
 Each regular tracked-change table follows the `tracked_changes_<schema>.<resource>` naming convention. Descriptor tombstones and descriptor key-change metadata use the shared `tracked_changes_edfi.Descriptor` table.

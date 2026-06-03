@@ -516,6 +516,63 @@ public class Given_Deterministic_Tracked_Change_Derivation
                 );
         }
     }
+
+    /// <summary>
+    /// It should emit value columns in a stable, pinned order. Column order derives from identity-then-
+    /// securable path enumeration; this guards against a refactor that silently reorders columns (which
+    /// would otherwise only surface as a golden-fixture diff).
+    /// </summary>
+    [Test]
+    public void It_should_order_value_columns_deterministically()
+    {
+        var set = TrackedChangeDerivationTestHelpers.BuildSet(
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema()
+        );
+
+        var enrollment = TrackedChangeDerivationTestHelpers.TableBySourceName(set, "Enrollment");
+
+        enrollment
+            .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
+            .Should()
+            .Equal(
+                "Old_School_SchoolId",
+                "Old_School_EducationOrganizationId",
+                "Old_Student_StudentUniqueId"
+            );
+    }
+}
+
+/// <summary>
+/// Test fixture for the strict-resolution invariant: every identity and securable path must resolve to a
+/// stored column, otherwise derivation fails loudly rather than silently dropping the column.
+/// </summary>
+[TestFixture]
+public class Given_An_Unresolvable_Securable_Path_For_Tracked_Change_Derivation
+{
+    /// <summary>
+    /// It should throw rather than silently omit a securable path that resolves to no stored column.
+    /// </summary>
+    [Test]
+    public void It_should_throw_when_a_securable_path_has_no_stored_column()
+    {
+        var schema = ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema();
+        var enrollment = (JsonObject)((JsonObject)schema["resourceSchemas"]!)["enrollments"]!;
+
+        var securableElements = enrollment["securableElements"] as JsonObject;
+        if (securableElements is null)
+        {
+            securableElements = new JsonObject();
+            enrollment["securableElements"] = securableElements;
+        }
+        securableElements["Namespace"] = new JsonArray { "$.unresolvableSecurablePath" };
+
+        var build = () => TrackedChangeDerivationTestHelpers.BuildSet(schema);
+
+        build
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*could not resolve identity/securable path*$.unresolvableSecurablePath*");
+    }
 }
 
 /// <summary>

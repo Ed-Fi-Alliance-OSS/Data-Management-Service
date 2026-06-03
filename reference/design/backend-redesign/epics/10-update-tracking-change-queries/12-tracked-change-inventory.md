@@ -33,6 +33,7 @@ Note: The derived relational model changes described here and in the `change-que
 
 ## Out of Scope
 
-- Rendering tracked-change tables.
-- Rendering tracked-change trigger SQL.
+- Rendering tracked-change trigger SQL (tombstone and key-change `INSERT`s), which is handled by `16-tracked-change-trigger-rendering.md` (DMS-1179).
 - Deriving `ReadChangesAuthorizationViewInfo`, which is handled by `13-readchanges-authorization-inventory.md`.
+
+Note: emitting the tracked-change `CREATE TABLE` DDL (originally scoped to `14-tracked-change-table-ddl.md` / DMS-1177) was pulled forward into this story so the derived inventory has concrete SQL/manifest golden coverage; the `tracked_changes_*` tables are rendered here. Only trigger-population SQL remains deferred.
