@@ -4,28 +4,32 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.DataModel.Model.Information;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
-public class InformationModule : IEndpointModule
+public class InformationModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("", GetInformation);
     }
 
-    private static IResult GetInformation(HttpContext httpContext)
+    private IResult GetInformation(HttpContext httpContext)
     {
         var baseUrl =
             $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";
         var urls = new ApiUrls($"{baseUrl}/metadata/specifications");
+        var specificationVersion = appSettings.Value.SpecificationVersion.ToLowerInvariant();
         var response = new ApiInformation(
             ApiVersionDetails.Version,
             ApiVersionDetails.ApplicationName,
             ApiVersionDetails.InformationalVersion,
             ApiVersionDetails.Build,
-            urls
+            urls,
+            specificationVersion
         );
         return Results.Ok(response);
     }

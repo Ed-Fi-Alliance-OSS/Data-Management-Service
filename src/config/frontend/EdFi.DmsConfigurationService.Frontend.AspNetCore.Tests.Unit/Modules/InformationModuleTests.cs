@@ -60,6 +60,11 @@ public class InformationModuleTests
         build.GetString().Should().NotBeNullOrEmpty();
         jsonDoc.RootElement.TryGetProperty("urls", out var urls).Should().BeTrue();
         urls.TryGetProperty("openApiMetadata", out _).Should().BeTrue();
+        jsonDoc
+            .RootElement.TryGetProperty("specificationVersion", out var specificationVersion)
+            .Should()
+            .BeTrue();
+        specificationVersion.GetString().Should().BeOneOf("v1", "v2", "v3");
     }
 
     [Test]
@@ -87,6 +92,70 @@ public class InformationModuleTests
             .BeTrue(
                 because: $"build value '{buildValue}' should match the four-part numeric version pattern"
             );
+    }
+
+    [Test]
+    public async Task Information_Endpoint_Returns_SpecificationVersion_From_Config()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:SpecificationVersion"] = "v2" }
+                    );
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/");
+        var content = await response.Content.ReadAsStringAsync();
+        var jsonDoc = JsonDocument.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        jsonDoc
+            .RootElement.TryGetProperty("specificationVersion", out var specificationVersion)
+            .Should()
+            .BeTrue();
+        specificationVersion.GetString().Should().Be("v2");
+    }
+
+    [Test]
+    public async Task Information_Endpoint_Normalizes_SpecificationVersion_To_Lowercase()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:SpecificationVersion"] = "V2" }
+                    );
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/");
+        var content = await response.Content.ReadAsStringAsync();
+        var jsonDoc = JsonDocument.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        jsonDoc
+            .RootElement.TryGetProperty("specificationVersion", out var specificationVersion)
+            .Should()
+            .BeTrue();
+        specificationVersion.GetString().Should().Be("v2");
     }
 
     [Test]

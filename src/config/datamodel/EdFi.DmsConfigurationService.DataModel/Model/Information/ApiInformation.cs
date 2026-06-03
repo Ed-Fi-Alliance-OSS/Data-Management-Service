@@ -12,7 +12,8 @@ public class ApiInformation
         string applicationName,
         string informationalVersion,
         string build,
-        ApiUrls urls
+        ApiUrls urls,
+        string specificationVersion
     )
     {
         Version = version;
@@ -20,6 +21,7 @@ public class ApiInformation
         InformationalVersion = informationalVersion;
         Build = build;
         Urls = urls;
+        SpecificationVersion = specificationVersion;
     }
 
     public string Version { get; }
@@ -31,6 +33,8 @@ public class ApiInformation
     public string Build { get; }
 
     public ApiUrls Urls { get; }
+
+    public string SpecificationVersion { get; }
 }
 
 public class ApiUrls
