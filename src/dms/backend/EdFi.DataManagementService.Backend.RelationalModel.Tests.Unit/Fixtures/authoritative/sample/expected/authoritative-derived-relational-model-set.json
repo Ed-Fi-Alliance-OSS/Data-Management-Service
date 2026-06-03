@@ -56813,6 +56813,7 @@
           "old_column": "Old_AssessmentIdentifier_Unified",
           "new_column": "New_AssessmentIdentifier_Unified",
           "source_json_path": "$.assessmentReference.assessmentIdentifier",
+          "canonical_storage_column": "AssessmentIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -56826,6 +56827,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.assessmentReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -57238,6 +57240,7 @@
           "old_column": "Old_FiscalYear_Unified",
           "new_column": "New_FiscalYear_Unified",
           "source_json_path": "$.fiscalYear",
+          "canonical_storage_column": "FiscalYear_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -57878,6 +57881,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.schoolReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -58351,7 +58355,7 @@
             "max_length": 255
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity, SecurableElement"
         },
         {
           "old_column": "Old_CodeValue",
@@ -59625,6 +59629,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.gradingPeriodReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -59637,6 +59642,7 @@
           "old_column": "Old_SchoolYear_Unified",
           "new_column": "New_SchoolYear_Unified",
           "source_json_path": "$.gradingPeriodReference.schoolYear",
+          "canonical_storage_column": "SchoolYear_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -60510,6 +60516,7 @@
           "old_column": "Old_FiscalYear_Unified",
           "new_column": "New_FiscalYear_Unified",
           "source_json_path": "$.fiscalYear",
+          "canonical_storage_column": "FiscalYear_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -61324,6 +61331,7 @@
           "old_column": "Old_AssessmentIdentifier_Unified",
           "new_column": "New_AssessmentIdentifier_Unified",
           "source_json_path": "$.assessmentReference.assessmentIdentifier",
+          "canonical_storage_column": "AssessmentIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -61337,6 +61345,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.assessmentReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -62291,6 +62300,7 @@
           "old_column": "Old_ProgramEducationOrganizationId_Unified",
           "new_column": "New_ProgramEducationOrganizationId_Unified",
           "source_json_path": "$.programEvaluationReference.programEducationOrganizationId",
+          "canonical_storage_column": "ProgramEducationOrganizationId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -62331,6 +62341,7 @@
           "old_column": "Old_ProgramEvaluationTitle_Unified",
           "new_column": "New_ProgramEvaluationTitle_Unified",
           "source_json_path": "$.programEvaluationReference.programEvaluationTitle",
+          "canonical_storage_column": "ProgramEvaluationTitle_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -62372,6 +62383,7 @@
           "old_column": "Old_ProgramName_Unified",
           "new_column": "New_ProgramName_Unified",
           "source_json_path": "$.programEvaluationReference.programName",
+          "canonical_storage_column": "ProgramName_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -62933,6 +62945,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.schoolReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -63162,6 +63175,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.courseOfferingReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -63282,6 +63296,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.calendarDateReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -63294,6 +63309,7 @@
           "old_column": "Old_SchoolYear_Unified",
           "new_column": "New_SchoolYear_Unified",
           "source_json_path": "$.calendarDateReference.schoolYear",
+          "canonical_storage_column": "SchoolYear_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -64031,6 +64047,7 @@
           "old_column": "Old_StaffUniqueId_Unified",
           "new_column": "New_StaffUniqueId_Unified",
           "source_json_path": "$.staffReference.staffUniqueId",
+          "canonical_storage_column": "StaffUniqueId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -64719,6 +64736,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.schoolReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -65675,6 +65693,7 @@
           "old_column": "Old_StudentUniqueId_Unified",
           "new_column": "New_StudentUniqueId_Unified",
           "source_json_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+          "canonical_storage_column": "StudentUniqueId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -65790,6 +65809,7 @@
           "old_column": "Old_AssessmentIdentifier_Unified",
           "new_column": "New_AssessmentIdentifier_Unified",
           "source_json_path": "$.assessmentBatteryPartReference.assessmentIdentifier",
+          "canonical_storage_column": "AssessmentIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -65803,6 +65823,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.assessmentBatteryPartReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -69069,6 +69090,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.schoolReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -69211,6 +69233,7 @@
           "old_column": "Old_SchoolId_Unified",
           "new_column": "New_SchoolId_Unified",
           "source_json_path": "$.schoolReference.schoolId",
+          "canonical_storage_column": "SchoolId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -70993,6 +71016,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.surveyReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71006,6 +71030,7 @@
           "old_column": "Old_SurveyIdentifier_Unified",
           "new_column": "New_SurveyIdentifier_Unified",
           "source_json_path": "$.surveyReference.surveyIdentifier",
+          "canonical_storage_column": "SurveyIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71064,6 +71089,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.surveyQuestionReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71090,6 +71116,7 @@
           "old_column": "Old_SurveyIdentifier_Unified",
           "new_column": "New_SurveyIdentifier_Unified",
           "source_json_path": "$.surveyQuestionReference.surveyIdentifier",
+          "canonical_storage_column": "SurveyIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71688,6 +71715,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.surveyResponseReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71701,6 +71729,7 @@
           "old_column": "Old_SurveyIdentifier_Unified",
           "new_column": "New_SurveyIdentifier_Unified",
           "source_json_path": "$.surveyResponseReference.surveyIdentifier",
+          "canonical_storage_column": "SurveyIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71797,6 +71826,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.surveySectionResponseReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71810,6 +71840,7 @@
           "old_column": "Old_SurveyIdentifier_Unified",
           "new_column": "New_SurveyIdentifier_Unified",
           "source_json_path": "$.surveySectionResponseReference.surveyIdentifier",
+          "canonical_storage_column": "SurveyIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71907,6 +71938,7 @@
           "old_column": "Old_Namespace_Unified",
           "new_column": "New_Namespace_Unified",
           "source_json_path": "$.surveySectionResponseReference.namespace",
+          "canonical_storage_column": "Namespace_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {
@@ -71920,6 +71952,7 @@
           "old_column": "Old_SurveyIdentifier_Unified",
           "new_column": "New_SurveyIdentifier_Unified",
           "source_json_path": "$.surveySectionResponseReference.surveyIdentifier",
+          "canonical_storage_column": "SurveyIdentifier_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {

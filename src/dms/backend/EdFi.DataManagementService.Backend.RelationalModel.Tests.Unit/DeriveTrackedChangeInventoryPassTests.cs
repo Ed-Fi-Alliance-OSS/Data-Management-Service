@@ -685,6 +685,47 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
     }
 
     /// <summary>
+    /// It should record the canonical storage column on a key-unified tracked value column, and leave it
+    /// null for a column that does not participate in key unification.
+    /// </summary>
+    [Test]
+    public void It_should_record_the_canonical_storage_column_for_key_unified_columns()
+    {
+        var courseOffering = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "CourseOffering");
+
+        var unified = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
+            courseOffering,
+            "Old_SchoolId_Unified"
+        );
+        unified.CanonicalStorageColumn.Should().Be(new DbColumnName("SchoolId_Unified"));
+
+        var nonUnified = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(
+            courseOffering,
+            "Old_LocalCourseCode"
+        );
+        nonUnified.CanonicalStorageColumn.Should().BeNull();
+    }
+
+    /// <summary>
+    /// It should mark the shared descriptor Namespace as both identity and securable element (descriptors
+    /// are namespace-secured), while CodeValue remains identity-only.
+    /// </summary>
+    [Test]
+    public void It_should_carry_securable_origin_on_the_shared_descriptor_namespace()
+    {
+        var descriptor = _set.TrackedChangeTablesInNameOrder.Single(table =>
+            table.Kind == TrackedChangeTableKind.SharedDescriptor
+        );
+
+        var ns = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "Old_Namespace");
+        ns.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.Identity);
+        ns.Origin.Should().HaveFlag(TrackedChangeColumnOrigin.SecurableElement);
+
+        var codeValue = TrackedChangeDerivationTestHelpers.ValueColumnByOldName(descriptor, "Old_CodeValue");
+        codeValue.Origin.Should().Be(TrackedChangeColumnOrigin.Identity);
+    }
+
+    /// <summary>
     /// It should never repeat an Old_ value-column name within any derived tracked-change table.
     /// </summary>
     [Test]

@@ -160,10 +160,10 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                 continue;
             }
 
-            var columnModel = ResolveScalarColumnModel(resourceModel, root, path, identityColumnByPath);
-            if (columnModel is not null)
+            var resolved = ResolveScalarColumnModel(resourceModel, root, path, identityColumnByPath);
+            if (resolved is { } scalar)
             {
-                AddScalarColumn(columnModel, path, origin, valueColumns, valueColumnsByOldName);
+                AddScalarColumn(scalar, path, origin, valueColumns, valueColumnsByOldName);
             }
         }
 
@@ -199,7 +199,9 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             return null;
         }
 
-        // The shared descriptor table tracks its own Namespace/CodeValue identity.
+        // The shared descriptor table tracks its own Namespace/CodeValue identity. Namespace is also a
+        // securable element on descriptor resources, so it carries both origins when any descriptor
+        // declares it; CodeValue is identity-only.
         var valueColumns = new[]
         {
             BuildValueColumn(
@@ -208,7 +210,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                 descriptorValueTypes.Namespace,
                 isOldNullable: false,
                 TrackedChangeColumnRole.Scalar,
-                TrackedChangeColumnOrigin.Identity
+                DescriptorNamespaceOrigin(context)
             ),
             BuildValueColumn(
                 "CodeValue",
@@ -230,6 +232,33 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             [],
             []
         );
+    }
+
+    /// <summary>
+    /// Computes the shared descriptor <c>Namespace</c> column origin: always identity, plus securable element
+    /// when any descriptor resource declares <c>$.namespace</c> as a namespace securable element.
+    /// </summary>
+    private static TrackedChangeColumnOrigin DescriptorNamespaceOrigin(
+        RelationalModelSetBuilderContext context
+    )
+    {
+        var origin = TrackedChangeColumnOrigin.Identity;
+
+        foreach (var descriptor in context.ConcreteResourcesInNameOrder)
+        {
+            if (descriptor.StorageKind != ResourceStorageKind.SharedDescriptorTable)
+            {
+                continue;
+            }
+
+            if (descriptor.SecurableElements.Namespace.Contains("$.namespace", StringComparer.Ordinal))
+            {
+                origin |= TrackedChangeColumnOrigin.SecurableElement;
+                break;
+            }
+        }
+
+        return origin;
     }
 
     /// <summary>
@@ -270,11 +299,17 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
+    /// A scalar source column resolved to its stored model, tracking whether key unification was unwrapped
+    /// so the canonical storage column can be recorded on the tracked-change column.
+    /// </summary>
+    private readonly record struct ResolvedScalarColumn(DbColumnModel Column, bool IsUnified);
+
+    /// <summary>
     /// Resolves a canonical source path to its stored (canonical, unified-alias-unwrapped) scalar column.
     /// Prefers the identity resolver's column when the path is an identity path (handles reference-component
     /// identity); otherwise matches a column by <see cref="DbColumnModel.SourceJsonPath"/>.
     /// </summary>
-    private static DbColumnModel? ResolveScalarColumnModel(
+    private static ResolvedScalarColumn? ResolveScalarColumnModel(
         RelationalResourceModel resourceModel,
         DbTableModel root,
         string canonicalPath,
@@ -306,9 +341,13 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves a column model to its canonical stored column model when it is a unified alias.
+    /// Resolves a column model to its canonical stored column model when it is a unified alias, reporting
+    /// whether the alias was unwrapped so the caller can record the canonical storage column.
     /// </summary>
-    private static DbColumnModel ResolveCanonicalColumnModel(DbColumnModel columnModel, DbTableModel table)
+    private static ResolvedScalarColumn ResolveCanonicalColumnModel(
+        DbColumnModel columnModel,
+        DbTableModel table
+    )
     {
         if (columnModel.Storage is ColumnStorage.UnifiedAlias alias)
         {
@@ -317,23 +356,23 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             );
             if (canonical is not null)
             {
-                return canonical;
+                return new ResolvedScalarColumn(canonical, IsUnified: true);
             }
         }
 
-        return columnModel;
+        return new ResolvedScalarColumn(columnModel, IsUnified: false);
     }
 
     private static void AddScalarColumn(
-        DbColumnModel columnModel,
+        ResolvedScalarColumn resolved,
         string sourcePath,
         TrackedChangeColumnOrigin origin,
         List<TrackedChangeColumnInfo> valueColumns,
         Dictionary<string, int> valueColumnsByOldName
     )
     {
-        var canonicalStorageColumn =
-            columnModel.Storage is ColumnStorage.UnifiedAlias ? columnModel.ColumnName : (DbColumnName?)null;
+        var columnModel = resolved.Column;
+        var canonicalStorageColumn = resolved.IsUnified ? columnModel.ColumnName : (DbColumnName?)null;
 
         var entry = BuildValueColumn(
             columnModel.ColumnName.Value,

@@ -2136,6 +2136,7 @@
           "old_column": "Old_StudentUniqueId_Unified",
           "new_column": "New_StudentUniqueId_Unified",
           "source_json_path": "$.resourceAReference.studentUniqueId",
+          "canonical_storage_column": "StudentUniqueId_Unified",
           "is_old_column_nullable": false,
           "is_new_column_nullable": true,
           "scalar_type": {

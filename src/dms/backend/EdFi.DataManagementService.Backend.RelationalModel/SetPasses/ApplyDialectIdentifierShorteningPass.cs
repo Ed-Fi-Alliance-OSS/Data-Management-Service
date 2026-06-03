@@ -2151,6 +2151,21 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             );
         }
 
+        // Derived tracked-change schemas (tracked_changes_<ProjectSchema>) are shortened independently of
+        // their source project schema, so two distinct project schemas can yield colliding tracked-change
+        // schemas; register them so the collision is detected.
+        foreach (var trackedTable in context.TrackedChangeInventory)
+        {
+            var schema = trackedTable.Table.Schema.Value;
+
+            if (schemaOrigins.ContainsKey(schema))
+            {
+                continue;
+            }
+
+            schemaOrigins[schema] = BuildOrigin($"tracked-change schema '{schema}'", null, null);
+        }
+
         foreach (var entry in schemaOrigins.OrderBy(item => item.Key, StringComparer.Ordinal))
         {
             detector.RegisterSchema(new DbSchemaName(entry.Key), entry.Value);
