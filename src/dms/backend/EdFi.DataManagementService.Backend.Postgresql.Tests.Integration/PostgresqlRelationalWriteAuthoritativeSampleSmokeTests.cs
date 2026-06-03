@@ -149,14 +149,10 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
         ResourceSchema baseResourceSchema,
         ResourceInfo extensionResourceInfo,
         ResourceSchema extensionResourceSchema,
-        MappingSet mappingSet,
-        long favoriteProgramTypeDescriptorId
+        MappingSet mappingSet
     )
     {
-        var extensionDocumentReferences = CreateExtensionDocumentReferences(
-            requestBody,
-            favoriteProgramTypeDescriptorId
-        );
+        var extensionDocumentReferences = CreateExtensionDocumentReferences(requestBody);
 
         return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
@@ -230,10 +226,7 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
         return string.Join(" | ", documentFailures.Concat(descriptorFailures));
     }
 
-    private static IReadOnlyList<DocumentReference> CreateExtensionDocumentReferences(
-        JsonNode requestBody,
-        long favoriteProgramTypeDescriptorId
-    )
+    private static IReadOnlyList<DocumentReference> CreateExtensionDocumentReferences(JsonNode requestBody)
     {
         var favoriteProgramReference = requestBody["_ext"]?["sample"]?["favoriteProgramReference"];
 
@@ -246,11 +239,18 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
             ?["educationOrganizationId"]?.GetValue<long>()
             .ToString(CultureInfo.InvariantCulture);
         var programName = favoriteProgramReference["programName"]?.GetValue<string>();
+        var programTypeDescriptor = favoriteProgramReference["programTypeDescriptor"]
+            ?.GetValue<string>()
+            .ToLowerInvariant();
 
-        if (string.IsNullOrWhiteSpace(educationOrganizationId) || string.IsNullOrWhiteSpace(programName))
+        if (
+            string.IsNullOrWhiteSpace(educationOrganizationId)
+            || string.IsNullOrWhiteSpace(programName)
+            || string.IsNullOrWhiteSpace(programTypeDescriptor)
+        )
         {
             throw new InvalidOperationException(
-                "Expected favoriteProgramReference and educationOrganizationReference to be present."
+                "Expected favoriteProgramReference and educationOrganizationReference to contain all identity members."
             );
         }
 
@@ -266,10 +266,7 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
                 educationOrganizationId
             ),
             new DocumentIdentityElement(new JsonPath("$.programName"), programName),
-            new DocumentIdentityElement(
-                new JsonPath("$.programTypeDescriptor"),
-                favoriteProgramTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-            ),
+            new DocumentIdentityElement(new JsonPath("$.programTypeDescriptor"), programTypeDescriptor),
         ]);
 
         return
@@ -903,8 +900,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 _baseResourceSchema,
                 _extensionResourceInfo,
                 _extensionResourceSchema,
-                _mappingSet,
-                _seedData.ProgramTypeDescriptorDocumentId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -947,8 +943,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 _baseResourceSchema,
                 _extensionResourceInfo,
                 _extensionResourceSchema,
-                _mappingSet,
-                _seedData.ProgramTypeDescriptorDocumentId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -991,8 +986,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 _baseResourceSchema,
                 _extensionResourceInfo,
                 _extensionResourceSchema,
-                _mappingSet,
-                _seedData.ProgramTypeDescriptorDocumentId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -1291,7 +1285,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 ("$.programName", "Robotics Club"),
                 (
                     "$.programTypeDescriptor",
-                    programTypeDescriptorDocumentId.ToString(CultureInfo.InvariantCulture)
+                    "uri://ed-fi.org/ProgramTypeDescriptor#Extracurricular".ToLowerInvariant()
                 )
             ),
             primaryProgramDocumentId,
@@ -1317,7 +1311,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 ("$.programName", "STEM Lab"),
                 (
                     "$.programTypeDescriptor",
-                    programTypeDescriptorDocumentId.ToString(CultureInfo.InvariantCulture)
+                    "uri://ed-fi.org/ProgramTypeDescriptor#Extracurricular".ToLowerInvariant()
                 )
             ),
             secondaryProgramDocumentId,
@@ -1484,11 +1478,34 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         short resourceKeyId
     )
     {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
+
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
+            VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
             new NpgsqlParameter("referentialId", referentialId.Value),
             new NpgsqlParameter("documentId", documentId),
@@ -2041,8 +2058,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
                 _baseResourceSchema,
                 _extensionResourceInfo,
                 _extensionResourceSchema,
-                _mappingSet,
-                0
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -2205,11 +2221,34 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
         short resourceKeyId
     )
     {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
+
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
+            VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
             new NpgsqlParameter("referentialId", referentialId.Value),
             new NpgsqlParameter("documentId", documentId),

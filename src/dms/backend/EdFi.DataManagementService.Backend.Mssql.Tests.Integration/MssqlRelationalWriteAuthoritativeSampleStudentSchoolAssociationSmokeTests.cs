@@ -137,12 +137,11 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
         JsonNode requestBody,
         ResourceInfo resourceInfo,
         ResourceSchema resourceSchema,
-        MappingSet mappingSet,
-        long graduationPlanTypeDescriptorId
+        MappingSet mappingSet
     )
     {
         var (alternativeGraduationPlanReferences, alternativeGraduationPlanReferenceArrays) =
-            CreateAlternativeGraduationPlanDocumentReferences(requestBody, graduationPlanTypeDescriptorId);
+            CreateAlternativeGraduationPlanDocumentReferences(requestBody);
         var documentInfo = RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
             resourceInfo,
@@ -254,10 +253,7 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
     private static (
         IReadOnlyList<DocumentReference> DocumentReferences,
         IReadOnlyList<DocumentReferenceArray> DocumentReferenceArrays
-    ) CreateAlternativeGraduationPlanDocumentReferences(
-        JsonNode requestBody,
-        long graduationPlanTypeDescriptorId
-    )
+    ) CreateAlternativeGraduationPlanDocumentReferences(JsonNode requestBody)
     {
         var alternativeGraduationPlans = requestBody["alternativeGraduationPlans"] as JsonArray;
 
@@ -271,7 +267,6 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
             new ResourceName("GraduationPlan"),
             false
         );
-        var descriptorValue = graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture);
         List<DocumentReference> documentReferences = [];
 
         for (var index = 0; index < alternativeGraduationPlans.Count; index++)
@@ -291,10 +286,14 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
             var graduationSchoolYear = reference["graduationSchoolYear"]
                 ?.GetValue<int>()
                 .ToString(CultureInfo.InvariantCulture);
+            var graduationPlanTypeDescriptor = reference["graduationPlanTypeDescriptor"]
+                ?.GetValue<string>()
+                .ToLowerInvariant();
 
             if (
                 string.IsNullOrWhiteSpace(educationOrganizationId)
                 || string.IsNullOrWhiteSpace(graduationSchoolYear)
+                || string.IsNullOrWhiteSpace(graduationPlanTypeDescriptor)
             )
             {
                 throw new InvalidOperationException(
@@ -307,7 +306,10 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
                     new JsonPath("$.educationOrganizationReference.educationOrganizationId"),
                     educationOrganizationId
                 ),
-                new DocumentIdentityElement(new JsonPath("$.graduationPlanTypeDescriptor"), descriptorValue),
+                new DocumentIdentityElement(
+                    new JsonPath("$.graduationPlanTypeDescriptor"),
+                    graduationPlanTypeDescriptor
+                ),
                 new DocumentIdentityElement(
                     new JsonPath("$.graduationSchoolYearTypeReference.schoolYear"),
                     graduationSchoolYear
@@ -474,7 +476,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
     private ResourceSchema _resourceSchema = null!;
-    private MssqlStudentSchoolAssociationSeedData _seedData = null!;
     private UpsertResult _createResult = null!;
     private GetResult _getResultAfterCreate = null!;
     private GetResult _profiledGetResultAfterCreate = null!;
@@ -520,7 +521,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         _databaseLease = await _baselineDatabase.AcquireRestoredDatabaseAsync();
         _database = _databaseLease.Database;
         _serviceProvider = MssqlStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
-        _seedData = await SeedReferenceDataAsync();
+        await SeedReferenceDataAsync();
         await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
         var requestBody =
@@ -530,8 +531,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             requestBody,
             _resourceInfo,
             _resourceSchema,
-            _mappingSet,
-            _seedData.GraduationPlanTypeDescriptorId
+            _mappingSet
         );
 
         _createResult = await ExecuteCreateAsync(
@@ -1188,10 +1188,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     FoundationGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -1221,10 +1218,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     EndorsementGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -1547,15 +1541,32 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         short resourceKeyId
     )
     {
-        await _database.ExecuteNonQueryAsync(
+        var rows = await _database.QueryRowsAsync(
             """
-            DELETE FROM [dms].[ReferentialIdentity]
+            SELECT [ReferentialId]
+            FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] = @documentId
               AND [ResourceKeyId] = @resourceKeyId;
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId)
+        );
 
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [ReferentialId] = @referentialId;
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
 
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
+        await _database.ExecuteNonQueryAsync(
+            """
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,

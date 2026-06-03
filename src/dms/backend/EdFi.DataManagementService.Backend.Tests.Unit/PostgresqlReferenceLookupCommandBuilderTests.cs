@@ -95,15 +95,28 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
                     RelationalAccessTestData.CreateSchoolLookup(CreateReferentialId(1)),
                     RelationalAccessTestData.CreateEducationOrganizationLookup(CreateReferentialId(2)),
                     RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(CreateReferentialId(3)),
+                    RelationalAccessTestData.CreateStudentAcademicRecordLookup(CreateReferentialId(4)),
+                    RelationalAccessTestData.CreateSchoolClassificationLookup(CreateReferentialId(5)),
                 ]
             )
         );
 
         command.CommandText.Should().Contain("FROM \"edfi\".\"School\" source");
         command.CommandText.Should().Contain("FROM \"edfi\".\"EducationOrganization_View\" source");
+        command.CommandText.Should().Contain("FROM \"edfi\".\"StudentAcademicRecord\" source");
+        command.CommandText.Should().Contain("FROM \"edfi\".\"SchoolClassification_View\" source");
         command.CommandText.Should().Contain("'$.schoolId='");
         command.CommandText.Should().Contain("'$.educationOrganizationId='");
         command.CommandText.Should().Contain("'$.descriptor=' || lower(descriptor.\"Uri\")");
+        command.CommandText.Should().Contain("'$.termDescriptor='");
+        command.CommandText.Should().Contain("'$.schoolTypeDescriptor='");
+        command.CommandText.Should().Contain("FROM dms.\"Descriptor\" descriptor");
+        command
+            .CommandText.Should()
+            .Contain("descriptor.\"DocumentId\" = source.\"TermDescriptor_DescriptorId\"");
+        command
+            .CommandText.Should()
+            .Contain("descriptor.\"DocumentId\" = source.\"SchoolTypeDescriptor_DescriptorId\"");
     }
 
     [Test]

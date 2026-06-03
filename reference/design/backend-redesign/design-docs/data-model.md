@@ -192,6 +192,13 @@ Maps `ReferentialId` → `DocumentId` (replaces today’s `dms.Alias`), includin
 
 Rationale for retaining `ReferentialId` in this redesign: see [overview.md#Why keep ReferentialId](overview.md#why-keep-referentialid).
 
+`ReferentialId` hash input is always the Core/API `DocumentIdentity` value domain, not the raw relational storage domain.
+For descriptor-valued identity elements, relational tables store `..._DescriptorId` FKs to `dms.Descriptor(DocumentId)`,
+but `dms.ReferentialIdentity` maintenance must hash the normalized descriptor URI (`lower(dms.Descriptor.Uri)`) for that identity element.
+This keeps trigger-computed referential ids aligned with Core descriptor extraction and `ReferentialId` computation,
+where descriptor identity values are lowercased descriptor URIs rather than descriptor document ids.
+This rule applies model-wide to every resource whose natural identity includes a descriptor reference.
+
 **PostgreSQL**
 
 ```sql

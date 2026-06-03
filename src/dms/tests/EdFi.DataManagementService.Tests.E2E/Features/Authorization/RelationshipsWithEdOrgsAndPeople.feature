@@ -59,6 +59,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure client can retrieve a StudentSchoolAssociation
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -155,6 +157,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 06 Ensure client can update a StudentSchoolAssociation
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -244,6 +248,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/StudentSchoolAssociations/{id}"
              Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 09 Ensure client can delete a StudentSchoolAssociation
             Given  a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -295,6 +301,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 201
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 11 Ensure client can retrieve a Student
              When a GET request is made to "/ed-fi/students/{StudentId}"
              Then it should respond with 200
@@ -339,6 +347,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 15 Ensure client can update a Student
              When a PUT request is made to "/ed-fi/students/{StudentId}" with
                   """
@@ -378,6 +388,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 18 Ensure client can delete a Student
             Given a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
 
@@ -405,6 +417,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | 3255902001                 | Authorized PSI    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"} ] |
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3255901001, 3255902001"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 19 Ensure client can create a Student-securable
              When a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """

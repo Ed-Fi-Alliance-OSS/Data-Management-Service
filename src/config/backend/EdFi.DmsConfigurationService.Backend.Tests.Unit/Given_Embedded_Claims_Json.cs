@@ -4,8 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using FakeItEasy;
 using FluentAssertions;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
@@ -98,6 +105,66 @@ public class Given_Embedded_Claims_Json
             .Single(claimSet => claimSet["claimSetName"]!.GetValue<string>() == "SeedLoader");
 
         seedLoaderClaimSet["isSystemReserved"]!.GetValue<bool>().Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_projects_ODS_effective_people_CRUD_claim_metadata()
+    {
+        const string noFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
+        const string relationshipsWithEdOrgsOnly = "RelationshipsWithEdOrgsOnly";
+        const string relationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
+        const string relationshipsWithStudentsOnly = "RelationshipsWithStudentsOnly";
+
+        var metadata = await CreateClaimSetMetadata("EdFiSandbox");
+
+        foreach (var personClaimName in new[] { "student", "contact", "staff" }.Select(EdFiClaim))
+        {
+            AssertActionStrategies(metadata, personClaimName, "Create", noFurtherAuthorizationRequired);
+            AssertActionStrategies(metadata, personClaimName, "Read", relationshipsWithEdOrgsAndPeople);
+            AssertActionStrategies(metadata, personClaimName, "Update", relationshipsWithEdOrgsAndPeople);
+            AssertActionStrategies(metadata, personClaimName, "Delete", noFurtherAuthorizationRequired);
+        }
+
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentSchoolAssociation"),
+            "Create",
+            relationshipsWithEdOrgsOnly
+        );
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentSchoolAssociation"),
+            "Read",
+            relationshipsWithEdOrgsAndPeople
+        );
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentSchoolAssociation"),
+            "Update",
+            relationshipsWithEdOrgsAndPeople
+        );
+        AssertActionStrategies(
+            metadata,
+            EdFiClaim("studentSchoolAssociation"),
+            "Delete",
+            relationshipsWithEdOrgsAndPeople
+        );
+
+        foreach (var actionName in new[] { "Create", "Read", "Update", "Delete" })
+        {
+            AssertActionStrategies(
+                metadata,
+                EdFiClaim("studentContactAssociation"),
+                actionName,
+                relationshipsWithStudentsOnly
+            );
+            AssertActionStrategies(
+                metadata,
+                EdFiClaim("studentEducationOrganizationResponsibilityAssociation"),
+                actionName,
+                relationshipsWithEdOrgsAndPeople
+            );
+        }
     }
 
     [TestCaseSource(nameof(SeedLoaderInventorySource))]
@@ -255,6 +322,69 @@ public class Given_Embedded_Claims_Json
 
         return new SeedLoaderGrant(HasCreate: true, HasOverride: hasOverride);
     }
+
+    private async Task<ClaimSetMetadata> CreateClaimSetMetadata(string claimSetName)
+    {
+        var claimSetRepository = A.Fake<IClaimSetRepository>();
+        A.CallTo(() => claimSetRepository.QueryClaimSet(A<ClaimSetQuery>.Ignored))
+            .Returns(new ClaimSetQueryResult.Success([.. LoadClaimSetResponses()]));
+
+        var hierarchy =
+            JsonSerializer.Deserialize<List<Claim>>(
+                _claims["claimsHierarchy"]!.ToJsonString(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            ) ?? throw new InvalidOperationException("Embedded claimsHierarchy parsed to null.");
+
+        var response = await new AuthorizationMetadataResponseFactory(claimSetRepository).Create(
+            claimSetName,
+            hierarchy
+        );
+
+        return response.ClaimSets.Should().ContainSingle(c => c.ClaimSetName == claimSetName).Which;
+    }
+
+    private IReadOnlyList<ClaimSetResponse> LoadClaimSetResponses()
+    {
+        JsonArray claimSets = _claims["claimSets"]!.AsArray();
+
+        return
+        [
+            .. claimSets
+                .OfType<JsonObject>()
+                .Select(
+                    (claimSet, index) =>
+                        new ClaimSetResponse
+                        {
+                            Id = index + 1,
+                            Name = claimSet["claimSetName"]!.GetValue<string>(),
+                            IsSystemReserved = claimSet["isSystemReserved"]?.GetValue<bool>() ?? false,
+                        }
+                ),
+        ];
+    }
+
+    private static void AssertActionStrategies(
+        ClaimSetMetadata metadata,
+        string claimName,
+        string actionName,
+        params string[] expectedStrategies
+    )
+    {
+        var claim = metadata.Claims.Should().ContainSingle(c => c.Name == claimName).Which;
+        var authorization = metadata
+            .Authorizations.Should()
+            .ContainSingle(a => a.Id == claim.AuthorizationId)
+            .Which;
+        var action = authorization.Actions.Should().ContainSingle(a => a.Name == actionName).Which;
+
+        action
+            .AuthorizationStrategies.Select(static strategy => strategy.Name)
+            .Should()
+            .Equal(expectedStrategies);
+    }
+
+    private static string EdFiClaim(string claimName) =>
+        $"http://ed-fi.org/identity/claims/ed-fi/{claimName}";
 
     private static JsonObject LoadEmbeddedClaims()
     {

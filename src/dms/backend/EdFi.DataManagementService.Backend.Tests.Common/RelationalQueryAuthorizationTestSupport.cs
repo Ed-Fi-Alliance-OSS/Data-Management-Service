@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -40,6 +41,92 @@ internal sealed record AuthorizationNullableSeed(
     int AuthorizationNullableId,
     string Name,
     int? NullableSchoolId = null
+);
+
+internal sealed record StudentSeed(
+    DocumentUuid DocumentUuid,
+    string StudentUniqueId,
+    string FirstName,
+    string LastSurname
+);
+
+internal sealed record SchoolYearTypeSeed(
+    DocumentUuid DocumentUuid,
+    int SchoolYear,
+    bool CurrentSchoolYear,
+    string SchoolYearDescription
+);
+
+internal sealed record StudentSchoolAssociationSeed(
+    DocumentUuid DocumentUuid,
+    string StudentUniqueId,
+    int SchoolId,
+    int SchoolYear,
+    string EntryGradeLevelDescriptor,
+    DateOnly EntryDate
+);
+
+internal sealed record StudentAcademicRecordSeed(
+    DocumentUuid DocumentUuid,
+    int EducationOrganizationId,
+    int SchoolYear,
+    string StudentUniqueId,
+    string TermDescriptor
+);
+
+internal sealed record AuthorizationStudentAcademicRecordSeed(
+    DocumentUuid DocumentUuid,
+    int AuthorizationStudentAcademicRecordId,
+    string Name,
+    int EducationOrganizationId,
+    int SchoolYear,
+    string StudentUniqueId,
+    string TermDescriptor
+);
+
+internal sealed record AuthorizationStudentSchoolSeed(
+    DocumentUuid DocumentUuid,
+    int AuthorizationStudentSchoolId,
+    string Name,
+    int SchoolId,
+    string? StudentUniqueId
+);
+
+internal sealed record ContactSeed(
+    DocumentUuid DocumentUuid,
+    string ContactUniqueId,
+    string FirstName,
+    string LastSurname
+);
+
+internal sealed record StaffSeed(
+    DocumentUuid DocumentUuid,
+    string StaffUniqueId,
+    string FirstName,
+    string LastSurname
+);
+
+internal sealed record StudentContactAssociationSeed(
+    DocumentUuid DocumentUuid,
+    string StudentUniqueId,
+    string ContactUniqueId,
+    bool EmergencyContactStatus
+);
+
+internal sealed record StaffEducationOrganizationAssignmentAssociationSeed(
+    DocumentUuid DocumentUuid,
+    string StaffUniqueId,
+    int EducationOrganizationId,
+    string StaffClassificationDescriptor,
+    DateOnly BeginDate
+);
+
+internal sealed record StudentEducationOrganizationResponsibilityAssociationSeed(
+    DocumentUuid DocumentUuid,
+    string StudentUniqueId,
+    int EducationOrganizationId,
+    string ResponsibilityDescriptor,
+    DateOnly BeginDate
 );
 
 internal sealed record ClassPeriodReferenceSeed(string ClassPeriodName, int SchoolId);
@@ -166,6 +253,103 @@ internal static class RelationalQueryAuthorizationRequestBodies
 
         return requestBody;
     }
+
+    public static JsonNode CreateAuthorizationStudentAcademicRecordRequestBody(
+        AuthorizationStudentAcademicRecordSeed seed
+    )
+    {
+        return new JsonObject
+        {
+            ["authorizationStudentAcademicRecordId"] = seed.AuthorizationStudentAcademicRecordId,
+            ["name"] = seed.Name,
+            ["studentAcademicRecordReference"] = new JsonObject
+            {
+                ["educationOrganizationId"] = seed.EducationOrganizationId,
+                ["schoolYear"] = seed.SchoolYear,
+                ["studentUniqueId"] = seed.StudentUniqueId,
+                ["termDescriptor"] = seed.TermDescriptor,
+            },
+        };
+    }
+
+    public static JsonNode CreateAuthorizationStudentSchoolRequestBody(AuthorizationStudentSchoolSeed seed)
+    {
+        JsonObject requestBody = new()
+        {
+            ["authorizationStudentSchoolId"] = seed.AuthorizationStudentSchoolId,
+            ["name"] = seed.Name,
+            ["schoolReference"] = new JsonObject { ["schoolId"] = (long)seed.SchoolId },
+        };
+
+        if (seed.StudentUniqueId is not null)
+        {
+            requestBody["studentReference"] = new JsonObject { ["studentUniqueId"] = seed.StudentUniqueId };
+        }
+
+        return requestBody;
+    }
+
+    public static JsonNode CreateContactRequestBody(ContactSeed seed)
+    {
+        return new JsonObject
+        {
+            ["contactUniqueId"] = seed.ContactUniqueId,
+            ["firstName"] = seed.FirstName,
+            ["lastSurname"] = seed.LastSurname,
+        };
+    }
+
+    public static JsonNode CreateStaffRequestBody(StaffSeed seed)
+    {
+        return new JsonObject
+        {
+            ["staffUniqueId"] = seed.StaffUniqueId,
+            ["firstName"] = seed.FirstName,
+            ["lastSurname"] = seed.LastSurname,
+        };
+    }
+
+    public static JsonNode CreateStudentContactAssociationRequestBody(StudentContactAssociationSeed seed)
+    {
+        return new JsonObject
+        {
+            ["studentReference"] = new JsonObject { ["studentUniqueId"] = seed.StudentUniqueId },
+            ["contactReference"] = new JsonObject { ["contactUniqueId"] = seed.ContactUniqueId },
+            ["emergencyContactStatus"] = seed.EmergencyContactStatus,
+        };
+    }
+
+    public static JsonNode CreateStaffEducationOrganizationAssignmentAssociationRequestBody(
+        StaffEducationOrganizationAssignmentAssociationSeed seed
+    )
+    {
+        return new JsonObject
+        {
+            ["staffReference"] = new JsonObject { ["staffUniqueId"] = seed.StaffUniqueId },
+            ["educationOrganizationReference"] = new JsonObject
+            {
+                ["educationOrganizationId"] = seed.EducationOrganizationId,
+            },
+            ["staffClassificationDescriptor"] = seed.StaffClassificationDescriptor,
+            ["beginDate"] = seed.BeginDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        };
+    }
+
+    public static JsonNode CreateStudentEducationOrganizationResponsibilityAssociationRequestBody(
+        StudentEducationOrganizationResponsibilityAssociationSeed seed
+    )
+    {
+        return new JsonObject
+        {
+            ["studentReference"] = new JsonObject { ["studentUniqueId"] = seed.StudentUniqueId },
+            ["educationOrganizationReference"] = new JsonObject
+            {
+                ["educationOrganizationId"] = seed.EducationOrganizationId,
+            },
+            ["responsibilityDescriptor"] = seed.ResponsibilityDescriptor,
+            ["beginDate"] = seed.BeginDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        };
+    }
 }
 
 internal static class RelationalQueryAuthorizationAssertions
@@ -187,6 +371,21 @@ internal static class RelationalQueryAuthorizationAssertions
                             $"{failure.Path.Value}: {failure.Message}"
                         )
                     )
+            );
+        }
+
+        if (result is UpsertResult.UpsertFailureReference referenceFailure)
+        {
+            var documentFailures = referenceFailure.InvalidDocumentReferences.Select(static reference =>
+                $"{reference.Path.Value} -> {reference.TargetResource.ProjectName.Value}.{reference.TargetResource.ResourceName.Value} ({reference.Reason})"
+            );
+            var descriptorFailures = referenceFailure.InvalidDescriptorReferences.Select(static reference =>
+                $"{reference.Path.Value} -> {reference.TargetResource.ProjectName.Value}.{reference.TargetResource.ResourceName.Value} ({reference.Reason})"
+            );
+
+            Assert.Fail(
+                "Expected insert success but received reference failures: "
+                    + string.Join("; ", documentFailures.Concat(descriptorFailures))
             );
         }
 

@@ -19,6 +19,8 @@ public static class RelationshipAuthorizationCrudTestSupport
     public const string RootAndChildEdOrgResourceName = "AuthorizationRootChildResource";
     public const string ChildOnlyEdOrgResourceName = "AuthorizationChildOnlyResource";
     public const string NullableRootEdOrgResourceName = "AuthorizationNullableResource";
+    public const string StudentAcademicRecordResourceName = "AuthorizationStudentAcademicRecordResource";
+    public const string StudentSchoolResourceName = "AuthorizationStudentSchoolResource";
 
     public const long ClaimEducationOrganizationId = 900;
     public const long AuthorizedSchoolId = 100;
@@ -27,6 +29,11 @@ public static class RelationshipAuthorizationCrudTestSupport
 
     public const string RelationshipsWithEdOrgsOnly = "RelationshipsWithEdOrgsOnly";
     public const string RelationshipsWithEdOrgsOnlyInverted = "RelationshipsWithEdOrgsOnlyInverted";
+    public const string RelationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
+    public const string RelationshipsWithStudentsOnly = "RelationshipsWithStudentsOnly";
+    public const string RelationshipsWithPeopleOnly = "RelationshipsWithPeopleOnly";
+    public const string RelationshipsWithStudentsOnlyThroughResponsibility =
+        "RelationshipsWithStudentsOnlyThroughResponsibility";
     public const string NoFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
     public const string OwnershipBased = "OwnershipBased";
 
@@ -34,6 +41,19 @@ public static class RelationshipAuthorizationCrudTestSupport
 
     public static IReadOnlyList<string> InvertedEdOrgOnlyStrategyNames { get; } =
     [RelationshipsWithEdOrgsOnlyInverted];
+
+    public static IReadOnlyList<string> StudentsOnlyStrategyNames { get; } = [RelationshipsWithStudentsOnly];
+
+    public static IReadOnlyList<string> PeopleOnlyStrategyNames { get; } = [RelationshipsWithPeopleOnly];
+
+    public static IReadOnlyList<string> EdOrgAndPeopleStrategyNames { get; } =
+    [RelationshipsWithEdOrgsAndPeople];
+
+    public static IReadOnlyList<string> EdOrgAndPeoplePlusPeopleOnlyStrategyNames { get; } =
+    [RelationshipsWithEdOrgsAndPeople, RelationshipsWithPeopleOnly];
+
+    public static IReadOnlyList<string> StudentsOnlyThroughResponsibilityStrategyNames { get; } =
+    [RelationshipsWithStudentsOnlyThroughResponsibility];
 
     public static IReadOnlyList<string> NoFurtherAuthorizationRequiredOnlyStrategyNames { get; } =
     [NoFurtherAuthorizationRequired];

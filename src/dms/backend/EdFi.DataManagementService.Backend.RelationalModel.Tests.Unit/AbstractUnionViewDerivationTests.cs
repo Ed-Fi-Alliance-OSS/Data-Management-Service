@@ -99,6 +99,59 @@ public class Given_Abstract_Union_View_Derivation
 }
 
 /// <summary>
+/// Test fixture for descriptor-valued abstract union view identity metadata.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_View_Derivation_With_Descriptor_Identity
+{
+    private AbstractUnionViewOutputColumn _descriptorOutputColumn = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildDescriptorIdentityProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var abstractUnionView = result.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "ProgramCarrier"
+        );
+
+        _descriptorOutputColumn = abstractUnionView.OutputColumnsInSelectOrder.Single(column =>
+            column.SourceJsonPath?.Canonical == "$.programTypeDescriptor"
+        );
+    }
+
+    /// <summary>
+    /// It should preserve descriptor-reference metadata on abstract union view output columns.
+    /// </summary>
+    [Test]
+    public void It_should_preserve_descriptor_reference_metadata_on_output_columns()
+    {
+        _descriptorOutputColumn.ColumnName.Value.Should().Be("ProgramTypeDescriptor");
+        _descriptorOutputColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        _descriptorOutputColumn
+            .TargetResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"));
+        _descriptorOutputColumn.IsDescriptorReference.Should().BeTrue();
+    }
+}
+
+/// <summary>
 /// Test fixture for abstract union view derivation with widenable string max-length mismatches.
 /// </summary>
 [TestFixture]

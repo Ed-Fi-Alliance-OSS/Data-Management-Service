@@ -37,6 +37,17 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
         CancellationToken cancellationToken
     )
     {
+        if (request.PostRelationshipAuthorizationPlans is not null)
+        {
+            return await ResolvePostRelationshipAuthorizationPlansAsync(
+                    request,
+                    request.PostRelationshipAuthorizationPlans,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
         var storedRelationshipRequiresAuthorization =
             request.StoredRelationshipAuthorization
             is not (
@@ -108,6 +119,165 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                 targetResolution.ExistingTargetLocked
             );
     }
+
+    private async Task<StoredRelationshipAuthorizationBoundary> ResolvePostRelationshipAuthorizationPlansAsync(
+        RelationalWriteExecutorRequest request,
+        PostRelationshipAuthorizationPlans postRelationshipAuthorizationPlans,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (request.TargetRequest is not RelationalWriteTargetRequest.Post postTargetRequest)
+        {
+            throw new InvalidOperationException(
+                "POST relationship authorization plan selection requires a POST target request."
+            );
+        }
+
+        var targetResolution = await ResolvePostTargetAsync(
+                request,
+                postTargetRequest,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        const PostTargetReevaluationMode postTargetReevaluation = PostTargetReevaluationMode.Suppressed;
+
+        if (targetResolution.ImmediateResult is not null)
+        {
+            return new StoredRelationshipAuthorizationBoundary(
+                request,
+                targetResolution.ImmediateResult,
+                postTargetReevaluation,
+                targetResolution.ExistingTargetLocked
+            );
+        }
+
+        var executionRequest = targetResolution.ExecutionRequest with
+        {
+            PostRelationshipAuthorizationPlans = null,
+        };
+
+        switch (executionRequest.TargetContext)
+        {
+            case RelationalWriteTargetContext.CreateNew:
+                return ResolveCreateNewPostRelationshipAuthorizationPlan(
+                    executionRequest,
+                    postRelationshipAuthorizationPlans,
+                    postTargetReevaluation,
+                    targetResolution.ExistingTargetLocked
+                );
+
+            case RelationalWriteTargetContext.ExistingDocument existingTarget:
+                return await ResolveExistingPostRelationshipAuthorizationPlanAsync(
+                        executionRequest,
+                        postRelationshipAuthorizationPlans,
+                        existingTarget,
+                        postTargetReevaluation,
+                        targetResolution.ExistingTargetLocked,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+            default:
+                throw new InvalidOperationException(
+                    $"POST relationship authorization plan selection does not support target context '{executionRequest.TargetContext.GetType().Name}'."
+                );
+        }
+    }
+
+    private static StoredRelationshipAuthorizationBoundary ResolveCreateNewPostRelationshipAuthorizationPlan(
+        RelationalWriteExecutorRequest request,
+        PostRelationshipAuthorizationPlans postRelationshipAuthorizationPlans,
+        PostTargetReevaluationMode postTargetReevaluation,
+        bool existingTargetLocked
+    )
+    {
+        if (postRelationshipAuthorizationPlans.CreateNewImmediateResult is not null)
+        {
+            return new StoredRelationshipAuthorizationBoundary(
+                request,
+                postRelationshipAuthorizationPlans.CreateNewImmediateResult,
+                postTargetReevaluation,
+                existingTargetLocked
+            );
+        }
+
+        return new StoredRelationshipAuthorizationBoundary(
+            request with
+            {
+                StoredRelationshipAuthorization = null,
+                ProposedRelationshipAuthorization =
+                    postRelationshipAuthorizationPlans.CreateNewProposedRelationshipAuthorization,
+            },
+            null,
+            postTargetReevaluation,
+            existingTargetLocked
+        );
+    }
+
+    private async Task<StoredRelationshipAuthorizationBoundary> ResolveExistingPostRelationshipAuthorizationPlanAsync(
+        RelationalWriteExecutorRequest request,
+        PostRelationshipAuthorizationPlans postRelationshipAuthorizationPlans,
+        RelationalWriteTargetContext.ExistingDocument existingTarget,
+        PostTargetReevaluationMode postTargetReevaluation,
+        bool existingTargetLocked,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var existingResourcePlan = postRelationshipAuthorizationPlans.ExistingResourcePlan;
+        var executionRequest = request with
+        {
+            StoredRelationshipAuthorization = existingResourcePlan.StoredValues,
+            ProposedRelationshipAuthorization = GetExistingResourceProposedAuthorization(
+                existingResourcePlan
+            ),
+        };
+        var authorizationResult = await AuthorizeAsync(
+                executionRequest,
+                existingTarget,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return authorizationResult is null
+            ? new StoredRelationshipAuthorizationBoundary(
+                executionRequest,
+                null,
+                postTargetReevaluation,
+                existingTargetLocked
+            )
+            : new StoredRelationshipAuthorizationBoundary(
+                executionRequest,
+                authorizationResult,
+                postTargetReevaluation,
+                existingTargetLocked
+            );
+    }
+
+    private static RelationshipAuthorizationResult.Authorized? GetExistingResourceProposedAuthorization(
+        RelationshipAuthorizationUpdatePlan existingResourcePlan
+    ) =>
+        existingResourcePlan.ProposedValues switch
+        {
+            RelationshipAuthorizationResult.Authorized authorized => authorized,
+            RelationshipAuthorizationResult.NoAuthorizationRequired
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired => null,
+            RelationshipAuthorizationResult.NoClaims => null,
+            RelationshipAuthorizationResult.KnownButNotEnabled => throw new InvalidOperationException(
+                "Known-but-not-enabled POST relationship authorization results must be handled by repository preflight before executor entry."
+            ),
+            RelationshipAuthorizationResult.SecurityConfigurationError => throw new InvalidOperationException(
+                "Security-configuration POST relationship authorization results must be handled by repository preflight before executor entry."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported existing-resource POST proposed relationship authorization result '{existingResourcePlan.ProposedValues.GetType().Name}'."
+            ),
+        };
 
     private async Task<StoredRelationshipAuthorizationTargetResolution> ResolveTargetAsync(
         RelationalWriteExecutorRequest request,

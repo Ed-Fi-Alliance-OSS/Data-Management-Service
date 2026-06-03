@@ -152,12 +152,11 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
         ResourceSchema baseResourceSchema,
         ResourceInfo extensionResourceInfo,
         ResourceSchema extensionResourceSchema,
-        MappingSet mappingSet,
-        long programTypeDescriptorId
+        MappingSet mappingSet
     )
     {
         var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
-            CreateExtensionDocumentReferences(requestBody, programTypeDescriptorId);
+            CreateExtensionDocumentReferences(requestBody);
         return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
             resourceInfo,
@@ -245,7 +244,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
     private static (
         IReadOnlyList<DocumentReference> DocumentReferences,
         IReadOnlyList<DocumentReferenceArray> DocumentReferenceArrays
-    ) CreateExtensionDocumentReferences(JsonNode requestBody, long programTypeDescriptorId)
+    ) CreateExtensionDocumentReferences(JsonNode requestBody)
     {
         var relatedAssociations =
             requestBody["_ext"]?["sample"]?["relatedGeneralStudentProgramAssociations"] as JsonArray;
@@ -260,7 +259,6 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
             new ResourceName("GeneralStudentProgramAssociation"),
             false
         );
-        var descriptorValue = programTypeDescriptorId.ToString(CultureInfo.InvariantCulture);
         List<DocumentReference> documentReferences = [];
 
         for (var index = 0; index < relatedAssociations.Count; index++)
@@ -282,6 +280,9 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
                 ?.GetValue<long>()
                 .ToString(CultureInfo.InvariantCulture);
             var programName = reference["programName"]?.GetValue<string>();
+            var programTypeDescriptor = reference["programTypeDescriptor"]
+                ?.GetValue<string>()
+                .ToLowerInvariant();
             var studentUniqueId = reference["studentUniqueId"]?.GetValue<string>();
 
             if (
@@ -289,6 +290,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
                 || string.IsNullOrWhiteSpace(educationOrganizationId)
                 || string.IsNullOrWhiteSpace(programEducationOrganizationId)
                 || string.IsNullOrWhiteSpace(programName)
+                || string.IsNullOrWhiteSpace(programTypeDescriptor)
                 || string.IsNullOrWhiteSpace(studentUniqueId)
             )
             {
@@ -310,7 +312,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
                 new DocumentIdentityElement(new JsonPath("$.programReference.programName"), programName),
                 new DocumentIdentityElement(
                     new JsonPath("$.programReference.programTypeDescriptor"),
-                    descriptorValue
+                    programTypeDescriptor
                 ),
                 new DocumentIdentityElement(
                     new JsonPath("$.studentReference.studentUniqueId"),
@@ -886,8 +888,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 _baseResourceSchema,
                 _extensionResourceInfo,
                 _extensionResourceSchema,
-                _mappingSet,
-                _seedData.ProgramTypeDescriptorDocumentId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -930,8 +931,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 _baseResourceSchema,
                 _extensionResourceInfo,
                 _extensionResourceSchema,
-                _mappingSet,
-                _seedData.ProgramTypeDescriptorDocumentId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -974,8 +974,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 _baseResourceSchema,
                 _extensionResourceInfo,
                 _extensionResourceSchema,
-                _mappingSet,
-                _seedData.ProgramTypeDescriptorDocumentId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -1267,10 +1266,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
                 ("$.programName", programName),
-                (
-                    "$.programTypeDescriptor",
-                    programTypeDescriptorDocumentId.ToString(CultureInfo.InvariantCulture)
-                )
+                ("$.programTypeDescriptor", ProgramTypeDescriptorUri.ToLowerInvariant())
             ),
             programDocumentId,
             programResourceKeyId
@@ -1325,10 +1321,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
                 ("$.programReference.programName", programName),
-                (
-                    "$.programReference.programTypeDescriptor",
-                    programTypeDescriptorDocumentId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.programReference.programTypeDescriptor", ProgramTypeDescriptorUri.ToLowerInvariant()),
                 ("$.studentReference.studentUniqueId", StudentUniqueId)
             ),
             documentId,
@@ -1806,11 +1799,34 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         short resourceKeyId
     )
     {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
+
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
+            VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
             new NpgsqlParameter("referentialId", referentialId.Value),
             new NpgsqlParameter("documentId", documentId),

@@ -1003,6 +1003,66 @@ public class Given_Reference_Bearing_Identity_For_ReferentialIdentity_Trigger
 }
 
 /// <summary>
+/// Test fixture proving descriptor-valued identity elements carry descriptor metadata into
+/// ReferentialIdentityMaintenance triggers.
+/// </summary>
+[TestFixture]
+public class Given_Descriptor_Valued_Identity_For_ReferentialIdentity_Trigger
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = AbstractIdentityTableTestSchemaBuilder.BuildDescriptorIdentityProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    [Test]
+    public void It_should_mark_descriptor_identity_elements_as_descriptor_references()
+    {
+        var refIdentity = _triggers.Single(t =>
+            t.Table.Name == "ProgramOffering"
+            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+
+        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity.Parameters;
+        var element = refIdParams.IdentityElements.Should().ContainSingle().Subject;
+
+        element.Column.Value.Should().Be("ProgramTypeDescriptor_DescriptorId");
+        element.IdentityJsonPath.Should().Be("$.programTypeDescriptor");
+        element.IsDescriptorReference.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_preserve_descriptor_metadata_on_superclass_alias_identity_elements()
+    {
+        var refIdentity = _triggers.Single(t =>
+            t.Table.Name == "ProgramOffering"
+            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+
+        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity.Parameters;
+        refIdParams.SuperclassAlias.Should().NotBeNull();
+        var aliasElement = refIdParams.SuperclassAlias!.IdentityElements.Should().ContainSingle().Subject;
+
+        aliasElement.Column.Value.Should().Be("ProgramTypeDescriptor_DescriptorId");
+        aliasElement.IdentityJsonPath.Should().Be("$.programTypeDescriptor");
+        aliasElement.IsDescriptorReference.Should().BeTrue();
+    }
+}
+
+/// <summary>
 /// Test pass that injects a synthetic unmapped reference mapping to validate fail-fast behavior.
 /// </summary>
 file sealed class UnmappedReferenceMappingFixturePass : IRelationalModelSetPass

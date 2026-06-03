@@ -100,8 +100,6 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteExecutorResult? writeFailureResult = null;
         var executionRequest = request;
         RelationalWriteCurrentState? currentState = null;
-        var ifMatchPreconditionEvaluation =
-            RelationalWriteExecutionStateResolver.GetIfMatchPreconditionEvaluation(request);
 
         await using var writeSession = await _writeSessionFactory
             .CreateAsync(cancellationToken)
@@ -120,6 +118,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             executionRequest = storedAuthorizationBoundary.ExecutionRequest;
+            var ifMatchPreconditionEvaluation =
+                RelationalWriteExecutionStateResolver.GetIfMatchPreconditionEvaluation(executionRequest);
             // A stored-auth POST lookup is the authorization boundary for this attempt. If it saw
             // CreateNew, keep that decision stable so a later race cannot become an update without
             // stored-value authorization.
@@ -226,6 +226,19 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             var mergeResult = mergeBoundary.MergeResult!;
 
+            // Identity comparison needs the finalized merged root row, but immutable identity
+            // failures must win before any proposed authorization evaluates rejected values.
+            var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
+                executionRequest,
+                mergeResult
+            );
+
+            if (identityStabilityFailure is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return identityStabilityFailure;
+            }
+
             // NamespaceBased AND-composes with the relationship OR-group and runs before it, so a
             // namespace denial surfaces over a concurrent relationship denial. Mirrors the
             // stored-side ordering used for locked-target authorization.
@@ -267,17 +280,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return deferredPreconditionResult;
                 }
-            }
-
-            var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
-                executionRequest,
-                mergeResult
-            );
-
-            if (identityStabilityFailure is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return identityStabilityFailure;
             }
 
             if (

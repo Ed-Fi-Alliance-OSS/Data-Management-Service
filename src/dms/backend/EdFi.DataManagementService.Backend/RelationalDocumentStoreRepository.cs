@@ -337,10 +337,11 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) resolve
-        // before the write session opens, so a denial issues no DB roundtrip and never locks the
-        // target. The stored namespace check itself runs inside the delete session against the locked
-        // target (see AuthorizeDeleteIfRequiredAsync).
+        // Planner terminals (namespace setup failures, relationship security-configuration failures,
+        // and known unsupported relationship composition) resolve before the write session opens, so
+        // those denials issue no DB roundtrip and never lock the target. Target-dependent namespace
+        // and relationship checks still run inside the delete session against the locked target (see
+        // AuthorizeDeleteIfRequiredAsync).
         var authorizationPreflight = AuthorizeDeletePreflight(relationalDeleteRequest, mappingSet, resource);
 
         return authorizationPreflight switch
@@ -352,7 +353,7 @@ public sealed class RelationalDocumentStoreRepository(
                 resource,
                 writePrecondition,
                 proceed.StoredNamespaceAuthorization,
-                proceed.NonNamespaceConfiguredStrategies
+                proceed.StoredRelationshipAuthorization
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported relational delete authorization preflight result '{authorizationPreflight.GetType().Name}'."
@@ -366,7 +367,7 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         WritePrecondition writePrecondition,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
+        RelationshipAuthorizationResult storedRelationshipAuthorization
     )
     {
         var documentUuid = relationalDeleteRequest.DocumentUuid;
@@ -451,10 +452,9 @@ public sealed class RelationalDocumentStoreRepository(
 
                         var authorizationFailure = await AuthorizeDeleteIfRequiredAsync(
                                 mappingSet,
-                                resource,
                                 resolved.DocumentId,
                                 storedNamespaceAuthorization,
-                                nonNamespaceConfiguredStrategies,
+                                storedRelationshipAuthorization,
                                 relationalDeleteRequest.AuthorizationContext,
                                 sessionCommandExecutor
                             )
@@ -663,10 +663,9 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<DeleteResult?> AuthorizeDeleteIfRequiredAsync(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
         long documentId,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationResult storedRelationshipAuthorization,
         RelationalAuthorizationContext authorizationContext,
         IRelationalCommandExecutor sessionCommandExecutor
     )
@@ -689,34 +688,7 @@ public sealed class RelationalDocumentStoreRepository(
             }
         }
 
-        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
-            mappingSet,
-            resource,
-            nonNamespaceConfiguredStrategies,
-            authorizationContext
-        );
-
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                nonNamespaceConfiguredStrategies,
-                relationshipAuthorizationResult,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new DeleteResult.DeleteFailureNotImplemented(
-                BuildKnownButNotEnabledDeleteAuthorizationMessage(
-                    resource,
-                    CombinePeopleEndpointStagingFailures(
-                        peopleStagingFailures,
-                        relationshipAuthorizationResult
-                    )
-                )
-            );
-        }
-
-        switch (relationshipAuthorizationResult)
+        switch (storedRelationshipAuthorization)
         {
             case RelationshipAuthorizationResult.NoAuthorizationRequired:
             case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
@@ -739,18 +711,6 @@ public sealed class RelationalDocumentStoreRepository(
 
                 return CreateDeleteRelationshipNotAuthorized(noClaimsFailure);
 
-            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
-                return new DeleteResult.DeleteFailureNotImplemented(
-                    BuildKnownButNotEnabledDeleteAuthorizationMessage(resource, knownButNotEnabled.Failures)
-                );
-
-            case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
-                return BuildDeleteAuthorizationSecurityConfigurationFailure(
-                    mappingSet,
-                    resource,
-                    securityConfigurationError.Failures
-                );
-
             case RelationshipAuthorizationResult.Authorized authorized:
                 return await ExecuteDeleteRelationshipAuthorizationAsync(
                         mappingSet,
@@ -762,12 +722,12 @@ public sealed class RelationalDocumentStoreRepository(
 
             default:
                 throw new InvalidOperationException(
-                    $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
+                    $"Unsupported relationship authorization result '{storedRelationshipAuthorization.GetType().Name}' after delete authorization preflight."
                 );
         }
     }
 
-    private static DeleteAuthorizationPreflightResult AuthorizeDeletePreflight(
+    private DeleteAuthorizationPreflightResult AuthorizeDeletePreflight(
         IRelationalDeleteRequest relationalDeleteRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource
@@ -803,20 +763,27 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return new DeleteAuthorizationPreflightResult.Proceed(
+                return AuthorizeDeleteRelationshipPreflight(
+                    mappingSet,
+                    resource,
                     null,
-                    securityConfigurationError.NonNamespaceConfiguredStrategies
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    relationalDeleteRequest.AuthorizationContext
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
-                return new DeleteAuthorizationPreflightResult.Proceed(
+                return AuthorizeDeleteRelationshipPreflight(
+                    mappingSet,
+                    resource,
                     null,
-                    stillUnsupported.NonNamespaceConfiguredStrategies
+                    stillUnsupported.NonNamespaceConfiguredStrategies,
+                    relationalDeleteRequest.AuthorizationContext
                 );
 
             case RelationalAuthorizationPlanOutcome.Plan plan:
                 return AuthorizeDeletePlanPreflight(
                     mappingSet,
+                    resource,
                     plan,
                     relationalDeleteRequest.AuthorizationContext
                 );
@@ -828,17 +795,21 @@ public sealed class RelationalDocumentStoreRepository(
         }
     }
 
-    private static DeleteAuthorizationPreflightResult AuthorizeDeletePlanPreflight(
+    private DeleteAuthorizationPreflightResult AuthorizeDeletePlanPreflight(
         MappingSet mappingSet,
+        QualifiedResourceName resource,
         RelationalAuthorizationPlanOutcome.Plan plan,
         RelationalAuthorizationContext authorizationContext
     )
     {
         if (plan.NamespaceChecks.Count == 0)
         {
-            return new DeleteAuthorizationPreflightResult.Proceed(
+            return AuthorizeDeleteRelationshipPreflight(
+                mappingSet,
+                resource,
                 null,
-                plan.NonNamespaceConfiguredStrategies
+                plan.NonNamespaceConfiguredStrategies,
+                authorizationContext
             );
         }
 
@@ -856,10 +827,61 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        return new DeleteAuthorizationPreflightResult.Proceed(
-            new RelationalWriteNamespaceAuthorization(plan.NamespaceChecks, namespacePrefixParameterization),
-            plan.NonNamespaceConfiguredStrategies
+        var storedNamespaceAuthorization = new RelationalWriteNamespaceAuthorization(
+            plan.NamespaceChecks,
+            namespacePrefixParameterization
         );
+
+        return AuthorizeDeleteRelationshipPreflight(
+            mappingSet,
+            resource,
+            storedNamespaceAuthorization,
+            plan.NonNamespaceConfiguredStrategies,
+            authorizationContext
+        );
+    }
+
+    private DeleteAuthorizationPreflightResult AuthorizeDeleteRelationshipPreflight(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        var storedRelationshipAuthorization = _relationshipAuthorizationPlanner.PlanStoredValues(
+            mappingSet,
+            resource,
+            nonNamespaceConfiguredStrategies,
+            authorizationContext
+        );
+
+        return storedRelationshipAuthorization switch
+        {
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+                new DeleteAuthorizationPreflightResult.Stop(
+                    new DeleteResult.DeleteFailureNotImplemented(
+                        BuildKnownButNotEnabledDeleteAuthorizationMessage(
+                            resource,
+                            knownButNotEnabled.Failures
+                        )
+                    )
+                ),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                new DeleteAuthorizationPreflightResult.Stop(
+                    BuildDeleteAuthorizationSecurityConfigurationFailure(
+                        mappingSet,
+                        resource,
+                        securityConfigurationError.Failures
+                    )
+                ),
+
+            _ => new DeleteAuthorizationPreflightResult.Proceed(
+                storedNamespaceAuthorization,
+                storedRelationshipAuthorization
+            ),
+        };
     }
 
     private async Task<DeleteResult?> ExecuteDeleteNamespaceAuthorizationAsync(
@@ -897,7 +919,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         public sealed record Proceed(
             RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
-            IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies
+            RelationshipAuthorizationResult StoredRelationshipAuthorization
         ) : DeleteAuthorizationPreflightResult;
     }
 
@@ -1587,7 +1609,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
     )
     {
-        var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
+        var existingResourcePlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
             nonNamespaceConfiguredStrategies,
@@ -1595,41 +1617,29 @@ public sealed class RelationalDocumentStoreRepository(
             writePlan
         );
 
-        var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
+        var securityConfigurationFailures = existingResourcePlan.SecurityConfigurationFailures;
 
-        if (
-            securityConfigurationFailures.Count > 0
-            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
-        )
+        if (securityConfigurationFailures.Count > 0)
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
                 BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
             );
         }
 
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                nonNamespaceConfiguredStrategies,
-                out var peopleStagingFailures
-            )
-        )
+        if (existingResourcePlan.KnownButNotEnabledFailures.Count > 0)
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
                 new UpsertResult.UpsertFailureNotImplemented(
                     BuildKnownButNotEnabledPostAuthorizationMessage(
                         resource,
-                        CombinePeopleEndpointStagingFailures(
-                            peopleStagingFailures,
-                            relationshipAuthorizationPlan
-                        )
+                        existingResourcePlan.KnownButNotEnabledFailures
                     ),
                     UpsertFailureNotImplementedReason.StrategyNotEnabled
                 )
             );
         }
 
-        return relationshipAuthorizationPlan.ProposedValues switch
+        return existingResourcePlan.ProposedValues switch
         {
             RelationshipAuthorizationResult.NoAuthorizationRequired
             or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
@@ -1640,13 +1650,16 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedNamespaceAuthorization
                 ),
 
-            RelationshipAuthorizationResult.Authorized authorized =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    relationshipAuthorizationPlan.StoredValues,
-                    authorized,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
-                ),
+            RelationshipAuthorizationResult.Authorized => CreatePostRelationshipAuthorizationContinue(
+                mappingSet,
+                resource,
+                nonNamespaceConfiguredStrategies,
+                authorizationContext,
+                writePlan,
+                existingResourcePlan,
+                storedNamespaceAuthorization,
+                proposedNamespaceAuthorization
+            ),
 
             // NamespaceBased AND-composes before relationship OR strategies (auth.md). When a
             // proposed namespace check is also planned, defer NoClaims through Continue so the
@@ -1683,7 +1696,92 @@ public sealed class RelationalDocumentStoreRepository(
                 ),
 
             _ => throw new InvalidOperationException(
-                $"Unsupported relationship authorization result '{relationshipAuthorizationPlan.ProposedValues.GetType().Name}'."
+                $"Unsupported relationship authorization result '{existingResourcePlan.ProposedValues.GetType().Name}'."
+            ),
+        };
+    }
+
+    private WriteGuardRailPreflightResult<UpsertResult> CreatePostRelationshipAuthorizationContinue(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext,
+        ResourceWritePlan writePlan,
+        RelationshipAuthorizationUpdatePlan existingResourcePlan,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+    )
+    {
+        var createNewProposedValues = _relationshipAuthorizationPlanner.PlanProposedValues(
+            mappingSet,
+            resource,
+            nonNamespaceConfiguredStrategies,
+            authorizationContext,
+            writePlan
+        );
+
+        return createNewProposedValues switch
+        {
+            RelationshipAuthorizationResult.NoAuthorizationRequired
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    null,
+                    null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(existingResourcePlan, null, null)
+                ),
+
+            RelationshipAuthorizationResult.Authorized createNewAuthorized =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    null,
+                    null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(existingResourcePlan, createNewAuthorized, null)
+                ),
+
+            RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
+                ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
+                : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    null,
+                    null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(existingResourcePlan, noClaims, null)
+                ),
+
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                    new UpsertResult.UpsertFailureNotImplemented(
+                        BuildKnownButNotEnabledPostAuthorizationMessage(
+                            resource,
+                            knownButNotEnabled.Failures
+                        ),
+                        UpsertFailureNotImplementedReason.StrategyNotEnabled
+                    )
+                ),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                    null,
+                    null,
+                    storedNamespaceAuthorization,
+                    proposedNamespaceAuthorization,
+                    new PostRelationshipAuthorizationPlans(
+                        existingResourcePlan,
+                        null,
+                        new RelationalWriteExecutorResult.Upsert(
+                            BuildPostAuthorizationSecurityConfigurationFailure(
+                                mappingSet,
+                                securityConfigurationError.Failures
+                            )
+                        )
+                    )
+                ),
+
+            _ => throw new InvalidOperationException(
+                $"Unsupported POST create-new relationship authorization result '{createNewProposedValues.GetType().Name}'."
             ),
         };
     }
@@ -1829,35 +1927,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         var securityConfigurationFailures = relationshipAuthorizationPlan.SecurityConfigurationFailures;
 
-        if (
-            securityConfigurationFailures.Count > 0
-            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationFailures)
-        )
+        if (securityConfigurationFailures.Count > 0)
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
                 BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
-            );
-        }
-
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                nonNamespaceConfiguredStrategies,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                new UpdateResult.UpdateFailureNotImplemented(
-                    BuildKnownButNotEnabledPutAuthorizationMessage(
-                        resource,
-                        CombinePeopleEndpointStagingFailures(
-                            peopleStagingFailures,
-                            relationshipAuthorizationPlan
-                        )
-                    ),
-                    UpdateFailureNotImplementedReason.StrategyNotEnabled
-                )
             );
         }
 
@@ -1991,6 +2064,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationshipAuthorizationResult? proposedRelationshipAuthorization = null;
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
+        PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null;
 
         if (preflight is not null)
         {
@@ -2003,6 +2077,7 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedRelationshipAuthorization = continueResult.ProposedRelationshipAuthorization;
                     storedNamespaceAuthorization = continueResult.StoredNamespaceAuthorization;
                     proposedNamespaceAuthorization = continueResult.ProposedNamespaceAuthorization;
+                    postRelationshipAuthorizationPlans = continueResult.PostRelationshipAuthorizationPlans;
                     break;
 
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
@@ -2066,6 +2141,9 @@ public sealed class RelationalDocumentStoreRepository(
                         storedNamespaceAuthorization: storedNamespaceAuthorization,
                         proposedNamespaceAuthorization: proposedNamespaceAuthorization
                     )
+                    {
+                        PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans,
+                    }
                 )
                 .ConfigureAwait(false);
 
@@ -2171,7 +2249,8 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization,
                 RelationshipAuthorizationResult? proposedRelationshipAuthorization,
                 RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
-                RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
+                RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
+                PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null
             )
             {
                 ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
@@ -2180,6 +2259,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
                 StoredNamespaceAuthorization = storedNamespaceAuthorization;
                 ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
+                PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans;
             }
 
             public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
@@ -2189,6 +2269,8 @@ public sealed class RelationalDocumentStoreRepository(
             public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; }
 
             public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; }
+
+            public PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; }
 
             private static void ValidateStoredRelationshipAuthorization(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization
@@ -2241,10 +2323,11 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceReadPlan readPlan
     )
     {
-        // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) resolve
-        // before the target lookup, so a denial issues no read roundtrip and never depends on document
-        // existence. The stored namespace check itself runs per attempt against the resolved target
-        // (see AuthorizeGetByIdAgainstTargetAsync).
+        // Planner terminals (namespace setup failures, relationship security-configuration failures,
+        // and known unsupported relationship composition) resolve before the target lookup, so those
+        // denials issue no read roundtrip and never depend on document existence. Target-dependent
+        // namespace and relationship checks still run per attempt against the resolved target (see
+        // AuthorizeGetByIdAgainstTargetAsync).
         var authorizationPreflight = AuthorizeGetByIdPreflight(relationalGetRequest, mappingSet, resource);
 
         if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
@@ -2282,9 +2365,8 @@ public sealed class RelationalDocumentStoreRepository(
                     await AuthorizeGetByIdAgainstTargetAsync(
                             relationalGetRequest,
                             mappingSet,
-                            resource,
                             proceed.StoredNamespaceAuthorization,
-                            proceed.NonNamespaceConfiguredStrategies,
+                            proceed.StoredRelationshipAuthorization,
                             existingDocument.DocumentId,
                             existingDocument.ContentVersion
                         )
@@ -2452,7 +2534,7 @@ public sealed class RelationalDocumentStoreRepository(
         return currentDocument.ContentVersion != observedContentVersion.Value;
     }
 
-    private static GetByIdAuthorizationPreflightResult AuthorizeGetByIdPreflight(
+    private GetByIdAuthorizationPreflightResult AuthorizeGetByIdPreflight(
         IRelationalGetRequest relationalGetRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource
@@ -2494,19 +2576,25 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return new GetByIdAuthorizationPreflightResult.Proceed(
+                return AuthorizeGetByIdRelationshipPreflight(
+                    mappingSet,
+                    resource,
                     null,
-                    securityConfigurationError.NonNamespaceConfiguredStrategies
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
-                return new GetByIdAuthorizationPreflightResult.Proceed(
+                return AuthorizeGetByIdRelationshipPreflight(
+                    mappingSet,
+                    resource,
                     null,
-                    stillUnsupported.NonNamespaceConfiguredStrategies
+                    stillUnsupported.NonNamespaceConfiguredStrategies,
+                    authorizationContext
                 );
 
             case RelationalAuthorizationPlanOutcome.Plan plan:
-                return AuthorizeGetByIdPlanPreflight(mappingSet, plan, authorizationContext);
+                return AuthorizeGetByIdPlanPreflight(mappingSet, resource, plan, authorizationContext);
 
             default:
                 throw new InvalidOperationException(
@@ -2515,17 +2603,21 @@ public sealed class RelationalDocumentStoreRepository(
         }
     }
 
-    private static GetByIdAuthorizationPreflightResult AuthorizeGetByIdPlanPreflight(
+    private GetByIdAuthorizationPreflightResult AuthorizeGetByIdPlanPreflight(
         MappingSet mappingSet,
+        QualifiedResourceName resource,
         RelationalAuthorizationPlanOutcome.Plan plan,
         RelationalAuthorizationContext authorizationContext
     )
     {
         if (plan.NamespaceChecks.Count == 0)
         {
-            return new GetByIdAuthorizationPreflightResult.Proceed(
+            return AuthorizeGetByIdRelationshipPreflight(
+                mappingSet,
+                resource,
                 null,
-                plan.NonNamespaceConfiguredStrategies
+                plan.NonNamespaceConfiguredStrategies,
+                authorizationContext
             );
         }
 
@@ -2543,18 +2635,65 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        return new GetByIdAuthorizationPreflightResult.Proceed(
-            new RelationalWriteNamespaceAuthorization(plan.NamespaceChecks, namespacePrefixParameterization),
-            plan.NonNamespaceConfiguredStrategies
+        var storedNamespaceAuthorization = new RelationalWriteNamespaceAuthorization(
+            plan.NamespaceChecks,
+            namespacePrefixParameterization
         );
+
+        return AuthorizeGetByIdRelationshipPreflight(
+            mappingSet,
+            resource,
+            storedNamespaceAuthorization,
+            plan.NonNamespaceConfiguredStrategies,
+            authorizationContext
+        );
+    }
+
+    private GetByIdAuthorizationPreflightResult AuthorizeGetByIdRelationshipPreflight(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        var storedRelationshipAuthorization = _relationshipAuthorizationPlanner.PlanStoredValues(
+            mappingSet,
+            resource,
+            nonNamespaceConfiguredStrategies,
+            authorizationContext
+        );
+
+        return storedRelationshipAuthorization switch
+        {
+            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
+                new GetByIdAuthorizationPreflightResult.Stop(
+                    new GetResult.GetFailureNotImplemented(
+                        BuildKnownButNotEnabledGetAuthorizationMessage(resource, knownButNotEnabled.Failures)
+                    )
+                ),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                new GetByIdAuthorizationPreflightResult.Stop(
+                    BuildGetAuthorizationSecurityConfigurationFailure(
+                        mappingSet,
+                        resource,
+                        securityConfigurationError.Failures
+                    )
+                ),
+
+            _ => new GetByIdAuthorizationPreflightResult.Proceed(
+                storedNamespaceAuthorization,
+                storedRelationshipAuthorization
+            ),
+        };
     }
 
     private async Task<GetAuthorizationOutcome> AuthorizeGetByIdAgainstTargetAsync(
         IRelationalGetRequest relationalGetRequest,
         MappingSet mappingSet,
-        QualifiedResourceName resource,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationResult storedRelationshipAuthorization,
         long documentId,
         long storedContentVersion
     )
@@ -2577,8 +2716,7 @@ public sealed class RelationalDocumentStoreRepository(
 
             var relationshipOutcome = await AuthorizeGetRelationshipAsync(
                     mappingSet,
-                    resource,
-                    nonNamespaceConfiguredStrategies,
+                    storedRelationshipAuthorization,
                     authorizationContext,
                     documentId
                 )
@@ -2595,8 +2733,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         return await AuthorizeGetRelationshipAsync(
                 mappingSet,
-                resource,
-                nonNamespaceConfiguredStrategies,
+                storedRelationshipAuthorization,
                 authorizationContext,
                 documentId
             )
@@ -2605,44 +2742,12 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<GetAuthorizationOutcome> AuthorizeGetRelationshipAsync(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
+        RelationshipAuthorizationResult storedRelationshipAuthorization,
         RelationalAuthorizationContext authorizationContext,
         long documentId
     )
     {
-        var relationshipAuthorizationResult = _relationshipAuthorizationPlanner.PlanStoredValues(
-            mappingSet,
-            resource,
-            configuredAuthorizationStrategies,
-            authorizationContext
-        );
-
-        if (
-            TryCreatePeopleEndpointStagingFailures(
-                resource,
-                configuredAuthorizationStrategies,
-                relationshipAuthorizationResult,
-                out var peopleStagingFailures
-            )
-        )
-        {
-            return new GetAuthorizationOutcome(
-                new GetResult.GetFailureNotImplemented(
-                    BuildKnownButNotEnabledGetAuthorizationMessage(
-                        resource,
-                        CombinePeopleEndpointStagingFailures(
-                            peopleStagingFailures,
-                            relationshipAuthorizationResult
-                        )
-                    )
-                ),
-                null,
-                false
-            );
-        }
-
-        switch (relationshipAuthorizationResult)
+        switch (storedRelationshipAuthorization)
         {
             case RelationshipAuthorizationResult.NoAuthorizationRequired:
             case RelationshipAuthorizationResult.NoFurtherAuthorizationRequired:
@@ -2673,33 +2778,13 @@ public sealed class RelationalDocumentStoreRepository(
                     false
                 );
 
-            case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
-                return new GetAuthorizationOutcome(
-                    new GetResult.GetFailureNotImplemented(
-                        BuildKnownButNotEnabledGetAuthorizationMessage(resource, knownButNotEnabled.Failures)
-                    ),
-                    null,
-                    false
-                );
-
-            case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
-                return new GetAuthorizationOutcome(
-                    BuildGetAuthorizationSecurityConfigurationFailure(
-                        mappingSet,
-                        resource,
-                        securityConfigurationError.Failures
-                    ),
-                    null,
-                    false
-                );
-
             case RelationshipAuthorizationResult.Authorized authorized:
                 return await ExecuteGetRelationshipAuthorizationAsync(mappingSet, documentId, authorized)
                     .ConfigureAwait(false);
 
             default:
                 throw new InvalidOperationException(
-                    $"Unsupported relationship authorization result '{relationshipAuthorizationResult.GetType().Name}'."
+                    $"Unsupported relationship authorization result '{storedRelationshipAuthorization.GetType().Name}' after GET-by-id authorization preflight."
                 );
         }
     }
@@ -2896,7 +2981,7 @@ public sealed class RelationalDocumentStoreRepository(
         // StoredNamespaceAuthorization is null when only relationship strategies must be evaluated.
         public sealed record Proceed(
             RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
-            IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies
+            RelationshipAuthorizationResult StoredRelationshipAuthorization
         ) : GetByIdAuthorizationPreflightResult;
 
         // No per-record authorization is required for this read (StoredDocument-mode bypass); the
@@ -2920,13 +3005,9 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "GET-by-id",
             effectiveAuthorizationLabel: "GET",
-            executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "single-record EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "single-record relationship execution boundary",
+            supportedStrategySetName: "single-record relationship",
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledDeleteAuthorizationMessage(
@@ -2938,13 +3019,9 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "DELETE",
             effectiveAuthorizationLabel: "DELETE",
-            executionBoundaryName: "single-record EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "single-record EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "single-record relationship execution boundary",
+            supportedStrategySetName: "single-record relationship",
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledPostAuthorizationMessage(
@@ -2956,13 +3033,9 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "POST",
             effectiveAuthorizationLabel: "POST",
-            executionBoundaryName: "POST create-new EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "POST create-new EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "POST create-new relationship execution boundary",
+            supportedStrategySetName: "POST create-new relationship",
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledPutAuthorizationMessage(
@@ -2974,134 +3047,10 @@ public sealed class RelationalDocumentStoreRepository(
             knownButNotEnabledFailures,
             operationLabel: "PUT",
             effectiveAuthorizationLabel: "PUT",
-            executionBoundaryName: "PUT EdOrg-only relationship execution boundary",
-            supportedStrategySetName: "PUT EdOrg-only relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            ]
+            executionBoundaryName: "PUT relationship execution boundary",
+            supportedStrategySetName: "PUT relationship",
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
-
-    private static bool TryCreatePeopleEndpointStagingFailures(
-        QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
-        RelationshipAuthorizationResult relationshipAuthorizationResult,
-        out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
-    )
-    {
-        if (
-            relationshipAuthorizationResult
-                is RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError
-            && !HasOnlyPeopleEndpointStagingCompatibleFailures(securityConfigurationError.Failures)
-        )
-        {
-            failures = [];
-            return false;
-        }
-
-        return TryCreatePeopleEndpointStagingFailures(
-            resource,
-            configuredAuthorizationStrategies,
-            out failures
-        );
-    }
-
-    internal static bool TryCreatePeopleEndpointStagingFailures(
-        QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
-        out IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
-    )
-    {
-        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
-
-        failures =
-        [
-            .. RelationshipAuthorizationStrategyClassifier
-                .SelectPeopleRelationshipStrategies(configuredAuthorizationStrategies)
-                .Select(strategy => new RelationshipAuthorizationFailureMetadata(
-                    RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy,
-                    resource,
-                    strategy.ConfiguredStrategy,
-                    strategy.RelationshipLocalOrder,
-                    Hint: "People relationship single-record endpoint execution is staged until CRUD People relationship authorization execution is enabled."
-                )),
-        ];
-
-        return failures.Count > 0;
-    }
-
-    private static bool HasOnlyPeopleEndpointStagingCompatibleFailures(
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
-    ) =>
-        failures.Count > 0
-        && failures.All(static failure =>
-            failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
-            || IsPeopleCorePlanningFailure(failure)
-        );
-
-    private static bool IsPeopleCorePlanningFailure(RelationshipAuthorizationFailureMetadata failure) =>
-        failure.FailureKind
-            is RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations
-                or RelationshipAuthorizationFailureKind.NoExecutableSubjects
-                or RelationshipAuthorizationFailureKind.NoApplicableRootSubject
-                or RelationshipAuthorizationFailureKind.UnresolvedSecurableElement
-                or RelationshipAuthorizationFailureKind.MissingProposedRootBinding
-        && (
-            failure.PersonMetadata is not null
-            || failure.Location?.Kind
-                is SecurableElementKind.Student
-                    or SecurableElementKind.Contact
-                    or SecurableElementKind.Staff
-            || failure.Contributors.Any(static contributor =>
-                contributor.Kind
-                    is SecurableElementKind.Student
-                        or SecurableElementKind.Contact
-                        or SecurableElementKind.Staff
-            )
-            || failure.IneligibleSubjects.Any(static ineligibleSubject =>
-                ineligibleSubject.Subject.PersonMetadata is not null
-            )
-        );
-
-    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
-        RelationshipAuthorizationResult relationshipAuthorizationResult
-    ) =>
-        relationshipAuthorizationResult switch
-        {
-            RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
-            [
-                .. peopleEndpointStagingFailures,
-                .. knownButNotEnabled.Failures,
-            ],
-            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
-            [
-                .. peopleEndpointStagingFailures,
-                .. securityConfigurationError.Failures.Where(static failure =>
-                    failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
-                ),
-            ],
-            _ => peopleEndpointStagingFailures,
-        };
-
-    private static IReadOnlyList<RelationshipAuthorizationFailureMetadata> CombinePeopleEndpointStagingFailures(
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> peopleEndpointStagingFailures,
-        RelationshipAuthorizationUpdatePlan relationshipAuthorizationPlan
-    )
-    {
-        IReadOnlyList<RelationshipAuthorizationFailureMetadata> knownButNotEnabledFailures =
-        [
-            .. relationshipAuthorizationPlan.KnownButNotEnabledFailures,
-            .. relationshipAuthorizationPlan.SecurityConfigurationFailures.Where(static failure =>
-                failure.FailureKind is RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
-            ),
-        ];
-
-        return knownButNotEnabledFailures.Count > 0
-            ? [.. peopleEndpointStagingFailures, .. knownButNotEnabledFailures]
-            : peopleEndpointStagingFailures;
-    }
 
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
         MappingSet mappingSet,
@@ -3132,7 +3081,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "GET-by-id",
                     effectiveAuthorizationLabel: "GET",
-                    executionBoundaryName: "single-record EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "single-record relationship execution boundary"
                 )
             ),
         ]);
@@ -3167,7 +3116,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "DELETE",
                     effectiveAuthorizationLabel: "DELETE",
-                    executionBoundaryName: "single-record EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "single-record relationship execution boundary"
                 )
             ),
         ]);
@@ -3188,7 +3137,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "POST",
                     effectiveAuthorizationLabel: "POST",
-                    executionBoundaryName: "POST create-new EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "POST create-new relationship execution boundary"
                 )
             ),
         ]);
@@ -3209,7 +3158,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "PUT",
                     effectiveAuthorizationLabel: "PUT",
-                    executionBoundaryName: "PUT EdOrg-only relationship execution boundary"
+                    executionBoundaryName: "PUT relationship execution boundary"
                 )
             ),
         ]);
@@ -3226,16 +3175,7 @@ public sealed class RelationalDocumentStoreRepository(
             effectiveAuthorizationLabel: "GET-many",
             executionBoundaryName: "GET-many relationship query execution boundary",
             supportedStrategySetName: "GET-many relationship",
-            supportedStrategyNames:
-            [
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
-                AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
-                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-            ]
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledAuthorizationMessage(
@@ -3400,7 +3340,7 @@ public sealed class RelationalDocumentStoreRepository(
                     failure,
                     operationLabel: "query",
                     effectiveAuthorizationLabel: "GET-many",
-                    executionBoundaryName: "GET-many EdOrg-only relationship query execution boundary"
+                    executionBoundaryName: "GET-many relationship query execution boundary"
                 )
             ),
         ]);

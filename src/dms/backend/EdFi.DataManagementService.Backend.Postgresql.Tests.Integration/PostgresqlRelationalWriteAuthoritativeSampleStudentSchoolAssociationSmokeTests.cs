@@ -153,12 +153,11 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         JsonNode requestBody,
         ResourceInfo resourceInfo,
         ResourceSchema baseResourceSchema,
-        MappingSet mappingSet,
-        long graduationPlanTypeDescriptorId
+        MappingSet mappingSet
     )
     {
         var (alternativeGraduationPlanReferences, alternativeGraduationPlanReferenceArrays) =
-            CreateAlternativeGraduationPlanDocumentReferences(requestBody, graduationPlanTypeDescriptorId);
+            CreateAlternativeGraduationPlanDocumentReferences(requestBody);
         var documentInfo = RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
             resourceInfo,
@@ -277,10 +276,7 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
     private static (
         IReadOnlyList<DocumentReference> DocumentReferences,
         IReadOnlyList<DocumentReferenceArray> DocumentReferenceArrays
-    ) CreateAlternativeGraduationPlanDocumentReferences(
-        JsonNode requestBody,
-        long graduationPlanTypeDescriptorId
-    )
+    ) CreateAlternativeGraduationPlanDocumentReferences(JsonNode requestBody)
     {
         var alternativeGraduationPlans = requestBody["alternativeGraduationPlans"] as JsonArray;
 
@@ -294,7 +290,6 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
             new ResourceName("GraduationPlan"),
             false
         );
-        var descriptorValue = graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture);
         List<DocumentReference> documentReferences = [];
 
         for (var index = 0; index < alternativeGraduationPlans.Count; index++)
@@ -314,10 +309,14 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
             var graduationSchoolYear = reference["graduationSchoolYear"]
                 ?.GetValue<int>()
                 .ToString(CultureInfo.InvariantCulture);
+            var graduationPlanTypeDescriptor = reference["graduationPlanTypeDescriptor"]
+                ?.GetValue<string>()
+                .ToLowerInvariant();
 
             if (
                 string.IsNullOrWhiteSpace(educationOrganizationId)
                 || string.IsNullOrWhiteSpace(graduationSchoolYear)
+                || string.IsNullOrWhiteSpace(graduationPlanTypeDescriptor)
             )
             {
                 throw new InvalidOperationException(
@@ -330,7 +329,10 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
                     new JsonPath("$.educationOrganizationReference.educationOrganizationId"),
                     educationOrganizationId
                 ),
-                new DocumentIdentityElement(new JsonPath("$.graduationPlanTypeDescriptor"), descriptorValue),
+                new DocumentIdentityElement(
+                    new JsonPath("$.graduationPlanTypeDescriptor"),
+                    graduationPlanTypeDescriptor
+                ),
                 new DocumentIdentityElement(
                     new JsonPath("$.graduationSchoolYearTypeReference.schoolYear"),
                     graduationSchoolYear
@@ -756,8 +758,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 JsonNode.Parse(CreateRequestBodyJson)!,
                 _resourceInfo,
                 _baseResourceSchema,
-                _mappingSet,
-                _seedData.GraduationPlanTypeDescriptorId
+                _mappingSet
             );
 
         documentInfo
@@ -1282,8 +1283,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _mappingSet,
-                _seedData.GraduationPlanTypeDescriptorId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -1313,8 +1313,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _mappingSet,
-                _seedData.GraduationPlanTypeDescriptorId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -1768,10 +1767,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     FoundationGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -1801,10 +1797,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     EndorsementGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -1834,10 +1827,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     StemGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -2126,11 +2116,34 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         short resourceKeyId
     )
     {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
+
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
+            VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
             new NpgsqlParameter("referentialId", referentialId.Value),
             new NpgsqlParameter("documentId", documentId),
@@ -2700,8 +2713,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _mappingSet,
-                _seedData.GraduationPlanTypeDescriptorId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -2731,8 +2743,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _mappingSet,
-                _seedData.GraduationPlanTypeDescriptorId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -3008,10 +3019,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     FoundationGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -3041,10 +3049,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     EndorsementGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -3328,11 +3333,34 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         short resourceKeyId
     )
     {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
+
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
+            VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
             new NpgsqlParameter("referentialId", referentialId.Value),
             new NpgsqlParameter("documentId", documentId),
@@ -3779,8 +3807,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _mappingSet,
-                _seedData.GraduationPlanTypeDescriptorId
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -4094,10 +4121,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     FoundationGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -4127,10 +4151,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     EndorsementGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -4160,10 +4181,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                     "$.educationOrganizationReference.educationOrganizationId",
                     SchoolId.ToString(CultureInfo.InvariantCulture)
                 ),
-                (
-                    "$.graduationPlanTypeDescriptor",
-                    graduationPlanTypeDescriptorId.ToString(CultureInfo.InvariantCulture)
-                ),
+                ("$.graduationPlanTypeDescriptor", GraduationPlanTypeDescriptorUri.ToLowerInvariant()),
                 (
                     "$.graduationSchoolYearTypeReference.schoolYear",
                     StemGraduationSchoolYear.ToString(CultureInfo.InvariantCulture)
@@ -4452,11 +4470,34 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         short resourceKeyId
     )
     {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        if (rows.Count > 0)
+        {
+            rows.Should().ContainSingle();
+            var existingReferentialId = rows[0]["ReferentialId"] switch
+            {
+                Guid value => value,
+                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
+            };
+
+            existingReferentialId.Should().Be(referentialId.Value);
+            return;
+        }
+
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
+            VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
             new NpgsqlParameter("referentialId", referentialId.Value),
             new NpgsqlParameter("documentId", documentId),

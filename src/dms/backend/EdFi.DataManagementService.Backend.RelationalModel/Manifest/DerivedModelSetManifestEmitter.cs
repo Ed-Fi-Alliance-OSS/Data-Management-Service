@@ -222,6 +222,11 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteNullValue();
         }
 
+        if (column.IsDescriptorReference)
+        {
+            writer.WriteBoolean("is_descriptor_reference", true);
+        }
+
         writer.WriteEndObject();
     }
 
@@ -378,6 +383,10 @@ public static class DerivedModelSetManifestEmitter
                         writer.WriteStartObject();
                         writer.WriteString("column", element.Column.Value);
                         writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                        if (element.IsDescriptorReference)
+                        {
+                            writer.WriteBoolean("is_descriptor_reference", true);
+                        }
                         writer.WriteEndObject();
                     }
                     writer.WriteEndArray();
@@ -396,6 +405,10 @@ public static class DerivedModelSetManifestEmitter
                             writer.WriteStartObject();
                             writer.WriteString("column", element.Column.Value);
                             writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                            if (element.IsDescriptorReference)
+                            {
+                                writer.WriteBoolean("is_descriptor_reference", true);
+                            }
                             writer.WriteEndObject();
                         }
                         writer.WriteEndArray();

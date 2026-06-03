@@ -424,6 +424,431 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<UpsertResult> CreateAuthorizationStudentAcademicRecordAsync(
+        AuthorizationStudentAcademicRecordSeed seed
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentAcademicRecordResource");
+        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var studentAcademicRecordDocumentId = await GetStudentAcademicRecordDocumentIdAsync(
+            seed.EducationOrganizationId,
+            seed.SchoolYear,
+            seed.StudentUniqueId,
+            seed.TermDescriptor
+        );
+        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "authz"."AuthorizationStudentAcademicRecordResource" (
+                "DocumentId",
+                "StudentAcademicRecord_DocumentId",
+                "StudentAcademicRecord_EducationOrganizationId",
+                "StudentAcademicRecord_SchoolYear",
+                "StudentAcademicRecord_StudentUniqueId",
+                "StudentAcademicRecord_TermDescriptor_DescriptorId",
+                "AuthorizationStudentAcademicRecordId",
+                "Name"
+            )
+            VALUES (
+                @documentId,
+                @studentAcademicRecordDocumentId,
+                @educationOrganizationId,
+                @schoolYear,
+                @studentUniqueId,
+                @termDescriptorId,
+                @authorizationStudentAcademicRecordId,
+                @name
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("studentAcademicRecordDocumentId", studentAcademicRecordDocumentId),
+            new NpgsqlParameter("educationOrganizationId", seed.EducationOrganizationId),
+            new NpgsqlParameter("schoolYear", seed.SchoolYear),
+            new NpgsqlParameter("studentUniqueId", seed.StudentUniqueId),
+            new NpgsqlParameter("termDescriptorId", termDescriptorId),
+            new NpgsqlParameter(
+                "authorizationStudentAcademicRecordId",
+                seed.AuthorizationStudentAcademicRecordId
+            ),
+            new NpgsqlParameter("name", seed.Name)
+        );
+
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(
+                "Authz",
+                "AuthorizationStudentAcademicRecordResource",
+                (
+                    "$.authorizationStudentAcademicRecordId",
+                    seed.AuthorizationStudentAcademicRecordId.ToString(CultureInfo.InvariantCulture)
+                )
+            ),
+            documentId,
+            resourceKeyId
+        );
+
+        return new UpsertResult.InsertSuccess(seed.DocumentUuid);
+    }
+
+    public async Task<UpsertResult> UpsertAuthorizationStudentAcademicRecordAsync(
+        AuthorizationStudentAcademicRecordSeed seed,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationStudentAcademicRecordResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentAcademicRecordRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"post-auth-student-academic-record-{seed.AuthorizationStudentAcademicRecordId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
+    public async Task<UpdateResult> UpdateAuthorizationStudentAcademicRecordByIdAsync(
+        AuthorizationStudentAcademicRecordSeed seed,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            "authz",
+            "AuthorizationStudentAcademicRecordResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentAcademicRecordRequestBody(
+                seed
+            ),
+            documentUuid,
+            $"put-auth-student-academic-record-{seed.AuthorizationStudentAcademicRecordId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
+    public async Task<UpsertResult> CreateAuthorizationStudentSchoolAsync(AuthorizationStudentSchoolSeed seed)
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationStudentSchoolResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentSchoolRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-auth-student-school-{seed.AuthorizationStudentSchoolId}"
+        );
+    }
+
+    public async Task<UpsertResult> UpsertAuthorizationStudentSchoolAsync(
+        AuthorizationStudentSchoolSeed seed,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpsertAsync(
+            "authz",
+            "AuthorizationStudentSchoolResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentSchoolRequestBody(seed),
+            seed.DocumentUuid,
+            $"post-auth-student-school-{seed.AuthorizationStudentSchoolId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
+    public async Task<UpdateResult> UpdateAuthorizationStudentSchoolByIdAsync(
+        AuthorizationStudentSchoolSeed seed,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            "authz",
+            "AuthorizationStudentSchoolResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentSchoolRequestBody(seed),
+            documentUuid,
+            $"put-auth-student-school-{seed.AuthorizationStudentSchoolId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
+    public async Task<UpsertResult> CreateContactAsync(ContactSeed seed)
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "Contact",
+            RelationalQueryAuthorizationRequestBodies.CreateContactRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-contact-{seed.ContactUniqueId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStaffAsync(StaffSeed seed)
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "Staff",
+            RelationalQueryAuthorizationRequestBodies.CreateStaffRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-staff-{seed.StaffUniqueId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStudentContactAssociationAsync(StudentContactAssociationSeed seed)
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StudentContactAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStudentContactAssociationRequestBody(seed),
+            seed.DocumentUuid,
+            $"seed-student-contact-association-{seed.StudentUniqueId}-{seed.ContactUniqueId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStaffEducationOrganizationAssignmentAssociationAsync(
+        StaffEducationOrganizationAssignmentAssociationSeed seed
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StaffEducationOrganizationAssignmentAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStaffEducationOrganizationAssignmentAssociationRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"seed-staff-assignment-{seed.StaffUniqueId}-{seed.EducationOrganizationId}"
+        );
+    }
+
+    public async Task<UpsertResult> CreateStudentEducationOrganizationResponsibilityAssociationAsync(
+        StudentEducationOrganizationResponsibilityAssociationSeed seed
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StudentEducationOrganizationResponsibilityAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStudentEducationOrganizationResponsibilityAssociationRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"seed-student-responsibility-{seed.StudentUniqueId}-{seed.EducationOrganizationId}"
+        );
+    }
+
+    public async Task SeedTermDescriptorAsync(Guid documentUuid, string termDescriptor)
+    {
+        await SeedDescriptorAsync(
+            documentUuid,
+            "TermDescriptor",
+            "Ed-Fi:TermDescriptor",
+            termDescriptor,
+            "uri://ed-fi.org/TermDescriptor",
+            termDescriptor[(termDescriptor.LastIndexOf('#') + 1)..],
+            termDescriptor[(termDescriptor.LastIndexOf('#') + 1)..]
+        );
+    }
+
+    public async Task SeedStaffClassificationDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedDescriptorAsync(
+            documentUuid,
+            "StaffClassificationDescriptor",
+            "Ed-Fi:StaffClassificationDescriptor",
+            descriptor,
+            "uri://ed-fi.org/StaffClassificationDescriptor",
+            descriptor[(descriptor.LastIndexOf('#') + 1)..],
+            descriptor[(descriptor.LastIndexOf('#') + 1)..]
+        );
+    }
+
+    public async Task SeedResponsibilityDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedDescriptorAsync(
+            documentUuid,
+            "ResponsibilityDescriptor",
+            "Ed-Fi:ResponsibilityDescriptor",
+            descriptor,
+            "uri://ed-fi.org/ResponsibilityDescriptor",
+            descriptor[(descriptor.LastIndexOf('#') + 1)..],
+            descriptor[(descriptor.LastIndexOf('#') + 1)..]
+        );
+    }
+
+    public async Task SeedSchoolYearTypeAsync(SchoolYearTypeSeed seed)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
+        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."SchoolYearType" (
+                "DocumentId",
+                "CurrentSchoolYear",
+                "SchoolYear",
+                "SchoolYearDescription"
+            )
+            VALUES (
+                @documentId,
+                @currentSchoolYear,
+                @schoolYear,
+                @schoolYearDescription
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("currentSchoolYear", seed.CurrentSchoolYear),
+            new NpgsqlParameter("schoolYear", seed.SchoolYear),
+            new NpgsqlParameter("schoolYearDescription", seed.SchoolYearDescription)
+        );
+
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(
+                "Ed-Fi",
+                "SchoolYearType",
+                ("$.schoolYear", seed.SchoolYear.ToString(CultureInfo.InvariantCulture))
+            ),
+            documentId,
+            resourceKeyId
+        );
+    }
+
+    public async Task SeedStudentAsync(StudentSeed seed)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."Student" (
+                "DocumentId",
+                "BirthDate",
+                "FirstName",
+                "LastSurname",
+                "StudentUniqueId"
+            )
+            VALUES (
+                @documentId,
+                @birthDate,
+                @firstName,
+                @lastSurname,
+                @studentUniqueId
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("birthDate", new DateOnly(2010, 5, 14)),
+            new NpgsqlParameter("firstName", seed.FirstName),
+            new NpgsqlParameter("lastSurname", seed.LastSurname),
+            new NpgsqlParameter("studentUniqueId", seed.StudentUniqueId)
+        );
+
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId("Ed-Fi", "Student", ("$.studentUniqueId", seed.StudentUniqueId)),
+            documentId,
+            resourceKeyId
+        );
+    }
+
+    public async Task SeedStudentSchoolAssociationAsync(StudentSchoolAssociationSeed seed)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentSchoolAssociation");
+        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.SchoolId);
+        var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
+        var entryGradeLevelDescriptorId = await GetDescriptorDocumentIdAsync(
+            "GradeLevelDescriptor",
+            seed.EntryGradeLevelDescriptor
+        );
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."StudentSchoolAssociation" (
+                "DocumentId",
+                "SchoolId_Unified",
+                "School_DocumentId",
+                "Student_DocumentId",
+                "Student_StudentUniqueId",
+                "EntryGradeLevelDescriptor_DescriptorId",
+                "EntryDate"
+            )
+            VALUES (
+                @documentId,
+                @schoolId,
+                @schoolDocumentId,
+                @studentDocumentId,
+                @studentUniqueId,
+                @entryGradeLevelDescriptorId,
+                @entryDate
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolId", seed.SchoolId),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("studentDocumentId", studentDocumentId),
+            new NpgsqlParameter("studentUniqueId", seed.StudentUniqueId),
+            new NpgsqlParameter("entryGradeLevelDescriptorId", entryGradeLevelDescriptorId),
+            new NpgsqlParameter("entryDate", seed.EntryDate)
+        );
+    }
+
+    public async Task SeedStudentAcademicRecordAsync(StudentAcademicRecordSeed seed)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentAcademicRecord");
+        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.EducationOrganizationId);
+        var schoolYearDocumentId = await GetSchoolYearDocumentIdAsync(seed.SchoolYear);
+        var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
+        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."StudentAcademicRecord" (
+                "DocumentId",
+                "EducationOrganization_DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "SchoolYear_DocumentId",
+                "SchoolYear_SchoolYear",
+                "Student_DocumentId",
+                "Student_StudentUniqueId",
+                "TermDescriptor_DescriptorId"
+            )
+            VALUES (
+                @documentId,
+                @schoolDocumentId,
+                @educationOrganizationId,
+                @schoolYearDocumentId,
+                @schoolYear,
+                @studentDocumentId,
+                @studentUniqueId,
+                @termDescriptorId
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("educationOrganizationId", seed.EducationOrganizationId),
+            new NpgsqlParameter("schoolYearDocumentId", schoolYearDocumentId),
+            new NpgsqlParameter("schoolYear", seed.SchoolYear),
+            new NpgsqlParameter("studentDocumentId", studentDocumentId),
+            new NpgsqlParameter("studentUniqueId", seed.StudentUniqueId),
+            new NpgsqlParameter("termDescriptorId", termDescriptorId)
+        );
+
+        await InsertReferentialIdentityAsync(
+            CreateStudentAcademicRecordReferentialId(seed),
+            documentId,
+            resourceKeyId
+        );
+    }
+
     public async Task<UpsertResult> UpsertAuthorizationNullableAsync(
         AuthorizationNullableSeed seed,
         IReadOnlyList<long> claimEducationOrganizationIds,
@@ -560,11 +985,13 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         DocumentUuid documentUuid,
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
-        string? traceId = null
+        string? traceId = null,
+        Func<MappingSet, MappingSet>? mappingSetTransform = null
     )
     {
         ResetRecorder();
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+        var mappingSet = mappingSetTransform is null ? MappingSet : mappingSetTransform(MappingSet);
 
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
@@ -572,7 +999,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var request = new IntegrationRelationalGetRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: resourceHandle.ResourceInfo,
-            MappingSet: MappingSet,
+            MappingSet: mappingSet,
             ResourceAuthorizationHandler: new RelationalQueryAuthorizationAllowAllResourceAuthorizationHandler(),
             AuthorizationStrategyEvaluators:
             [
@@ -749,6 +1176,48 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentAcademicRecordResource");
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "authz",
+                "AuthorizationStudentAcademicRecordResource",
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
+    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationStudentSchoolSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentSchoolResource");
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "authz",
+                "AuthorizationStudentSchoolResource",
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
     public void AssertPostCreateRelationshipAuthorizationBeforeDocumentInsert()
     {
         var command = GetPostCreateRelationshipAuthorizationCommand();
@@ -769,6 +1238,46 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .IndexOf("AUTH1", StringComparison.Ordinal)
             .Should()
             .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+    }
+
+    public void AssertPostCreatePeopleAuthorizationBeforeDocumentInsert()
+    {
+        var command = GetPostCreateRelationshipAuthorizationCommand();
+
+        command.Should().Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentId\"");
+        command.Should().Contain("\"edfi\".\"StudentAcademicRecord\"");
+        command
+            .IndexOf("AUTH1", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(command.IndexOf("INSERT INTO dms.\"Document\"", StringComparison.Ordinal));
+    }
+
+    public void AssertPeopleUpdateRunsStoredThenProposedRelationshipAuthorization()
+    {
+        var peopleAuthorizationCommands = _writeSessionRecorder
+            .Commands.Select((command, index) => (command, index))
+            .Where(static item =>
+                item.command.CommandText.Contains("AUTH1", StringComparison.Ordinal)
+                && item.command.CommandText.Contains(
+                    "\"auth\".\"EducationOrganizationIdToStudentDocumentId\"",
+                    StringComparison.Ordinal
+                )
+                && item.command.CommandText.Contains(
+                    "\"edfi\".\"StudentAcademicRecord\"",
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+
+        peopleAuthorizationCommands.Should().HaveCount(2);
+        peopleAuthorizationCommands
+            .Select(static item => item.command.SessionId)
+            .Distinct()
+            .Should()
+            .ContainSingle();
+        peopleAuthorizationCommands[0].command.CommandText.Should().Contain("@DocumentId");
+        peopleAuthorizationCommands[1].command.CommandText.Should().Contain("@relationshipAuthorization_");
+        peopleAuthorizationCommands[0].index.Should().BeLessThan(peopleAuthorizationCommands[1].index);
     }
 
     public async Task<IReadOnlyList<PersistedQuerySchool>> ReadPersistedSchoolsInDocumentOrderAsync()
@@ -1292,6 +1801,73 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    private async Task<long> GetSchoolYearDocumentIdAsync(int schoolYear)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT "DocumentId"
+            FROM "edfi"."SchoolYearType"
+            WHERE "SchoolYear" = @schoolYear;
+            """,
+            new NpgsqlParameter("schoolYear", schoolYear)
+        );
+    }
+
+    private async Task<long> GetStudentDocumentIdAsync(string studentUniqueId)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT "DocumentId"
+            FROM "edfi"."Student"
+            WHERE "StudentUniqueId" = @studentUniqueId;
+            """,
+            new NpgsqlParameter("studentUniqueId", studentUniqueId)
+        );
+    }
+
+    private async Task<long> GetStudentAcademicRecordDocumentIdAsync(
+        int educationOrganizationId,
+        int schoolYear,
+        string studentUniqueId,
+        string termDescriptor
+    )
+    {
+        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", termDescriptor);
+
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT "DocumentId"
+            FROM "edfi"."StudentAcademicRecord"
+            WHERE "EducationOrganization_EducationOrganizationId" = @educationOrganizationId
+              AND "SchoolYear_SchoolYear" = @schoolYear
+              AND "Student_StudentUniqueId" = @studentUniqueId
+              AND "TermDescriptor_DescriptorId" = @termDescriptorId;
+            """,
+            new NpgsqlParameter("educationOrganizationId", educationOrganizationId),
+            new NpgsqlParameter("schoolYear", schoolYear),
+            new NpgsqlParameter("studentUniqueId", studentUniqueId),
+            new NpgsqlParameter("termDescriptorId", termDescriptorId)
+        );
+    }
+
+    private async Task<long> GetDescriptorDocumentIdAsync(string resourceName, string uri)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
+
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT descriptor."DocumentId"
+            FROM "dms"."Descriptor" descriptor
+            INNER JOIN "dms"."Document" document
+                ON document."DocumentId" = descriptor."DocumentId"
+            WHERE document."ResourceKeyId" = @resourceKeyId
+              AND descriptor."Uri" = @uri;
+            """,
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
+            new NpgsqlParameter("uri", uri)
+        );
+    }
+
     private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
     {
         return await Database.ExecuteScalarAsync<long>(
@@ -1360,7 +1936,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
             VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
+            ON CONFLICT ("DocumentId", "ResourceKeyId") DO UPDATE
+            SET "ReferentialId" = EXCLUDED."ReferentialId";
             """,
             new NpgsqlParameter("referentialId", referentialId.Value),
             new NpgsqlParameter("documentId", documentId),
@@ -1381,6 +1958,36 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                     DocumentIdentity.DescriptorIdentityJsonPath,
                     descriptorUri.ToLowerInvariant()
                 ),
+            ])
+        );
+    }
+
+    private static ReferentialId CreateStudentAcademicRecordReferentialId(StudentAcademicRecordSeed seed) =>
+        CreateReferentialId(
+            "Ed-Fi",
+            "StudentAcademicRecord",
+            (
+                "$.educationOrganizationReference.educationOrganizationId",
+                seed.EducationOrganizationId.ToString(CultureInfo.InvariantCulture)
+            ),
+            ("$.schoolYearTypeReference.schoolYear", seed.SchoolYear.ToString(CultureInfo.InvariantCulture)),
+            ("$.studentReference.studentUniqueId", seed.StudentUniqueId),
+            ("$.termDescriptor", seed.TermDescriptor.ToLowerInvariant())
+        );
+
+    private static ReferentialId CreateReferentialId(
+        string projectName,
+        string resourceName,
+        params (string JsonPath, string Value)[] identityElements
+    )
+    {
+        return ReferentialIdCalculator.ReferentialIdFrom(
+            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), false),
+            new DocumentIdentity([
+                .. identityElements.Select(static identityElement => new DocumentIdentityElement(
+                    new JsonPath(identityElement.JsonPath),
+                    identityElement.Value
+                )),
             ])
         );
     }

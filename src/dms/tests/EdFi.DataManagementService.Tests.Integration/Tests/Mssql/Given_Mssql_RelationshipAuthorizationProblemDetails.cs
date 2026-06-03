@@ -90,3 +90,118 @@ public sealed class Given_Mssql_RelationshipAuthorizationProblemDetails_For_Empt
     public Task It_renders_empty_edorg_claims_as_none() =>
         RelationshipAuthorizationProblemDetailsScenario.It_renders_empty_edorg_claims_as_none(Harness);
 }
+
+public sealed class Given_Mssql_PeopleRelationshipAuthorizationProblemDetails_For_Read_Update_And_Delete
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IReadOnlyList<long> ClientEducationOrganizationIds =>
+        [PeopleRelationshipCrudProblemDetailsScenario.ClaimEducationOrganizationId];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        PeopleRelationshipCrudProblemDetailsScenario.CreateReadUpdateDeleteStudentsOnlyClaimSetProvider(
+            fixture
+        );
+
+    [Test]
+    public Task It_returns_people_problem_details_for_unauthorized_get_by_id() =>
+        PeopleRelationshipCrudProblemDetailsScenario.It_returns_people_problem_details_for_unauthorized_get_by_id(
+            Harness
+        );
+
+    [Test]
+    public Task It_returns_people_stored_data_problem_details_before_put_proposed_values() =>
+        PeopleRelationshipCrudProblemDetailsScenario.It_returns_people_stored_data_problem_details_before_put_proposed_values(
+            Harness
+        );
+}
+
+public sealed class Given_Mssql_PeopleRelationshipAuthorizationProblemDetails_For_Create
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IReadOnlyList<long> ClientEducationOrganizationIds =>
+        [PeopleRelationshipCrudProblemDetailsScenario.ClaimEducationOrganizationId];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        PeopleRelationshipCrudProblemDetailsScenario.CreateCreateStudentsOnlyClaimSetProvider(fixture);
+
+    [Test]
+    public Task It_returns_people_problem_details_for_unauthorized_post_create() =>
+        PeopleRelationshipCrudProblemDetailsScenario.It_returns_people_problem_details_for_unauthorized_post_create(
+            Harness
+        );
+
+    [Test]
+    public Task It_returns_people_proposed_data_problem_details_for_missing_post_create_student() =>
+        PeopleRelationshipCrudProblemDetailsScenario.It_returns_people_proposed_data_problem_details_for_missing_post_create_student(
+            Harness
+        );
+}
+
+public sealed class Given_Mssql_PeopleRelationshipAuthorizationProblemDetails_For_Empty_EdOrg_Claims
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IReadOnlyList<long> ClientEducationOrganizationIds => [];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        PeopleRelationshipCrudProblemDetailsScenario.CreateReadUpdateDeleteStudentsOnlyClaimSetProvider(
+            fixture
+        );
+
+    [Test]
+    public Task It_returns_people_problem_details_for_unauthorized_delete_with_no_claims() =>
+        PeopleRelationshipCrudProblemDetailsScenario.It_returns_people_problem_details_for_unauthorized_delete_with_no_claims(
+            Harness
+        );
+}
+
+public sealed class Given_Mssql_PeopleRelationshipAuthorizationProblemDetails_For_Mixed_EdOrg_And_People
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IReadOnlyList<long> ClientEducationOrganizationIds =>
+        [PeopleRelationshipCrudProblemDetailsScenario.ClaimEducationOrganizationId];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        PeopleRelationshipCrudProblemDetailsScenario.CreateReadEdOrgAndPeopleClaimSetProvider(fixture);
+
+    [Test]
+    public Task It_renders_plural_securable_names_for_mixed_people_no_relationship() =>
+        PeopleRelationshipCrudProblemDetailsScenario.It_renders_plural_securable_names_for_mixed_people_no_relationship(
+            Harness
+        );
+}
+
+public sealed class Given_Mssql_PeopleRelationshipAuthorizationProblemDetails_For_Mixed_Put_Precedence
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IReadOnlyList<long> ClientEducationOrganizationIds =>
+        [PeopleRelationshipCrudProblemDetailsScenario.ClaimEducationOrganizationId];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        PeopleRelationshipCrudProblemDetailsScenario.CreateUpdateEdOrgAndPeopleClaimSetProvider(fixture);
+
+    [Test]
+    public Task It_prioritizes_people_proposed_data_problem_details_over_mixed_no_relationship() =>
+        PeopleRelationshipCrudProblemDetailsScenario.It_prioritizes_people_proposed_data_problem_details_over_mixed_no_relationship(
+            Harness
+        );
+}

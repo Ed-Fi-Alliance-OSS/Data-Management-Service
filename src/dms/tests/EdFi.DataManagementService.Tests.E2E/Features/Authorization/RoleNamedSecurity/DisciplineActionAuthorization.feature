@@ -26,6 +26,8 @@ Feature: DisciplineAction Authorization
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 01 Ensure authorized client can create a DisciplineAction
              When a POST request is made to "/ed-fi/disciplineActions" with
                   """
@@ -50,6 +52,8 @@ Feature: DisciplineAction Authorization
                   """
              Then it should respond with 201
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 02.1 Ensure authorized client can get a DisciplineAction by id
              When a GET request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 200
@@ -103,6 +107,8 @@ Feature: DisciplineAction Authorization
                   ]
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure authorized client can update a DisciplineAction
              When a PUT request is made to "/ed-fi/disciplineActions/{disciplineActionId}" with
                   """
@@ -128,6 +134,8 @@ Feature: DisciplineAction Authorization
                   """
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Ensure authorized client can delete a DisciplineAction
              When a DELETE request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 204

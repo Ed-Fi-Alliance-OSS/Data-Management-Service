@@ -226,6 +226,46 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
+    public async Task It_binds_transitive_people_first_hop_anchors_to_proposed_authorization_sql()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
+        var runtimeCheck = CreateTransitivePeopleProposedRelationshipAuthorizationRuntimeCheck(
+            request,
+            rootPlan,
+            255901
+        );
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true,
+            runtimeCheck
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReaderResultSets: [CreateSingleValueResultSet("AuthorizationResult", typeof(int), 1)]
+            ),
+        ]);
+
+        await _sut.AuthorizeProposedRelationshipAsync(request, mergeResult, writeSession);
+
+        writeSession.Commands.Should().ContainSingle();
+        var command = writeSession.Commands[0];
+        command.CommandText.Should().Contain("FROM \"edfi\".\"StudentSchoolAssociation\" p0_0_0");
+        command
+            .CommandText.Should()
+            .Contain("p0_0_0.\"SchoolId\" = CAST(@relationshipAuthorization_0_0_SchoolId AS bigint)");
+        command.CommandText.Should().Contain("a0_0.\"Student_DocumentId\" = p0_0_0.\"Student_DocumentId\"");
+        GetParameterValue(command, "@relationshipAuthorization_0_0_SchoolId").Should().Be(255901);
+    }
+
+    [Test]
     public async Task It_maps_proposed_relationship_authorization_auth1_failures_before_root_insert()
     {
         var rootPlan = CreateRootPlan();
@@ -1714,6 +1754,104 @@ public class Given_Relational_Write_No_Profile_Persister
                             subject,
                             proposedValueBinding,
                             new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(schoolIdValue)
+                        ),
+                    ]
+                ),
+            ]
+        );
+    }
+
+    private static ProposedRelationshipAuthorizationRuntimeCheck CreateTransitivePeopleProposedRelationshipAuthorizationRuntimeCheck(
+        RelationalWriteExecutorRequest request,
+        TableWritePlan rootPlan,
+        object? schoolIdValue
+    )
+    {
+        var binding = rootPlan
+            .ColumnBindings.Select(static (binding, index) => (binding, index))
+            .Single(static entry => entry.binding.Column.ColumnName.Value == "SchoolId");
+        var rootTable = rootPlan.TableModel.Table;
+        var schoolIdColumn = binding.binding.Column.ColumnName;
+        var studentSchoolAssociationTable = new DbTableName(
+            new DbSchemaName("edfi"),
+            "StudentSchoolAssociation"
+        );
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var proposedValueBinding = new RelationshipAuthorizationProposedValueBinding(
+            rootTable,
+            schoolIdColumn,
+            binding.index,
+            schoolIdColumn.Value,
+            binding.binding.ParameterName
+        );
+        var personPath = new RelationshipAuthorizationPersonSubjectPath(
+            RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+            [
+                new ColumnPathStep(rootTable, schoolIdColumn, studentSchoolAssociationTable, schoolIdColumn),
+                new ColumnPathStep(
+                    studentSchoolAssociationTable,
+                    AuthNames.StudentDocumentId,
+                    studentTable,
+                    AuthNames.StudentDocumentId
+                ),
+            ]
+        );
+        var subject = new RelationshipAuthorizationSubject(
+            request.WritePlan.Model.Resource,
+            studentSchoolAssociationTable,
+            AuthNames.StudentDocumentId,
+            RelationshipAuthorizationAuthObject.CreatePerson(
+                RelationshipAuthorizationPersonAuthViewKind.Student
+            ),
+            [
+                new RelationshipAuthorizationSubjectContributor(
+                    SecurableElementKind.Student,
+                    "$.studentReference.studentUniqueId",
+                    "StudentUniqueId"
+                ),
+            ],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                RelationshipAuthorizationPersonKind.Student,
+                personPath,
+                new RelationshipAuthorizationPersonStoredAnchor(rootTable, new DbColumnName("DocumentId")),
+                new RelationshipAuthorizationPersonProposedAnchor(
+                    RelationshipAuthorizationPersonProposedAnchorKind.FirstHop,
+                    proposedValueBinding
+                )
+            )
+        );
+        var checkSpec = new RelationshipAuthorizationCheckSpec(
+            new ConfiguredAuthorizationStrategy(
+                AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                0
+            ),
+            0,
+            RelationshipAuthorizationHierarchyDirection.Normal,
+            RelationshipAuthorizationValueSource.Proposed,
+            [subject],
+            new RelationshipAuthorizationCheckTarget.Proposed(rootTable, [proposedValueBinding])
+        );
+
+        return new ProposedRelationshipAuthorizationRuntimeCheck(
+            [checkSpec],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                request.MappingSet.Key.Dialect,
+                [1234L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            ),
+            0,
+            [
+                new ProposedRelationshipAuthorizationRuntimeStrategy(
+                    0,
+                    checkSpec,
+                    [
+                        new ProposedRelationshipAuthorizationRuntimeSubject(
+                            0,
+                            subject,
+                            proposedValueBinding,
+                            new ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue(
+                                schoolIdValue
+                            )
                         ),
                     ]
                 ),

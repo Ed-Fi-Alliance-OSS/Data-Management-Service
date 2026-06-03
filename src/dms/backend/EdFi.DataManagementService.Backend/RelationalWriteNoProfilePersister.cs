@@ -610,13 +610,8 @@ internal sealed class RelationalWriteNoProfilePersister(
             valuesByParameterName[proposedValueParameter.ParameterName] = value switch
             {
                 ProposedRelationshipAuthorizationRuntimeValue.SubjectValue subjectValue => subjectValue.Value,
-                ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue =>
-                    throw new InvalidOperationException(
-                        "Generic proposed relationship authorization SQL cannot bind transitive People "
-                            + $"first-hop anchor for strategy '{proposedValueParameter.StrategyOrdinal}' "
-                            + $"subject '{proposedValueParameter.SubjectOrdinal}' as an auth-view subject value. "
-                            + "A People-aware compiler must resolve the terminal person DocumentId through the path."
-                    ),
+                ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue anchorValue =>
+                    anchorValue.Value,
                 _ => throw new InvalidOperationException(
                     $"Unsupported proposed relationship authorization runtime value '{value.GetType().Name}'."
                 ),

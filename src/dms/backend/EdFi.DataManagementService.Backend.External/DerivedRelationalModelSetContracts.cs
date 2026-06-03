@@ -143,11 +143,16 @@ public sealed record AbstractUnionViewInfo(
 /// <param name="TargetResource">
 /// Optional referenced resource type for diagnostics when the column models reference/descriptors.
 /// </param>
+/// <param name="IsDescriptorReference">
+/// Whether the output column stores a descriptor document id that must be projected as the descriptor URI when
+/// used as an API identity value.
+/// </param>
 public sealed record AbstractUnionViewOutputColumn(
     DbColumnName ColumnName,
     RelationalScalarType ScalarType,
     JsonPathExpression? SourceJsonPath,
-    QualifiedResourceName? TargetResource
+    QualifiedResourceName? TargetResource,
+    bool IsDescriptorReference = false
 );
 
 /// <summary>
@@ -333,10 +338,15 @@ public readonly record struct DbTriggerName(string Value);
 /// <param name="Column">The physical column on the root table.</param>
 /// <param name="IdentityJsonPath">The canonical JSON path label used in the UUIDv5 hash string.</param>
 /// <param name="ScalarType">The scalar type metadata for type-aware string formatting in hash expressions.</param>
+/// <param name="IsDescriptorReference">
+/// Indicates that <paramref name="Column"/> stores a descriptor document ID that must be converted back
+/// to the descriptor URI before UUIDv5 hash computation.
+/// </param>
 public sealed record IdentityElementMapping(
     DbColumnName Column,
     string IdentityJsonPath,
-    RelationalScalarType ScalarType
+    RelationalScalarType ScalarType,
+    bool IsDescriptorReference = false
 );
 
 /// <summary>

@@ -624,6 +624,688 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
 [Category("Authorization")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category("RelationalPut")]
+[Category("RelationalPost")]
+[Category("PeopleRelationship")]
+public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_People_Fixture
+{
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+    private const string TermDescriptor = "uri://ed-fi.org/TermDescriptor#Fall Semester";
+    private const string EntryGradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+
+    private static readonly QuerySchoolSeed[] _schoolSeeds =
+    [
+        new(new DocumentUuid(Guid.Parse("aaaaaaaa-5555-0000-0000-000000000001")), 100, "North School"),
+        new(new DocumentUuid(Guid.Parse("aaaaaaaa-5555-0000-0000-000000000002")), 300, "West School"),
+    ];
+
+    private static readonly SchoolYearTypeSeed _schoolYearSeed = new(
+        new DocumentUuid(Guid.Parse("bbbbbbbb-5555-0000-0000-000000000001")),
+        2026,
+        true,
+        "2026"
+    );
+
+    private static readonly StudentSeed _authorizedStudentSeed = new(
+        new DocumentUuid(Guid.Parse("bbbbbbbb-5555-0000-0000-000000000101")),
+        "put-10001",
+        "Ari",
+        "Able"
+    );
+
+    private static readonly StudentSeed _unauthorizedStudentSeed = new(
+        new DocumentUuid(Guid.Parse("bbbbbbbb-5555-0000-0000-000000000102")),
+        "put-10002",
+        "Blake",
+        "Baker"
+    );
+
+    private static readonly StudentSchoolAssociationSeed _authorizedStudentSchoolAssociationSeed = new(
+        new DocumentUuid(Guid.Parse("bbbbbbbb-5555-0000-0000-000000000201")),
+        _authorizedStudentSeed.StudentUniqueId,
+        100,
+        _schoolYearSeed.SchoolYear,
+        EntryGradeLevelDescriptor,
+        new DateOnly(2026, 8, 15)
+    );
+
+    private static readonly StudentSchoolAssociationSeed _unauthorizedStudentSchoolAssociationSeed = new(
+        new DocumentUuid(Guid.Parse("bbbbbbbb-5555-0000-0000-000000000202")),
+        _unauthorizedStudentSeed.StudentUniqueId,
+        300,
+        _schoolYearSeed.SchoolYear,
+        EntryGradeLevelDescriptor,
+        new DateOnly(2026, 8, 15)
+    );
+
+    private static readonly StudentAcademicRecordSeed _authorizedStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("bbbbbbbb-5555-0000-0000-000000000301")),
+        100,
+        _schoolYearSeed.SchoolYear,
+        _authorizedStudentSeed.StudentUniqueId,
+        TermDescriptor
+    );
+
+    private static readonly StudentAcademicRecordSeed _unauthorizedStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("bbbbbbbb-5555-0000-0000-000000000302")),
+        300,
+        _schoolYearSeed.SchoolYear,
+        _unauthorizedStudentSeed.StudentUniqueId,
+        TermDescriptor
+    );
+
+    private MssqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _context = new MssqlRelationalQueryAuthorizationTestContext();
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false,
+            replaceReadTargetLookup: false
+        );
+    }
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _context.Database.ResetAsync();
+        await _context.SeedSchoolDescriptorDataAsync();
+
+        foreach (var schoolSeed in _schoolSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateSchoolAsync(schoolSeed)
+            );
+        }
+
+        await _context.SeedTermDescriptorAsync(
+            Guid.Parse("bbbbbbbb-5555-0000-0000-000000000501"),
+            TermDescriptor
+        );
+        await _context.SeedSchoolYearTypeAsync(_schoolYearSeed);
+        await _context.SeedStudentAsync(_authorizedStudentSeed);
+        await _context.SeedStudentAsync(_unauthorizedStudentSeed);
+        await _context.SeedStudentSchoolAssociationAsync(_authorizedStudentSchoolAssociationSeed);
+        await _context.SeedStudentSchoolAssociationAsync(_unauthorizedStudentSchoolAssociationSeed);
+        await _context.SeedStudentAcademicRecordAsync(_authorizedStudentAcademicRecordSeed);
+        await _context.SeedStudentAcademicRecordAsync(_unauthorizedStudentAcademicRecordSeed);
+
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, 300);
+        await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
+        _context.ResetRecorder();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task It_authorizes_people_put_and_updates_the_existing_document()
+    {
+        var existingSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-5555-0000-0000-000000000001",
+            801,
+            "people-put-authorized-existing",
+            _authorizedStudentAcademicRecordSeed
+        );
+        var proposedSeed = existingSeed with { Name = "people-put-authorized-change" };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PutStudentAcademicRecordAsync(proposedSeed, existingSeed.DocumentUuid);
+
+        var success = result.Should().BeOfType<UpdateResult.UpdateSuccess>().Subject;
+        success.ExistingDocumentUuid.Should().Be(existingSeed.DocumentUuid);
+        var after = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
+        AssertPeopleRootRow(after, proposedSeed);
+    }
+
+    [Test]
+    public async Task It_denies_people_put_on_stored_values_before_request_reference_resolution()
+    {
+        var existingSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-5555-0000-0000-000000000002",
+            802,
+            "people-put-stored-denied-existing",
+            _unauthorizedStudentAcademicRecordSeed
+        );
+        var proposedSeed = existingSeed with
+        {
+            Name = "people-put-stored-denied-missing-reference",
+            StudentUniqueId = "missing-student",
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PutStudentAcademicRecordAsync(proposedSeed, existingSeed.DocumentUuid);
+
+        AssertPeopleRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Stored,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+        );
+        var after = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Test]
+    public async Task It_returns_people_403_before_stale_if_match_when_put_proposed_values_are_unauthorized()
+    {
+        var existingSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-5555-0000-0000-000000000003",
+            803,
+            "people-put-proposed-denied-existing",
+            _authorizedStudentAcademicRecordSeed
+        );
+        var proposedSeed = existingSeed with
+        {
+            Name = "people-put-proposed-denied-change",
+            EducationOrganizationId = _unauthorizedStudentAcademicRecordSeed.EducationOrganizationId,
+            StudentUniqueId = _unauthorizedStudentAcademicRecordSeed.StudentUniqueId,
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PutStudentAcademicRecordAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            ifMatch: "\"stale-etag\""
+        );
+
+        AssertPeopleRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Proposed,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+        );
+        var after = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Test]
+    public async Task It_denies_put_for_unauthorized_people_only_proposed_value()
+    {
+        var existingSeed = new AuthorizationStudentSchoolSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-5555-0000-0000-000000000008")),
+            808,
+            "people-only-direct-put-existing",
+            100,
+            _authorizedStudentSeed.StudentUniqueId
+        );
+        var proposedSeed = existingSeed with
+        {
+            Name = "people-only-direct-put-denied-change",
+            StudentUniqueId = _unauthorizedStudentSeed.StudentUniqueId,
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentSchoolAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentSchoolSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PutStudentSchoolAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+
+        AssertDirectStudentRelationshipDenied(
+            result,
+            RelationshipAuthorizationCrudTestSupport.RelationshipsWithPeopleOnly
+        );
+        var after = await _context.ReadAuthorizationStudentSchoolSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Test]
+    public async Task It_denies_put_for_unauthorized_edorgs_and_people_proposed_value()
+    {
+        var existingSeed = new AuthorizationStudentSchoolSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-5555-0000-0000-000000000009")),
+            809,
+            "mixed-direct-put-existing",
+            100,
+            _authorizedStudentSeed.StudentUniqueId
+        );
+        var proposedSeed = existingSeed with
+        {
+            Name = "mixed-direct-put-denied-change",
+            StudentUniqueId = _unauthorizedStudentSeed.StudentUniqueId,
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentSchoolAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentSchoolSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PutStudentSchoolAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            RelationshipAuthorizationCrudTestSupport.EdOrgAndPeopleStrategyNames
+        );
+
+        AssertDirectStudentRelationshipDenied(
+            result,
+            RelationshipAuthorizationCrudTestSupport.RelationshipsWithEdOrgsAndPeople
+        );
+        var after = await _context.ReadAuthorizationStudentSchoolSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Test]
+    public async Task It_authorizes_people_put_proposed_values_before_guarded_no_op_success()
+    {
+        var existingSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-5555-0000-0000-000000000004",
+            804,
+            "people-put-guarded-no-op",
+            _authorizedStudentAcademicRecordSeed
+        );
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PutStudentAcademicRecordAsync(existingSeed, existingSeed.DocumentUuid);
+
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _context.AssertPeopleUpdateRunsStoredThenProposedRelationshipAuthorization();
+        var after = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [Test]
+    public async Task It_denies_people_post_as_update_on_stored_values_before_request_reference_resolution()
+    {
+        var existingSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-5555-0000-0000-000000000005",
+            805,
+            "people-post-update-stored-denied-existing",
+            _unauthorizedStudentAcademicRecordSeed
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-5555-0000-0000-000000000005")),
+            Name = "people-post-update-stored-denied-missing-reference",
+            StudentUniqueId = "missing-student",
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PostStudentAcademicRecordAsync(candidateSeed);
+
+        AssertPeopleRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Stored,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+        );
+        var after = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_people_403_before_stale_if_match_when_post_as_update_proposed_values_are_unauthorized()
+    {
+        var existingSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-5555-0000-0000-000000000006",
+            806,
+            "people-post-update-proposed-denied-existing",
+            _authorizedStudentAcademicRecordSeed
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-5555-0000-0000-000000000006")),
+            Name = "people-post-update-proposed-denied-change",
+            EducationOrganizationId = _unauthorizedStudentAcademicRecordSeed.EducationOrganizationId,
+            StudentUniqueId = _unauthorizedStudentAcademicRecordSeed.StudentUniqueId,
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PostStudentAcademicRecordAsync(candidateSeed, ifMatch: "\"stale-etag\"");
+
+        AssertPeopleRelationshipDenied(
+            result,
+            RelationshipAuthorizationFailureValueSource.Proposed,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship
+        );
+        var after = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_authorizes_people_post_as_update_proposed_values_before_guarded_no_op_success()
+    {
+        var existingSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-5555-0000-0000-000000000007",
+            807,
+            "people-post-update-guarded-no-op",
+            _authorizedStudentAcademicRecordSeed
+        );
+        var candidateSeed = existingSeed with
+        {
+            DocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-5555-0000-0000-000000000007")),
+        };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(existingSeed)
+        );
+        var before = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+
+        var result = await PostStudentAcademicRecordAsync(candidateSeed);
+
+        result.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _context.AssertPeopleUpdateRunsStoredThenProposedRelationshipAuthorization();
+        var after = await _context.ReadAuthorizationStudentAcademicRecordSideEffectStateAsync(
+            existingSeed.DocumentUuid
+        );
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+        (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
+    }
+
+    private async Task<UpdateResult> PutStudentAcademicRecordAsync(
+        AuthorizationStudentAcademicRecordSeed seed,
+        DocumentUuid documentUuid,
+        string? ifMatch = null
+    )
+    {
+        return await _context.UpdateAuthorizationStudentAcademicRecordByIdAsync(
+            seed,
+            documentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames,
+            ifMatch
+        );
+    }
+
+    private async Task<UpdateResult> PutStudentSchoolAsync(
+        AuthorizationStudentSchoolSeed seed,
+        DocumentUuid documentUuid,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await _context.UpdateAuthorizationStudentSchoolByIdAsync(
+            seed,
+            documentUuid,
+            [ClaimEducationOrganizationId],
+            strategyNames,
+            ifMatch
+        );
+    }
+
+    private async Task<UpsertResult> PostStudentAcademicRecordAsync(
+        AuthorizationStudentAcademicRecordSeed seed,
+        string? ifMatch = null
+    )
+    {
+        return await _context.UpsertAuthorizationStudentAcademicRecordAsync(
+            seed,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames,
+            ifMatch
+        );
+    }
+
+    private static void AssertPeopleRelationshipDenied(
+        UpdateResult result,
+        RelationshipAuthorizationFailureValueSource expectedValueSource,
+        RelationshipAuthorizationSubjectFailureKind expectedFailureKind
+    )
+    {
+        if (result is UpdateResult.UnknownFailure unknownFailure)
+        {
+            Assert.Fail(
+                $"Expected relationship denial but received unknown failure: {unknownFailure.FailureMessage}"
+            );
+        }
+
+        var failure = result.Should().BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>().Subject;
+        AssertPeopleRelationshipFailure(
+            failure.RelationshipFailure,
+            expectedValueSource,
+            expectedFailureKind
+        );
+    }
+
+    private static void AssertDirectStudentRelationshipDenied(
+        UpdateResult result,
+        string expectedStrategyName
+    )
+    {
+        if (result is UpdateResult.UnknownFailure unknownFailure)
+        {
+            Assert.Fail(
+                $"Expected relationship denial but received unknown failure: {unknownFailure.FailureMessage}"
+            );
+        }
+
+        var failure = result.Should().BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>().Subject;
+        AssertDirectStudentRelationshipFailure(failure.RelationshipFailure, expectedStrategyName);
+    }
+
+    private static void AssertPeopleRelationshipDenied(
+        UpsertResult result,
+        RelationshipAuthorizationFailureValueSource expectedValueSource,
+        RelationshipAuthorizationSubjectFailureKind expectedFailureKind
+    )
+    {
+        if (result is UpsertResult.UnknownFailure unknownFailure)
+        {
+            Assert.Fail(
+                $"Expected relationship denial but received unknown failure: {unknownFailure.FailureMessage}"
+            );
+        }
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
+        AssertPeopleRelationshipFailure(
+            failure.RelationshipFailure,
+            expectedValueSource,
+            expectedFailureKind
+        );
+    }
+
+    private static void AssertDirectStudentRelationshipFailure(
+        RelationshipAuthorizationFailure relationshipFailure,
+        string expectedStrategyName
+    )
+    {
+        relationshipFailure.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        relationshipFailure
+            .ClaimEducationOrganizationIds.Select(static id => id.Value)
+            .Should()
+            .Equal(ClaimEducationOrganizationId);
+
+        var failedStrategy = relationshipFailure.FailedStrategies.Should().ContainSingle().Subject;
+        failedStrategy.StrategyName.Should().Be(expectedStrategyName);
+        failedStrategy.StrategyKind.Should().Be(expectedStrategyName);
+
+        var failedSubject = failedStrategy.FailedSubjects.Should().ContainSingle().Subject;
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        failedSubject.RootBinding.TableName.Should().Be("authz.AuthorizationStudentSchoolResource");
+        failedSubject.RootBinding.ColumnName.Should().Be("Student_DocumentId");
+        failedSubject
+            .SecurableElements.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                new RelationshipAuthorizationSecurableElement(
+                    "Student",
+                    "$.studentReference.studentUniqueId",
+                    "StudentUniqueId"
+                )
+            );
+        failedSubject.PersonSubject.Should().NotBeNull();
+        failedSubject.PersonSubject!.PersonKind.Should().Be("Student");
+        failedSubject.PersonSubject.PathKind.Should().Be("DirectRootColumn");
+        failedSubject.PersonSubject.ProposedAnchor.Should().NotBeNull();
+        failedSubject.PersonSubject.ProposedAnchor!.Kind.Should().Be("RootRow");
+        failedSubject.PersonSubject.ProposedAnchor.Binding.ColumnName.Should().Be("Student_DocumentId");
+        failedSubject.PersonSubject.Hint.Should().Contain("StudentSchoolAssociation");
+    }
+
+    private static void AssertPeopleRelationshipFailure(
+        RelationshipAuthorizationFailure relationshipFailure,
+        RelationshipAuthorizationFailureValueSource expectedValueSource,
+        RelationshipAuthorizationSubjectFailureKind expectedFailureKind
+    )
+    {
+        relationshipFailure.ValueSource.Should().Be(expectedValueSource);
+        relationshipFailure
+            .ClaimEducationOrganizationIds.Select(static id => id.Value)
+            .Should()
+            .Equal(ClaimEducationOrganizationId);
+
+        var failedStrategy = relationshipFailure.FailedStrategies.Should().ContainSingle().Subject;
+        failedStrategy
+            .StrategyName.Should()
+            .Be(RelationshipAuthorizationCrudTestSupport.RelationshipsWithStudentsOnly);
+        failedStrategy
+            .StrategyKind.Should()
+            .Be(RelationshipAuthorizationCrudTestSupport.RelationshipsWithStudentsOnly);
+
+        var failedSubject = failedStrategy.FailedSubjects.Should().ContainSingle().Subject;
+        failedSubject.FailureKind.Should().Be(expectedFailureKind);
+        failedSubject.RootBinding.TableName.Should().Be("authz.AuthorizationStudentAcademicRecordResource");
+        failedSubject
+            .SecurableElements.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                new RelationshipAuthorizationSecurableElement(
+                    "Student",
+                    "$.studentAcademicRecordReference.studentUniqueId",
+                    "StudentUniqueId"
+                )
+            );
+        failedSubject.PersonSubject.Should().NotBeNull();
+        failedSubject.PersonSubject!.PersonKind.Should().Be("Student");
+        failedSubject.PersonSubject.PathKind.Should().Be("TransitiveJoinPath");
+        failedSubject.PersonSubject.Hint.Should().Contain("StudentSchoolAssociation");
+
+        if (expectedValueSource is RelationshipAuthorizationFailureValueSource.Proposed)
+        {
+            failedSubject.PersonSubject.ProposedAnchor.Should().NotBeNull();
+            failedSubject
+                .PersonSubject.ProposedAnchor!.Binding.ColumnName.Should()
+                .Be("StudentAcademicRecord_DocumentId");
+        }
+    }
+
+    private static void AssertPeopleRootRow(
+        AuthorizationWriteSideEffectState state,
+        AuthorizationStudentAcademicRecordSeed expectedSeed
+    )
+    {
+        var rootRow = state
+            .ResourceTables.Single(static table =>
+                table.TableName == "authz.AuthorizationStudentAcademicRecordResource"
+            )
+            .Rows.Should()
+            .ContainSingle()
+            .Subject;
+
+        rootRow["AuthorizationStudentAcademicRecordId"]
+            .Should()
+            .Be(expectedSeed.AuthorizationStudentAcademicRecordId.ToString());
+        rootRow["Name"].Should().Be(expectedSeed.Name);
+        rootRow["StudentAcademicRecord_EducationOrganizationId"]
+            .Should()
+            .Be(expectedSeed.EducationOrganizationId.ToString());
+        rootRow["StudentAcademicRecord_SchoolYear"].Should().Be(expectedSeed.SchoolYear.ToString());
+        rootRow["StudentAcademicRecord_StudentUniqueId"].Should().Be(expectedSeed.StudentUniqueId);
+    }
+
+    private static AuthorizationStudentAcademicRecordSeed CreateAuthorizationStudentAcademicRecordSeed(
+        string documentUuid,
+        int authorizationStudentAcademicRecordId,
+        string name,
+        StudentAcademicRecordSeed studentAcademicRecordSeed
+    ) =>
+        new(
+            new DocumentUuid(Guid.Parse(documentUuid)),
+            authorizationStudentAcademicRecordId,
+            name,
+            studentAcademicRecordSeed.EducationOrganizationId,
+            studentAcademicRecordSeed.SchoolYear,
+            studentAcademicRecordSeed.StudentUniqueId,
+            studentAcademicRecordSeed.TermDescriptor
+        );
+}
+
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
 [Category("RelationalPost")]
 public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthetic_EdOrg_Fixture
 {
