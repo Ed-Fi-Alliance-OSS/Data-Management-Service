@@ -43,6 +43,7 @@ internal class TenantResolutionMiddlewareTests
                     MultiTenancy = false,
                     Datastore = "postgresql",
                     IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
                 }
             );
         }
@@ -113,6 +114,7 @@ internal class TenantResolutionMiddlewareTests
                     MultiTenancy = true,
                     Datastore = "postgresql",
                     IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
                 }
             );
         }

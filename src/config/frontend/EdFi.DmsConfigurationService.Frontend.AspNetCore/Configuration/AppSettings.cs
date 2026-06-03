@@ -15,10 +15,13 @@ public class AppSettings
     public required string IdentityProvider { get; set; }
     public bool MultiTenancy { get; set; }
     public bool EnableApplicationResetEndpoint { get; set; }
+    public required string SpecificationVersion { get; set; }
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>
 {
+    private static readonly string[] ValidSpecificationVersions = ["v1", "v2", "v3"];
+
     public ValidateOptionsResult Validate(string? name, AppSettings options)
     {
         if (string.IsNullOrWhiteSpace(options.Datastore))
@@ -53,6 +56,23 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         {
             return ValidateOptionsResult.Fail(
                 "AppSettings value IdentityProvider must be one of: (keycloak, self-contained)"
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(options.SpecificationVersion))
+        {
+            return ValidateOptionsResult.Fail("Missing required AppSettings value: SpecificationVersion");
+        }
+
+        if (
+            !ValidSpecificationVersions.Contains(
+                options.SpecificationVersion,
+                StringComparer.OrdinalIgnoreCase
+            )
+        )
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value SpecificationVersion must be one of: v1, v2, v3"
             );
         }
 
