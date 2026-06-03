@@ -46,16 +46,6 @@ public sealed class RelationalDocumentStoreRepository(
     internal const int PostRelationshipAuthorizationAuth1Index = 0;
     internal const int PutRelationshipAuthorizationAuth1Index = 0;
     private const int GetByIdReadBoundaryAttemptCount = 2;
-    private static readonly IReadOnlyList<string> _supportedRelationshipStrategyNames =
-    [
-        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
-        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
-        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
-        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-    ];
 
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
@@ -3017,7 +3007,7 @@ public sealed class RelationalDocumentStoreRepository(
             effectiveAuthorizationLabel: "GET",
             executionBoundaryName: "single-record relationship execution boundary",
             supportedStrategySetName: "single-record relationship",
-            supportedStrategyNames: _supportedRelationshipStrategyNames
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledDeleteAuthorizationMessage(
@@ -3031,7 +3021,7 @@ public sealed class RelationalDocumentStoreRepository(
             effectiveAuthorizationLabel: "DELETE",
             executionBoundaryName: "single-record relationship execution boundary",
             supportedStrategySetName: "single-record relationship",
-            supportedStrategyNames: _supportedRelationshipStrategyNames
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledPostAuthorizationMessage(
@@ -3045,7 +3035,7 @@ public sealed class RelationalDocumentStoreRepository(
             effectiveAuthorizationLabel: "POST",
             executionBoundaryName: "POST create-new relationship execution boundary",
             supportedStrategySetName: "POST create-new relationship",
-            supportedStrategyNames: _supportedRelationshipStrategyNames
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledPutAuthorizationMessage(
@@ -3059,7 +3049,7 @@ public sealed class RelationalDocumentStoreRepository(
             effectiveAuthorizationLabel: "PUT",
             executionBoundaryName: "PUT relationship execution boundary",
             supportedStrategySetName: "PUT relationship",
-            supportedStrategyNames: _supportedRelationshipStrategyNames
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static GetResult.GetFailureSecurityConfiguration BuildGetAuthorizationSecurityConfigurationFailure(
@@ -3185,7 +3175,7 @@ public sealed class RelationalDocumentStoreRepository(
             effectiveAuthorizationLabel: "GET-many",
             executionBoundaryName: "GET-many relationship query execution boundary",
             supportedStrategySetName: "GET-many relationship",
-            supportedStrategyNames: _supportedRelationshipStrategyNames
+            supportedStrategyNames: RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
         );
 
     private static string BuildKnownButNotEnabledAuthorizationMessage(

@@ -9312,18 +9312,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static void AssertSupportedRelationshipStrategyNames(string message)
     {
-        string[] expectedStrategyNames =
-        [
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople,
-            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeopleInverted,
-            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
-            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
-            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnlyThroughResponsibility,
-        ];
-
-        foreach (var expectedStrategyName in expectedStrategyNames)
+        foreach (
+            var expectedStrategyName in RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
+        )
         {
             message.Should().Contain(expectedStrategyName);
         }

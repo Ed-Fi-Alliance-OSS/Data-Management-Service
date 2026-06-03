@@ -109,6 +109,9 @@ internal static class RelationshipAuthorizationStrategyClassifier
             RelationshipAuthorizationStrategyKind.OwnershipBased,
     };
 
+    internal static IReadOnlyList<string> SupportedRelationshipStrategyNames { get; } =
+    [.. _supportedStrategyDefinitionsByName.Keys];
+
     public static bool IsPeopleRelationshipStrategy(string strategyName) =>
         _supportedStrategyDefinitionsByName.TryGetValue(strategyName, out var definition)
         && definition.IncludesPeopleSubjects;
