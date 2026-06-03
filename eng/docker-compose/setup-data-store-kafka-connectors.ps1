@@ -5,7 +5,7 @@
 
 <#
 .SYNOPSIS
-    Sets up Debezium connectors for topic-per-instance architecture in E2E tests
+    Sets up Debezium connectors for topic-per-data-store architecture in E2E tests
 
 .DESCRIPTION
     This script creates individual Debezium connectors for each data store,
@@ -17,18 +17,18 @@
 .PARAMETER EnvironmentFile
     Path to the environment file containing configuration (default: ./.env)
 
-.PARAMETER Instances
-    Array of instance configurations. Each instance should have:
+.PARAMETER DataStores
+    Array of data store configurations. Each data store should have:
     - DataStoreId: Numeric ID for the data store
-    - DatabaseName: Name of the PostgreSQL database for this instance
+    - DatabaseName: Name of the PostgreSQL database for this data store
 
 .EXAMPLE
-    $instances = @(
+    $dataStores = @(
         @{ DataStoreId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
         @{ DataStoreId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
         @{ DataStoreId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
     )
-    .\setup-instance-kafka-connectors.ps1 -Instances $instances
+    .\setup-data-store-kafka-connectors.ps1 -DataStores $dataStores
 #>
 
 [CmdletBinding()]
@@ -39,7 +39,7 @@ param (
 
     [Parameter(Mandatory = $true)]
     [array]
-    $Instances
+    $DataStores
 )
 
 function IsReady([string] $Url) {
@@ -144,10 +144,10 @@ function Initialize-DataStoreConnector {
 Write-Host @"
 
 ========================================
-Instance Kafka Connectors Setup
+Data Store Kafka Connectors Setup
 ========================================
 Environment File: $EnvironmentFile
-Number of Instances: $($Instances.Count)
+Number of data stores: $($DataStores.Count)
 ========================================
 
 "@ -ForegroundColor Cyan
@@ -181,7 +181,7 @@ if (-not (IsReady $connectBaseUrl)) {
 }
 
 # Load connector template
-$templatePath = "./instance_connector_template.json"
+$templatePath = "./data_store_connector_template.json"
 if (-not (Test-Path $templatePath)) {
     Write-Host "`nERROR: Connector template not found at: $templatePath" -ForegroundColor Red
     exit 1
@@ -190,15 +190,15 @@ if (-not (Test-Path $templatePath)) {
 $templateContent = Get-Content $templatePath -Raw
 Write-Host "`nLoaded connector template from: $templatePath" -ForegroundColor Green
 
-# Setup connector for each instance
+# Setup connector for each data store
 $successCount = 0
 $failureCount = 0
 
-foreach ($instance in $Instances) {
+foreach ($dataStore in $DataStores) {
     try {
         Initialize-DataStoreConnector `
-            -DataStoreId $instance.DataStoreId `
-            -DatabaseName $instance.DatabaseName `
+            -DataStoreId $dataStore.DataStoreId `
+            -DatabaseName $dataStore.DatabaseName `
             -ConnectBaseUrl $connectBaseUrl `
             -PostgresPassword $postgresPassword `
             -TemplateContent $templateContent
@@ -206,7 +206,7 @@ foreach ($instance in $Instances) {
         $successCount++
     }
     catch {
-        Write-Information -MessageData "`nFailed to setup connector for data store $($instance.DataStoreId)"
+        Write-Information -MessageData "`nFailed to setup connector for data store $($dataStore.DataStoreId)"
         Write-Information -MessageData $_.Exception.Message
         $failureCount++
     }
@@ -241,4 +241,5 @@ if ($failureCount -gt 0) {
     exit 1
 }
 
-Write-Host "`nAll instance connectors configured successfully! ✓" -ForegroundColor Green
+Write-Host "`nAll data store connectors configured successfully! ✓" -ForegroundColor Green
+

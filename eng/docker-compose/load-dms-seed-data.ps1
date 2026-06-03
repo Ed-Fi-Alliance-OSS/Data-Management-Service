@@ -1206,7 +1206,7 @@ function Resolve-SeedTargetDataStores {
 
     # No selector; auto-select if exactly one instance.
     if ($instances.Count -eq 0) {
-        throw "No DMS data stores found in CMS. Run configure-local-dms-instance.ps1 to create data stores, then re-run seed delivery."
+        throw "No DMS data stores found in CMS. Run configure-local-data-store.ps1 to create data stores, then re-run seed delivery."
     }
 
     if ($instances.Count -gt 1) {
@@ -1852,3 +1852,4 @@ else {
 # --- Step 10: Cleanup on success ---
 Remove-SeedWorkspace -BootstrapRoot $bootstrapRoot
 Write-Host "Seed delivery complete. Workspace cleaned up."
+

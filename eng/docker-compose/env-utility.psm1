@@ -91,7 +91,7 @@ function Get-EnvValue {
     .SYNOPSIS
     Shared helper that returns the value of an env-file key when present and non-blank,
     otherwise the documented default. Equivalent to the duplicated Get-EnvValueOrDefault
-    helpers in configure-local-dms-instance.ps1 and provision-dms-schema.ps1, lifted into
+    helpers in configure-local-data-store.ps1 and provision-dms-schema.ps1, lifted into
     the shared module so the precedence rule is single-sourced.
 
     Precedence: explicit env-file value > documented default. Process environment variables
@@ -119,7 +119,7 @@ function Get-EnvValue {
 function Resolve-BootstrapAdminClient {
     <#
     .SYNOPSIS
-        Returns the bootstrap admin client id and secret used by configure-local-dms-instance.ps1
+        Returns the bootstrap admin client id and secret used by configure-local-data-store.ps1
         and provision-dms-schema.ps1 to acquire a CMS admin token. Reads
         DMS_BOOTSTRAP_ADMIN_CLIENT_ID / DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET from the env file and
         falls back to the historical local-dev defaults so the standard developer flow needs no
@@ -133,7 +133,7 @@ function Resolve-BootstrapAdminClient {
     )
 
     return [pscustomobject]@{
-        ClientId     = Get-EnvValue -EnvValues $EnvValues -Name "DMS_BOOTSTRAP_ADMIN_CLIENT_ID" -DefaultValue "dms-instance-admin"
+        ClientId     = Get-EnvValue -EnvValues $EnvValues -Name "DMS_BOOTSTRAP_ADMIN_CLIENT_ID" -DefaultValue "dms-data-store-admin"
         ClientSecret = Get-EnvValue -EnvValues $EnvValues -Name "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
     }
 }
@@ -453,3 +453,4 @@ function Resolve-BootstrapDerivedEnv {
 
     return $DerivedTargetPath
 }
+

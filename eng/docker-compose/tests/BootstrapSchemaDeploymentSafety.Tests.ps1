@@ -40,7 +40,7 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
                 "bootstrap-schema-tool.psm1",
                 "bootstrap-schema-workspace.psm1",
                 "env-utility.psm1",
-                "configure-local-dms-instance.ps1",
+                "configure-local-data-store.ps1",
                 "provision-dms-schema.ps1",
                 "bootstrap-wrapper.psm1",
                 "bootstrap-local-dms.ps1"
@@ -68,7 +68,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 DockerComposeRoot = $dockerComposeRoot
                 BootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
                 EnvFile = $envFile
-                ConfigureScript = Join-Path $dockerComposeRoot "configure-local-dms-instance.ps1"
+                ConfigureScript = Join-Path $dockerComposeRoot "configure-local-data-store.ps1"
                 ProvisionScript = Join-Path $dockerComposeRoot "provision-dms-schema.ps1"
                 WrapperScript = Join-Path $dockerComposeRoot "bootstrap-local-dms.ps1"
             }
@@ -261,14 +261,15 @@ exit $ExitCode
             $params.Count | Should -Be 3
         }
 
-        It "wrapper entry script exposes configure flags without exposing InstanceId" {
+        It "wrapper entry script exposes configure flags without exposing direct data-store selectors" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
 
-            $params | Should -Contain "NoDmsInstance"
+            $params | Should -Contain "NoDataStore"
             $params | Should -Contain "AddSmokeTestCredentials"
             $params | Should -Contain "SchoolYearRange"
             $params | Should -Contain "LoadSeedData"
             $params | Should -Not -Contain "InstanceId"
+            $params | Should -Not -Contain "DataStoreId"
         }
 
         It "start scripts expose InfraOnly and DmsOnly phase switches" {
@@ -449,15 +450,15 @@ exit $ExitCode
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "A"
+                        name = "A"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=tenant_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     },
                     [pscustomobject]@{
                         id = 2
-                        instanceName = "B"
+                        name = "B"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=tenant_db;'
-                        dmsInstanceRouteContexts = @(
+                        dataStoreContexts = @(
                             [pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" }
                         )
                     }
@@ -498,9 +499,9 @@ exit $ExitCode
                 return @(
                     [pscustomobject]@{
                         id = 3
-                        instanceName = "Encrypted"
+                        name = "Encrypted"
                         connectionString = $encryptedConnectionString
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -565,9 +566,9 @@ exit $ExitCode
                     1..500 | ForEach-Object {
                         [pscustomobject]@{
                             id = $_
-                            instanceName = "I$_"
+                            name = "I$_"
                             connectionString = "host=dms-postgresql;port=5432;username=postgres;password=x;database=db$_;"
-                            dmsInstanceRouteContexts = @()
+                            dataStoreContexts = @()
                         }
                     }
                 )
@@ -591,16 +592,16 @@ exit $ExitCode
             function Get-DataStore {
                 $target = [pscustomobject]@{
                     id = 1
-                    instanceName = "Target"
+                    name = "Target"
                     connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=below_limit;'
-                    dmsInstanceRouteContexts = @()
+                    dataStoreContexts = @()
                 }
                 $filler = 2..499 | ForEach-Object {
                     [pscustomobject]@{
                         id = $_
-                        instanceName = "I$_"
+                        name = "I$_"
                         connectionString = "host=dms-postgresql;port=5432;username=postgres;password=x;database=db$_;"
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 }
                 return @($target) + @($filler)
@@ -625,24 +626,24 @@ exit $ExitCode
                 return @(
                     [pscustomobject]@{
                         id = 10
-                        instanceName = "SY2024-A"
+                        name = "SY2024-A"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=sy2024a;'
-                        dmsInstanceRouteContexts = @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" })
+                        dataStoreContexts = @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" })
                     },
                     [pscustomobject]@{
                         id = 11
-                        instanceName = "SY2024-B"
+                        name = "SY2024-B"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=sy2024b;'
-                        dmsInstanceRouteContexts = @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" })
+                        dataStoreContexts = @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" })
                     }
                 )
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -SchoolYear @(2024) } |
-                Should -Throw -ExpectedMessage "*Multiple DMS instances found with route context schoolYear=2024*"
+                Should -Throw -ExpectedMessage "*Multiple data stores found with route context schoolYear=2024*"
         }
 
-        It "fails on zero instances or ambiguous auto-selection before invoking SchemaTools" {
+        It "fails on zero data stores or ambiguous auto-selection before invoking SchemaTools" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
@@ -655,28 +656,28 @@ exit $ExitCode
             function Get-DataStore { return @() }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile } |
-                Should -Throw -ExpectedMessage "*No DMS instances found*"
+                Should -Throw -ExpectedMessage "*No data stores found*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
 
             function Get-DataStore {
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "A"
+                        name = "A"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=a;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     },
                     [pscustomobject]@{
                         id = 2
-                        instanceName = "B"
+                        name = "B"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=b;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile } |
-                Should -Throw -ExpectedMessage "*Multiple DMS instances exist*"
+                Should -Throw -ExpectedMessage "*Multiple data stores exist*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
 
@@ -723,9 +724,9 @@ exit $ExitCode
                 return @(
                     [pscustomobject]@{
                         id = 5
-                        instanceName = "A"
+                        name = "A"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=log_guard;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -754,9 +755,9 @@ exit $ExitCode
                 return @(
                     [pscustomobject]@{
                         id = 5
-                        instanceName = "A"
+                        name = "A"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=drift_guard;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -768,7 +769,7 @@ exit $ExitCode
     }
 
     Context "instance configuration" {
-        It "returns a structured object for NoDmsInstance route-unqualified selection" {
+        It "returns a structured object for NoDataStore route-unqualified selection" {
             . $script:repo.ConfigureScript
 
             function Add-CmsClient { }
@@ -777,20 +778,20 @@ exit $ExitCode
                 return @(
                     [pscustomobject]@{
                         id = 77
-                        instanceName = "Existing"
-                        dmsInstanceRouteContexts = @()
+                        name = "Existing"
+                        dataStoreContexts = @()
                     }
                 )
             }
 
-            $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -NoDmsInstance
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -NoDataStore
 
-            $result.InstanceIds | Should -Be @(77)
-            $result.HasRouteQualifiedInstances | Should -BeFalse
+            $result.DataStoreIds | Should -Be @(77)
+            $result.HasRouteQualifiedDataStores | Should -BeFalse
             $result.RouteContexts.Count | Should -Be 0
         }
 
-        It "rejects NoDmsInstance when the sole existing instance is route-qualified" {
+        It "rejects NoDataStore when the sole existing data store is route-qualified" {
             . $script:repo.ConfigureScript
 
             function Add-CmsClient { }
@@ -799,17 +800,17 @@ exit $ExitCode
                 return @(
                     [pscustomobject]@{
                         id = 77
-                        instanceName = "Existing"
-                        dmsInstanceRouteContexts = @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" })
+                        name = "Existing"
+                        dataStoreContexts = @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" })
                     }
                 )
             }
 
-            { Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -NoDmsInstance } |
+            { Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -NoDataStore } |
                 Should -Throw -ExpectedMessage "*route-qualified*"
         }
 
-        It "creates smoke credentials for the selected NoDmsInstance target and tenant" {
+        It "creates smoke credentials for the selected NoDataStore target and tenant" {
             $envFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
             Get-Content -LiteralPath $script:repo.EnvFile |
                 Set-Content -LiteralPath $envFile -Encoding utf8
@@ -836,18 +837,18 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
                 return @(
                     [pscustomobject]@{
                         id = 77
-                        instanceName = "Existing"
-                        dmsInstanceRouteContexts = @()
+                        name = "Existing"
+                        dataStoreContexts = @()
                     }
                 )
             }
 
-            Invoke-ConfigureLocalDmsInstance -EnvironmentFile $envFile -NoDmsInstance -AddSmokeTestCredentials | Out-Null
+            Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -NoDataStore -AddSmokeTestCredentials | Out-Null
 
             @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke url=http://localhost:18081 ids=77 tenant=tenant-a"
         }
 
-        It "creates smoke credentials for all selected school-year instances" {
+        It "creates smoke credentials for all selected school-year data stores" {
             $capturePath = Join-Path $script:repo.RepoRoot "smoke-schoolyear-capture.txt"
             $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
             New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
@@ -865,12 +866,12 @@ Export-ModuleMember -Function Get-SmokeTestCredentials
             function Get-CmsToken { return "token" }
             function Add-DmsSchoolYearInstances {
                 return @(
-                    @{ InstanceId = [long]101; Year = 2024 },
-                    @{ InstanceId = [long]102; Year = 2025 }
+                    @{ DataStoreId = [long]101; Year = 2024 },
+                    @{ DataStoreId = [long]102; Year = 2025 }
                 )
             }
 
-            Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials | Out-Null
+            Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials | Out-Null
 
             @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke ids=101,102 tenant="
         }
@@ -896,19 +897,20 @@ else { Add-Content -LiteralPath '$sequencePath' -Value 'start-legacy' }
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "start-local-dms.ps1") -Encoding utf8
 
             @"
-param([string] `$EnvironmentFile, [string] `$SchoolYearRange, [switch] `$NoDmsInstance, [switch] `$AddSmokeTestCredentials)
-Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRange noDms=`$NoDmsInstance smoke=`$AddSmokeTestCredentials`"
+param([string] `$EnvironmentFile, [string] `$SchoolYearRange, [switch] `$NoDataStore, [switch] `$AddSmokeTestCredentials)
+Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRange noDataStore=`$NoDataStore smoke=`$AddSmokeTestCredentials`"
 [pscustomobject]@{
-    InstanceIds = [long[]] @(101, 102)
+    DataStoreIds = [long[]] @(101, 102)
+    SelectedDataStoreIds = [long[]] @(101, 102)
     RouteContexts = @(
-        [pscustomobject]@{ InstanceId = [long]101; ContextKey = 'schoolYear'; ContextValue = '2024' },
-        [pscustomobject]@{ InstanceId = [long]102; ContextKey = 'schoolYear'; ContextValue = '2025' }
+        [pscustomobject]@{ DataStoreId = [long]101; ContextKey = 'schoolYear'; ContextValue = '2024' },
+        [pscustomobject]@{ DataStoreId = [long]102; ContextKey = 'schoolYear'; ContextValue = '2025' }
     )
     Tenant = ''
     SchoolYears = [int[]] @(2024, 2025)
-    HasRouteQualifiedInstances = `$true
+    HasRouteQualifiedDataStores = `$true
 }
-"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-dms-instance.ps1") -Encoding utf8
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
 
             @"
 param([string] `$EnvironmentFile, [long[]] `$InstanceId)
@@ -916,8 +918,8 @@ Add-Content -LiteralPath '$sequencePath' -Value `"provision ids=`$(`$InstanceId 
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1") -Encoding utf8
 
             @"
-param([string] `$EnvironmentFile, [int[]] `$SchoolYear, [long[]] `$InstanceId, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
-Add-Content -LiteralPath '$sequencePath' -Value `"seed years=`$(`$SchoolYear -join ',') ids=`$(`$InstanceId -join ',')`"
+param([string] `$EnvironmentFile, [int[]] `$SchoolYear, [long[]] `$DataStoreId, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$sequencePath' -Value `"seed years=`$(`$SchoolYear -join ',') ids=`$(`$DataStoreId -join ',')`"
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
 
             & $script:repo.WrapperScript `
@@ -929,13 +931,13 @@ Add-Content -LiteralPath '$sequencePath' -Value `"seed years=`$(`$SchoolYear -jo
 
             $sequence = @(Get-Content -LiteralPath $sequencePath)
             $sequence[0] | Should -Be "start-infra EnableConfig=True"
-            $sequence[1] | Should -Be "configure range=2024-2025 noDms=False smoke=True"
+            $sequence[1] | Should -Be "configure range=2024-2025 noDataStore=False smoke=True"
             $sequence[2] | Should -Be "provision ids=101,102"
             $sequence[3] | Should -Be "start-dms"
             $sequence[4] | Should -Be "seed years=2024,2025 ids="
         }
 
-        It "passes route-unqualified configured instance to seed by InstanceId" {
+        It "passes route-unqualified configured data store to seed by DataStoreId" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $sequencePath = Join-Path $script:repo.RepoRoot "sequence.txt"
 
@@ -946,18 +948,19 @@ Add-Content -LiteralPath '$sequencePath' -Value `"seed years=`$(`$SchoolYear -jo
 param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 Add-Content -LiteralPath '$sequencePath' -Value 'configure'
 [pscustomobject]@{
-    InstanceIds = [long[]] @(42)
+    DataStoreIds = [long[]] @(42)
+    SelectedDataStoreIds = [long[]] @(42)
     RouteContexts = @()
     Tenant = ''
     SchoolYears = [int[]] @()
-    HasRouteQualifiedInstances = `$false
+    HasRouteQualifiedDataStores = `$false
 }
-"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-dms-instance.ps1") -Encoding utf8
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
 
             "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'provision'" |
                 Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1") -Encoding utf8
 
-            "param([long[]] `$InstanceId, [int[]] `$SchoolYear, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value (`"seed ids=`$(`$InstanceId -join ',') years=`$(`$SchoolYear -join ',')`")" |
+            "param([long[]] `$DataStoreId, [int[]] `$SchoolYear, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value (`"seed ids=`$(`$DataStoreId -join ',') years=`$(`$SchoolYear -join ',')`")" |
                 Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
 
             & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -LoadSeedData -SeedDataPath $script:repo.DockerComposeRoot
@@ -977,13 +980,14 @@ Add-Content -LiteralPath '$sequencePath' -Value 'configure'
 param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 Add-Content -LiteralPath '$sequencePath' -Value 'configure'
 [pscustomobject]@{
-    InstanceIds = [long[]] @(42)
+    DataStoreIds = [long[]] @(42)
+    SelectedDataStoreIds = [long[]] @(42)
     RouteContexts = @()
     Tenant = ''
     SchoolYears = [int[]] @()
-    HasRouteQualifiedInstances = `$false
+    HasRouteQualifiedDataStores = `$false
 }
-"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-dms-instance.ps1") -Encoding utf8
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
 
             "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest); Add-Content -LiteralPath '$sequencePath' -Value 'provision'; throw 'provision failed'" |
                 Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1") -Encoding utf8
@@ -1020,13 +1024,14 @@ elseif (`$DmsOnly) {
             @"
 param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 [pscustomobject]@{
-    InstanceIds = [long[]] @(42)
+    DataStoreIds = [long[]] @(42)
+    SelectedDataStoreIds = [long[]] @(42)
     RouteContexts = @()
     Tenant = ''
     SchoolYears = [int[]] @()
-    HasRouteQualifiedInstances = `$false
+    HasRouteQualifiedDataStores = `$false
 }
-"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-dms-instance.ps1") -Encoding utf8
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
 
             "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)" |
                 Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1") -Encoding utf8
@@ -1087,15 +1092,15 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "A"
+                        name = "A"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=shared_name;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     },
                     [pscustomobject]@{
                         id = 2
-                        instanceName = "B"
+                        name = "B"
                         connectionString = 'host=other-postgresql;port=5432;username=postgres;password=secret-pass;database=shared_name;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1120,15 +1125,15 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "A"
+                        name = "A"
                         connectionString = 'host=localhost;port=15432;username=postgres;password=secret-pass;database=shared_name;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     },
                     [pscustomobject]@{
                         id = 2
-                        instanceName = "B"
+                        name = "B"
                         connectionString = 'host=localhost;port=15433;username=postgres;password=secret-pass;database=shared_name;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1153,15 +1158,15 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "RoleA"
+                        name = "RoleA"
                         connectionString = 'host=dms-postgresql;port=5432;username=app_role_a;password=secret-pass;database=shared_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     },
                     [pscustomobject]@{
                         id = 2
-                        instanceName = "RoleB"
+                        name = "RoleB"
                         connectionString = 'host=dms-postgresql;port=5432;username=app_role_b;password=secret-pass;database=shared_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1188,9 +1193,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Tenant-A"
+                        name = "Tenant-A"
                         connectionString = 'host=dms-postgresql;port=5432;username=tenant_a_user;password=tenant_a_secret;database=tenant_a_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1220,9 +1225,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "External"
+                        name = "External"
                         connectionString = 'host=managed-pg.example.com;port=5439;username=ops_user;password=ops_pass;database=ext_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1252,9 +1257,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "MsSql"
+                        name = "MsSql"
                         connectionString = 'Server=mssql-host;Initial Catalog=db1;User Id=sa;Password=foo;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1278,9 +1283,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Secured"
+                        name = "Secured"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=secured_db;SSL Mode=Require;Trust Server Certificate=true;Timeout=45;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1314,9 +1319,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "ExternalSecured"
+                        name = "ExternalSecured"
                         connectionString = 'host=managed-pg.example.com;port=5439;username=ops_user;password=ops_pass;database=ext_db;SSL Mode=VerifyFull;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1345,9 +1350,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "QuotedSemicolon"
+                        name = "QuotedSemicolon"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password="abc;123";database=quoted_db;SSL Mode=Require;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1384,9 +1389,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "ExternalQuoted"
+                        name = "ExternalQuoted"
                         connectionString = 'host=managed-pg.example.com;port=5439;username=ops_user;password="p;w=d/q";database=ext_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1408,7 +1413,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
     }
 
     Context "configure result contract" {
-        It "returns SelectedInstanceIds plus a backward-compatible InstanceIds alias" {
+        It "returns SelectedDataStoreIds plus DataStoreIds" {
             . $script:repo.ConfigureScript
 
             function Add-CmsClient { }
@@ -1417,17 +1422,18 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 return @(
                     [pscustomobject]@{
                         id = 99
-                        instanceName = "Sole"
-                        dmsInstanceRouteContexts = @()
+                        name = "Sole"
+                        dataStoreContexts = @()
                     }
                 )
             }
 
-            $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -NoDmsInstance
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -NoDataStore
 
-            $result.PSObject.Properties.Name | Should -Contain "SelectedInstanceIds"
-            $result.SelectedInstanceIds | Should -Be @([long]99)
-            $result.InstanceIds | Should -Be @([long]99)
+            $result.PSObject.Properties.Name | Should -Contain "SelectedDataStoreIds"
+            $result.PSObject.Properties.Name | Should -Contain "DataStoreIds"
+            $result.SelectedDataStoreIds | Should -Be @([long]99)
+            $result.DataStoreIds | Should -Be @([long]99)
         }
 
         It "includes CMSReadOnlyAccess block when env supplies the client id" {
@@ -1455,13 +1461,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Sole"
-                        dmsInstanceRouteContexts = @()
+                        name = "Sole"
+                        dataStoreContexts = @()
                     }
                 )
             }
 
-            $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $envFile -NoDmsInstance
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -NoDataStore
 
             $result.PSObject.Properties.Name | Should -Contain "CMSReadOnlyAccess"
             $result.CMSReadOnlyAccess["ClientId"] | Should -Be "CMSReadOnlyAccess"
@@ -1485,9 +1491,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Single"
+                        name = "Single"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=summary_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1517,9 +1523,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 7
-                        instanceName = "Single"
+                        name = "Single"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=guidance_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1631,7 +1637,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
     }
 
     Context "EnvironmentFile precedence" {
-        It "configure-local-dms-instance.ps1 reads only the supplied -EnvironmentFile, not ambient process env" {
+        It "configure-local-data-store.ps1 reads only the supplied -EnvironmentFile, not ambient process env" {
             $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
             @"
 POSTGRES_PASSWORD=isolated-pass
@@ -1659,13 +1665,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                     return @(
                         [pscustomobject]@{
                             id = 1
-                            instanceName = "Sole"
-                            dmsInstanceRouteContexts = @()
+                            name = "Sole"
+                            dataStoreContexts = @()
                         }
                     )
                 }
 
-                $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $isolatedEnvFile -NoDmsInstance
+                $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $isolatedEnvFile -NoDataStore
 
                 $result.Tenant | Should -Be "isolated-tenant"
             }
@@ -1706,9 +1712,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                     return @(
                         [pscustomobject]@{
                             id = 1
-                            instanceName = "Sole"
+                            name = "Sole"
                             connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=isolated_db;'
-                            dmsInstanceRouteContexts = @()
+                            dataStoreContexts = @()
                         }
                     )
                 }
@@ -1726,39 +1732,39 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
         }
     }
 
-    Context "wrapper consumes SelectedInstanceIds" {
-        It "Resolve-WrapperSelectedInstanceIds prefers SelectedInstanceIds over the legacy alias" {
+    Context "wrapper consumes SelectedDataStoreIds" {
+        It "Resolve-WrapperSelectedDataStoreIds prefers SelectedDataStoreIds over DataStoreIds" {
             Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
 
             $configured = [pscustomobject]@{
-                SelectedInstanceIds = [long[]]@(101, 102)
-                InstanceIds = [long[]]@(901, 902)
-                HasRouteQualifiedInstances = $false
+                SelectedDataStoreIds = [long[]]@(101, 102)
+                DataStoreIds = [long[]]@(901, 902)
+                HasRouteQualifiedDataStores = $false
             }
-            $resolved = Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured
+            $resolved = Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured
 
             $resolved | Should -Be @([long]101, [long]102)
         }
 
-        It "Resolve-WrapperSelectedInstanceIds falls back to InstanceIds when SelectedInstanceIds is absent" {
+        It "Resolve-WrapperSelectedDataStoreIds falls back to DataStoreIds when SelectedDataStoreIds is absent" {
             Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
 
             $configured = [pscustomobject]@{
-                InstanceIds = [long[]]@(42)
-                HasRouteQualifiedInstances = $false
+                DataStoreIds = [long[]]@(42)
+                HasRouteQualifiedDataStores = $false
             }
-            $resolved = Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured
+            $resolved = Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured
 
             $resolved | Should -Be @([long]42)
         }
 
-        It "Resolve-WrapperSelectedInstanceIds throws when neither property is present" {
+        It "Resolve-WrapperSelectedDataStoreIds throws when neither property is present" {
             Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
 
             $configured = [pscustomobject]@{ Tenant = "" }
 
-            { Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured } |
-                Should -Throw -ExpectedMessage "*missing SelectedInstanceIds*"
+            { Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured } |
+                Should -Throw -ExpectedMessage "*missing SelectedDataStoreIds*"
         }
     }
 
@@ -1777,9 +1783,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Sole"
+                        name = "Sole"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=auth_consumer_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1801,7 +1807,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Get-DataStore { return @() }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
-                Should -Throw -ExpectedMessage "*configure-local-dms-instance.ps1*"
+                Should -Throw -ExpectedMessage "*configure-local-data-store.ps1*"
         }
     }
 
@@ -1820,9 +1826,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "ExternalNoPort"
+                        name = "ExternalNoPort"
                         connectionString = 'host=managed-pg.example.com;username=ops_user;password=ops_pass;database=ext_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1850,9 +1856,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "DockerInternalNoPort"
+                        name = "DockerInternalNoPort"
                         connectionString = 'host=dms-postgresql;username=postgres;password=secret-pass;database=docker_internal_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1879,9 +1885,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "MissingHost"
+                        name = "MissingHost"
                         connectionString = 'username=postgres;password=secret-pass;database=no_host_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -1924,13 +1930,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Sole"
-                        dmsInstanceRouteContexts = @()
+                        name = "Sole"
+                        dataStoreContexts = @()
                     }
                 )
             }
 
-            $result = Invoke-ConfigureLocalDmsInstance -EnvironmentFile $script:repo.EnvFile -NoDmsInstance
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -NoDataStore
 
             $result.PSObject.Properties.Name | Should -Not -Contain "CMSReadOnlyAccess"
         }
@@ -2160,9 +2166,9 @@ $extracted
                     return @(
                         [pscustomobject]@{
                             id = 1
-                            instanceName = "Sole"
+                            name = "Sole"
                             connectionString = $connectionString
-                            dmsInstanceRouteContexts = @()
+                            dataStoreContexts = @()
                         }
                     )
                 }
@@ -2232,9 +2238,9 @@ $extracted
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Sole"
+                        name = "Sole"
                         connectionString = $connectionString
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -2258,7 +2264,7 @@ $extracted
 
             $resolved = Resolve-BootstrapAdminClient -EnvValues @{ POSTGRES_PASSWORD = "x" }
 
-            $resolved.ClientId | Should -Be "dms-instance-admin"
+            $resolved.ClientId | Should -Be "dms-data-store-admin"
             $resolved.ClientSecret | Should -Be "ValidClientSecret1234567890!Abcd"
         }
 
@@ -2292,13 +2298,13 @@ $extracted
                 DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET = "secret-only-value"
             }
 
-            $resolved.ClientId | Should -Be "dms-instance-admin"
+            $resolved.ClientId | Should -Be "dms-data-store-admin"
             $resolved.ClientSecret | Should -Be "secret-only-value"
         }
     }
 
     Context "bootstrap admin client flows through to configure and provision" {
-        It "configure-local-dms-instance.ps1 calls Add-CmsClient and Get-CmsToken with the env-resolved bootstrap admin client" {
+        It "configure-local-data-store.ps1 calls Add-CmsClient and Get-CmsToken with the env-resolved bootstrap admin client" {
             $overrideEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-bootstrap-admin.env"
             @"
 POSTGRES_PASSWORD=secret-pass
@@ -2337,13 +2343,13 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=configure-side-secret
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Sole"
-                        dmsInstanceRouteContexts = @()
+                        name = "Sole"
+                        dataStoreContexts = @()
                     }
                 )
             }
 
-            Invoke-ConfigureLocalDmsInstance -EnvironmentFile $overrideEnvFile -NoDmsInstance | Out-Null
+            Invoke-ConfigureLocalDataStore -EnvironmentFile $overrideEnvFile -NoDataStore | Out-Null
 
             $script:capturedAddCmsClient.ClientId | Should -Be "configure-side-admin"
             $script:capturedAddCmsClient.ClientSecret | Should -Be "configure-side-secret"
@@ -2388,9 +2394,9 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        instanceName = "Sole"
+                        name = "Sole"
                         connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=prov_admin_db;'
-                        dmsInstanceRouteContexts = @()
+                        dataStoreContexts = @()
                     }
                 )
             }
@@ -2554,3 +2560,6 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
         }
     }
 }
+
+
+

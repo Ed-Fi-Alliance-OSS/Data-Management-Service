@@ -9,7 +9,7 @@
 [CmdletBinding()]
 param(
     [string]$EnvironmentFile,
-    [switch]$NoDmsInstance,
+    [switch]$NoDataStore,
     [string]$SchoolYearRange = "",
     [switch]$AddSmokeTestCredentials
 )
@@ -68,13 +68,13 @@ function Get-EnvValueOrDefault {
     return Get-EnvValue -EnvValues $EnvValues -Name $Name -DefaultValue $DefaultValue
 }
 
-function Get-DmsInstanceRouteContexts {
+function Get-DataStoreContexts {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns a collection of route contexts; the plural noun reflects the return shape.')]
     param(
         $Instance
     )
 
-    $property = $Instance.PSObject.Properties["dmsInstanceRouteContexts"]
+    $property = $Instance.PSObject.Properties["dataStoreContexts"]
     if ($null -eq $property -or $null -eq $property.Value -or $property.Value -is [string]) {
         return @()
     }
@@ -85,14 +85,14 @@ function Get-DmsInstanceRouteContexts {
 function ConvertTo-ConfigureResult {
     <#
     .SYNOPSIS
-    Builds the structured success-pipeline object emitted by configure-local-dms-instance.ps1.
+    Builds the structured success-pipeline object emitted by configure-local-data-store.ps1.
     See command-boundaries.md Section 3.4: the result must be JSON-compatible and contain
-    SelectedInstanceIds. CMSReadOnlyAccess fields are included when the configured local flow
+    SelectedDataStoreIds. CMSReadOnlyAccess fields are included when the configured local flow
     has access to them so IDE next-step guidance can quote them without scraping prose.
     #>
     param(
         [long[]]
-        $InstanceIds = @(),
+        $DataStoreIds = @(),
 
         [object[]]
         $RouteContexts = @(),
@@ -108,15 +108,12 @@ function ConvertTo-ConfigureResult {
     )
 
     $result = [ordered]@{
-        # SelectedInstanceIds is the documented property name. InstanceIds is kept as a
-        # backward-compatible alias so existing callers (e.g. older wrapper checkouts during
-        # rollout) continue to work; new code should prefer SelectedInstanceIds.
-        SelectedInstanceIds = [long[]]@($InstanceIds)
-        InstanceIds = [long[]]@($InstanceIds)
+        SelectedDataStoreIds = [long[]]@($DataStoreIds)
+        DataStoreIds = [long[]]@($DataStoreIds)
         RouteContexts = @($RouteContexts)
         Tenant = $Tenant
         SchoolYears = [int[]]@($SchoolYears)
-        HasRouteQualifiedInstances = (@($RouteContexts).Count -gt 0)
+        HasRouteQualifiedDataStores = (@($RouteContexts).Count -gt 0)
     }
 
     if ($null -ne $CmsReadOnlyAccess -and $CmsReadOnlyAccess.Count -gt 0) {
@@ -203,43 +200,43 @@ function Resolve-SchoolYearRange {
     return [int[]]@($startYear..$endYear)
 }
 
-function Get-ExistingCompatibleInstance {
+function Get-ExistingCompatibleDataStore {
     param(
         [object[]]
-        $Instances,
+        $DataStores,
 
         [string]
         $Tenant
     )
 
-    if ($Instances.Count -eq 0) {
-        throw "-NoDmsInstance was supplied, but no existing DMS instances were found in the current tenant scope '$(Format-LogSafeText $Tenant)'. Create one route-unqualified CMS instance, or omit -NoDmsInstance."
+    if ($DataStores.Count -eq 0) {
+        throw "-NoDataStore was supplied, but no existing data stores were found in the current tenant scope '$(Format-LogSafeText $Tenant)'. Create one route-unqualified CMS data store, or omit -NoDataStore."
     }
 
-    if ($Instances.Count -gt 1) {
-        $listing = ($Instances | ForEach-Object {
-            "id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.instanceName)"
+    if ($DataStores.Count -gt 1) {
+        $listing = ($DataStores | ForEach-Object {
+            "id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.name)"
         }) -join ", "
-        throw "-NoDmsInstance requires exactly one existing DMS instance in tenant scope '$(Format-LogSafeText $Tenant)'. Found $($Instances.Count): $listing. Clean up CMS state or run with explicit configuration inputs."
+        throw "-NoDataStore requires exactly one existing data store in tenant scope '$(Format-LogSafeText $Tenant)'. Found $($DataStores.Count): $listing. Clean up CMS state or run with explicit configuration inputs."
     }
 
-    $instance = $Instances[0]
-    $routeContexts = @(Get-DmsInstanceRouteContexts -Instance $instance)
+    $dataStore = $DataStores[0]
+    $routeContexts = @(Get-DataStoreContexts -Instance $dataStore)
     if ($routeContexts.Count -gt 0) {
         $contextList = ($routeContexts | ForEach-Object { "$(Format-LogSafeText $_.contextKey)=$(Format-LogSafeText $_.contextValue)" }) -join ", "
-        throw "-NoDmsInstance found one existing instance, but it is route-qualified ($contextList). -NoDmsInstance supports exactly one route-unqualified instance; clean up CMS state or use -SchoolYearRange."
+        throw "-NoDataStore found one existing data store, but it is route-qualified ($contextList). -NoDataStore supports exactly one route-unqualified data store; clean up CMS state or use -SchoolYearRange."
     }
 
-    return $instance
+    return $dataStore
 }
 
-function Invoke-ConfigureLocalDmsInstance {
+function Invoke-ConfigureLocalDataStore {
     param(
         [string]
         $EnvironmentFile,
 
         [switch]
-        $NoDmsInstance,
+        $NoDataStore,
 
         [string]
         $SchoolYearRange = "",
@@ -254,8 +251,8 @@ function Invoke-ConfigureLocalDmsInstance {
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
     $schoolYears = @(Resolve-SchoolYearRange -Range $SchoolYearRange)
 
-    if ($NoDmsInstance -and $schoolYears.Count -gt 0) {
-        throw "Parameters -NoDmsInstance and -SchoolYearRange are mutually exclusive. Use -NoDmsInstance to select one existing route-unqualified instance, or -SchoolYearRange to configure route-qualified instances."
+    if ($NoDataStore -and $schoolYears.Count -gt 0) {
+        throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore to select one existing route-unqualified data store, or -SchoolYearRange to configure route-qualified data stores."
     }
 
     $multiTenancyEnabled = (Get-EnvValueOrDefault -EnvValues $envValues -Name "DMS_CONFIG_MULTI_TENANCY").Equals("true", [System.StringComparison]::OrdinalIgnoreCase)
@@ -269,12 +266,12 @@ function Invoke-ConfigureLocalDmsInstance {
     # the shared -EnvironmentFile helper so this phase and provision-dms-schema.ps1 agree on
     # the admin client (DMS_BOOTSTRAP_ADMIN_CLIENT_ID / DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET).
     $bootstrapAdmin = Resolve-BootstrapAdminClient -EnvValues $envValues
-    Write-Information "Acquiring CMS bootstrap admin token for DMS instance configuration." -InformationAction Continue
+    Write-Information "Acquiring CMS bootstrap admin token for data store configuration." -InformationAction Continue
     Add-CmsClient `
         -CmsUrl $cmsUrl `
         -ClientId $bootstrapAdmin.ClientId `
         -ClientSecret $bootstrapAdmin.ClientSecret `
-        -DisplayName "DMS Instance Setup Administrator"
+        -DisplayName "Data Store Setup Administrator"
 
     $configToken = Get-CmsToken `
         -CmsUrl $cmsUrl `
@@ -296,26 +293,26 @@ function Invoke-ConfigureLocalDmsInstance {
     $postgresUser = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
     $cmsReadOnlyAccess = Resolve-CmsReadOnlyAccessFromEnv -EnvValues $envValues
 
-    if ($NoDmsInstance) {
-        Write-Information "Selecting existing route-unqualified DMS instance from CMS." -InformationAction Continue
-        $instances = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
-        $selectedInstance = Get-ExistingCompatibleInstance -Instances $instances -Tenant $tenant
+    if ($NoDataStore) {
+        Write-Information "Selecting existing route-unqualified data store from CMS." -InformationAction Continue
+        $dataStores = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
+        $selectedDataStore = Get-ExistingCompatibleDataStore -DataStores $dataStores -Tenant $tenant
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedInstance.id) -Tenant $tenant | Out-Null
+            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedDataStore.id) -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
         return ConvertTo-ConfigureResult `
-            -InstanceIds @([long]$selectedInstance.id) `
+            -DataStoreIds @([long]$selectedDataStore.id) `
             -Tenant $tenant `
             -CmsReadOnlyAccess $cmsReadOnlyAccess
     }
 
     if ($schoolYears.Count -gt 0) {
-        Write-Information "Creating DMS instances for school years $($schoolYears[0])-$($schoolYears[-1])." -InformationAction Continue
-        $instances = Add-DmsSchoolYearInstances `
+        Write-Information "Creating data stores for school years $($schoolYears[0])-$($schoolYears[-1])." -InformationAction Continue
+        $dataStores = Add-DmsSchoolYearInstances `
             -CmsUrl $cmsUrl `
             -AccessToken $configToken `
             -StartYear $schoolYears[0] `
@@ -325,9 +322,9 @@ function Invoke-ConfigureLocalDmsInstance {
             -PostgresUser $postgresUser `
             -Tenant $tenant
 
-        $instanceIds = @($instances | ForEach-Object { [long]$_.DataStoreId })
+        $dataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
         $routeContexts = @(
-            $instances | ForEach-Object {
+            $dataStores | ForEach-Object {
                 [pscustomobject]@{
                     DataStoreId = [long]$_.DataStoreId
                     ContextKey = "schoolYear"
@@ -339,46 +336,46 @@ function Invoke-ConfigureLocalDmsInstance {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds $instanceIds -Tenant $tenant | Out-Null
+            Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds $dataStoreIds -Tenant $tenant | Out-Null
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
         return ConvertTo-ConfigureResult `
-            -InstanceIds $instanceIds `
+            -DataStoreIds $dataStoreIds `
             -RouteContexts $routeContexts `
             -Tenant $tenant `
             -SchoolYears $schoolYears `
             -CmsReadOnlyAccess $cmsReadOnlyAccess
     }
 
-    Write-Information "Creating default route-unqualified DMS instance." -InformationAction Continue
-    $instanceId = Add-DataStore `
+    Write-Information "Creating default route-unqualified data store." -InformationAction Continue
+    $dataStoreId = Add-DataStore `
         -CmsUrl $cmsUrl `
         -AccessToken $configToken `
         -PostgresPassword $postgresPassword `
         -PostgresDbName $postgresDbName `
         -PostgresUser $postgresUser `
-        -Name "Local Development Instance" `
+        -Name "Local Development Data Store" `
         -DataStoreType "Development" `
         -Tenant $tenant
 
     if ($AddSmokeTestCredentials) {
         Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
         Write-Information "Creating smoke test credentials." -InformationAction Continue
-        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$instanceId) -Tenant $tenant | Out-Null
+        Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$dataStoreId) -Tenant $tenant | Out-Null
         Write-Information "Smoke test credentials created." -InformationAction Continue
     }
 
     return ConvertTo-ConfigureResult `
-        -InstanceIds @([long]$instanceId) `
+        -DataStoreIds @([long]$dataStoreId) `
         -Tenant $tenant `
         -CmsReadOnlyAccess $cmsReadOnlyAccess
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }
 
-Invoke-ConfigureLocalDmsInstance `
+Invoke-ConfigureLocalDataStore `
     -EnvironmentFile $EnvironmentFile `
-    -NoDmsInstance:$NoDmsInstance `
+    -NoDataStore:$NoDataStore `
     -SchoolYearRange $SchoolYearRange `
     -AddSmokeTestCredentials:$AddSmokeTestCredentials

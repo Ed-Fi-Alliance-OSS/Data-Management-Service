@@ -1,6 +1,6 @@
-### Multi-Instance Route Qualifiers Testing
-### This file demonstrates DMS instance routing with route qualifiers (districtId and schoolYear)
-### Make sure to deploy with the multi-instance.env configuration first
+### Multi-Data-Store Route Qualifiers Testing
+### This file demonstrates data store routing with route qualifiers (districtId and schoolYear)
+### Make sure to deploy with the multi-data-store configuration configuration first
 
 @configPort = 8081
 @dmsPort = 8080
@@ -61,11 +61,11 @@ Authorization: bearer {{configToken}}
 
 
 ### ============================================================================
-### STEP 3: Create DMS Instances with Route Contexts
+### STEP 3: Create Data Stores with Route Contexts
 ### ============================================================================
 
-### Create DMS Instance 1 - District 255901, School Year 2024
-# @name createInstance1
+### Create Data Store 1 - District 255901, School Year 2024
+# @name createDataStore1
 POST http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
@@ -77,9 +77,9 @@ Content-Type: application/json
 }
 
 ###
-@dataStore1Id = {{createInstance1.response.body.id}}
+@dataStore1Id = {{createDataStore1.response.body.id}}
 
-### Create Route Context for Instance 1 - districtId
+### Create Route Context for Data Store 1 - districtId
 # @name createRouteContext1A
 POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
@@ -91,7 +91,7 @@ Content-Type: application/json
   "contextValue": "{{districtId1}}"
 }
 
-### Create Route Context for Instance 1 - schoolYear
+### Create Route Context for Data Store 1 - schoolYear
 # @name createRouteContext1B
 POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
@@ -105,8 +105,8 @@ Content-Type: application/json
 
 
 ### ============================================================================
-### Create DMS Instance 2 - District 255901, School Year 2025
-# @name createInstance2
+### Create Data Store 2 - District 255901, School Year 2025
+# @name createDataStore2
 POST http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
@@ -118,9 +118,9 @@ Content-Type: application/json
 }
 
 ###
-@dataStore2Id = {{createInstance2.response.body.id}}
+@dataStore2Id = {{createDataStore2.response.body.id}}
 
-### Create Route Context for Instance 2 - districtId
+### Create Route Context for Data Store 2 - districtId
 # @name createRouteContext2A
 POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
@@ -132,7 +132,7 @@ Content-Type: application/json
   "contextValue": "{{districtId1}}"
 }
 
-### Create Route Context for Instance 2 - schoolYear
+### Create Route Context for Data Store 2 - schoolYear
 # @name createRouteContext2B
 POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
@@ -146,8 +146,8 @@ Content-Type: application/json
 
 
 ### ============================================================================
-### Create DMS Instance 3 - District 255902, School Year 2024
-# @name createInstance3
+### Create Data Store 3 - District 255902, School Year 2024
+# @name createDataStore3
 POST http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
@@ -159,9 +159,9 @@ Content-Type: application/json
 }
 
 ###
-@dataStore3Id = {{createInstance3.response.body.id}}
+@dataStore3Id = {{createDataStore3.response.body.id}}
 
-### Create Route Context for Instance 3 - districtId
+### Create Route Context for Data Store 3 - districtId
 # @name createRouteContext3A
 POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
@@ -173,7 +173,7 @@ Content-Type: application/json
   "contextValue": "{{districtId2}}"
 }
 
-### Create Route Context for Instance 3 - schoolYear
+### Create Route Context for Data Store 3 - schoolYear
 # @name createRouteContext3B
 POST http://localhost:{{configPort}}/v2/dataStoreContexts
 Authorization: bearer {{configToken}}
@@ -187,14 +187,14 @@ Content-Type: application/json
 
 
 ### ============================================================================
-### STEP 4: View Created Instances and Route Contexts
+### STEP 4: View Created Data Stores and Route Contexts
 ### ============================================================================
 
-### List all DMS Instances
+### List all data stores
 GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
-### Get specific instance by ID
+### Get specific data store by ID
 GET http://localhost:{{configPort}}/v2/dataStores/{{dataStore1Id}}
 Authorization: bearer {{configToken}}
 
@@ -204,7 +204,7 @@ Authorization: bearer {{configToken}}
 
 
 ### ============================================================================
-### STEP 5: Create Application with Multiple Instances
+### STEP 5: Create Application with Multiple Data Stores
 ### ============================================================================
 
 ### Create Application
@@ -256,7 +256,7 @@ grant_type=client_credentials
 ### STEP 7: Test Route Qualifier Routing - Create Descriptors
 ### ============================================================================
 
-### Create Descriptor in District 255901, School Year 2024 (Instance 1)
+### Create Descriptor in District 255901, School Year 2024 (data store 1)
 ### URL pattern: /{districtId}/{schoolYear}/data/ed-fi/{resource}
 # @name createDescriptor1
 POST http://localhost:{{dmsPort}}/{{districtId1}}/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
@@ -276,7 +276,7 @@ Content-Type: application/json
 
 
 ### ============================================================================
-### Create Descriptor in District 255901, School Year 2025 (Instance 2)
+### Create Descriptor in District 255901, School Year 2025 (data store 2)
 # @name createDescriptor2
 POST http://localhost:{{dmsPort}}/{{districtId1}}/{{schoolYear2}}/data/ed-fi/contentClassDescriptors
 Authorization: bearer {{dmsToken}}
@@ -295,7 +295,7 @@ Content-Type: application/json
 
 
 ### ============================================================================
-### Create Descriptor in District 255902, School Year 2024 (Instance 3)
+### Create Descriptor in District 255902, School Year 2024 (data store 3)
 # @name createDescriptor3
 POST http://localhost:{{dmsPort}}/{{districtId2}}/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
 Authorization: bearer {{dmsToken}}
@@ -338,21 +338,21 @@ Authorization: bearer {{dmsToken}}
 ### Expected: Returns descriptors from database edfi_datamanagementservice_d255902_sy2024 (should include District255902-2024)
 
 
-### GET specific descriptor by location (Instance 1)
+### GET specific descriptor by location (data store 1)
 GET {{descriptor1Location}}
 Authorization: bearer {{dmsToken}}
 
 ### Expected: Returns "District255901-2024" descriptor
 
 
-### GET specific descriptor by location (Instance 2)
+### GET specific descriptor by location (data store 2)
 GET {{descriptor2Location}}
 Authorization: bearer {{dmsToken}}
 
 ### Expected: Returns "District255901-2025" descriptor
 
 
-### GET specific descriptor by location (Instance 3)
+### GET specific descriptor by location (data store 3)
 GET {{descriptor3Location}}
 Authorization: bearer {{dmsToken}}
 
@@ -367,14 +367,14 @@ Authorization: bearer {{dmsToken}}
 GET http://localhost:{{dmsPort}}/999999/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
 Authorization: bearer {{dmsToken}}
 
-### Expected: 404 - No database instance found matching the request route qualifiers
+### Expected: 404 - No database data store found matching the request route qualifiers
 
 
 ### Try to access with invalid school year (should return 404)
 GET http://localhost:{{dmsPort}}/{{districtId1}}/2099/data/ed-fi/contentClassDescriptors
 Authorization: bearer {{dmsToken}}
 
-### Expected: 404 - No database instance found matching the request route qualifiers
+### Expected: 404 - No database data store found matching the request route qualifiers
 
 
 ### Try to access without route qualifiers (should return 400 or 404)
@@ -407,3 +407,4 @@ Authorization: bearer {{configToken}}
 ### Delete Vendor
 DELETE http://localhost:{{configPort}}/v2/vendors/{{vendorId}}
 Authorization: bearer {{configToken}}
+

@@ -1,5 +1,5 @@
-### Quick Test: School Year Instances Setup
-### This file demonstrates how to verify the school year instances were created correctly
+### Quick Test: School Year Data Stores Setup
+### This file demonstrates how to verify the school year data stores were created correctly
 
 @configPort = 8081
 @dmsPort = 8080
@@ -13,7 +13,7 @@
 POST http://localhost:{{configPort}}/connect/token
 Content-Type: application/x-www-form-urlencoded
 
-client_id=dms-instance-admin
+client_id=dms-data-store-admin
 &client_secret=DmsSetup1!
 &grant_type=client_credentials
 &scope=edfi_admin_api/full_access
@@ -23,15 +23,15 @@ client_id=dms-instance-admin
 
 
 ### ============================================================================
-### STEP 2: Verify DMS Instances Were Created
+### STEP 2: Verify Data Stores Were Created
 ### ============================================================================
 
-### List all DMS Instances
-# @name listInstances
+### List all data stores
+# @name listDataStores
 GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
-### Expected: You should see instances named "School Year 2022", "School Year 2023", etc.
+### Expected: You should see data stores named "School Year 2022", "School Year 2023", etc.
 
 
 ### ============================================================================
@@ -80,7 +80,7 @@ GET http://localhost:{{dmsPort}}/metadata/specifications/resources-spec.json
 POST http://localhost:{{configPort}}/connect/token
 Content-Type: application/x-www-form-urlencoded
 
-client_id=dms-instance-admin
+client_id=dms-data-store-admin
 &client_secret=DmsSetup1!
 &grant_type=client_credentials
 &scope=edfi_admin_api/full_access
@@ -95,7 +95,7 @@ Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "company": "School Year Instance Test Vendor",
+    "company": "School Year Data Store Test Vendor",
     "contactName": "Test Admin",
     "contactEmailAddress": "admin@testyear.edu",
     "namespacePrefixes": "uri://ed-fi.org,uri://testyear.edu"
@@ -112,11 +112,11 @@ Authorization: bearer {{configToken}}
 ###
 @vendorId={{getVendor.response.body.id}}
 
-### List all DMS Instances
+### List all data stores
 GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
-### Create Application -- Instance 3 not configurable to see error handling
+### Create Application -- data store 3 not configurable to see error handling
 # @name createApplication
 POST http://localhost:{{configPort}}/v2/applications
 Authorization: bearer {{configToken}}
@@ -124,7 +124,7 @@ Content-Type: application/json
 
 {
   "vendorId": {{vendorId}},
-  "applicationName": "School Year instance Test App",
+  "applicationName": "School Year Data Store Test App",
   "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
   "educationOrganizationIds": [255901, 255902],
   "dataStoreIds": [1, 2]
@@ -141,3 +141,4 @@ Content-Type: application/json
 ### - School year selector dropdown appears at the top
 ### - Default selected year is the current school year (based on current date)
 ### - You can switch between years 2022-2026 (or whatever range you specified)
+

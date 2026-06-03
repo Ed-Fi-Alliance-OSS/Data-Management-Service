@@ -1,5 +1,5 @@
 {
-  "name": "postgresql-source-instance-{{INSTANCE_ID}}",
+  "name": "postgresql-source-datastore-{{DATASTORE_ID}}",
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "plugin.name": "pgoutput",
@@ -9,8 +9,8 @@
     "database.password": "{{POSTGRES_PASSWORD}}",
     "database.dbname": "{{DATABASE_NAME}}",
 
-    "publication.name": "to_debezium_instance_{{INSTANCE_ID}}",
-    "slot.name": "debezium_instance_{{INSTANCE_ID}}",
+    "publication.name": "to_debezium_datastore_{{DATASTORE_ID}}",
+    "slot.name": "debezium_datastore_{{DATASTORE_ID}}",
     "publication.autocreate.mode": "filtered",
 
     "snapshot.mode": "initial",
@@ -18,14 +18,14 @@
     "snapshot.include.collection.list": "dms.document,dms.educationorganizationhierarchytermslookup",
     "schema.include.list": "dms",
     "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
-    "schema.history.internal.kafka.topic": "schema-changes.dms.instance.{{INSTANCE_ID}}",
+    "schema.history.internal.kafka.topic": "schema-changes.dms.datastore.{{DATASTORE_ID}}",
     "schema.history.internal.kafka.producer.key.serializer": "org.apache.kafka.common.serialization.StringSerializer",
     "schema.history.internal.kafka.producer.value.serializer": "org.apache.kafka.common.serialization.StringSerializer",
     "schema.history.internal.kafka.producer.acks": "all",
     "schema.history.internal.kafka.producer.compression.type": "lz4",
     "schema.history.internal.kafka.producer.enable.idempotence": "true",
 
-    "topic.prefix": "edfi.dms.{{INSTANCE_ID}}",
+    "topic.prefix": "edfi.dms.{{DATASTORE_ID}}",
     "table.include.list": "dms.document,dms.document_00,dms.document_01,dms.document_02,dms.document_03,dms.document_04,dms.document_05,dms.document_06,dms.document_07,dms.document_08,dms.document_09,dms.document_10,dms.document_11,dms.document_12,dms.document_13,dms.document_14,dms.document_15,dms.educationorganizationhierarchytermslookup",
 
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
@@ -38,10 +38,10 @@
     "predicates": "isDocumentTable, isHierarchyTable",
 
     "predicates.isDocumentTable.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
-    "predicates.isDocumentTable.pattern": "edfi\\.dms\\.{{INSTANCE_ID}}\\.document",
+    "predicates.isDocumentTable.pattern": "edfi\\.dms\\.{{DATASTORE_ID}}\\.document",
 
     "predicates.isHierarchyTable.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
-    "predicates.isHierarchyTable.pattern": "edfi\\.dms\\.{{INSTANCE_ID}}\\.educationorganizationhierarchytermslookup",
+    "predicates.isHierarchyTable.pattern": "edfi\\.dms\\.{{DATASTORE_ID}}\\.educationorganizationhierarchytermslookup",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.delete.tombstone.handling.mode": "rewrite",

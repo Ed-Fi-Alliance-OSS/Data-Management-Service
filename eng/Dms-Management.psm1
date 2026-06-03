@@ -798,10 +798,10 @@ function Add-DataStore {
 
 <#
 .SYNOPSIS
-    Retrieves all DMS Instances from the Configuration Service.
+    Retrieves all data stores from the Configuration Service.
 
 .DESCRIPTION
-    Gets a list of all DMS Instances with optional paging support.
+    Gets a list of all data stores with optional paging support.
 
 .PARAMETER CmsUrl
     The base URL of the Config server (e.g., http://localhost:8081).
@@ -820,7 +820,7 @@ function Add-DataStore {
     to enable multi-tenant routing.
 
 .OUTPUTS
-    Array of DMS Instance objects.
+    Array of data store objects.
 
 .EXAMPLE
     $instances = Get-DataStore -AccessToken $token
@@ -942,11 +942,11 @@ function Add-DataStoreContext {
 
 <#
 .SYNOPSIS
-    Creates multiple DMS Instances with school year route contexts.
+    Creates multiple data stores with school year route contexts.
 
 .DESCRIPTION
-    Creates a DMS Instance for each school year in the specified range.
-    Each instance will have a route context with key "schoolYear" and the year as the value.
+    Creates a data store for each school year in the specified range.
+    Each data store will have a route context with key "schoolYear" and the year as the value.
 
 .PARAMETER CmsUrl
     The base URL of the Config server (e.g., http://localhost:8081).
@@ -980,11 +980,11 @@ function Add-DataStoreContext {
     to enable multi-tenant routing.
 
 .OUTPUTS
-    Array of hashtables containing DataStoreId and Year for each created instance.
+    Array of hashtables containing DataStoreId and Year for each created data store.
 
 .EXAMPLE
-    # Create instances for years 2022-2026
-    $instances = Add-DmsSchoolYearInstances -AccessToken $token -StartYear 2022 -EndYear 2026 -PostgresPassword "secret123"
+    # Create data stores for years 2022-2026
+    $dataStores = Add-DmsSchoolYearInstances -AccessToken $token -StartYear 2022 -EndYear 2026 -PostgresPassword "secret123"
 #>
 function Add-DmsSchoolYearInstances {
     [CmdletBinding()]
@@ -1023,14 +1023,14 @@ function Add-DmsSchoolYearInstances {
         throw "StartYear ($StartYear) cannot be greater than EndYear ($EndYear)"
     }
 
-    $createdInstances = @()
+    $createdDataStores = @()
 
-    Write-Host "Creating DMS Instances for school years $StartYear to $EndYear..." -ForegroundColor Cyan
+    Write-Host "Creating data stores for school years $StartYear to $EndYear..." -ForegroundColor Cyan
 
     for ($year = $StartYear; $year -le $EndYear; $year++) {
         Write-Verbose "  Creating data store for School Year $year..."
 
-        # Create DMS Instance
+        # Create data store
         $dataStoreId = Add-DataStore `
             -CmsUrl $CmsUrl `
             -DataStoreType "SchoolYear" `
@@ -1056,16 +1056,16 @@ function Add-DmsSchoolYearInstances {
 
         Write-Host "    Route context created with ID: $routeContextId (schoolYear=$year)" -ForegroundColor Green
 
-        $createdInstances += @{
+        $createdDataStores += @{
             DataStoreId = $dataStoreId
             Year = $year
             RouteContextId = $routeContextId
         }
     }
 
-    Write-Verbose "Successfully created $($createdInstances.Count) data stores with school year contexts"
+    Write-Verbose "Successfully created $($createdDataStores.Count) data stores with school year contexts"
 
-    return $createdInstances
+    return $createdDataStores
 }
 
 <#
@@ -1074,7 +1074,7 @@ function Add-DmsSchoolYearInstances {
 
 .DESCRIPTION
     Adds a new Tenant with the specified name. This is required before creating
-    DMS Instances when multi-tenancy is enabled.
+    data stores when multi-tenancy is enabled.
 
 .PARAMETER CmsUrl
     The base URL of the Config server (e.g., http://localhost:8081).

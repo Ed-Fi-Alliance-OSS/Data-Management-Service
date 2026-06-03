@@ -30,7 +30,7 @@
       0. Preflight checks and pre-teardown of any leftover dms-local stack.
       1. prepare-dms-schema.ps1 + prepare-dms-claims.ps1 materialize .bootstrap/.
       2. start-local-dms.ps1 -InfraOnly -EnableConfig -IdentityProvider self-contained.
-      3. configure-local-dms-instance.ps1 registers the instance(s).
+      3. configure-local-data-store.ps1 registers the data store(s).
       4. provision-dms-schema.ps1 provisions the selected target databases.
       5. Re-run step 4 to confirm provision is safely re-runnable (idempotent re-invocation;
          the re-run is asserted to complete without error - it does not diff schema state).
@@ -251,11 +251,11 @@ try {
     }
 
     # Step 3: configure
-    Invoke-SmokeStep -Name "configure-local-dms-instance" -Body {
+    Invoke-SmokeStep -Name "configure-local-data-store" -Body {
         Invoke-PhaseScript `
-            -ScriptPath "$script:DockerComposeRoot/configure-local-dms-instance.ps1" `
+            -ScriptPath "$script:DockerComposeRoot/configure-local-data-store.ps1" `
             -Arguments @{ EnvironmentFile = $resolvedEnvFile } `
-            -Description "configure-local-dms-instance.ps1"
+            -Description "configure-local-data-store.ps1"
     }
 
     # Step 4: provision
@@ -409,3 +409,4 @@ if ($smokeFailed) {
 Write-Host ""
 Write-Host "[smoke] Bootstrap Docker smoke completed successfully." -ForegroundColor Green
 exit 0
+
