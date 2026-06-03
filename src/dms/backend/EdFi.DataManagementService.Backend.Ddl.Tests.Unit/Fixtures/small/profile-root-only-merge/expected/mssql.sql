@@ -408,6 +408,8 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.ProfileRootOnlyMergeItem', N'U') IS NULL
 CREATE TABLE [edfi].[ProfileRootOnlyMergeItem]
@@ -444,6 +446,42 @@ CREATE TABLE [edfi].[Student]
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId]),
     CONSTRAINT [UX_Student_RefKey] UNIQUE ([DocumentId], [StudentUniqueId])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.Descriptor', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[Descriptor]
+(
+    [Old_Namespace] nvarchar(255) NOT NULL,
+    [New_Namespace] nvarchar(255) NULL,
+    [Old_CodeValue] nvarchar(50) NOT NULL,
+    [New_CodeValue] nvarchar(50) NULL,
+    [Discriminator] nvarchar(128) NOT NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_Descriptor] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.ProfileRootOnlyMergeItem', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[ProfileRootOnlyMergeItem]
+(
+    [Old_ProfileRootOnlyMergeItemId] int NOT NULL,
+    [New_ProfileRootOnlyMergeItemId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_ProfileRootOnlyMergeItem] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.Student', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[Student]
+(
+    [Old_StudentUniqueId] nvarchar(32) NOT NULL,
+    [New_StudentUniqueId] nvarchar(32) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_Student] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF NOT EXISTS (

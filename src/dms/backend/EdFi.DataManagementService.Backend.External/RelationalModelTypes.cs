@@ -745,3 +745,110 @@ public sealed record ExtensionSite(
     JsonPathExpression ExtensionPath,
     IReadOnlyList<string> ProjectKeys
 );
+
+/// <summary>
+/// Classifies a derived tracked-change table (<c>tracked_changes_*</c>) by the kind of source it tracks.
+/// </summary>
+public enum TrackedChangeTableKind
+{
+    /// <summary>
+    /// A per-resource tracked-change table for a regular <see cref="ResourceStorageKind.RelationalTables"/> resource.
+    /// </summary>
+    Resource,
+
+    /// <summary>
+    /// A per-resource tracked-change table for a concrete subclass of an abstract resource
+    /// (e.g. <c>School</c>, <c>LocalEducationAgency</c>, <c>OrganizationDepartment</c>). Each concrete
+    /// abstract resource gets its own table rather than sharing an abstract parent table.
+    /// </summary>
+    ConcreteAbstract,
+
+    /// <summary>
+    /// The single shared descriptor tracked-change table (<c>tracked_changes_*.Descriptor</c>) covering
+    /// every <see cref="ResourceStorageKind.SharedDescriptorTable"/> resource, discriminated by
+    /// <see cref="TrackedChangeSystemColumnRole.Discriminator"/>.
+    /// </summary>
+    SharedDescriptor,
+}
+
+/// <summary>
+/// The materialization shape of a tracked-change value column — how the tracked old/new value is stored.
+/// </summary>
+public enum TrackedChangeColumnRole
+{
+    /// <summary>
+    /// A plain scalar value mirrored from a live identity or securable-element storage column.
+    /// </summary>
+    Scalar,
+
+    /// <summary>
+    /// The <c>Namespace</c> half of a materialized descriptor reference. Pairs with a
+    /// <see cref="DescriptorCodeValue"/> column and references a table-level descriptor join.
+    /// </summary>
+    DescriptorNamespace,
+
+    /// <summary>
+    /// The <c>CodeValue</c> half of a materialized descriptor reference. Pairs with a
+    /// <see cref="DescriptorNamespace"/> column and references a table-level descriptor join.
+    /// </summary>
+    DescriptorCodeValue,
+
+    /// <summary>
+    /// A materialized person (Student/Contact/Staff) resource <c>DocumentId</c>, reached via a
+    /// table-level person join.
+    /// </summary>
+    PersonDocumentId,
+}
+
+/// <summary>
+/// The authorization purpose(s) a tracked-change value column serves. A single column can serve more
+/// than one purpose (e.g. a path that is both an identity component and a securable element), so the
+/// values are combinable. Lets <c>/deletes</c>, <c>/keyChanges</c>, and authorization planners read a
+/// column's purpose without re-deriving it from <c>SourceJsonPath</c>.
+/// </summary>
+[Flags]
+public enum TrackedChangeColumnOrigin
+{
+    /// <summary>
+    /// No classified origin.
+    /// </summary>
+    None = 0,
+
+    /// <summary>
+    /// The column tracks a resource identity path (<c>IdentityJsonPaths</c>).
+    /// </summary>
+    Identity = 1,
+
+    /// <summary>
+    /// The column tracks a securable-element path (<c>SecurableElements</c>).
+    /// </summary>
+    SecurableElement = 2,
+}
+
+/// <summary>
+/// Identifies a fixed-by-role system column on a tracked-change table. These columns are determined by
+/// role rather than by ApiSchema value metadata.
+/// </summary>
+public enum TrackedChangeSystemColumnRole
+{
+    /// <summary>
+    /// <c>Id</c> — the source document's <c>DocumentUuid</c>.
+    /// </summary>
+    Id,
+
+    /// <summary>
+    /// <c>ChangeVersion</c> — the bumped <c>dms.Document.ContentVersion</c> at the tracked event.
+    /// </summary>
+    ChangeVersion,
+
+    /// <summary>
+    /// <c>CreatedAt</c> — the tracked row insert timestamp.
+    /// </summary>
+    CreatedAt,
+
+    /// <summary>
+    /// <c>Discriminator</c> — present only on the shared descriptor tracked-change table; identifies the
+    /// concrete descriptor type.
+    /// </summary>
+    Discriminator,
+}

@@ -425,6 +425,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "sample";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."Program"
 (
@@ -523,6 +524,26 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPeriod"
     CONSTRAINT "PK_SchoolAddressPeriod" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolAddressPeriod_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal"),
     CONSTRAINT "UX_SchoolAddressPeriod_ParentCollectionItemId_PeriodName" UNIQUE ("ParentCollectionItemId", "PeriodName")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
+(
+    "Old_ProgramName" varchar(20) NOT NULL,
+    "New_ProgramName" varchar(20) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Program" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
+(
+    "Old_SchoolId" integer NOT NULL,
+    "New_SchoolId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

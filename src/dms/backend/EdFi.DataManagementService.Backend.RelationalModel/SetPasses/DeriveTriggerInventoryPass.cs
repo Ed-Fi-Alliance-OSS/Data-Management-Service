@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInpu
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
+using static EdFi.DataManagementService.Backend.RelationalModel.SetPasses.IdentityProjectionResolver;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
@@ -31,6 +32,13 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private const string ReferentialIdentityToken = "ReferentialIdentity";
     private const string AbstractIdentityToken = "AbstractIdentity";
     private const string PropagationFallbackPrefix = "PropagateIdentity";
+
+    // The shared dms.Descriptor stamping trigger. Defined as local constants because DmsTableNames is
+    // internal to Backend.Ddl and RelationalModel must not depend on the DDL project; a drift-guard test
+    // asserts these match what CoreDdlEmitter renders. Matches the existing local-constant convention in
+    // this layer (e.g. IdentifierCollisionDetector, AbstractIdentityTableAndUnionViewDerivationPass).
+    private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
+    private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
 
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.TriggerInventory"/> with
@@ -249,6 +257,23 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             );
         }
 
+        // Shared dms.Descriptor stamping trigger. Descriptor resources are skipped above (they get no
+        // per-resource trigger); the single shared trigger is derived once per model set regardless of
+        // whether any descriptor resource exists, because core DDL always emits dms.Descriptor and its
+        // stamping trigger. The ChangeTracking attachment (tombstones / key-change rows) is added later by
+        // DeriveTrackedChangeInventoryPass, and only when a shared descriptor tracked-change table exists.
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName(DescriptorStampingTriggerName),
+                _descriptorTable,
+                [RelationalNameConventions.DocumentIdColumnName],
+                // Descriptor identity is immutable; no identity projection columns to diff.
+                [],
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: _descriptorTable
+            )
+        );
+
         // IdentityPropagationFallback — MSSQL only: emits triggers on referenced entities to propagate
         // identity updates to all referrers. This replaces ON UPDATE CASCADE which SQL Server rejects
         // due to multiple cascade paths.
@@ -263,102 +288,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 resourcesByKey
             );
         }
-    }
-
-    /// <summary>
-    /// Resolves a reference-bearing identity path to its locally stored identity-part columns
-    /// (from <see cref="DocumentReferenceBinding.IdentityBindings"/>). Returns <c>null</c> if the
-    /// path does not match a reference binding, allowing the caller to fall through to direct
-    /// column lookup.
-    /// </summary>
-    private static IReadOnlyList<DbColumnName>? ResolveReferenceIdentityPartColumns(
-        string canonicalPath,
-        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
-        DbTableName rootTable,
-        QualifiedResourceName resource
-    )
-    {
-        if (!referenceBindingsByIdentityPath.TryGetValue(canonicalPath, out var binding))
-        {
-            return null;
-        }
-
-        if (binding.Table != rootTable)
-        {
-            throw new InvalidOperationException(
-                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
-                    + "must bind to the root table when resolving reference identity-part columns."
-            );
-        }
-
-        if (!binding.IsIdentityComponent)
-        {
-            throw new InvalidOperationException(
-                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
-                    + "mapped to a non-identity reference binding."
-            );
-        }
-
-        if (binding.IdentityBindings.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
-                    + "mapped to a reference binding with no identity-part columns."
-            );
-        }
-
-        var identityBindingsForPath = binding
-            .IdentityBindings.Where(ib => ib.ReferenceJsonPath.Canonical == canonicalPath)
-            .ToArray();
-
-        if (identityBindingsForPath.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
-                    + "did not resolve to a local identity-part column."
-            );
-        }
-
-        return identityBindingsForPath.Select(ib => ib.Column).ToArray();
-    }
-
-    /// <summary>
-    /// Builds the ordered set of root identity projection columns for MSSQL <c>UPDATE()</c> guards
-    /// and PostgreSQL <c>IS DISTINCT FROM</c> comparisons. These columns must be physically stored
-    /// (writable) columns because SQL Server rejects <c>UPDATE(computedCol)</c> at trigger creation
-    /// time (Msg 2114). Under key unification, identity binding columns may be persisted computed
-    /// aliases; this method resolves each to its canonical storage column and de-duplicates.
-    /// </summary>
-    private static IReadOnlyList<DbColumnName> BuildRootIdentityProjectionColumns(
-        RelationalResourceModel resourceModel,
-        IReadOnlyList<IdentityElementMapping> identityElements,
-        QualifiedResourceName resource
-    )
-    {
-        if (identityElements.Count == 0)
-        {
-            return [];
-        }
-
-        var rootTable = resourceModel.Root;
-
-        // Resolve each identity element column to its canonical stored column.
-        // Under key unification, binding columns may be unified aliases that are computed,
-        // and UPDATE() guards and IS DISTINCT FROM comparisons must reference stored columns.
-        HashSet<string> seen = new(StringComparer.Ordinal);
-        List<DbColumnName> storedColumns = new(identityElements.Count);
-
-        foreach (var element in identityElements)
-        {
-            var resolved = ResolveToStoredColumn(element.Column, rootTable, resource);
-
-            if (seen.Add(resolved.Value))
-            {
-                storedColumns.Add(resolved);
-            }
-        }
-
-        return storedColumns.ToArray();
     }
 
     /// <summary>
@@ -658,130 +587,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds identity element mappings for UUIDv5 computation by pairing each identity projection
-    /// column with its canonical JSON path. For identity-component references, this resolves to
-    /// locally stored identity-part columns (not the FK <c>..._DocumentId</c>) so the computed
-    /// UUIDv5 hash matches Core's <c>ReferentialIdCalculator</c>.
-    /// </summary>
-    private static IReadOnlyList<IdentityElementMapping> BuildIdentityElementMappings(
-        RelationalResourceModel resourceModel,
-        RelationalModelBuilderContext builderContext,
-        QualifiedResourceName resource
-    )
-    {
-        if (builderContext.IdentityJsonPaths.Count == 0)
-        {
-            return [];
-        }
-
-        var rootTable = resourceModel.Root;
-        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable, resource);
-        var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
-            resourceModel.DocumentReferenceBindings,
-            resource
-        );
-
-        // Build a column-name-to-scalar-type lookup for type-aware identity hash formatting.
-        var columnScalarTypes = rootTable
-            .Columns.Where(c => c.ScalarType is not null)
-            .ToDictionary(c => c.ColumnName.Value, c => c.ScalarType!, StringComparer.Ordinal);
-        var columnKinds = rootTable.Columns.ToDictionary(
-            c => c.ColumnName.Value,
-            c => c.Kind,
-            StringComparer.Ordinal
-        );
-
-        HashSet<string> seenColumns = new(StringComparer.Ordinal);
-        List<IdentityElementMapping> mappings = new(builderContext.IdentityJsonPaths.Count);
-
-        foreach (var canonical in builderContext.IdentityJsonPaths.Select(p => p.Canonical))
-        {
-            var identityPartColumns = ResolveReferenceIdentityPartColumns(
-                canonical,
-                referenceBindingsByIdentityPath,
-                rootTable.Table,
-                resource
-            );
-
-            if (identityPartColumns is not null)
-            {
-                foreach (var col in identityPartColumns.Where(c => seenColumns.Add(c.Value)))
-                {
-                    mappings.Add(
-                        new IdentityElementMapping(
-                            col,
-                            canonical,
-                            LookupColumnScalarType(columnScalarTypes, col, canonical, resource),
-                            IsDescriptorReference(columnKinds, col, canonical, resource)
-                        )
-                    );
-                }
-                continue;
-            }
-
-            if (!rootColumnsByPath.TryGetValue(canonical, out var columnName))
-            {
-                throw new InvalidOperationException(
-                    $"Identity path '{canonical}' on resource '{FormatResource(resource)}' "
-                        + "did not map to a root table column during identity element mapping."
-                );
-            }
-
-            if (seenColumns.Add(columnName.Value))
-            {
-                mappings.Add(
-                    new IdentityElementMapping(
-                        columnName,
-                        canonical,
-                        LookupColumnScalarType(columnScalarTypes, columnName, canonical, resource),
-                        IsDescriptorReference(columnKinds, columnName, canonical, resource)
-                    )
-                );
-            }
-        }
-
-        return mappings.ToArray();
-    }
-
-    /// <summary>
-    /// Resolves the <see cref="RelationalScalarType"/> for a given column from the pre-built lookup.
-    /// </summary>
-    private static RelationalScalarType LookupColumnScalarType(
-        Dictionary<string, RelationalScalarType> columnScalarTypes,
-        DbColumnName column,
-        string identityPath,
-        QualifiedResourceName resource
-    )
-    {
-        if (!columnScalarTypes.TryGetValue(column.Value, out var scalarType))
-        {
-            throw new InvalidOperationException(
-                $"Identity column '{column.Value}' for path '{identityPath}' on resource "
-                    + $"'{FormatResource(resource)}' has no scalar type metadata."
-            );
-        }
-        return scalarType;
-    }
-
-    private static bool IsDescriptorReference(
-        Dictionary<string, ColumnKind> columnKinds,
-        DbColumnName column,
-        string identityPath,
-        QualifiedResourceName resource
-    )
-    {
-        if (!columnKinds.TryGetValue(column.Value, out var kind))
-        {
-            throw new InvalidOperationException(
-                $"Identity column '{column.Value}' for path '{identityPath}' on resource "
-                    + $"'{FormatResource(resource)}' has no column kind metadata."
-            );
-        }
-
-        return kind is ColumnKind.DescriptorFk;
-    }
-
-    /// <summary>
     /// Builds column mappings from concrete root table columns to abstract identity table columns
     /// for <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers. For
     /// identity-component references, resolves to locally stored identity-part columns (not the FK
@@ -886,32 +691,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves a sequence of column names to their canonical stored columns, de-duplicating
-    /// by canonical column name. Convenience wrapper around <see cref="ResolveToStoredColumn"/>.
-    /// </summary>
-    private static IReadOnlyList<DbColumnName> ResolveColumnsToStored(
-        IEnumerable<DbColumnName> columns,
-        DbTableModel table,
-        QualifiedResourceName resource
-    )
-    {
-        HashSet<string> seen = new(StringComparer.Ordinal);
-        List<DbColumnName> result = [];
-
-        foreach (var column in columns)
-        {
-            var resolved = ResolveToStoredColumn(column, table, resource);
-
-            if (seen.Add(resolved.Value))
-            {
-                result.Add(resolved);
-            }
-        }
-
-        return result.ToArray();
-    }
-
-    /// <summary>
     /// Resolves the root document locator column used by document-stamping triggers. Stable-key collection
     /// tables surface this through explicit identity metadata instead of through PK shape.
     /// </summary>
@@ -935,39 +714,5 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             column.Kind == ColumnKind.ParentKeyPart
             && RelationalNameConventions.IsDocumentIdColumn(column.ColumnName)
         );
-    }
-
-    /// <summary>
-    /// Resolves a column name to its canonical stored column. If the column is a unified alias
-    /// (persisted computed column), returns the canonical storage column; otherwise returns the
-    /// column itself.
-    /// </summary>
-    /// <remarks>
-    /// This is required for MSSQL trigger guards (<c>UPDATE()</c>) and propagation targets
-    /// (<c>SET r.[col]</c>), which SQL Server rejects for computed columns
-    /// (Msg 2114 and Msg 271 respectively).
-    /// </remarks>
-    private static DbColumnName ResolveToStoredColumn(
-        DbColumnName column,
-        DbTableModel table,
-        QualifiedResourceName resource
-    )
-    {
-        var columnModel = table.Columns.FirstOrDefault(c => c.ColumnName == column);
-
-        if (columnModel is null)
-        {
-            throw new InvalidOperationException(
-                $"Trigger derivation for resource '{FormatResource(resource)}': column "
-                    + $"'{column.Value}' not found on table "
-                    + $"'{table.Table.Schema.Value}.{table.Table.Name}'."
-            );
-        }
-
-        return columnModel.Storage switch
-        {
-            ColumnStorage.UnifiedAlias alias => alias.CanonicalColumn,
-            _ => columnModel.ColumnName,
-        };
     }
 }

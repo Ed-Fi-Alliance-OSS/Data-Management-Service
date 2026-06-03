@@ -173,6 +173,12 @@ public sealed class RelationalModelSetBuilderContext
     public List<DbTriggerInfo> TriggerInventory { get; } = [];
 
     /// <summary>
+    /// Derived tracked-change table inventory (<c>tracked_changes_*</c>). BuildResult canonicalizes ordering
+    /// by table schema and name; passes must not rely on insertion order.
+    /// </summary>
+    public List<TrackedChangeTableInfo> TrackedChangeInventory { get; } = [];
+
+    /// <summary>
     /// Derived auth EducationOrganization hierarchy. <c>null</c> when no abstract EducationOrganization
     /// resource exists in the schema.
     /// </summary>
@@ -604,6 +610,12 @@ public sealed class RelationalModelSetBuilderContext
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
 
+        // TrackedChangeTableInfo has no separate name field; order by the tracked-change table's schema then name.
+        var canonicalTrackedChangeTables = TrackedChangeInventory
+            .OrderBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(table => table.Table.Name, StringComparer.Ordinal)
+            .ToArray();
+
         OverrideCollisionDetector.ThrowIfCollisions();
 
         return new DerivedRelationalModelSet(
@@ -615,7 +627,8 @@ public sealed class RelationalModelSetBuilderContext
             orderedAbstractUnionViews,
             canonicalIndexes,
             canonicalTriggers,
-            AuthEdOrgHierarchy
+            AuthEdOrgHierarchy,
+            canonicalTrackedChangeTables
         );
     }
 
@@ -629,9 +642,11 @@ public sealed class RelationalModelSetBuilderContext
         ValidateNoNullEntries(AbstractUnionViewsInNameOrder, nameof(AbstractUnionViewsInNameOrder));
         ValidateNoNullEntries(IndexInventory, nameof(IndexInventory));
         ValidateNoNullEntries(TriggerInventory, nameof(TriggerInventory));
+        ValidateNoNullEntries(TrackedChangeInventory, nameof(TrackedChangeInventory));
         ValidateConcreteResourceUniqueness();
         ValidateIndexNameUniqueness();
         ValidateTriggerNameUniqueness();
+        ValidateTrackedChangeInventory();
     }
 
     /// <summary>
@@ -730,6 +745,84 @@ public sealed class RelationalModelSetBuilderContext
             throw new InvalidOperationException(
                 "Duplicate trigger names detected for: " + string.Join(", ", duplicateTriggerKeys)
             );
+        }
+    }
+
+    /// <summary>
+    /// Validates the tracked-change inventory: no duplicate tracked-change tables, and within each table
+    /// no duplicate <c>Old_</c>/<c>New_</c> value-column names and no duplicate descriptor/person join names.
+    /// </summary>
+    private void ValidateTrackedChangeInventory()
+    {
+        var duplicateTables = TrackedChangeInventory
+            .GroupBy(table => table.Table)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(table => table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(table => table.Name, StringComparer.Ordinal)
+            .Select(table => $"{table.Schema.Value}.{table.Name}")
+            .ToArray();
+
+        if (duplicateTables.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "Duplicate tracked-change tables detected for: " + string.Join(", ", duplicateTables)
+            );
+        }
+
+        foreach (var trackedChangeTable in TrackedChangeInventory)
+        {
+            var tableLabel = $"{trackedChangeTable.Table.Schema.Value}.{trackedChangeTable.Table.Name}";
+
+            var columnNames = trackedChangeTable
+                .ValueColumnsInTableOrder.SelectMany(column =>
+                    new[] { column.OldColumnName.Value, column.NewColumnName.Value }
+                )
+                .ToArray();
+            var duplicateColumns = columnNames
+                .GroupBy(name => name, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray();
+
+            if (duplicateColumns.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate tracked-change value columns on table '{tableLabel}': "
+                        + string.Join(", ", duplicateColumns)
+                );
+            }
+
+            var duplicateDescriptorJoins = trackedChangeTable
+                .DescriptorJoins.GroupBy(join => join.DescriptorJoinName, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray();
+
+            if (duplicateDescriptorJoins.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate tracked-change descriptor join names on table '{tableLabel}': "
+                        + string.Join(", ", duplicateDescriptorJoins)
+                );
+            }
+
+            var duplicatePersonJoins = trackedChangeTable
+                .PersonJoins.GroupBy(join => join.PersonJoinName, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray();
+
+            if (duplicatePersonJoins.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate tracked-change person join names on table '{tableLabel}': "
+                        + string.Join(", ", duplicatePersonJoins)
+                );
+            }
         }
     }
 

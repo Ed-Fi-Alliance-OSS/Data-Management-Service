@@ -1290,9 +1290,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 }
 
 /// <summary>
-/// Test fixture for the core-owned descriptor stamping trigger metadata. The descriptor trigger is
-/// hand-emitted by <see cref="CoreDdlEmitter"/> (not derived into the trigger inventory); the metadata
-/// gives downstream consumers the trigger's mirror-stamp target.
+/// Test fixture for the core-owned descriptor stamping trigger. The trigger is derived into
+/// <c>DerivedRelationalModelSet.TriggersInCreateOrder</c> (by <c>DeriveTriggerInventoryPass</c>) so its
+/// change-tracking attachment flows through manifests/planners, but <c>dms.Descriptor</c> is a core
+/// table whose stamping trigger SQL is rendered by <see cref="CoreDdlEmitter"/>. These tests pin the
+/// rendered name and target table; <c>DeriveTriggerInventoryPassTests</c> pins the derived entry to the
+/// same literals, and the two together guard against drift between the derivation constants and the
+/// rendered DDL.
 /// </summary>
 [TestFixture]
 public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
@@ -1306,18 +1310,10 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     }
 
     [Test]
-    public void It_should_expose_descriptor_stamping_trigger_metadata_targeting_dms_Descriptor()
+    public void It_should_render_the_descriptor_stamping_trigger_targeting_dms_Descriptor()
     {
-        var info = CoreDdlEmitter.DescriptorStampingTriggerInfo;
-
-        info.Name.Value.Should().Be("TR_Descriptor_Stamp_Document");
-        info.Table.Schema.Value.Should().Be("dms");
-        info.Table.Name.Should().Be("Descriptor");
-        info.KeyColumns.Select(c => c.Value).Should().Equal("DocumentId");
-        info.Parameters.Should().BeOfType<TriggerKindParameters.DocumentStamping>();
-        info.MirrorStampTargetTable.Should().NotBeNull();
-        info.MirrorStampTargetTable!.Value.Schema.Value.Should().Be("dms");
-        info.MirrorStampTargetTable.Value.Name.Should().Be("Descriptor");
+        _pgsqlDdl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
+        _pgsqlDdl.Should().Contain("AFTER UPDATE ON \"dms\".\"Descriptor\"");
     }
 
     [Test]

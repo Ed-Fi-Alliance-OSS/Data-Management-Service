@@ -410,6 +410,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'aligned')
     EXEC('CREATE SCHEMA [aligned]');
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.ParentResource', N'U') IS NULL
 CREATE TABLE [edfi].[ParentResource]
@@ -457,6 +459,28 @@ CREATE TABLE [edfi].[Sponsor]
     CONSTRAINT [PK_Sponsor] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Sponsor_NK] UNIQUE ([SponsorName]),
     CONSTRAINT [UX_Sponsor_RefKey] UNIQUE ([DocumentId], [SponsorName])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.ParentResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[ParentResource]
+(
+    [Old_ParentResourceId] int NOT NULL,
+    [New_ParentResourceId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_ParentResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.Sponsor', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[Sponsor]
+(
+    [Old_SponsorName] nvarchar(30) NOT NULL,
+    [New_SponsorName] nvarchar(30) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_Sponsor] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF NOT EXISTS (

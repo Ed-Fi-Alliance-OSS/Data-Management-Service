@@ -408,6 +408,8 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.NamingStressItem', N'U') IS NULL
 CREATE TABLE [edfi].[NamingStressItem]
@@ -423,6 +425,17 @@ CREATE TABLE [edfi].[NamingStressItem]
     [VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] nvarchar(100) NULL,
     CONSTRAINT [PK_NamingStressItem] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_NamingStressItem_NK] UNIQUE ([NamingStressItemId])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.NamingStressItem', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[NamingStressItem]
+(
+    [Old_NamingStressItemId] int NOT NULL,
+    [New_NamingStressItemId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_NamingStressItem] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF NOT EXISTS (

@@ -425,6 +425,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "rootext";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."ParentResource"
 (
@@ -480,6 +481,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ParentResourceParentChildren"
     CONSTRAINT "PK_ParentResourceParentChildren" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ParentResourceParentChildren_ChildCode_ParentColl_e1c321757c" UNIQUE ("ParentCollectionItemId", "ChildCode"),
     CONSTRAINT "UX_ParentResourceParentChildren_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ParentResource"
+(
+    "Old_ParentResourceId" integer NOT NULL,
+    "New_ParentResourceId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ParentResource" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

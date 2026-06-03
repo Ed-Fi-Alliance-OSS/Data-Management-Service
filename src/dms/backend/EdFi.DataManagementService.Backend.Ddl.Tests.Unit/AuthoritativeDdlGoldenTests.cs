@@ -299,4 +299,151 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
         // after the using block disposes the JsonDocument.
         return authObjects.Clone();
     }
+
+    // ── DMS-1177: tracked_changes_* schema and table rendering ──────────────────────────
+    //
+    // The DS-5.2 + Sample set exercises all three tracked-change table kinds: regular resources,
+    // concrete subclasses of an abstract resource (School / LocalEducationAgency), and the single
+    // shared descriptor table. These tests assert the rendered DDL (read fresh via ReadActual) covers
+    // each kind in both dialects, independent of the byte-for-byte goldens.
+
+    [Test]
+    public void It_should_emit_the_tracked_changes_schema_for_pgsql()
+    {
+        ReadActual("pgsql.sql").Should().Contain("CREATE SCHEMA IF NOT EXISTS \"tracked_changes_edfi\";");
+    }
+
+    [Test]
+    public void It_should_emit_the_tracked_changes_schema_for_mssql()
+    {
+        ReadActual("mssql.sql").Should().Contain("CREATE SCHEMA [tracked_changes_edfi]");
+    }
+
+    [Test]
+    public void It_should_render_a_regular_resource_tracked_change_table_for_pgsql()
+    {
+        AssertTrackedChangeTableStructure(
+            "pgsql.sql",
+            mssql: false,
+            "StudentSchoolAssociation",
+            expectDiscriminator: false
+        );
+    }
+
+    [Test]
+    public void It_should_render_a_regular_resource_tracked_change_table_for_mssql()
+    {
+        AssertTrackedChangeTableStructure(
+            "mssql.sql",
+            mssql: true,
+            "StudentSchoolAssociation",
+            expectDiscriminator: false
+        );
+    }
+
+    [Test]
+    public void It_should_render_a_concrete_abstract_tracked_change_table_for_pgsql()
+    {
+        AssertTrackedChangeTableStructure("pgsql.sql", mssql: false, "School", expectDiscriminator: false);
+    }
+
+    [Test]
+    public void It_should_render_a_concrete_abstract_tracked_change_table_for_mssql()
+    {
+        AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "School", expectDiscriminator: false);
+    }
+
+    [Test]
+    public void It_should_render_the_shared_descriptor_tracked_change_table_for_pgsql()
+    {
+        AssertTrackedChangeTableStructure("pgsql.sql", mssql: false, "Descriptor", expectDiscriminator: true);
+
+        // Old image follows the source nullability (NOT NULL); New image is nullable for tombstones.
+        var block = ExtractTrackedChangeTableBlock(ReadActual("pgsql.sql"), mssql: false, "Descriptor");
+        block.Should().Contain("\"Old_Namespace\" varchar(255) NOT NULL");
+        block.Should().Contain("\"New_Namespace\" varchar(255) NULL");
+        block.Should().Contain("\"Old_CodeValue\" varchar(50) NOT NULL");
+        block.Should().Contain("\"New_CodeValue\" varchar(50) NULL");
+        block.Should().Contain("\"Discriminator\" varchar(128) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_render_the_shared_descriptor_tracked_change_table_for_mssql()
+    {
+        AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "Descriptor", expectDiscriminator: true);
+
+        var block = ExtractTrackedChangeTableBlock(ReadActual("mssql.sql"), mssql: true, "Descriptor");
+        block.Should().Contain("[Old_Namespace] nvarchar(255) NOT NULL");
+        block.Should().Contain("[New_Namespace] nvarchar(255) NULL");
+        block.Should().Contain("[Old_CodeValue] nvarchar(50) NOT NULL");
+        block.Should().Contain("[New_CodeValue] nvarchar(50) NULL");
+        block.Should().Contain("[Discriminator] nvarchar(128) NOT NULL");
+    }
+
+    /// <summary>
+    /// Asserts a tracked-change <c>CREATE TABLE</c> block renders value columns before system columns,
+    /// the fixed-by-role system column types/defaults, and a <c>ChangeVersion</c> primary key (clustered
+    /// on SQL Server).
+    /// </summary>
+    private void AssertTrackedChangeTableStructure(
+        string fileName,
+        bool mssql,
+        string tableName,
+        bool expectDiscriminator
+    )
+    {
+        var (open, close) = mssql ? ("[", "]") : ("\"", "\"");
+        var block = ExtractTrackedChangeTableBlock(ReadActual(fileName), mssql, tableName);
+
+        // Value columns (Old_*) precede the system columns (Id / ChangeVersion / CreatedAt).
+        var firstValueColumnIndex = block.IndexOf($"{open}Old_", StringComparison.Ordinal);
+        firstValueColumnIndex
+            .Should()
+            .BeGreaterThan(0, $"{tableName} tracked-change table must have value columns");
+        var idColumnIndex = block.IndexOf($"{open}Id{close} ", StringComparison.Ordinal);
+        idColumnIndex
+            .Should()
+            .BeGreaterThan(firstValueColumnIndex, "value columns must precede the system columns");
+
+        var idType = mssql ? "uniqueidentifier" : "uuid";
+        block.Should().Contain($"{open}Id{close} {idType} NOT NULL");
+        block.Should().Contain($"{open}ChangeVersion{close} bigint NOT NULL");
+        var createdAt = mssql
+            ? "datetime2(7) NOT NULL DEFAULT (sysutcdatetime())"
+            : "timestamp with time zone NOT NULL DEFAULT now()";
+        block.Should().Contain($"{open}CreatedAt{close} {createdAt}");
+
+        if (expectDiscriminator)
+        {
+            var discriminatorType = mssql ? "nvarchar(128)" : "varchar(128)";
+            block.Should().Contain($"{open}Discriminator{close} {discriminatorType} NOT NULL");
+        }
+        else
+        {
+            block.Should().NotContain($"{open}Discriminator{close} ");
+        }
+
+        var primaryKey = mssql
+            ? $"PRIMARY KEY CLUSTERED ({open}ChangeVersion{close})"
+            : $"PRIMARY KEY ({open}ChangeVersion{close})";
+        block.Should().Contain(primaryKey);
+    }
+
+    /// <summary>
+    /// Extracts the <c>CREATE TABLE</c> body for the supplied tracked-change table, from the create
+    /// header through the closing parenthesis.
+    /// </summary>
+    private static string ExtractTrackedChangeTableBlock(string sql, bool mssql, string tableName)
+    {
+        var (open, close) = mssql ? ("[", "]") : ("\"", "\"");
+        var qualified = $"{open}tracked_changes_edfi{close}.{open}{tableName}{close}";
+        var header = mssql ? $"CREATE TABLE {qualified}" : $"CREATE TABLE IF NOT EXISTS {qualified}";
+
+        var start = sql.IndexOf(header, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, $"expected to find '{header}'");
+        var end = sql.IndexOf(");", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start, $"expected a closing ');' after '{header}'");
+
+        return sql[start..end];
+    }
 }

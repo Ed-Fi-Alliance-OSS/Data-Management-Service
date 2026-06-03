@@ -410,6 +410,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'auth')
     EXEC('CREATE SCHEMA [auth]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.LocalEducationAgency', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgency]
@@ -441,6 +443,28 @@ CREATE TABLE [auth].[EducationOrganizationIdToEducationOrganizationId]
     [SourceEducationOrganizationId] bigint NOT NULL,
     [TargetEducationOrganizationId] bigint NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdToEducationOrganizationId] PRIMARY KEY CLUSTERED ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.LocalEducationAgency', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[LocalEducationAgency]
+(
+    [Old_LocalEducationAgencyId] int NOT NULL,
+    [New_LocalEducationAgencyId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_LocalEducationAgency] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.School', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[School]
+(
+    [Old_SchoolId] int NOT NULL,
+    [New_SchoolId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL

@@ -425,6 +425,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "sample";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
@@ -460,6 +461,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
     CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolAddress_CollectionItemId_School_DocumentId" UNIQUE ("CollectionItemId", "School_DocumentId"),
     CONSTRAINT "UX_SchoolAddress_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
+(
+    "Old_SchoolId" integer NOT NULL,
+    "New_SchoolId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

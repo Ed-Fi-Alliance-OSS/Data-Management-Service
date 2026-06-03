@@ -272,6 +272,165 @@ public class Given_DocumentStamping_Trigger_With_Shortened_Mirror_Stamp_Target_T
     }
 }
 
+/// <summary>
+/// Verifies that identifier shortening rewrites a tracked-change table's own name and its
+/// <c>Old_</c>/<c>New_</c> value-column names.
+/// </summary>
+[TestFixture]
+public class Given_Tracked_Change_Table_And_Columns_Shortening
+{
+    private DerivedRelationalModelSet _result = null!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new TrackedChangeShorteningFixturePass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
+        var dialectRules = new MappedDialectRules(
+            SqlDialect.Pgsql,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["LongTrackedTable"] = "ShortTable",
+                ["Old_LongValueColumn"] = "Old_Short",
+                ["New_LongValueColumn"] = "New_Short",
+            }
+        );
+
+        _result = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+    }
+
+    /// <summary>
+    /// It should shorten the tracked-change table name.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_the_tracked_change_table_name()
+    {
+        _result
+            .TrackedChangeTablesInNameOrder.Should()
+            .ContainSingle()
+            .Which.Table.Name.Should()
+            .Be("ShortTable");
+    }
+
+    /// <summary>
+    /// It should shorten the Old_ and New_ value-column names.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_the_old_and_new_value_column_names()
+    {
+        var column = _result.TrackedChangeTablesInNameOrder.Single().ValueColumnsInTableOrder.Single();
+
+        column.OldColumnName.Value.Should().Be("Old_Short");
+        column.NewColumnName.Value.Should().Be("New_Short");
+    }
+}
+
+/// <summary>
+/// Verifies that identifier shortening rewrites a DocumentStamping trigger's
+/// <see cref="TrackedChangeAttachment.TrackedChangeTable"/> reference consistently with the
+/// tracked-change table it points to.
+/// </summary>
+[TestFixture]
+public class Given_Tracked_Change_ChangeTracking_Reference_Shortening
+{
+    private DerivedRelationalModelSet _result = null!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new TrackedChangeAttachmentShorteningFixturePass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
+        var dialectRules = new MappedDialectRules(
+            SqlDialect.Pgsql,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["LongTrackedTable"] = "ShortTable" }
+        );
+
+        _result = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+    }
+
+    /// <summary>
+    /// It should shorten the change-tracking reference to match the shortened tracked-change table.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_the_change_tracking_reference_to_match_the_table()
+    {
+        _result
+            .TrackedChangeTablesInNameOrder.Should()
+            .ContainSingle()
+            .Which.Table.Name.Should()
+            .Be("ShortTable");
+
+        var stamping = (TriggerKindParameters.DocumentStamping)
+            _result.TriggersInCreateOrder.Single(trigger => trigger.Name.Value == "TR_Stamp").Parameters;
+
+        stamping.ChangeTracking.Should().NotBeNull();
+        stamping.ChangeTracking!.TrackedChangeTable.Name.Should().Be("ShortTable");
+    }
+}
+
+/// <summary>
+/// Verifies that collision detection covers tracked-change value columns that shorten to the same name
+/// within a single table.
+/// </summary>
+[TestFixture]
+public class Given_Tracked_Change_Column_Shortening_Collision_Within_Table
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new TrackedChangeColumnCollisionFixturePass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
+        var dialectRules = new MappedDialectRules(
+            SqlDialect.Pgsql,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["Old_AlphaLong"] = "Old_Dup",
+                ["Old_BetaLong"] = "Old_Dup",
+            }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with a tracked-change column-name collision.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_a_tracked_change_column_collision()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Identifier shortening collisions detected");
+        _exception.Message.Should().Contain("column name collision");
+    }
+}
+
 file sealed class MirrorStampTargetShorteningPass : IRelationalModelSetPass
 {
     /// <summary>
@@ -365,6 +524,112 @@ file sealed class TriggerShorteningCollisionAcrossTablesPass : IRelationalModelS
                 [],
                 [],
                 new TriggerKindParameters.DocumentStamping()
+            )
+        );
+    }
+}
+
+/// <summary>
+/// Shared builders for tracked-change inventory entries used by shortening fixtures.
+/// </summary>
+file static class TrackedChangeShorteningFixtures
+{
+    internal static readonly DbSchemaName TrackedSchema = new("tracked_changes_edfi");
+    internal static readonly DbSchemaName SourceSchema = new("edfi");
+
+    internal static TrackedChangeColumnInfo ValueColumn(string oldName, string newName)
+    {
+        return new TrackedChangeColumnInfo(
+            new DbColumnName(oldName),
+            new DbColumnName(newName),
+            "$.value",
+            CanonicalStorageColumn: null,
+            IsOldColumnNullable: false,
+            IsNewColumnNullable: true,
+            new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity
+        );
+    }
+
+    internal static TrackedChangeTableInfo Table(
+        string tableName,
+        IReadOnlyList<TrackedChangeColumnInfo> valueColumns
+    )
+    {
+        return new TrackedChangeTableInfo(
+            new DbTableName(TrackedSchema, tableName),
+            TrackedChangeTableKind.Resource,
+            new DbTableName(SourceSchema, "School"),
+            valueColumns,
+            SystemColumns: [],
+            PrimaryKeyColumns: [new DbColumnName("ChangeVersion")],
+            DescriptorJoins: [],
+            PersonJoins: []
+        );
+    }
+}
+
+file sealed class TrackedChangeShorteningFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        context.TrackedChangeInventory.Add(
+            TrackedChangeShorteningFixtures.Table(
+                "LongTrackedTable",
+                [TrackedChangeShorteningFixtures.ValueColumn("Old_LongValueColumn", "New_LongValueColumn")]
+            )
+        );
+    }
+}
+
+file sealed class TrackedChangeAttachmentShorteningFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        var trackedTable = new DbTableName(TrackedChangeShorteningFixtures.TrackedSchema, "LongTrackedTable");
+        var sourceTable = new DbTableName(TrackedChangeShorteningFixtures.SourceSchema, "School");
+
+        context.TrackedChangeInventory.Add(
+            TrackedChangeShorteningFixtures.Table(
+                "LongTrackedTable",
+                [TrackedChangeShorteningFixtures.ValueColumn("Old_Value", "New_Value")]
+            )
+        );
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_Stamp"),
+                sourceTable,
+                [],
+                [],
+                new TriggerKindParameters.DocumentStamping(new TrackedChangeAttachment(trackedTable)),
+                MirrorStampTargetTable: sourceTable
+            )
+        );
+    }
+}
+
+file sealed class TrackedChangeColumnCollisionFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        context.TrackedChangeInventory.Add(
+            TrackedChangeShorteningFixtures.Table(
+                "TrackedTable",
+                [
+                    TrackedChangeShorteningFixtures.ValueColumn("Old_AlphaLong", "New_AlphaLong"),
+                    TrackedChangeShorteningFixtures.ValueColumn("Old_BetaLong", "New_BetaLong"),
+                ]
             )
         );
     }

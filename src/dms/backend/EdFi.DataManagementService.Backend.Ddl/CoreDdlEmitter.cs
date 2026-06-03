@@ -55,23 +55,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     /// <summary>
-    /// Core-owned trigger metadata for the hand-emitted descriptor stamping trigger
-    /// (<c>TR_Descriptor_Stamp_Document</c>). The descriptor trigger is rendered by this emitter, not derived
-    /// into <c>DerivedRelationalModelSet.TriggersInCreateOrder</c>; this metadata exposes the same
-    /// <see cref="DbTriggerInfo"/> shape for downstream mirror-stamping consumers, with the mirror-stamp
-    /// target set to the shared <c>dms.Descriptor</c> table.
-    /// </summary>
-    public static DbTriggerInfo DescriptorStampingTriggerInfo { get; } =
-        new(
-            new DbTriggerName(DescriptorStampingTriggerName),
-            DmsTableNames.Descriptor,
-            [new DbColumnName("DocumentId")],
-            [],
-            new TriggerKindParameters.DocumentStamping(),
-            MirrorStampTargetTable: DmsTableNames.Descriptor
-        );
-
-    /// <summary>
     /// Creates a column-name value object for use in core DDL emission.
     /// </summary>
     private static DbColumnName Col(string name) => new(name);

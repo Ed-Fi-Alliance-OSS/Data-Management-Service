@@ -410,6 +410,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'auth')
     EXEC('CREATE SCHEMA [auth]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.DateTimeKeyResource', N'U') IS NULL
 CREATE TABLE [edfi].[DateTimeKeyResource]
@@ -575,6 +577,147 @@ CREATE TABLE [auth].[EducationOrganizationIdToEducationOrganizationId]
     [SourceEducationOrganizationId] bigint NOT NULL,
     [TargetEducationOrganizationId] bigint NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdToEducationOrganizationId] PRIMARY KEY CLUSTERED ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.DateTimeKeyResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[DateTimeKeyResource]
+(
+    [Old_EventTimestamp] datetime2(7) NOT NULL,
+    [New_EventTimestamp] datetime2(7) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_DateTimeKeyResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.DecimalKeyResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[DecimalKeyResource]
+(
+    [Old_DecimalKey] decimal(9,2) NOT NULL,
+    [New_DecimalKey] decimal(9,2) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_DecimalKeyResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.DecimalRefResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[DecimalRefResource]
+(
+    [Old_RefResourceId] nvarchar(64) NOT NULL,
+    [New_RefResourceId] nvarchar(64) NULL,
+    [Old_DecimalKeyReference_DecimalKey] decimal(9,2) NOT NULL,
+    [New_DecimalKeyReference_DecimalKey] decimal(9,2) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_DecimalRefResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.EdOrgDependentChildResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[EdOrgDependentChildResource]
+(
+    [Old_EdOrgDependentChildResourceId] nvarchar(64) NOT NULL,
+    [New_EdOrgDependentChildResourceId] nvarchar(64) NULL,
+    [Old_EdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
+    [New_EdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NULL,
+    [Old_EdOrgDependentResourceReference_EducationOrganizationId] int NOT NULL,
+    [New_EdOrgDependentResourceReference_EducationOrganizationId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_EdOrgDependentChildResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.EdOrgDependentResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[EdOrgDependentResource]
+(
+    [Old_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
+    [New_EdOrgDependentResourceId] nvarchar(64) NULL,
+    [Old_EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [New_EducationOrganization_EducationOrganizationId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_EdOrgDependentResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.KeyUnifiedResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[KeyUnifiedResource]
+(
+    [Old_KeyUnifiedResourceId] nvarchar(64) NOT NULL,
+    [New_KeyUnifiedResourceId] nvarchar(64) NULL,
+    [Old_ResourceAReference_ResourceAId] nvarchar(64) NOT NULL,
+    [New_ResourceAReference_ResourceAId] nvarchar(64) NULL,
+    [Old_StudentUniqueId_Unified] nvarchar(32) NOT NULL,
+    [New_StudentUniqueId_Unified] nvarchar(32) NULL,
+    [Old_ResourceBReference_ResourceBId] nvarchar(64) NOT NULL,
+    [New_ResourceBReference_ResourceBId] nvarchar(64) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_KeyUnifiedResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.ResourceA', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[ResourceA]
+(
+    [Old_ResourceAId] nvarchar(64) NOT NULL,
+    [New_ResourceAId] nvarchar(64) NULL,
+    [Old_StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
+    [New_StudentReference_StudentUniqueId] nvarchar(32) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_ResourceA] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.ResourceB', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[ResourceB]
+(
+    [Old_ResourceBId] nvarchar(64) NOT NULL,
+    [New_ResourceBId] nvarchar(64) NULL,
+    [Old_StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
+    [New_StudentReference_StudentUniqueId] nvarchar(32) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_ResourceB] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.School', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[School]
+(
+    [Old_SchoolId] int NOT NULL,
+    [New_SchoolId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.Student', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[Student]
+(
+    [Old_StudentUniqueId] nvarchar(32) NOT NULL,
+    [New_StudentUniqueId] nvarchar(32) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_Student] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.StudentSchoolAssociation', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[StudentSchoolAssociation]
+(
+    [Old_StudentUniqueId] nvarchar(32) NOT NULL,
+    [New_StudentUniqueId] nvarchar(32) NULL,
+    [Old_SchoolReference_SchoolId] int NOT NULL,
+    [New_SchoolReference_SchoolId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_StudentSchoolAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL

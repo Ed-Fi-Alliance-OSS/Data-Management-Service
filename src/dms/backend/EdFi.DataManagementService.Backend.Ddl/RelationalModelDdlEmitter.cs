@@ -93,22 +93,44 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             .ToList();
 
         var triggers = modelSet
-            .TriggersInCreateOrder.OrderBy(t => t.Table.Schema.Value, StringComparer.Ordinal)
+            // The shared dms.Descriptor stamping trigger is derived into the model set so its
+            // change-tracking attachment flows through manifests/planners, but dms.Descriptor is a core
+            // table owned and rendered by CoreDdlEmitter. Exclude it here to avoid double emission.
+            .TriggersInCreateOrder.Where(t => t.Table != DmsTableNames.Descriptor)
+            .OrderBy(t => t.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(t => t.Table.Name, StringComparer.Ordinal)
             .ThenBy(t => t.Name.Value, StringComparer.Ordinal)
             .ToList();
 
+        var trackedChangeTables = modelSet
+            .TrackedChangeTablesInNameOrder.OrderBy(t => t.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(t => t.Table.Name, StringComparer.Ordinal)
+            .ToList();
+
         var authHierarchy = modelSet.AuthEdOrgHierarchy;
 
-        // Phase 1: Schemas (includes auth schema when hierarchy is present)
-        var additionalSchemas = authHierarchy is { EntitiesInNameOrder.Count: > 0 }
-            ? [AuthNames.AuthSchema]
-            : Array.Empty<DbSchemaName>();
+        // Phase 1: Schemas (includes the auth schema when the hierarchy is present, plus each distinct
+        // tracked_changes_<project> schema required by the tracked-change inventory).
+        var additionalSchemas = new List<DbSchemaName>();
+        if (authHierarchy is { EntitiesInNameOrder.Count: > 0 })
+        {
+            additionalSchemas.Add(AuthNames.AuthSchema);
+        }
+        foreach (
+            var trackedChangeSchema in trackedChangeTables
+                .Select(t => t.Table.Schema)
+                .Distinct()
+                .OrderBy(s => s.Value, StringComparer.Ordinal)
+        )
+        {
+            additionalSchemas.Add(trackedChangeSchema);
+        }
         EmitSchemas(writer, schemas, additionalSchemas);
 
-        // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs; includes auth table)
+        // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs; includes auth and tracked-change tables)
         EmitTables(writer, concreteResources);
         EmitAuthTable(writer, authHierarchy);
+        EmitTrackedChangeTables(writer, trackedChangeTables);
 
         // Phase 3: Abstract Identity Tables (must precede FKs that reference them)
         EmitAbstractIdentityTables(writer, abstractIdentityTables);
@@ -207,6 +229,113 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine(");");
         writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits <c>CREATE TABLE</c> statements for each derived tracked-change table
+    /// (<c>tracked_changes_*</c>). Renders the value columns (each as an <c>Old_*</c> / <c>New_*</c>
+    /// pair) in table order, then the fixed-by-role system columns, then the primary key. The inventory
+    /// is already shortened and canonicalized, so rendering is purely mechanical (DMS-1177).
+    /// </summary>
+    private void EmitTrackedChangeTables(
+        SqlWriter writer,
+        IReadOnlyList<TrackedChangeTableInfo> trackedChangeTables
+    )
+    {
+        foreach (var trackedTable in trackedChangeTables)
+        {
+            EmitCreateTrackedChangeTable(writer, trackedTable);
+        }
+    }
+
+    /// <summary>
+    /// Emits a single tracked-change <c>CREATE TABLE</c> statement.
+    /// </summary>
+    private void EmitCreateTrackedChangeTable(SqlWriter writer, TrackedChangeTableInfo trackedTable)
+    {
+        writer.AppendLine(_dialect.CreateTableHeader(trackedTable.Table));
+        writer.AppendLine("(");
+
+        var definitions = new List<string>();
+
+        foreach (var column in trackedTable.ValueColumnsInTableOrder)
+        {
+            var type = _dialect.RenderColumnType(column.ScalarType);
+            definitions.Add(
+                _dialect.RenderColumnDefinition(column.OldColumnName, type, column.IsOldColumnNullable)
+            );
+            definitions.Add(
+                _dialect.RenderColumnDefinition(column.NewColumnName, type, column.IsNewColumnNullable)
+            );
+        }
+
+        foreach (var systemColumn in trackedTable.SystemColumns)
+        {
+            definitions.Add(RenderTrackedChangeSystemColumn(systemColumn));
+        }
+
+        if (trackedTable.PrimaryKeyColumns.Count > 0)
+        {
+            definitions.Add(
+                _dialect.RenderNamedPrimaryKeyClause(
+                    ResolveTrackedChangePrimaryKeyName(trackedTable.Table),
+                    trackedTable.PrimaryKeyColumns
+                )
+            );
+        }
+
+        using (writer.Indent())
+        {
+            for (var i = 0; i < definitions.Count; i++)
+            {
+                writer.Append(definitions[i]);
+
+                if (i < definitions.Count - 1)
+                {
+                    writer.AppendLine(",");
+                }
+                else
+                {
+                    writer.AppendLine();
+                }
+            }
+        }
+
+        writer.AppendLine(");");
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Renders a fixed-by-role tracked-change system column. The <c>Id</c> role has no
+    /// <see cref="RelationalScalarType"/> and renders as the dialect UUID type; the <c>CreatedAt</c> role
+    /// carries the current-UTC-timestamp default; all other roles render directly from their scalar type.
+    /// </summary>
+    private string RenderTrackedChangeSystemColumn(TrackedChangeSystemColumnInfo systemColumn)
+    {
+        var type = systemColumn.ScalarType is null
+            ? _dialect.UuidColumnType
+            : _dialect.RenderColumnType(systemColumn.ScalarType);
+
+        var defaultExpression =
+            systemColumn.Role == TrackedChangeSystemColumnRole.CreatedAt
+                ? _dialect.CurrentTimestampDefaultExpression
+                : null;
+
+        return _dialect.RenderColumnDefinition(
+            systemColumn.ColumnName,
+            type,
+            systemColumn.IsNullable,
+            defaultExpression
+        );
+    }
+
+    /// <summary>
+    /// Resolves the primary-key constraint name for a tracked-change table, applying the dialect
+    /// identifier limit.
+    /// </summary>
+    private string ResolveTrackedChangePrimaryKeyName(DbTableName table)
+    {
+        return _dialect.Rules.ShortenIdentifier($"PK_{table.Schema.Value}_{table.Name}");
     }
 
     /// <summary>

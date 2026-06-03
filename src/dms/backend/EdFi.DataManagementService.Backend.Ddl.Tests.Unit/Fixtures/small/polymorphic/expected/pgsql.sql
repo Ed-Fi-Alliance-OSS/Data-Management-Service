@@ -425,6 +425,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "auth";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
@@ -453,6 +454,26 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
     "SourceEducationOrganizationId" bigint NOT NULL,
     "TargetEducationOrganizationId" bigint NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdToEducationOrganizationId" PRIMARY KEY ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEducationAgency"
+(
+    "Old_LocalEducationAgencyId" integer NOT NULL,
+    "New_LocalEducationAgencyId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalEducationAgency" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
+(
+    "Old_SchoolId" integer NOT NULL,
+    "New_SchoolId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"

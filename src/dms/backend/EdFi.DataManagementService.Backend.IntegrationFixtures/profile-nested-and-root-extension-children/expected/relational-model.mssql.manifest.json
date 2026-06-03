@@ -220,6 +220,22 @@
   ],
   "triggers": [
     {
+      "name": "TR_Descriptor_Stamp_Document",
+      "table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [],
+      "mirror_stamp_target_table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      }
+    },
+    {
       "name": "TR_ParentResource_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -258,6 +274,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "ParentResource"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "ParentResource"
+        }
       }
     },
     {
@@ -323,6 +345,65 @@
         "schema": "edfi",
         "name": "ParentResource"
       }
+    }
+  ],
+  "tracked_change_tables": [
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "ParentResource"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "ParentResource"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_ParentResourceId",
+          "new_column": "New_ParentResourceId",
+          "source_json_path": "$.parentResourceId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int32"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
     }
   ],
   "resource_details": [

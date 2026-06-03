@@ -59,6 +59,7 @@ public static class DerivedModelSetManifestEmitter
             WriteAbstractUnionViews(writer, modelSet.AbstractUnionViewsInNameOrder);
             WriteIndexes(writer, modelSet.IndexesInCreateOrder);
             WriteTriggers(writer, modelSet.TriggersInCreateOrder);
+            WriteTrackedChangeTables(writer, modelSet.TrackedChangeTablesInNameOrder);
             WriteAuthObjects(writer, modelSet.AuthEdOrgHierarchy, modelSet.ConcreteResourcesInNameOrder);
 
             if (detailedResources is not null)
@@ -416,7 +417,7 @@ public static class DerivedModelSetManifestEmitter
                     }
                     break;
 
-                case TriggerKindParameters.DocumentStamping:
+                case TriggerKindParameters.DocumentStamping stamping:
                     writer.WritePropertyName("mirror_stamp_target_table");
                     WriteTableReference(
                         writer,
@@ -426,6 +427,14 @@ public static class DerivedModelSetManifestEmitter
                                     + "MirrorStampTargetTable."
                             )
                     );
+                    if (stamping.ChangeTracking is { } changeTracking)
+                    {
+                        writer.WritePropertyName("change_tracking");
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("tracked_change_table");
+                        WriteTableReference(writer, changeTracking.TrackedChangeTable);
+                        writer.WriteEndObject();
+                    }
                     break;
 
                 case TriggerKindParameters.AuthHierarchyMaintenance auth:
@@ -446,6 +455,125 @@ public static class DerivedModelSetManifestEmitter
                     writer.WriteEndArray();
                     break;
             }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Writes the <c>tracked_change_tables</c> section: per-resource and shared-descriptor
+    /// <c>tracked_changes_*</c> tables with value columns, system columns, primary key, and the
+    /// descriptor/person joins value columns reference by name.
+    /// </summary>
+    private static void WriteTrackedChangeTables(
+        Utf8JsonWriter writer,
+        IReadOnlyList<TrackedChangeTableInfo> trackedChangeTables
+    )
+    {
+        writer.WritePropertyName("tracked_change_tables");
+        writer.WriteStartArray();
+
+        foreach (var trackedTable in trackedChangeTables)
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("table");
+            WriteTableReference(writer, trackedTable.Table);
+            writer.WriteString("kind", trackedTable.Kind.ToString());
+            writer.WritePropertyName("source_table");
+            WriteTableReference(writer, trackedTable.SourceTable);
+            writer.WritePropertyName("primary_key_columns");
+            WriteColumnNameList(writer, trackedTable.PrimaryKeyColumns);
+
+            writer.WritePropertyName("value_columns");
+            writer.WriteStartArray();
+            foreach (var column in trackedTable.ValueColumnsInTableOrder)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("old_column", column.OldColumnName.Value);
+                writer.WriteString("new_column", column.NewColumnName.Value);
+                writer.WriteString("source_json_path", column.SourceJsonPath);
+                if (column.CanonicalStorageColumn is { } canonical)
+                {
+                    writer.WriteString("canonical_storage_column", canonical.Value);
+                }
+                writer.WriteBoolean("is_old_column_nullable", column.IsOldColumnNullable);
+                writer.WriteBoolean("is_new_column_nullable", column.IsNewColumnNullable);
+                writer.WritePropertyName("scalar_type");
+                WriteScalarType(writer, column.ScalarType);
+                writer.WriteString("role", column.Role.ToString());
+                writer.WriteString("origin", column.Origin.ToString());
+                if (column.DescriptorJoinName is { } descriptorJoinName)
+                {
+                    writer.WriteString("descriptor_join_name", descriptorJoinName);
+                }
+                if (column.PersonJoinName is { } personJoinName)
+                {
+                    writer.WriteString("person_join_name", personJoinName);
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("system_columns");
+            writer.WriteStartArray();
+            foreach (var systemColumn in trackedTable.SystemColumns)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("role", systemColumn.Role.ToString());
+                writer.WriteString("column", systemColumn.ColumnName.Value);
+                writer.WritePropertyName("scalar_type");
+                WriteScalarType(writer, systemColumn.ScalarType);
+                writer.WriteBoolean("is_nullable", systemColumn.IsNullable);
+                writer.WriteBoolean("is_primary_key", systemColumn.IsPrimaryKey);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("descriptor_joins");
+            writer.WriteStartArray();
+            foreach (var join in trackedTable.DescriptorJoins)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("descriptor_join_name", join.DescriptorJoinName);
+                writer.WriteString("source_column", join.SourceColumn.Value);
+                writer.WriteString("descriptor_project", join.DescriptorResource.ProjectName);
+                writer.WriteString("descriptor_resource", join.DescriptorResource.ResourceName);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("person_joins");
+            writer.WriteStartArray();
+            foreach (var join in trackedTable.PersonJoins)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("person_join_name", join.PersonJoinName);
+                writer.WriteString("person_kind", join.PersonKind.ToString());
+                writer.WritePropertyName("join_path");
+                writer.WriteStartArray();
+                foreach (var step in join.JoinPath)
+                {
+                    writer.WriteStartObject();
+                    writer.WritePropertyName("source_table");
+                    WriteTableReference(writer, step.SourceTable);
+                    writer.WriteString("source_column", step.SourceColumnName.Value);
+                    if (step.TargetTable is { } targetTable)
+                    {
+                        writer.WritePropertyName("target_table");
+                        WriteTableReference(writer, targetTable);
+                    }
+                    if (step.TargetColumnName is { } targetColumn)
+                    {
+                        writer.WriteString("target_column", targetColumn.Value);
+                    }
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
 
             writer.WriteEndObject();
         }
