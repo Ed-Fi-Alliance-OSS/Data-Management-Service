@@ -165,6 +165,11 @@ jobs:
                   -DumpAllUserSchemas
         working-directory: eng/DatabaseTemplates/
 
+      - name: Verify template package restore
+        run: |
+          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME
+        working-directory: eng/DatabaseTemplates/
+
       - name: Upload Bulk Load Logs
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
