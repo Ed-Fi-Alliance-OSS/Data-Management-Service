@@ -41,6 +41,10 @@ These tests detect cases where the `DocumentId` is correct but the `ReferentialI
 
 - **Parity test (Core vs DB compute)**: for representative resources (self-contained + reference-bearing), compute expected `ReferentialId` via Core logic from stored identity values; assert it equals the row(s) in `dms.ReferentialIdentity`.
 - **Cross-engine equivalence test**: run the same fixture on PostgreSQL and SQL Server; assert the resulting `ReferentialId`s are byte-for-byte identical (validates UUIDv5 implementation + concatenation rules).
+- **Descriptor-valued identity parity test**: for a non-descriptor resource whose natural identity includes one or more descriptor references,
+  create descriptor rows and assert the trigger-maintained `dms.ReferentialIdentity` row hashes each descriptor-valued identity element
+  as `lower(dms.Descriptor.Uri)`, not the descriptor `DocumentId`. This guards the model-wide Core/DB contract:
+  Core extracts descriptor identity values as lowercased URIs, while relational resource tables store descriptor `DocumentId` FKs.
 - **Formatting/canonicalization edge cases**: identities containing dates/times, decimals, leading zeros, whitespace, and collation-sensitive strings; assert DB-computed UUIDv5 matches Core exactly.
 - **Unicode/encoding test**: non-ASCII identity values produce the same UUIDv5 between Core and the database (guards UTF-8/UTF-16 and normalization differences).
 - **SQL Server collation edge cases**: case-only and trailing-space-only changes to string identity parts trigger the expected recompute and match Core-computed UUIDv5 (guards “comparison says no change but stored value changed”).
