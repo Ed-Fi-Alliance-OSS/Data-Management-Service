@@ -659,54 +659,70 @@ Feature: RelationshipsWithEdOrgsOnly relational authorization
 
         @relational-backend
         @relational-ci-shard-3
-        Scenario: PUT returns forbidden and leaves the academic week unchanged when proposed authorization fails
-            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001, 255901222"
-              And the system has these "schools"
-                  | schoolId  | nameOfInstitution     | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
-                  | 255901001 | Authorized school     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-                  | 255901222 | Proposed denied school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-             When a POST request is made to "/ed-fi/academicWeeks" with
+        @ResetClaimsetsAfterScenario
+        Scenario: PUT returns forbidden and leaves the organization department unchanged when proposed authorization fails
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901, 255902"
+              And the system has these "localEducationAgencies"
+                  | localEducationAgencyId | nameOfInstitution  | categories                                                                                                          | localEducationAgencyCategoryDescriptor                     |
+                  | 255901                 | Authorized LEA     | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC |
+                  | 255902                 | Proposed denied LEA | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC |
+              And the system has these descriptors
+                  | descriptorValue                                                                  |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department |
+              And a claim set is uploaded to CMS that grants "OrganizationDepartment" access to "E2E-RelationshipsWithEdOrgsOnlyOrgDepartmentClaimSet" using authorization strategy "RelationshipsWithEdOrgsOnly"
+              And the claim set upload to CMS should be successful
+              And the claimSet "E2E-RelationshipsWithEdOrgsOnlyOrgDepartmentClaimSet" is authorized with educationOrganizationIds "255901, 255902"
+             When a POST request is made to "/ed-fi/organizationDepartments" with
                   """
                   {
-                      "weekIdentifier": "put proposed forbidden",
-                      "schoolReference": {
-                          "schoolId": 255901001
+                      "organizationDepartmentId": 255901777,
+                      "nameOfInstitution": "PUT proposed forbidden department",
+                      "parentEducationOrganizationReference": {
+                          "educationOrganizationId": 255901
                       },
-                      "beginDate": "2023-08-29",
-                      "endDate": "2023-09-04",
-                      "totalInstructionalDays": 5
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department"
+                          }
+                      ]
                   }
                   """
              Then it should respond with 201 or 200
-             When the resulting id is stored in the "putProposedForbiddenAcademicWeekId" variable
-            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
-             When a PUT request is made to "/ed-fi/academicWeeks/{putProposedForbiddenAcademicWeekId}" with
+             When the resulting id is stored in the "putProposedForbiddenOrganizationDepartmentId" variable
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyOrgDepartmentClaimSet" is authorized with educationOrganizationIds "255901"
+             When a PUT request is made to "/ed-fi/organizationDepartments/{putProposedForbiddenOrganizationDepartmentId}" with
                   """
                   {
-                      "id": "{putProposedForbiddenAcademicWeekId}",
-                      "weekIdentifier": "put proposed forbidden",
-                      "schoolReference": {
-                          "schoolId": 255901222
+                      "id": "{putProposedForbiddenOrganizationDepartmentId}",
+                      "organizationDepartmentId": 255901777,
+                      "nameOfInstitution": "PUT proposed forbidden department updated",
+                      "parentEducationOrganizationReference": {
+                          "educationOrganizationId": 255902
                       },
-                      "beginDate": "2023-08-29",
-                      "endDate": "2023-09-04",
-                      "totalInstructionalDays": 6
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department"
+                          }
+                      ]
                   }
                   """
              Then it should respond with 403
-             When a GET request is made to "/ed-fi/academicWeeks/{putProposedForbiddenAcademicWeekId}"
+             When a GET request is made to "/ed-fi/organizationDepartments/{putProposedForbiddenOrganizationDepartmentId}"
              Then it should respond with 200
               And the response body is
                   """
                   {
                       "id": "{id}",
-                      "weekIdentifier": "put proposed forbidden",
-                      "beginDate": "2023-08-29",
-                      "endDate": "2023-09-04",
-                      "totalInstructionalDays": 5,
-                      "schoolReference": {
-                          "schoolId": 255901001
-                      }
+                      "parentEducationOrganizationReference": {
+                          "educationOrganizationId": 255901
+                      },
+                      "organizationDepartmentId": 255901777,
+                      "nameOfInstitution": "PUT proposed forbidden department",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department"
+                          }
+                      ]
                   }
                   """
 
