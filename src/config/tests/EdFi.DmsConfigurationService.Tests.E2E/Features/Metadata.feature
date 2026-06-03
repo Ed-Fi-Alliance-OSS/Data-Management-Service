@@ -15,7 +15,8 @@ Feature: Metadata endpoints
                       "build": "{*}",
                       "urls": {
                           "openApiMetadata": "{*}"
-                      }
+                      },
+                      "specificationVersion": "{*}"
                   }
                   """
               And the response contains metadata URLs
@@ -56,10 +57,10 @@ Feature: Metadata endpoints
              When a GET request is made to "/metadata/specifications"
              Then it should respond with 200
               And the OpenAPI paths should include
-                  | Path                 |
-                  | /v2/vendors          |
-                  | /v2/applications     |
-                  | /v2/claimSets        |
+                  | Path                   |
+                  | /v2/vendors            |
+                  | /v2/applications       |
+                  | /v2/claimSets          |
                   | /authorizationMetadata |
 
         Scenario: 06 Service information URLs should be accessible
