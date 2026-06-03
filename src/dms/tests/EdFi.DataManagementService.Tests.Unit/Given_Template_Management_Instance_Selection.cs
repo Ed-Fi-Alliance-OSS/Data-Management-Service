@@ -13,15 +13,14 @@ namespace EdFi.DataManagementService.Tests.Unit;
 public partial class Given_Template_Management_Instance_Selection
 {
     [Test]
-    public async Task It_selects_the_instance_whose_connection_string_targets_the_database()
+    public async Task It_accepts_an_explicit_instance_id_even_when_the_connection_string_is_protected()
     {
         var result = await RunInModuleScope(
             """
             $instances = @(
-                [pscustomobject]@{ id = 7; connectionString = 'host=h;port=5432;username=u;password=p;database=other_db;' },
-                [pscustomobject]@{ id = 9; connectionString = 'host=h;port=5432;username=u;password=p;Database=edfi_relational;' }
+                [pscustomobject]@{ id = 9; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' }
             )
-            Select-DmsInstanceId -DmsInstances $instances -DatabaseName 'edfi_relational'
+            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -RequestedDmsInstanceId 9 -DatabaseNameBound $true
             """
         );
 
@@ -30,88 +29,90 @@ public partial class Given_Template_Management_Instance_Selection
     }
 
     [Test]
-    public async Task It_fails_when_no_instance_targets_the_database()
+    public async Task It_fails_when_the_explicit_instance_id_is_not_registered()
     {
         var result = await RunInModuleScope(
             """
             $instances = @(
-                [pscustomobject]@{ id = 7; connectionString = 'host=h;port=5432;username=u;password=p;database=other_db;' }
+                [pscustomobject]@{ id = 7; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' }
             )
-            Select-DmsInstanceId -DmsInstances $instances -DatabaseName 'edfi_relational'
+            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -RequestedDmsInstanceId 9 -DatabaseNameBound $true
             """
         );
 
         result.ExitCode.Should().NotBe(0);
         result
             .NormalizedOutput.Should()
-            .Contain("No existing DMS instance targets database 'edfi_relational'");
+            .Contain("DMS instance id '9' is not registered in the Configuration Service");
     }
 
     [Test]
-    public async Task It_matches_the_database_name_with_ordinal_case_sensitivity()
+    public async Task It_requires_a_database_name_when_an_instance_id_is_provided_to_Build_Template()
     {
         var result = await RunInModuleScope(
             """
-            $instances = @(
-                [pscustomobject]@{ id = 7; connectionString = 'host=h;port=5432;username=u;password=p;database=EDFI_relational;' }
-            )
-            Select-DmsInstanceId -DmsInstances $instances -DatabaseName 'edfi_relational'
+            Build-Template `
+                -TemplateType Minimal `
+                -DmsUrl 'http://localhost:1' `
+                -CmsUrl 'http://localhost:1' `
+                -MinimalSampleDataDirectory './' `
+                -Extension 'ed-fi' `
+                -ConfigFilePath './MinimalTemplateSettings.psd1' `
+                -StandardVersion '5.2.0' `
+                -PackageVersion '0.0.1' `
+                -DmsInstanceId 9
             """
         );
 
         result.ExitCode.Should().NotBe(0);
-        result
-            .NormalizedOutput.Should()
-            .Contain("No existing DMS instance targets database 'edfi_relational'");
+        result.NormalizedOutput.Should().Contain("-DmsInstanceId requires -DmsInstanceDatabaseName");
     }
 
     [Test]
-    public async Task It_fails_fast_when_a_connection_string_is_missing()
+    public async Task It_keeps_the_legacy_first_instance_behavior_when_no_new_parameters_are_bound()
     {
         var result = await RunInModuleScope(
             """
             $instances = @(
-                [pscustomobject]@{ id = 9; connectionString = 'host=h;port=5432;username=u;password=p;database=edfi_relational;' },
-                [pscustomobject]@{ id = 7; connectionString = $null }
+                [pscustomobject]@{ id = 7; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' },
+                [pscustomobject]@{ id = 9; connectionString = '/another-protected-value=' }
             )
-            Select-DmsInstanceId -DmsInstances $instances -DatabaseName 'edfi_relational'
+            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -DatabaseNameBound $false
             """
         );
 
-        result.ExitCode.Should().NotBe(0);
-        result.NormalizedOutput.Should().Contain("no readable connectionString");
+        result.ExitCode.Should().Be(0);
+        result.NormalizedOutput.Should().Contain("7");
     }
 
     [Test]
-    public async Task It_fails_fast_when_a_connection_string_is_unparseable()
+    public async Task It_fails_when_a_database_name_is_bound_without_an_instance_id_and_instances_exist()
     {
         var result = await RunInModuleScope(
             """
             $instances = @(
-                [pscustomobject]@{ id = 7; connectionString = 'this is not a connection string' }
+                [pscustomobject]@{ id = 7; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' }
             )
-            Select-DmsInstanceId -DmsInstances $instances -DatabaseName 'edfi_relational'
+            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -DatabaseNameBound $true
             """
         );
 
         result.ExitCode.Should().NotBe(0);
-        result.NormalizedOutput.Should().Contain("unparseable connectionString");
+        result.NormalizedOutput.Should().Contain("Pass -DmsInstanceId");
     }
 
     [Test]
-    public async Task It_fails_fast_when_a_connection_string_has_no_database_key()
+    public async Task It_signals_registration_is_needed_when_no_instances_exist()
     {
         var result = await RunInModuleScope(
             """
-            $instances = @(
-                [pscustomobject]@{ id = 7; connectionString = 'host=h;port=5432;username=u;password=p;' }
-            )
-            Select-DmsInstanceId -DmsInstances $instances -DatabaseName 'edfi_relational'
+            $resolved = Resolve-DmsInstanceIdForTemplate -DmsInstances @() -DatabaseNameBound $true
+            if ($null -eq $resolved) { 'REGISTER_NEW' } else { $resolved }
             """
         );
 
-        result.ExitCode.Should().NotBe(0);
-        result.NormalizedOutput.Should().Contain("does not specify a database");
+        result.ExitCode.Should().Be(0);
+        result.NormalizedOutput.Should().Contain("REGISTER_NEW");
     }
 
     private async Task<ScriptResult> RunInModuleScope(string scriptBody)

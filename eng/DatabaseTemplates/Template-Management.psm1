@@ -379,70 +379,68 @@ function Build-NuGetPackage {
 
 <#
 .SYNOPSIS
-    Resolves the database name targeted by a DMS instance's connection string.
+    Asserts that a DMS instance id is registered in the Configuration Service.
 
 .DESCRIPTION
-    The CMS-registered DmsInstance connection string is the source of truth for
-    where API writes land, so an instance with a missing or unparseable
-    connection string cannot be safely reused and causes a terminating error.
+    The Configuration Service protects DmsInstance connection strings in API
+    responses, so a caller that needs a specific target database must pass the
+    id returned when the instance was registered; membership of that id in the
+    registered set is the only property that can be verified here.
 #>
-function Get-DmsInstanceTargetDatabaseName {
+function Assert-DmsInstanceIdRegistered {
     param (
         [Parameter(Mandatory = $true)]
-        $DmsInstance
+        [AllowEmptyCollection()]
+        [object[]]$DmsInstances,
+
+        [Parameter(Mandatory = $true)]
+        [long]$DmsInstanceId
     )
 
-    $connectionString = [string]($DmsInstance.connectionString)
+    $registeredIds = @($DmsInstances | ForEach-Object { [long]$_.id })
 
-    if ([string]::IsNullOrWhiteSpace($connectionString)) {
-        throw "DMS instance '$($DmsInstance.id)' has no readable connectionString; refusing to reuse an instance whose target database cannot be verified."
+    if ($DmsInstanceId -notin $registeredIds) {
+        $registeredIdList = if ($registeredIds.Count -eq 0) { "<none>" } else { $registeredIds -join ', ' }
+        throw "DMS instance id '$DmsInstanceId' is not registered in the Configuration Service. Registered ids: $registeredIdList."
     }
-
-    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-
-    try {
-        # PSBase bypasses PowerShell's IDictionary adapter, which would otherwise turn this
-        # property assignment into adding a literal 'ConnectionString' key instead of parsing.
-        $builder.PSBase.ConnectionString = $connectionString
-    }
-    catch {
-        throw "DMS instance '$($DmsInstance.id)' has an unparseable connectionString; refusing to reuse an instance whose target database cannot be verified."
-    }
-
-    if (-not $builder.ContainsKey("database")) {
-        throw "DMS instance '$($DmsInstance.id)' connectionString does not specify a database; refusing to reuse an instance whose target database cannot be verified."
-    }
-
-    return [string]$builder["database"]
 }
 
 <#
 .SYNOPSIS
-    Returns the id of the DMS instance that targets the given database name.
+    Resolves which DMS instance id a template build should bind applications to.
 
 .DESCRIPTION
-    Every candidate instance must have a verifiable target database; the match
-    is exact (ordinal) on the database name while the connection-string key
-    lookup is case-insensitive.
+    A caller-supplied instance id is validated for membership and used as-is.
+    Without one, an empty instance list returns $null so the caller registers a
+    new instance. Existing instances cannot be matched to a requested database
+    because the Configuration Service protects connection strings in API
+    responses, so a bound database name with pre-existing instances is an
+    error; callers that bind neither parameter keep first-instance behavior.
 #>
-function Select-DmsInstanceId {
+function Resolve-DmsInstanceIdForTemplate {
     param (
-        [Parameter(Mandatory = $true)]
-        [object[]]$DmsInstances,
+        [AllowEmptyCollection()]
+        [object[]]$DmsInstances = @(),
 
-        [Parameter(Mandatory = $true)]
-        [string]$DatabaseName
+        [System.Nullable[long]]$RequestedDmsInstanceId = $null,
+
+        [bool]$DatabaseNameBound = $false
     )
 
-    $targetDatabaseNames = @($DmsInstances | ForEach-Object { Get-DmsInstanceTargetDatabaseName -DmsInstance $_ })
-
-    for ($index = 0; $index -lt $DmsInstances.Count; $index++) {
-        if ($targetDatabaseNames[$index] -ceq $DatabaseName) {
-            return $DmsInstances[$index].id
-        }
+    if ($null -ne $RequestedDmsInstanceId) {
+        Assert-DmsInstanceIdRegistered -DmsInstances $DmsInstances -DmsInstanceId $RequestedDmsInstanceId
+        return [long]$RequestedDmsInstanceId
     }
 
-    throw "No existing DMS instance targets database '$DatabaseName'. Existing instances target: $($targetDatabaseNames -join ', ')."
+    if ($DmsInstances.Count -eq 0) {
+        return $null
+    }
+
+    if ($DatabaseNameBound) {
+        throw "Existing DMS instances cannot be verified against a requested database because the Configuration Service protects connection strings in API responses. Pass -DmsInstanceId for the instance that targets the requested database."
+    }
+
+    return [long]$DmsInstances[0].id
 }
 
 <#
@@ -586,6 +584,12 @@ enum TemplateType {
 .PARAMETER DmsInstanceDatabaseName
     Database the CMS-registered DMS instance must target; also the database that is dumped into the template.
 
+.PARAMETER DmsInstanceId
+    Id of an already-registered DMS instance to bind applications to. The Configuration Service
+    protects instance connection strings in API responses, so the registrar of the instance must
+    hand its id forward; requires -DmsInstanceDatabaseName so writes and the dump target the same
+    database.
+
 .PARAMETER DumpAllUserSchemas
     Dump every non-system schema of the target database instead of only the dms schema.
 
@@ -637,31 +641,36 @@ function Build-Template {
 
         [string]$DmsInstanceDatabaseName = "edfi_datamanagementservice",
 
+        [long]$DmsInstanceId,
+
         [switch]$DumpAllUserSchemas,
 
         [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
     )
 
+    if ($PSBoundParameters.ContainsKey('DmsInstanceId') -and -not $PSBoundParameters.ContainsKey('DmsInstanceDatabaseName')) {
+        throw "-DmsInstanceId requires -DmsInstanceDatabaseName so the dump targets the same database the bound applications write to."
+    }
+
     Add-CmsClient -CmsUrl $CmsUrl
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    # Get or create the DMS instance. The CMS-registered instance connection string is the
-    # source of truth for where bulk-load writes land, so a caller that names a target
-    # database only reuses an instance that verifiably targets it. Callers that omit the
-    # parameter keep the original first-instance behavior.
+    # Resolve the DMS instance to bind applications to. The CMS-registered instance
+    # connection string controls where bulk-load writes land but is protected in API
+    # responses, so a caller that targets a specific database must hand the instance id
+    # forward from registration; callers that bind neither parameter keep the original
+    # first-instance behavior.
     $dmsInstances = @(Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken)
-    if ($dmsInstances.Count -eq 0) {
-        $dmsInstanceId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword -PostgresDbName $DmsInstanceDatabaseName
-    }
-    elseif ($PSBoundParameters.ContainsKey('DmsInstanceDatabaseName')) {
-        $dmsInstanceId = Select-DmsInstanceId -DmsInstances $dmsInstances -DatabaseName $DmsInstanceDatabaseName
-    }
-    else {
-        $dmsInstanceId = $dmsInstances[0].id
+    $targetDmsInstanceId = Resolve-DmsInstanceIdForTemplate `
+        -DmsInstances $dmsInstances `
+        -RequestedDmsInstanceId ($PSBoundParameters.ContainsKey('DmsInstanceId') ? $DmsInstanceId : $null) `
+        -DatabaseNameBound ($PSBoundParameters.ContainsKey('DmsInstanceDatabaseName'))
+    if ($null -eq $targetDmsInstanceId) {
+        $targetDmsInstanceId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword -PostgresDbName $DmsInstanceDatabaseName
     }
 
     # Create Bootstrap application and assign to DMS instance
-    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($dmsInstanceId)
+    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($targetDmsInstanceId)
 
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $bootstrapApp.Key -Secret $bootstrapApp.Secret
 
@@ -685,7 +694,7 @@ function Build-Template {
         }
 
         # Create Sandbox application and assign to DMS instance
-        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($dmsInstanceId)
+        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($targetDmsInstanceId)
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
