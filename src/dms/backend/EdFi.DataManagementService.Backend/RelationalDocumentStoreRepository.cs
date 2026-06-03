@@ -2217,7 +2217,7 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization,
                 RelationshipAuthorizationResult? proposedRelationshipAuthorization,
                 RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
-                RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
+                RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
                 PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null
             )
             {
