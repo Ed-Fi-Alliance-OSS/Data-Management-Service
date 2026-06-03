@@ -22,13 +22,14 @@ public class InformationModule(IOptions<AppSettings> appSettings) : IEndpointMod
         var baseUrl =
             $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";
         var urls = new ApiUrls($"{baseUrl}/metadata/specifications");
+        var specificationVersion = appSettings.Value.SpecificationVersion.ToLowerInvariant();
         var response = new ApiInformation(
             ApiVersionDetails.Version,
             ApiVersionDetails.ApplicationName,
             ApiVersionDetails.InformationalVersion,
             ApiVersionDetails.Build,
             urls,
-            appSettings.Value.SpecificationVersion
+            specificationVersion
         );
         return Results.Ok(response);
     }
