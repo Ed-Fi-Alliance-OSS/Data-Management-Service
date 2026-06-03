@@ -379,6 +379,107 @@ function Build-NuGetPackage {
 
 <#
 .SYNOPSIS
+    Resolves the database name targeted by a DMS instance's connection string.
+
+.DESCRIPTION
+    The CMS-registered DmsInstance connection string is the source of truth for
+    where API writes land, so an instance with a missing or unparseable
+    connection string cannot be safely reused and causes a terminating error.
+#>
+function Get-DmsInstanceTargetDatabaseName {
+    param (
+        [Parameter(Mandatory = $true)]
+        $DmsInstance
+    )
+
+    $connectionString = [string]($DmsInstance.connectionString)
+
+    if ([string]::IsNullOrWhiteSpace($connectionString)) {
+        throw "DMS instance '$($DmsInstance.id)' has no readable connectionString; refusing to reuse an instance whose target database cannot be verified."
+    }
+
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+
+    try {
+        # PSBase bypasses PowerShell's IDictionary adapter, which would otherwise turn this
+        # property assignment into adding a literal 'ConnectionString' key instead of parsing.
+        $builder.PSBase.ConnectionString = $connectionString
+    }
+    catch {
+        throw "DMS instance '$($DmsInstance.id)' has an unparseable connectionString; refusing to reuse an instance whose target database cannot be verified."
+    }
+
+    if (-not $builder.ContainsKey("database")) {
+        throw "DMS instance '$($DmsInstance.id)' connectionString does not specify a database; refusing to reuse an instance whose target database cannot be verified."
+    }
+
+    return [string]$builder["database"]
+}
+
+<#
+.SYNOPSIS
+    Returns the id of the DMS instance that targets the given database name.
+
+.DESCRIPTION
+    Every candidate instance must have a verifiable target database; the match
+    is exact (ordinal) on the database name while the connection-string key
+    lookup is case-insensitive.
+#>
+function Select-DmsInstanceId {
+    param (
+        [Parameter(Mandatory = $true)]
+        [object[]]$DmsInstances,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName
+    )
+
+    $targetDatabaseNames = @($DmsInstances | ForEach-Object { Get-DmsInstanceTargetDatabaseName -DmsInstance $_ })
+
+    for ($index = 0; $index -lt $DmsInstances.Count; $index++) {
+        if ($targetDatabaseNames[$index] -ceq $DatabaseName) {
+            return $DmsInstances[$index].id
+        }
+    }
+
+    throw "No existing DMS instance targets database '$DatabaseName'. Existing instances target: $($targetDatabaseNames -join ', ')."
+}
+
+<#
+.SYNOPSIS
+    Discovers the non-system schemas present in a PostgreSQL database.
+
+.DESCRIPTION
+    Queries pg_namespace inside the running PostgreSQL container, excluding
+    pg_* system schemas, information_schema, and public. Throws when the
+    database has no user schemas, which indicates it was never provisioned.
+#>
+function Get-UserSchemaNames {
+    param (
+        [string]$ContainerName = "dms-postgresql",
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName
+    )
+
+    $query = "SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ('information_schema', 'public') ORDER BY nspname;"
+    $output = & docker exec $ContainerName psql -U postgres -d $DatabaseName -tA -c $query
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to discover schemas in database '$DatabaseName'."
+    }
+
+    $schemas = @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+
+    if ($schemas.Count -eq 0) {
+        throw "No user schemas found in database '$DatabaseName'; the database does not appear to be provisioned."
+    }
+
+    return $schemas
+}
+
+<#
+.SYNOPSIS
     Builds a NuGet package containing a PostgreSQL database backup.
 
 .PARAMETER ConfigFilePath
@@ -390,6 +491,12 @@ function Build-NuGetPackage {
 
 .PARAMETER PackageVersion
     The version to assign to the generated NuGet package.
+
+.PARAMETER DatabaseName
+    The database to dump into the template package.
+
+.PARAMETER DumpAllUserSchemas
+    Dump every non-system schema of the target database instead of only the dms schema.
 
 .EXAMPLE
     Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
@@ -403,7 +510,11 @@ function Build-TemplateNuGetPackage {
         [string]$StandardVersion,
 
         [Parameter(Mandatory = $true)]
-        [string]$PackageVersion
+        [string]$PackageVersion,
+
+        [string]$DatabaseName = "edfi_datamanagementservice",
+
+        [switch]$DumpAllUserSchemas
     )
 
     $config = Import-PowerShellDataFile -Path $ConfigFilePath
@@ -414,7 +525,17 @@ function Build-TemplateNuGetPackage {
         }
     }
 
-    Invoke-DatabaseDump -DatabaseSchemas "dms" -BackupDirectory './' -BackupFileName $config.DatabaseBackupName
+    $databaseSchemas =
+        if ($DumpAllUserSchemas) {
+            $discoveredSchemas = @(Get-UserSchemaNames -DatabaseName $DatabaseName)
+            Write-Host "Dumping all user schemas from '$DatabaseName': $($discoveredSchemas -join ', ')"
+            $discoveredSchemas
+        }
+        else {
+            @("dms")
+        }
+
+    Invoke-DatabaseDump -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName
 
     New-DatabaseTemplateCsproj -Config $config -BackupDirectory './'
 
@@ -462,6 +583,12 @@ enum TemplateType {
 .PARAMETER ApplicationName
     The name of the application to create. Defaults to "Demo application".
 
+.PARAMETER DmsInstanceDatabaseName
+    Database the CMS-registered DMS instance must target; also the database that is dumped into the template.
+
+.PARAMETER DumpAllUserSchemas
+    Dump every non-system schema of the target database instead of only the dms schema.
+
 .PARAMETER PostgresPassword
     The PostgreSQL password for database connection. Defaults to environment variable POSTGRES_PASSWORD or "abcdefgh1!".
 
@@ -508,22 +635,33 @@ function Build-Template {
 
         [string]$ApplicationName = "Demo application",
 
+        [string]$DmsInstanceDatabaseName = "edfi_datamanagementservice",
+
+        [switch]$DumpAllUserSchemas,
+
         [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
     )
 
     Add-CmsClient -CmsUrl $CmsUrl
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    # Get or create DMS instance
-    $dataStores = Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken
-    if ($dataStores.Count -eq 0) {
-        $dataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword
-    } else {
-        $dataStoreId = $dataStores[0].id
+    # Get or create the DMS instance. The CMS-registered instance connection string is the
+    # source of truth for where bulk-load writes land, so a caller that names a target
+    # database only reuses an instance that verifiably targets it. Callers that omit the
+    # parameter keep the original first-instance behavior.
+    $dmsInstances = @(Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken)
+    if ($dmsInstances.Count -eq 0) {
+        $dmsInstanceId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword -PostgresDbName $DmsInstanceDatabaseName
+    }
+    elseif ($PSBoundParameters.ContainsKey('DmsInstanceDatabaseName')) {
+        $dmsInstanceId = Select-DmsInstanceId -DmsInstances $dmsInstances -DatabaseName $DmsInstanceDatabaseName
+    }
+    else {
+        $dmsInstanceId = $dmsInstances[0].id
     }
 
     # Create Bootstrap application and assign to DMS instance
-    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($dataStoreId)
+    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($dmsInstanceId)
 
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $bootstrapApp.Key -Secret $bootstrapApp.Secret
 
@@ -547,7 +685,7 @@ function Build-Template {
         }
 
         # Create Sandbox application and assign to DMS instance
-        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($dataStoreId)
+        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($dmsInstanceId)
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
@@ -561,7 +699,7 @@ function Build-Template {
             -ForceReloadMetadata
     }
 
-    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DmsInstanceDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
 }
 
-Export-ModuleMember -Function Build-Template
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames
