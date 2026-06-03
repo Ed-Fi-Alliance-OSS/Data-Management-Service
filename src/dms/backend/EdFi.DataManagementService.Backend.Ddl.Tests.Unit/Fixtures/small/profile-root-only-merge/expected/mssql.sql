@@ -458,7 +458,7 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
     [Discriminator] nvarchar(128) NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Descriptor_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Descriptor] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -469,7 +469,7 @@ CREATE TABLE [tracked_changes_edfi].[ProfileRootOnlyMergeItem]
     [New_ProfileRootOnlyMergeItemId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ProfileRootOnlyMergeItem_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ProfileRootOnlyMergeItem] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -480,7 +480,7 @@ CREATE TABLE [tracked_changes_edfi].[Student]
     [New_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Student_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Student] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 

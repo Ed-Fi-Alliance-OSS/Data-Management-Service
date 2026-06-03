@@ -408,10 +408,20 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
         var idType = mssql ? "uniqueidentifier" : "uuid";
         block.Should().Contain($"{open}Id{close} {idType} NOT NULL");
         block.Should().Contain($"{open}ChangeVersion{close} bigint NOT NULL");
-        var createdAt = mssql
-            ? "datetime2(7) NOT NULL DEFAULT (sysutcdatetime())"
-            : "timestamp with time zone NOT NULL DEFAULT now()";
-        block.Should().Contain($"{open}CreatedAt{close} {createdAt}");
+        if (mssql)
+        {
+            // CreatedAt carries a named DF_* default constraint (consistent with the core DDL convention),
+            // so the type prefix and the DEFAULT expression are separated by the CONSTRAINT clause.
+            block.Should().Contain($"{open}CreatedAt{close} datetime2(7) NOT NULL CONSTRAINT {open}DF_");
+            block.Should().Contain("DEFAULT (sysutcdatetime())");
+        }
+        else
+        {
+            // PostgreSQL ignores the default-constraint name and renders a plain DEFAULT.
+            block
+                .Should()
+                .Contain($"{open}CreatedAt{close} timestamp with time zone NOT NULL DEFAULT now()");
+        }
 
         if (expectDiscriminator)
         {

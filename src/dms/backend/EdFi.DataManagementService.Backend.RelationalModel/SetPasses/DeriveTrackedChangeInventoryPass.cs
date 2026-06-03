@@ -314,21 +314,31 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Collects the identity and securable (EdOrg + Namespace) source paths with merged origin flags.
-    /// Person securable paths are handled separately.
+    /// Collects the identity and securable (EdOrg + Namespace) source paths with merged origin flags, in
+    /// deterministic first-seen order (identity paths, then EdOrg securables, then Namespace securables).
+    /// The returned order is the value-column table order, which renders as physical column order in the
+    /// tracked-change DDL, so it is pinned here explicitly rather than relying on dictionary enumeration
+    /// order. Person securable paths are handled separately.
     /// </summary>
-    private static Dictionary<string, TrackedChangeColumnOrigin> BuildOriginByPath(
+    private static IReadOnlyList<(string Path, TrackedChangeColumnOrigin Origin)> BuildOriginByPath(
         RelationalModelBuilderContext builderContext,
         ConcreteResourceModel concreteModel
     )
     {
+        var orderedPaths = new List<string>();
         var originByPath = new Dictionary<string, TrackedChangeColumnOrigin>(StringComparer.Ordinal);
 
         void Merge(string path, TrackedChangeColumnOrigin origin)
         {
-            originByPath[path] = originByPath.TryGetValue(path, out var existing)
-                ? existing | origin
-                : origin;
+            if (originByPath.TryGetValue(path, out var existing))
+            {
+                originByPath[path] = existing | origin;
+            }
+            else
+            {
+                originByPath[path] = origin;
+                orderedPaths.Add(path);
+            }
         }
 
         foreach (var identityPath in builderContext.IdentityJsonPaths)
@@ -347,7 +357,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             Merge(namespacePath, TrackedChangeColumnOrigin.SecurableElement);
         }
 
-        return originByPath;
+        return orderedPaths.Select(path => (path, originByPath[path])).ToArray();
     }
 
     /// <summary>
@@ -601,7 +611,10 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             {
                 // Two person paths can legitimately collapse to the same join name when they resolve to the
                 // same chain; a name collision over a *different* chain would otherwise silently keep only
-                // the first path's join, so reject it explicitly.
+                // the first path's join, so reject it explicitly. Defense-in-depth: valid ApiSchema cannot
+                // currently produce two distinct chains that concatenate to the same BuildPersonJoinBaseName,
+                // so no fixture exercises this branch; it guards against a future regression in chain
+                // resolution or join-name construction rather than a reachable input.
                 if (existingJoin.PersonKind != personKind || !existingJoin.JoinPath.SequenceEqual(chain))
                 {
                     throw new InvalidOperationException(

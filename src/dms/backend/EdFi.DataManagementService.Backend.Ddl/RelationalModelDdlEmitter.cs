@@ -271,7 +271,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         foreach (var systemColumn in trackedTable.SystemColumns)
         {
-            definitions.Add(RenderTrackedChangeSystemColumn(systemColumn));
+            definitions.Add(RenderTrackedChangeSystemColumn(trackedTable.Table, systemColumn));
         }
 
         if (trackedTable.PrimaryKeyColumns.Count > 0)
@@ -308,25 +308,31 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Renders a fixed-by-role tracked-change system column. The <c>Id</c> role has no
     /// <see cref="RelationalScalarType"/> and renders as the dialect UUID type; the <c>CreatedAt</c> role
-    /// carries the current-UTC-timestamp default; all other roles render directly from their scalar type.
+    /// carries the current-UTC-timestamp default under a named <c>DF_*</c> constraint (consistent with the
+    /// core DDL convention so SQL Server does not assign a system-generated default-constraint name); all
+    /// other roles render directly from their scalar type.
     /// </summary>
-    private string RenderTrackedChangeSystemColumn(TrackedChangeSystemColumnInfo systemColumn)
+    private string RenderTrackedChangeSystemColumn(
+        DbTableName table,
+        TrackedChangeSystemColumnInfo systemColumn
+    )
     {
         var type = systemColumn.ScalarType is null
             ? _dialect.UuidColumnType
             : _dialect.RenderColumnType(systemColumn.ScalarType);
 
-        var defaultExpression =
-            systemColumn.Role == TrackedChangeSystemColumnRole.CreatedAt
-                ? _dialect.CurrentTimestampDefaultExpression
-                : null;
+        if (systemColumn.Role == TrackedChangeSystemColumnRole.CreatedAt)
+        {
+            return _dialect.RenderColumnDefinitionWithNamedDefault(
+                systemColumn.ColumnName,
+                type,
+                systemColumn.IsNullable,
+                ResolveTrackedChangeDefaultName(table, systemColumn.ColumnName),
+                _dialect.CurrentTimestampDefaultExpression
+            );
+        }
 
-        return _dialect.RenderColumnDefinition(
-            systemColumn.ColumnName,
-            type,
-            systemColumn.IsNullable,
-            defaultExpression
-        );
+        return _dialect.RenderColumnDefinition(systemColumn.ColumnName, type, systemColumn.IsNullable);
     }
 
     /// <summary>
@@ -336,6 +342,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private string ResolveTrackedChangePrimaryKeyName(DbTableName table)
     {
         return _dialect.Rules.ShortenIdentifier($"PK_{table.Schema.Value}_{table.Name}");
+    }
+
+    /// <summary>
+    /// Resolves a named default-constraint name (<c>DF_&lt;schema&gt;_&lt;table&gt;_&lt;column&gt;</c>) for a
+    /// tracked-change system column, applying the dialect identifier limit. Schema-qualified to stay unique
+    /// across the per-project <c>tracked_changes_*</c> schemas, mirroring
+    /// <see cref="ResolveTrackedChangePrimaryKeyName"/>.
+    /// </summary>
+    private string ResolveTrackedChangeDefaultName(DbTableName table, DbColumnName column)
+    {
+        return _dialect.Rules.ShortenIdentifier($"DF_{table.Schema.Value}_{table.Name}_{column.Value}");
     }
 
     /// <summary>

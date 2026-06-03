@@ -457,7 +457,7 @@ CREATE TABLE [tracked_changes_edfi].[ParentResource]
     [New_ParentResourceId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ParentResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ParentResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 

@@ -267,7 +267,13 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 new DbTriggerName(DescriptorStampingTriggerName),
                 _descriptorTable,
                 [RelationalNameConventions.DocumentIdColumnName],
-                // Descriptor identity is immutable; no identity projection columns to diff.
+                // Descriptor identity (Namespace + CodeValue) is immutable, so there are no identity
+                // projection columns to diff and the shared descriptor table never receives key-change
+                // rows (only tombstones). This empty workset is safe only because descriptor writes are
+                // handled by DescriptorWriteHandler, not DefaultRelationalWriteExecutor — the latter's
+                // RelationalWriteIdentityStability guard throws on a DocumentStamping trigger with zero
+                // IdentityProjectionColumns. If descriptors are ever routed through that executor, this
+                // workset must be populated first.
                 [],
                 new TriggerKindParameters.DocumentStamping(),
                 MirrorStampTargetTable: _descriptorTable

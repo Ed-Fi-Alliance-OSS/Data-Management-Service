@@ -586,7 +586,7 @@ CREATE TABLE [tracked_changes_edfi].[DateTimeKeyResource]
     [New_EventTimestamp] datetime2(7) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DateTimeKeyResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DateTimeKeyResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -597,7 +597,7 @@ CREATE TABLE [tracked_changes_edfi].[DecimalKeyResource]
     [New_DecimalKey] decimal(9,2) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DecimalKeyResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DecimalKeyResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -610,7 +610,7 @@ CREATE TABLE [tracked_changes_edfi].[DecimalRefResource]
     [New_DecimalKeyReference_DecimalKey] decimal(9,2) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_DecimalRefResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_DecimalRefResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -625,7 +625,7 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentChildResource]
     [New_EdOrgDependentResourceReference_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EdOrgDependentChildResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EdOrgDependentChildResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -638,7 +638,7 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentResource]
     [New_EducationOrganization_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_EdOrgDependentResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_EdOrgDependentResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -655,7 +655,7 @@ CREATE TABLE [tracked_changes_edfi].[KeyUnifiedResource]
     [New_ResourceBReference_ResourceBId] nvarchar(64) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_KeyUnifiedResource_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_KeyUnifiedResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -668,7 +668,7 @@ CREATE TABLE [tracked_changes_edfi].[ResourceA]
     [New_StudentReference_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ResourceA_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ResourceA] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -681,7 +681,7 @@ CREATE TABLE [tracked_changes_edfi].[ResourceB]
     [New_StudentReference_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ResourceB_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_ResourceB] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -692,7 +692,7 @@ CREATE TABLE [tracked_changes_edfi].[School]
     [New_SchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -703,7 +703,7 @@ CREATE TABLE [tracked_changes_edfi].[Student]
     [New_StudentUniqueId] nvarchar(32) NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Student_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Student] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
@@ -716,7 +716,7 @@ CREATE TABLE [tracked_changes_edfi].[StudentSchoolAssociation]
     [New_SchoolReference_SchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_StudentSchoolAssociation_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_StudentSchoolAssociation] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 

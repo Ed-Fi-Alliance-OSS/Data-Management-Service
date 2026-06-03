@@ -429,7 +429,7 @@ CREATE TABLE [tracked_changes_edfi].[Person]
     [New_PersonId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Person_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_Person] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 

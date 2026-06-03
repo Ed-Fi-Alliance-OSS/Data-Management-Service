@@ -434,7 +434,7 @@ CREATE TABLE [tracked_changes_edfi].[NamingStressItem]
     [New_NamingStressItemId] int NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
-    [CreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_NamingStressItem_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_tracked_changes_edfi_NamingStressItem] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
