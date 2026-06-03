@@ -21,12 +21,23 @@
     an authenticated descriptor read must return HTTP 200 with a non-empty
     array.
 
+    With -RequirePopulatedData, the script additionally proves the package
+    contains populated sample data: the source database must hold at least one
+    non-descriptor, non-school-year document, populated counts must restore
+    exactly (source-to-restored comparison, never hard-coded counts), and an
+    authenticated read of a populated resource (schools) must return HTTP 200
+    with a non-empty array.
+
 .PARAMETER SourceDatabaseName
     The relational database the template was dumped from; its user-schema set
     is the expected schema set after restore.
 
 .PARAMETER PackageDirectory
     Directory containing the generated .nupkg (default: current directory).
+
+.PARAMETER RequirePopulatedData
+    Additionally require populated (non-descriptor) sample data to survive the
+    restore and be serveable by DMS.
 #>
 
 [CmdletBinding()]
@@ -46,7 +57,9 @@ param (
 
     [string]$CmsUrl = "http://localhost:8081",
 
-    [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
+    [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!",
+
+    [switch]$RequirePopulatedData
 )
 
 Set-StrictMode -Version Latest
@@ -143,6 +156,49 @@ try {
 
     Write-Host "Data assertions passed: EffectiveSchema=$effectiveSchemaCount, Document=$documentCount, Descriptor=$descriptorCount" -ForegroundColor Green
 
+    # --- Populated-data assertions (opt-in) ---
+    # Counts are compared source-to-restored rather than hard-coded so the check is
+    # robust to data-standard sample changes. The %SchoolYear% exclusion is broader
+    # than the exact school-year resource name so school-year seed rows can never
+    # satisfy the "more than minimal data" assertion.
+    $probeSchoolId = $null
+
+    if ($RequirePopulatedData) {
+        $populatedDocumentCountQuery = @'
+SELECT COUNT(*)
+FROM dms."Document" d
+JOIN dms."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId"
+WHERE rk."ResourceName" NOT LIKE '%Descriptor'
+  AND rk."ResourceName" NOT ILIKE '%SchoolYear%';
+'@
+
+        $sourcePopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $populatedDocumentCountQuery
+        if ($sourcePopulatedDocumentCount -lt 1) {
+            throw "Source database '$SourceDatabaseName' contains no populated (non-descriptor) documents; the populated bulk load did not land there."
+        }
+
+        $restoredPopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $populatedDocumentCountQuery
+        if ($restoredPopulatedDocumentCount -ne $sourcePopulatedDocumentCount) {
+            throw "Restored populated document count ($restoredPopulatedDocumentCount) does not match the source ($sourcePopulatedDocumentCount); the dump dropped populated rows."
+        }
+
+        $schoolCountQuery = 'SELECT COUNT(*) FROM edfi."School";'
+
+        $sourceSchoolCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $schoolCountQuery
+        if ($sourceSchoolCount -lt 1) {
+            throw "Source database '$SourceDatabaseName' contains no schools; populated sample data is incomplete."
+        }
+
+        $restoredSchoolCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $schoolCountQuery
+        if ($restoredSchoolCount -ne $sourceSchoolCount) {
+            throw "Restored school count ($restoredSchoolCount) does not match the source ($sourceSchoolCount); the dump dropped school rows."
+        }
+
+        $probeSchoolId = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT "SchoolId" FROM edfi."School" ORDER BY "SchoolId" LIMIT 1;'
+
+        Write-Host "Populated data assertions passed: PopulatedDocuments=$restoredPopulatedDocumentCount, Schools=$restoredSchoolCount" -ForegroundColor Green
+    }
+
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
@@ -156,13 +212,20 @@ try {
 
     $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "Template Restore Verification Vendor"
 
-    $application = Add-Application `
-        -CmsUrl $CmsUrl `
-        -AccessToken $cmsToken `
-        -VendorId $vendorId `
-        -ClaimSetName "EdFiSandbox" `
-        -ApplicationName "Template Restore Verification" `
-        -DmsInstanceIds @($verificationInstanceId)
+    $applicationParams = @{
+        CmsUrl          = $CmsUrl
+        AccessToken     = $cmsToken
+        VendorId        = $vendorId
+        ClaimSetName    = "EdFiSandbox"
+        ApplicationName = "Template Restore Verification"
+        DmsInstanceIds  = @($verificationInstanceId)
+    }
+
+    if ($RequirePopulatedData) {
+        $applicationParams.EducationOrganizationIds = @($probeSchoolId)
+    }
+
+    $application = Add-Application @applicationParams
 
     # Close the CMS/OpenIddict application-visibility race before requesting a token.
     Wait-CmsClientAvailable -CmsUrl $CmsUrl -ClientId $application.Key -ClientSecret $application.Secret
@@ -203,6 +266,24 @@ try {
     }
 
     Write-Host "Serveability probe passed: $($descriptors.Count) academicSubjectDescriptors served from the restored database." -ForegroundColor Green
+
+    if ($RequirePopulatedData) {
+        $schoolsUri = "$($DmsUrl.TrimEnd('/'))/data/ed-fi/schools"
+        $schoolsResponse = Invoke-WebRequest -Uri $schoolsUri -Headers @{ Authorization = "Bearer $dmsToken" } -Method Get -TimeoutSec 30
+
+        if ($schoolsResponse.StatusCode -ne 200) {
+            throw "Populated serveability probe returned HTTP $($schoolsResponse.StatusCode) from $schoolsUri."
+        }
+
+        $schools = @($schoolsResponse.Content | ConvertFrom-Json)
+
+        if ($schools.Count -lt 1) {
+            throw "Populated serveability probe returned an empty schools array from $schoolsUri."
+        }
+
+        Write-Host "Populated serveability probe passed: $($schools.Count) schools served from the restored database." -ForegroundColor Green
+    }
+
     Write-Host "Template restore verification succeeded." -ForegroundColor Green
 }
 finally {
