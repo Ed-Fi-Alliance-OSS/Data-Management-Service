@@ -32,6 +32,32 @@ internal static class TrackedChangeDerivationTestHelpers
     }
 
     /// <summary>
+    /// Builds a derived model set from a core project plus one extension project using the canonical
+    /// production pass list, so the tracked-change pass runs in its real position.
+    /// </summary>
+    internal static DerivedRelationalModelSet BuildSet(
+        JsonObject coreProjectSchema,
+        JsonObject extensionProjectSchema
+    )
+    {
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+
+        return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
     /// Returns the single tracked-change table whose live source table has the supplied name.
     /// </summary>
     internal static TrackedChangeTableInfo TableBySourceName(DerivedRelationalModelSet set, string sourceName)
@@ -320,6 +346,55 @@ public class Given_Descriptor_Resources_For_Tracked_Change_Derivation
     {
         _set.TrackedChangeTablesInNameOrder.Should()
             .NotContain(table => table.SourceTable.Name == "GradeLevelDescriptor");
+    }
+}
+
+/// <summary>
+/// Test fixture proving the shared descriptor tracked-change table is always rendered in the core
+/// schema, even when an extension project's descriptor sorts ahead of <c>ed-fi</c> in endpoint order.
+/// </summary>
+[TestFixture]
+public class Given_An_Extension_Descriptor_Sorting_Before_Core_For_Tracked_Change_Derivation
+{
+    private DerivedRelationalModelSet _set = default!;
+
+    /// <summary>
+    /// Sets up the test fixture: the extension endpoint (<c>abc-extension</c>) sorts before <c>ed-fi</c>.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        _set = TrackedChangeDerivationTestHelpers.BuildSet(
+            CommonInventoryTestSchemaBuilder.BuildDescriptorOnlyProjectSchema(),
+            CommonInventoryTestSchemaBuilder.BuildExtensionDescriptorProjectSchema()
+        );
+    }
+
+    /// <summary>
+    /// It should still target the core tracked_changes_edfi.Descriptor table, not the extension schema.
+    /// </summary>
+    [Test]
+    public void It_should_target_the_core_descriptor_schema()
+    {
+        var descriptor = _set.TrackedChangeTablesInNameOrder.Single(table =>
+            table.Kind == TrackedChangeTableKind.SharedDescriptor
+        );
+
+        descriptor.Table.Schema.Value.Should().Be("tracked_changes_edfi");
+        descriptor.Table.Name.Should().Be("Descriptor");
+    }
+
+    /// <summary>
+    /// It should derive exactly one shared descriptor table across both projects' descriptors.
+    /// </summary>
+    [Test]
+    public void It_should_derive_exactly_one_shared_descriptor_table()
+    {
+        _set.TrackedChangeTablesInNameOrder.Where(table =>
+                table.Kind == TrackedChangeTableKind.SharedDescriptor
+            )
+            .Should()
+            .ContainSingle();
     }
 }
 

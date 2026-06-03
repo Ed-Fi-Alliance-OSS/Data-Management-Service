@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
+using EdFi.DataManagementService.Core.External.Model;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.SetPasses.IdentityProjectionResolver;
 
@@ -250,7 +251,10 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         };
 
         return new TrackedChangeTableInfo(
-            BuildTrackedChangeTableName(descriptorResource.RelationalModel.PhysicalSchema, "Descriptor"),
+            BuildTrackedChangeTableName(
+                ResolveSharedDescriptorSchema(context, descriptorResource),
+                "Descriptor"
+            ),
             TrackedChangeTableKind.SharedDescriptor,
             DescriptorTableName,
             valueColumns,
@@ -286,6 +290,27 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         }
 
         return origin;
+    }
+
+    /// <summary>
+    /// Resolves the physical schema for the single shared descriptor tracked-change table. Per
+    /// <c>change-queries.md</c>, every descriptor — including extension descriptors — is tracked in the
+    /// core project's schema (<c>tracked_changes_edfi.Descriptor</c>), so the schema is taken from the core
+    /// Ed-Fi descriptor rather than whichever descriptor sorts first in endpoint order (an extension whose
+    /// endpoint name sorts ahead of <c>ed-fi</c> would otherwise mis-target <c>tracked_changes_&lt;ext&gt;</c>).
+    /// Falls back to the supplied descriptor only in the degenerate case of extension-only descriptors.
+    /// </summary>
+    private static DbSchemaName ResolveSharedDescriptorSchema(
+        RelationalModelSetBuilderContext context,
+        ConcreteResourceModel fallbackDescriptor
+    )
+    {
+        var coreDescriptor = context.ConcreteResourcesInNameOrder.Find(resource =>
+            resource.StorageKind == ResourceStorageKind.SharedDescriptorTable
+            && DataModelConstants.IsCoreProjectName(resource.ResourceKey.Resource.ProjectName)
+        );
+
+        return (coreDescriptor ?? fallbackDescriptor).RelationalModel.PhysicalSchema;
     }
 
     /// <summary>
@@ -537,11 +562,36 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                 personResourceName,
                 resourceLookup,
                 skipped,
-                out _
+                out var unresolvedRootLevelPaths
             );
 
             if (chain is null || chain.Count == 0)
             {
+                // A null/empty chain is expected only for the zero-hop self person identity path (anchored
+                // on the resource's own DocumentId, materializing no person-join column) and for array-nested
+                // paths (unsupported, accumulated into `skipped`). Any other unresolved root-level path is an
+                // authorization-completeness defect — fail loudly, mirroring DeriveAuthorizationIndexInventoryPass
+                // and the identity/securable guard in BuildResourceTrackedChangeTable rather than silently
+                // dropping the person securable.
+                foreach (var unresolvedPath in unresolvedRootLevelPaths)
+                {
+                    if (
+                        !PersonJoinPathResolver.IsSelfPersonIdentityPath(
+                            concreteModel.RelationalModel.Resource,
+                            personKind,
+                            unresolvedPath
+                        )
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            $"Tracked-change derivation for resource "
+                                + $"'{concreteModel.ResourceKey.Resource.ProjectName}."
+                                + $"{concreteModel.ResourceKey.Resource.ResourceName}': {personResourceName} "
+                                + $"securable path '{unresolvedPath}' could not be resolved to a person join."
+                        );
+                    }
+                }
+
                 continue;
             }
 
