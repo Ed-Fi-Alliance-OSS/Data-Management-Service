@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -1621,12 +1622,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return scalarType.Kind switch
         {
             ScalarKind.String => ReadRequiredJsonValue<string>(jsonValue, scalarType, conversionContext),
-            ScalarKind.Int32 => ReadRequiredJsonValue<int>(jsonValue, scalarType, conversionContext)
-                .ToString(CultureInfo.InvariantCulture),
-            ScalarKind.Int64 => ReadRequiredJsonValue<long>(jsonValue, scalarType, conversionContext)
-                .ToString(CultureInfo.InvariantCulture),
-            ScalarKind.Decimal => ReadRequiredJsonValue<decimal>(jsonValue, scalarType, conversionContext)
-                .ToString(CultureInfo.InvariantCulture),
+            ScalarKind.Int32 => ReadRequiredNumericLiteral<int>(jsonValue, scalarType, conversionContext),
+            ScalarKind.Int64 => ReadRequiredNumericLiteral<long>(jsonValue, scalarType, conversionContext),
+            ScalarKind.Decimal => ReadRequiredNumericLiteral<decimal>(
+                jsonValue,
+                scalarType,
+                conversionContext
+            ),
             ScalarKind.Boolean => ReadRequiredJsonValue<bool>(jsonValue, scalarType, conversionContext)
                 ? bool.TrueString.ToLowerInvariant()
                 : bool.FalseString.ToLowerInvariant(),
@@ -1662,6 +1664,37 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             conversionContext,
             scalarType,
             createInvalidLiteralReason(scalarLiteral)
+        );
+    }
+
+    private static string ReadRequiredNumericLiteral<T>(
+        JsonValue jsonValue,
+        RelationalScalarType scalarType,
+        RequestDerivedScalarConversionContext conversionContext
+    )
+        where T : notnull, IFormattable
+    {
+        // The in-process string-coercion middleware can replace string-encoded numerics with
+        // object-backed JsonValues (e.g. JsonValue.Create((long)2022) or a double/decimal backing).
+        // JsonValue.TryGetValue<T> does not convert across CLR backing types, so a Number whose
+        // backing type differs from T (a valid value for the column) would otherwise be rejected.
+        // When TryGetValue fails for a Number, hand the JSON text to the shared scalar literal
+        // parser, which applies the target-type numeric parsing and produces the same diagnostic
+        // for values that are genuinely out of shape for the column.
+        if (jsonValue.TryGetValue<T>(out var value))
+        {
+            return value.ToString(null, CultureInfo.InvariantCulture);
+        }
+
+        if (jsonValue.GetValueKind() == JsonValueKind.Number)
+        {
+            return jsonValue.ToJsonString();
+        }
+
+        throw CreateInvalidRequestDerivedScalarException(
+            conversionContext,
+            scalarType,
+            $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
         );
     }
 

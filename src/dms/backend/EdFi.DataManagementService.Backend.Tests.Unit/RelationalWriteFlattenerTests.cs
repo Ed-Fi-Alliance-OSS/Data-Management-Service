@@ -1043,6 +1043,172 @@ public class Given_RelationalWriteFlattener
             .Contain("Column 'SchoolYear' on table 'edfi.Student' expected scalar kind 'Int32'");
     }
 
+    [Test]
+    public void It_accepts_a_clr_long_backed_number_for_an_int32_scalar()
+    {
+        // The in-process string-coercion middleware replaces string-encoded numerics with
+        // object-backed JsonValues (e.g. JsonValue.Create((long)2026)). JsonValue.TryGetValue<int>
+        // does not convert across CLR backing types, so a long-backed Number must still flatten
+        // into an Int32 column through the numeric-literal fallback.
+        var body = (JsonObject)JsonNode.Parse("""{ "schoolYear": 0 }""")!;
+        body["schoolYear"] = JsonValue.Create((long)2026);
+
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: body,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.Values[1].Should().Be(new FlattenedWriteValue.Literal(2026));
+    }
+
+    [Test]
+    public void It_accepts_a_clr_double_backed_number_for_a_decimal_scalar()
+    {
+        var writePlan = CreateSingleDecimalScalarWritePlan();
+        var body = (JsonObject)JsonNode.Parse("""{ "amount": 0 }""")!;
+        body["amount"] = JsonValue.Create(12.5d);
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            writePlan,
+            body,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.Values[1].Should().Be(new FlattenedWriteValue.Literal(12.5m));
+    }
+
+    [Test]
+    public void It_accepts_a_clr_decimal_backed_number_for_a_decimal_scalar()
+    {
+        var writePlan = CreateSingleDecimalScalarWritePlan();
+        var body = (JsonObject)JsonNode.Parse("""{ "amount": 0 }""")!;
+        body["amount"] = JsonValue.Create(12.5m);
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            writePlan,
+            body,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.Values[1].Should().Be(new FlattenedWriteValue.Literal(12.5m));
+    }
+
+    [Test]
+    public void It_rejects_a_non_integral_number_for_the_int32_scalar()
+    {
+        var body = (JsonObject)JsonNode.Parse("""{ "schoolYear": 0 }""")!;
+        body["schoolYear"] = JsonValue.Create(2022.5d);
+
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: body,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolYear");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("Column 'SchoolYear' on table 'edfi.Student' expected scalar kind 'Int32'")
+            .And.Contain("encountered JSON value kind 'Number' with raw value 2022.5");
+    }
+
+    private static ResourceWritePlan CreateSingleDecimalScalarWritePlan()
+    {
+        var amountPath = CreateTestPath("$.amount", new JsonPathSegment.Property("amount"));
+        var table = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "DecimalScalarExample"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_DecimalScalarExample",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Amount"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Decimal),
+                    IsNullable: true,
+                    SourceJsonPath: amountPath,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "DecimalScalarExample"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: table,
+                TablesInDependencyOrder: [table],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [
+                new TableWritePlan(
+                    TableModel: table,
+                    InsertSql: "INSERT INTO [edfi].[DecimalScalarExample] ([DocumentId], [Amount]) VALUES (@documentId, @amount);",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(1000, 2, 2100),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            Column: table.Columns[0],
+                            Source: new WriteValueSource.DocumentId(),
+                            ParameterName: "documentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: table.Columns[1],
+                            Source: new WriteValueSource.Scalar(
+                                amountPath,
+                                new RelationalScalarType(ScalarKind.Decimal)
+                            ),
+                            ParameterName: "amount"
+                        ),
+                    ],
+                    KeyUnificationPlans: []
+                ),
+            ]
+        );
+    }
+
     // Direct flattener tests bypass Core normalization and assert backend-local parsing against the supplied selected body.
     [Test]
     public void It_reads_iso_datetime_offsets_and_iso_time_values_from_the_supplied_selected_body_deterministically()
