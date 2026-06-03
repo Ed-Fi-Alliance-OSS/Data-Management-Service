@@ -12,6 +12,11 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      publish_package:
+        description: "Publish the built template package to the Azure Artifacts feed"
+        type: boolean
+        default: false
 
 env:
   STANDARD_VERSION: "5.2.0"
@@ -248,6 +253,7 @@ jobs:
 
   publish-template-package:
     name: Publish Minimal Template Package
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
     needs:
       - build-template
       - generate-package-sbom
