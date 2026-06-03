@@ -40,7 +40,24 @@ The `relational-backend` test category only selects tests; it does not configure
 1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
 2. Run: `pwsh ./setup-local-dms.ps1`
 
-### Setup Data Management Service relational-backend E2E test Docker environment
+### Run Data Management Service relational-backend E2E tests
+
+For relational-backend E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` path instead of manually running `setup-local-dms.ps1` followed by `dotnet test`.
+
+The build script performs required relational-only setup that direct local setup does not:
+- Provisions `RELATIONAL_E2E_DATABASE_NAME` with generated DDL, including `dms."EffectiveSchema"`.
+- Sets `AppSettings__DmsInstanceDatabaseName` for the E2E test process.
+- Restarts DMS after relational database reprovisioning to clear cached database state.
+
+Example shard run from the repository root:
+
+```powershell
+./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'
+```
+
+Do not treat `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational` plus direct `dotnet test` as a valid relational E2E signal unless you also manually run the relational provisioning helper and set the test-process database environment variables. Otherwise tests can fail before the scenario payload with `503 Database Not Provisioned` because the CMS-created DMS instance points at the legacy `edfi_datamanagementservice` database or a database without `dms."EffectiveSchema"`.
+
+If you only need to inspect the relational Docker environment manually, you can use this setup path:
 
 1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
 2. Run: `pwsh ./teardown-local-dms.ps1`
@@ -48,7 +65,6 @@ The `relational-backend` test category only selects tests; it does not configure
 4. Verify the DMS container is using the relational backend:
    - `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore|QueryHandler'`
    - Expected values include `AppSettings__UseRelationalBackend=true`, `AppSettings__Datastore=postgresql`, and `AppSettings__QueryHandler=postgresql`.
-5. Run tests with `env -u NODE_OPTIONS dotnet test EdFi.DataManagementService.Tests.E2E.csproj --configuration Release --filter "Category=relational-backend"`.
 
 The default `pwsh ./setup-local-dms.ps1` command uses `.env.e2e`, which starts DMS with `AppSettings__UseRelationalBackend=false`. A run with `Category=relational-backend` against that default stack is not a valid relational-backend signal.
 
