@@ -55,6 +55,22 @@ jobs:
             path: Ed-Fi-Data-Standard/
             ref: v${{ env.STANDARD_VERSION }} # Added v prefix to match the tag format
 
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve relational database name
+        run: |
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile "./.env.e2e.relational"
+          $relationalDatabaseName = [string]$envValues["RELATIONAL_E2E_DATABASE_NAME"]
+          if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
+            throw "RELATIONAL_E2E_DATABASE_NAME must be set in .env.e2e.relational"
+          }
+          "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
+        working-directory: eng/docker-compose/
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
@@ -87,14 +103,22 @@ jobs:
 
       - name: Start DMS Docker
         run: |
-          $env:USE_API_SCHEMA_PATH="false"
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -enableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e.relational" -EnableConfig -NoDmsInstance
         working-directory: eng/docker-compose/
+
+      - name: Provision relational database
+        run: |
+          ./provision-relational-e2e-database.ps1 -EnvironmentFile ./.env.e2e.relational -Configuration Release
+        working-directory: eng/docker-compose/
+
+      - name: Restart DMS to load the provisioned relational schema
+        run: |
+          docker restart dms-local-dms-1
 
       - name: Wait for DMS to be ready
         run: |
-          $maxAttempts = 10
+          $maxAttempts = 30
           $attempt = 0
           $ready = $false
 
@@ -136,7 +160,9 @@ jobs:
                   -ConfigFilePath './MinimalTemplateSettings.psd1' `
                   -StandardVersion '${{ env.STANDARD_VERSION }}'`
                   -PackageVersion $packageVersion `
-                  -ApplicationName $uniqueAppName
+                  -ApplicationName $uniqueAppName `
+                  -DmsInstanceDatabaseName $env:RELATIONAL_DB_NAME `
+                  -DumpAllUserSchemas
         working-directory: eng/DatabaseTemplates/
 
       - name: Upload Bulk Load Logs
