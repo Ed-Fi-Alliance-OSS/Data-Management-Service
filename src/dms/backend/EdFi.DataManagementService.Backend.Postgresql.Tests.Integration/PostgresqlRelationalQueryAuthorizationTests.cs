@@ -563,6 +563,26 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<UpdateResult> UpdateAuthorizationStudentSchoolByIdAsync(
+        AuthorizationStudentSchoolSeed seed,
+        DocumentUuid documentUuid,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        string? ifMatch = null
+    )
+    {
+        return await UpdateAsync(
+            "authz",
+            "AuthorizationStudentSchoolResource",
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationStudentSchoolRequestBody(seed),
+            documentUuid,
+            $"put-auth-student-school-{seed.AuthorizationStudentSchoolId}",
+            claimEducationOrganizationIds,
+            strategyNames,
+            ifMatch
+        );
+    }
+
     public async Task<UpsertResult> CreateContactAsync(ContactSeed seed)
     {
         return await UpsertAsync(
@@ -1168,6 +1188,27 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             ResourceTables: await ReadResourceTableStatesAsync(
                 "authz",
                 "AuthorizationStudentAcademicRecordResource",
+                document.DocumentId
+            ),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
+    public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationStudentSchoolSideEffectStateAsync(
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId("authz", "AuthorizationStudentSchoolResource");
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: await ReadResourceTableStatesAsync(
+                "authz",
+                "AuthorizationStudentSchoolResource",
                 document.DocumentId
             ),
             ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(

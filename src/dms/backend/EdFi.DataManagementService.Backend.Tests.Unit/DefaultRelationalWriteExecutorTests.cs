@@ -2359,6 +2359,98 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_returns_immutable_identity_failure_before_proposed_namespace_authorization_for_existing_updates(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            operationKind,
+            selectedBody: JsonNode.Parse("""{"schoolId":255902,"name":"Lincoln High Updated"}""")!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        if (operationKind is RelationalWriteOperationKind.Post)
+        {
+            _targetLookupResolver.PostResults.Enqueue(
+                new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+            );
+        }
+
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        var rootTable = request.WritePlan.TablePlansInDependencyOrder[0].TableModel.Table;
+        var namespaceAuth = new RelationalWriteNamespaceAuthorization(
+            [
+                new NamespaceAuthorizationCheckSpec(
+                    0,
+                    NamespaceAuthorizationCheckValueSource.Proposed,
+                    rootTable,
+                    new DbColumnName("Name")
+                ),
+            ],
+            NamespacePrefixParameterizationFactory.Create(
+                SqlDialect.Pgsql,
+                ["uri://ed-fi.org/"],
+                "namespacePrefixes"
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(request with { ProposedNamespaceAuthorization = namespaceAuth });
+
+        const string expectedFailureMessage =
+            "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead.";
+        switch (operationKind)
+        {
+            case RelationalWriteOperationKind.Put:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureImmutableIdentity(expectedFailureMessage)
+                        )
+                    );
+                break;
+
+            case RelationalWriteOperationKind.Post:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureImmutableIdentity(expectedFailureMessage)
+                        )
+                    );
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+        }
+
+        _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().BeEmpty();
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
     [Test]
     public async Task It_proceeds_past_identity_stability_fence_when_existing_document_identity_changes_and_updates_are_allowed()
     {
