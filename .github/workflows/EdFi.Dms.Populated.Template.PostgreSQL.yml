@@ -12,6 +12,11 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      publish_package:
+        description: "Publish the built template package to the Azure Artifacts feed"
+        type: boolean
+        default: false
 
 env:
   STANDARD_VERSION: "5.2.0"
@@ -33,5 +38,10 @@ jobs:
       package_name: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0"
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: "populated.template.intoto.jsonl"
+      publish_package: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
+      use_relational_backend: true
+      environment_file: "./.env.template.relational"
+      verify_restore: true
+      require_populated_data: true
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
