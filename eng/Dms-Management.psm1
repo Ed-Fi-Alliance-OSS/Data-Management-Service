@@ -246,7 +246,7 @@ function Add-CmsClient {
         Write-Warning "Client registration failed: $($response.validationErrors.clientId)"
     }
     else {
-        Write-Host "Client '$ClientId' registered successfully."
+        Write-Information "Client '$ClientId' registered successfully." -InformationAction Continue
     }
 }
 
@@ -537,9 +537,9 @@ function Add-Vendor {
 
     .EXAMPLE
         $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp" -DataStoreIds @(1,2)
-        Write-Host "App ID: $($creds.Id)"
-        Write-Host "App Key: $($creds.Key)"
-        Write-Host "App Secret: $($creds.Secret)"
+        Write-Output "App ID: $($creds.Id)"
+        Write-Output "App Key: $($creds.Key)"
+        Write-Output "App Secret: $($creds.Secret)"
 #>
 function Add-Application {
     [CmdletBinding()]
@@ -1025,7 +1025,7 @@ function Add-DmsSchoolYearInstances {
 
     $createdDataStores = @()
 
-    Write-Host "Creating data stores for school years $StartYear to $EndYear..." -ForegroundColor Cyan
+    Write-Information "Creating data stores for school years $StartYear to $EndYear..." -InformationAction Continue
 
     for ($year = $StartYear; $year -le $EndYear; $year++) {
         Write-Verbose "  Creating data store for School Year $year..."
@@ -1054,7 +1054,7 @@ function Add-DmsSchoolYearInstances {
             -AccessToken $AccessToken `
             -Tenant $Tenant
 
-        Write-Host "    Route context created with ID: $routeContextId (schoolYear=$year)" -ForegroundColor Green
+        Write-Information "    Route context created with ID: $routeContextId (schoolYear=$year)" -InformationAction Continue
 
         $createdDataStores += @{
             DataStoreId = $dataStoreId

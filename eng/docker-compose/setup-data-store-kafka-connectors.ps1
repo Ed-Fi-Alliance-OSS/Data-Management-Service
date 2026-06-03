@@ -47,25 +47,25 @@ function IsReady([string] $Url) {
     $attempt = 0
     $waitTime = 5
 
-    Write-Host "Checking if Kafka Connect is ready at $Url..." -ForegroundColor Cyan
+    Write-Information -MessageData "Checking if Kafka Connect is ready at $Url..." -InformationAction Continue
 
     while ($attempt -lt $maxAttempts) {
         try {
             $response = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 5
-            Write-Host "Kafka Connect is ready!" -ForegroundColor Green
+            Write-Information -MessageData "Kafka Connect is ready!" -InformationAction Continue
             return $true
         }
         catch {
             $attempt++
-            Write-Host "Attempt $attempt/$maxAttempts - Kafka Connect not ready yet: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Information -MessageData "Attempt $attempt/$maxAttempts - Kafka Connect not ready yet: $($_.Exception.Message)" -InformationAction Continue
             if ($attempt -lt $maxAttempts) {
-                Write-Host "Waiting $waitTime seconds before retry..." -ForegroundColor Yellow
+                Write-Information -MessageData "Waiting $waitTime seconds before retry..." -InformationAction Continue
                 Start-Sleep -Seconds $waitTime
             }
         }
     }
 
-    Write-Host "Kafka Connect did not become ready within expected time" -ForegroundColor Red
+    Write-Information -MessageData "Kafka Connect did not become ready within expected time" -InformationAction Continue
     return $false
 }
 
@@ -92,14 +92,14 @@ function Initialize-DataStoreConnector {
         $existingConnector = Invoke-RestMethod -Uri $connectorUrl -Method Get -SkipHttpErrorCheck -ErrorAction SilentlyContinue
 
         if ($null -ne $existingConnector.name) {
-            Write-Host "Deleting existing connector: $connectorName" -ForegroundColor Yellow
+            Write-Information -MessageData "Deleting existing connector: $connectorName" -InformationAction Continue
             Invoke-RestMethod -Method Delete -Uri $connectorUrl -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
         }
     }
     catch {
         # Connector doesn't exist, which is fine
-        Write-Host "No existing connector found (expected for first run)" -ForegroundColor Gray
+        Write-Information -MessageData "No existing connector found (expected for first run)" -InformationAction Continue
     }
 
     # Generate connector configuration from template
@@ -123,25 +123,25 @@ function Initialize-DataStoreConnector {
         # Check connector status
         $status = Invoke-RestMethod -Method Get -Uri "$connectorUrl/status" -SkipHttpErrorCheck
         if ($status.connector.state -eq "RUNNING") {
-            Write-Host "  Status: RUNNING ✓" -ForegroundColor Green
+            Write-Information -MessageData "  Status: RUNNING" -InformationAction Continue
         }
         else {
-            Write-Host "  Status: $($status.connector.state)" -ForegroundColor Yellow
+            Write-Information -MessageData "  Status: $($status.connector.state)" -InformationAction Continue
             if ($status.connector.trace) {
-                Write-Host "  Error: $($status.connector.trace)" -ForegroundColor Red
+                Write-Information -MessageData "  Error: $($status.connector.trace)" -InformationAction Continue
             }
         }
     }
     catch {
-        Write-Host "Failed to install connector: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "Error details:" -ForegroundColor Red
-        Write-Host $_.Exception -ForegroundColor Red
+        Write-Information -MessageData "Failed to install connector: $($_.Exception.Message)" -InformationAction Continue
+        Write-Information -MessageData "Error details:" -InformationAction Continue
+        Write-Information -MessageData $_.Exception -InformationAction Continue
         throw
     }
 }
 
 # Main execution
-Write-Host @"
+Write-Information -InformationAction Continue -MessageData @"
 
 ========================================
 Data Store Kafka Connectors Setup
@@ -150,7 +150,7 @@ Environment File: $EnvironmentFile
 Number of data stores: $($DataStores.Count)
 ========================================
 
-"@ -ForegroundColor Cyan
+"@
 
 # Read .env file
 Import-Module ./env-utility.psm1 -Force
@@ -159,12 +159,12 @@ $envFile = ReadValuesFromEnvFile $EnvironmentFile
 $sourcePort = $envFile["CONNECT_SOURCE_PORT"]
 if ([string]::IsNullOrEmpty($sourcePort)) {
     $sourcePort = "8083"
-    Write-Host "Using default Kafka Connect port: $sourcePort" -ForegroundColor Yellow
+    Write-Information -MessageData "Using default Kafka Connect port: $sourcePort" -InformationAction Continue
 }
 
 $postgresPassword = $envFile["POSTGRES_PASSWORD"]
 if ([string]::IsNullOrEmpty($postgresPassword)) {
-    Write-Host "ERROR: POSTGRES_PASSWORD not found in environment file" -ForegroundColor Red
+    Write-Information -MessageData "ERROR: POSTGRES_PASSWORD not found in environment file" -InformationAction Continue
     exit 1
 }
 
@@ -172,23 +172,23 @@ $connectBaseUrl = "http://localhost:$sourcePort/connectors"
 
 # Check if Kafka Connect is ready
 if (-not (IsReady $connectBaseUrl)) {
-    Write-Host "`nERROR: Kafka Connect is not available at $connectBaseUrl" -ForegroundColor Red
-    Write-Host "Please ensure:" -ForegroundColor Yellow
-    Write-Host "  1. Docker containers are running (docker ps)" -ForegroundColor Yellow
-    Write-Host "  2. kafka-postgresql-source container is healthy" -ForegroundColor Yellow
-    Write-Host "  3. Port $sourcePort is accessible" -ForegroundColor Yellow
+    Write-Information -MessageData "`nERROR: Kafka Connect is not available at $connectBaseUrl" -InformationAction Continue
+    Write-Information -MessageData "Please ensure:" -InformationAction Continue
+    Write-Information -MessageData "  1. Docker containers are running (docker ps)" -InformationAction Continue
+    Write-Information -MessageData "  2. kafka-postgresql-source container is healthy" -InformationAction Continue
+    Write-Information -MessageData "  3. Port $sourcePort is accessible" -InformationAction Continue
     exit 1
 }
 
 # Load connector template
 $templatePath = "./data_store_connector_template.json"
 if (-not (Test-Path $templatePath)) {
-    Write-Host "`nERROR: Connector template not found at: $templatePath" -ForegroundColor Red
+    Write-Information -MessageData "`nERROR: Connector template not found at: $templatePath" -InformationAction Continue
     exit 1
 }
 
 $templateContent = Get-Content $templatePath -Raw
-Write-Host "`nLoaded connector template from: $templatePath" -ForegroundColor Green
+Write-Information -MessageData "`nLoaded connector template from: $templatePath" -InformationAction Continue
 
 # Setup connector for each data store
 $successCount = 0
@@ -213,33 +213,31 @@ foreach ($dataStore in $DataStores) {
 }
 
 # Summary
-Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "Setup Complete" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Successful: $successCount" -ForegroundColor Green
-Write-Host "Failed: $failureCount" -ForegroundColor $(if ($failureCount -gt 0) { "Red" } else { "Gray" })
+Write-Information -MessageData "`n========================================" -InformationAction Continue
+Write-Information -MessageData "Setup Complete" -InformationAction Continue
+Write-Information -MessageData "========================================" -InformationAction Continue
+Write-Information -MessageData "Successful: $successCount" -InformationAction Continue
+Write-Information -MessageData "Failed: $failureCount" -InformationAction Continue
 
 # List all connectors
-Write-Host "`nActive Connectors:" -ForegroundColor Cyan
+Write-Information -MessageData "`nActive Connectors:" -InformationAction Continue
 try {
     $allConnectors = Invoke-RestMethod -Uri $connectBaseUrl -Method Get
     foreach ($connector in $allConnectors) {
         $connectorStatus = Invoke-RestMethod -Uri "$connectBaseUrl/$connector/status" -Method Get
-        $statusColor = if ($connectorStatus.connector.state -eq "RUNNING") { "Green" } else { "Yellow" }
-        Write-Host "  - $connector : $($connectorStatus.connector.state)" -ForegroundColor $statusColor
+        Write-Information -MessageData "  - $connector : $($connectorStatus.connector.state)" -InformationAction Continue
     }
 }
 catch {
-    Write-Host "Could not retrieve connector list: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Information -MessageData "Could not retrieve connector list: $($_.Exception.Message)" -InformationAction Continue
 }
 
-Write-Host "`nTo verify topics were created, run:" -ForegroundColor Cyan
-Write-Host "  docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092" -ForegroundColor Gray
+Write-Information -MessageData "`nTo verify topics were created, run:" -InformationAction Continue
+Write-Information -MessageData "  docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092" -InformationAction Continue
 
 if ($failureCount -gt 0) {
-    Write-Host "`nWARNING: Some connectors failed to setup. Check the errors above." -ForegroundColor Yellow
+    Write-Information -MessageData "`nWARNING: Some connectors failed to setup. Check the errors above." -InformationAction Continue
     exit 1
 }
 
-Write-Host "`nAll data store connectors configured successfully! ✓" -ForegroundColor Green
-
+Write-Information -MessageData "`nAll data store connectors configured successfully!" -InformationAction Continue
