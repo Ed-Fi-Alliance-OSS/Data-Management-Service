@@ -78,6 +78,7 @@ Implement People-involved relationship-based authorization for GET-by-id, POST, 
 ## Implementation Notes
 
 - DMS-1158 must remove the current single-record People relationship staging block and extend the single-record relationship authorization SQL path to execute People subjects for GET-by-id, POST, PUT, and DELETE. The existing single-record compiler is intentionally EdOrg-only until this story lands; People CRUD execution must support stored root-to-terminal joins, proposed direct person values, proposed self-person existing target anchors, and proposed transitive first-hop anchors that resolve to terminal person `DocumentId` values before checking the selected People auth view.
+- Revalidation note: the restored relational-backend tags for `Features/Security/TokenIntrospection.feature` scenarios 02 and 03 and `Features/References/StudentAssessmentRegistrationBatteryPartAssociation.feature` scenario 01 were intentionally retained after branch revalidation showed those scenarios pass with the DMS-1158 relational changes. The StudentAssessmentRegistrationBatteryPartAssociation restore depends on the branch's descriptor-identity/reference behavior fix; because that fix is a referential-identity concern rather than People relationship authorization, move or trim that retag with its owning story if the work is split later.
 
 ## Clarifying Questions and Answers
 

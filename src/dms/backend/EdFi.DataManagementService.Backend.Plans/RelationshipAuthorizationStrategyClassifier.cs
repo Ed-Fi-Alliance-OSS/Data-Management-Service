@@ -113,39 +113,6 @@ internal static class RelationshipAuthorizationStrategyClassifier
         _supportedStrategyDefinitionsByName.TryGetValue(strategyName, out var definition)
         && definition.IncludesPeopleSubjects;
 
-    public static IReadOnlyList<SupportedRelationshipAuthorizationStrategy> SelectPeopleRelationshipStrategies(
-        IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies
-    )
-    {
-        ArgumentNullException.ThrowIfNull(configuredAuthorizationStrategies);
-
-        List<SupportedRelationshipAuthorizationStrategy> peopleStrategies = [];
-        var relationshipLocalOrder = 0;
-
-        foreach (var configuredStrategy in configuredAuthorizationStrategies)
-        {
-            if (IsNoFurtherAuthorizationRequired(configuredStrategy.StrategyName))
-            {
-                continue;
-            }
-
-            var currentRelationshipLocalOrder = relationshipLocalOrder++;
-
-            if (
-                TryCreateSupportedRelationshipStrategy(
-                    configuredStrategy,
-                    currentRelationshipLocalOrder,
-                    out var supportedStrategy
-                ) && IsPeopleRelationshipStrategy(configuredStrategy.StrategyName)
-            )
-            {
-                peopleStrategies.Add(supportedStrategy);
-            }
-        }
-
-        return peopleStrategies;
-    }
-
     public static RelationshipAuthorizationClassification Classify(
         MappingSet mappingSet,
         QualifiedResourceName resource,
