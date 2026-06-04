@@ -59,7 +59,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 
         PathInfo? pathInfo = PathInfoFrom(requestInfo.FrontendRequest.Path);
 
-        if (pathInfo == null)
+        if (pathInfo is null)
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid path - {TraceId}",

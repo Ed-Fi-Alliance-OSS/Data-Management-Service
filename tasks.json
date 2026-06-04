@@ -52,7 +52,7 @@
       "rg -n \"ReadChanges|keyChanges|deletes|changeQueries\" src/dms/core src/dms/backend src/dms/frontend src/dms/tests",
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~ParsePathMiddlewareTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",

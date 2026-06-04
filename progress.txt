@@ -11,3 +11,10 @@ Key decisions: Relational request surface with empty claim-set catalog or missin
 Files changed: Core Middleware/ResourceActionAuthorizationMiddleware.cs; Core unit tests ResourceActionAuthorizationMiddlewareTests.cs; tasks.json.
 Verification: dotnet csharpier format src/dms/core. dotnet test Core.Tests.Unit with FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 37 tests.
 Blockers/notes: Next iteration should handle action metadata/ReadChanges mapping.
+
+Task completed: Carry request-surface and CMS action metadata through authorization resolution / current route guard.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: No DMS change-query route currently implemented; anchored resource path regex so extra segments cannot be ignored and change-query-shaped URLs cannot reach normal GET authorization as Read. Existing ResourceActionAuthorizationMiddleware action value remains single source for normal CRUD/read lookup and no-strategies response formatting.
+Files changed: Core UtilityService path regex; Core ParsePathMiddleware null check; Core ParsePathMiddlewareTests; tasks.json.
+Verification: dotnet csharpier format src/dms/core. dotnet test Core.Tests.Unit with FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~ParsePathMiddlewareTests passed 61 tests.
+Blockers/notes: Future change-query implementation must add explicit route parsing/action selection for ReadChanges before generic GET mapping.

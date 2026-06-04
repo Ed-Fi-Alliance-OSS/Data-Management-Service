@@ -15,7 +15,9 @@ public static partial class UtilityService
     // /ed-fi/sections
     // /ed-fi/sections/
     // /ed-fi/sections/idValue
-    [GeneratedRegex(@"\/(?<projectNamespace>[^/]+)\/(?<endpointName>[^/]+)(\/|$)((?<documentUuid>[^/]*$))?")]
+    [GeneratedRegex(
+        @"^\/(?<projectNamespace>[^/]+)\/(?<endpointName>[^/]+)(?:\/(?<documentUuid>[^/]+))?\/?$"
+    )]
     public static partial Regex PathExpressionRegex();
 
     // Regex for a UUID string - does not enforce any particular UUID version
