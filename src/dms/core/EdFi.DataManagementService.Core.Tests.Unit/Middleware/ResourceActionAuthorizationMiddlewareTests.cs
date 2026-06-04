@@ -35,7 +35,21 @@ public class ResourceActionAuthorizationMiddlewareTests
 {
     private RequestInfo _requestInfo = No.RequestInfo();
 
-    internal static IPipelineStep Middleware(string action = "Create", params string[] expectedAuthStrategies)
+    internal static IPipelineStep Middleware(
+        string action = "Create",
+        params string[] expectedAuthStrategies
+    ) => MiddlewareCore(action, useRelationalBackend: false, expectedAuthStrategies);
+
+    internal static IPipelineStep RelationalBackendMiddleware(
+        string action = "Create",
+        params string[] expectedAuthStrategies
+    ) => MiddlewareCore(action, useRelationalBackend: true, expectedAuthStrategies);
+
+    private static IPipelineStep MiddlewareCore(
+        string action,
+        bool useRelationalBackend,
+        params string[] expectedAuthStrategies
+    )
     {
         string[] authorizationStrategies =
             expectedAuthStrategies.Length == 0
@@ -61,7 +75,11 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 ),
             ]);
-        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(
+            claimSetProvider,
+            NullLogger.Instance,
+            useRelationalBackend
+        );
     }
 
     internal static RequestInfo CreateRequestInfo(
@@ -167,14 +185,31 @@ public class ResourceActionAuthorizationMiddlewareTests
         body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedError);
     }
 
-    internal static IPipelineStep MiddlewareWithClaimSets(params ClaimSet[] claimSets)
+    internal static IPipelineStep MiddlewareWithClaimSets(params ClaimSet[] claimSets) =>
+        MiddlewareWithClaimSetsCore(useRelationalBackend: false, claimSets);
+
+    internal static IPipelineStep RelationalBackendMiddlewareWithClaimSets(params ClaimSet[] claimSets) =>
+        MiddlewareWithClaimSetsCore(useRelationalBackend: true, claimSets);
+
+    private static IPipelineStep MiddlewareWithClaimSetsCore(
+        bool useRelationalBackend,
+        params ClaimSet[] claimSets
+    )
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored)).Returns(claimSets.ToList());
-        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(
+            claimSetProvider,
+            NullLogger.Instance,
+            useRelationalBackend
+        );
     }
 
-    internal static IPipelineStep NoAuthStrategyMiddleware(string action = "Create", ILogger? logger = null)
+    internal static IPipelineStep NoAuthStrategyMiddleware(
+        string action = "Create",
+        ILogger? logger = null,
+        bool useRelationalBackend = false
+    )
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
@@ -191,7 +226,11 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 ),
             ]);
-        return new ResourceActionAuthorizationMiddleware(claimSetProvider, logger ?? NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(
+            claimSetProvider,
+            logger ?? NullLogger.Instance,
+            useRelationalBackend
+        );
     }
 
     [TestFixture]
@@ -897,6 +936,54 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
             _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Backend_Flag_With_No_Matching_ClaimSet
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+
+            await RelationalBackendMiddlewareWithClaimSets(new ClaimSet("OtherClaimSet", []))
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_missing_metadata_security_configuration_problem_details()
+        {
+            AssertExpectedSecurityConfigurationResponse(
+                _requestInfo.FrontendResponse,
+                SecurityConfigurationFailureMessages.MissingSecurityMetadata
+            );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Backend_Flag_With_No_Authorization_Strategies_Before_Mapping_Set
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+
+            await NoAuthStrategyMiddleware("Read", useRelationalBackend: true)
+                .Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_security_configuration_problem_details()
+        {
+            AssertExpectedSecurityConfigurationResponse(
+                _requestInfo.FrontendResponse,
+                $"No authorization strategies were defined for the requested action 'Read' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'."
+            );
         }
     }
 

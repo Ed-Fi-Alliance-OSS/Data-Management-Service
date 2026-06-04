@@ -21,8 +21,11 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Authorizes requests resource and action based on the client's authorization information.
 /// </summary>
-internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSetProvider, ILogger _logger)
-    : IPipelineStep
+internal class ResourceActionAuthorizationMiddleware(
+    IClaimSetProvider _claimSetProvider,
+    ILogger _logger,
+    bool _useRelationalBackend = false
+) : IPipelineStep
 {
     private static readonly Dictionary<RequestMethod, string> _methodToActionNameMapping = new()
     {
@@ -336,7 +339,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         return resourceClaimUris;
     }
 
-    private static bool TryCreateStagedNotImplementedResponse(
+    private bool TryCreateStagedNotImplementedResponse(
         RequestInfo requestInfo,
         IReadOnlyList<string> strategies
     )
@@ -378,8 +381,8 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
 
     // Broad relational backend-planned surface used for missing-strategy classification; GET-many is included.
-    private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
-        requestInfo.MappingSet is not null
+    private bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
+        (_useRelationalBackend || requestInfo.MappingSet is not null)
         && (
             requestInfo.Method == RequestMethod.GET
             || requestInfo.Method == RequestMethod.DELETE

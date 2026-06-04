@@ -1243,14 +1243,19 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return ResolveQueryRelationshipAuthorization(
-                    mappingSet,
-                    resource,
-                    securityConfigurationError.NonNamespaceConfiguredStrategies,
-                    authorizationContext,
-                    totalCount,
-                    [],
-                    null
+                return new QueryAuthorizationResolution.Complete(
+                    new QueryResult.QueryFailureSecurityConfiguration(
+                        RelationalReadGuardrails.BuildSecurityConfigurationErrors(
+                            mappingSet,
+                            resource,
+                            securityConfigurationError.NonNamespaceConfiguredStrategies
+                        ),
+                        RelationalReadGuardrails.BuildSecurityConfigurationDiagnostics(
+                            mappingSet,
+                            resource,
+                            securityConfigurationError.NonNamespaceConfiguredStrategies
+                        )
+                    )
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:

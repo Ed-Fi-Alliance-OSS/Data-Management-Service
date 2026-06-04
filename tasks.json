@@ -195,7 +195,7 @@
       "If a focused security-configuration category is not added, run the specific generated Reqnroll scenario names from src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization using the same build-dms.ps1 relational command.",
       "Inspect dms-local container logs for SecurityConfigurationFailure entries matching the E2E correlationId values."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "verification",
