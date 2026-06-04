@@ -819,4 +819,378 @@ public class ValidateQueryMiddlewareTests
                 .Be("The query field 'invalidSchoolId' is not valid for this resource.");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Invalid_Min_Change_Version : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var queryParameters = new Dictionary<string, string> { { "minChangeVersion", "abc" } };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/schools",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters,
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_should_send_bad_request()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_use_the_parameter_validation_failed_problem_details()
+        {
+            JsonNode? body = _requestInfo.FrontendResponse.Body;
+            body?["type"]?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+            body?["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+            body?["detail"]?.GetValue<string>()
+                .Should()
+                .Be("Parameters supplied to the request were invalid.");
+            body?["status"]?.GetValue<int>().Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_report_the_min_change_version_error()
+        {
+            _requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be("MinChangeVersion must be a numeric value greater than or equal to 0.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Invalid_Max_Change_Version : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var queryParameters = new Dictionary<string, string> { { "maxChangeVersion", "-2" } };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/schools",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters,
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_should_send_bad_request()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_use_the_parameter_validation_failed_problem_details()
+        {
+            JsonNode? body = _requestInfo.FrontendResponse.Body;
+            body?["type"]?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+            body?["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+            body?["detail"]?.GetValue<string>()
+                .Should()
+                .Be("Parameters supplied to the request were invalid.");
+            body?["status"]?.GetValue<int>().Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_report_the_max_change_version_error()
+        {
+            _requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be("MaxChangeVersion must be a numeric value greater than or equal to 0.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Inverted_Change_Version_Range : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var queryParameters = new Dictionary<string, string>
+            {
+                { "minChangeVersion", "10" },
+                { "maxChangeVersion", "5" },
+            };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/schools",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters,
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_should_send_bad_request()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_report_the_inverted_range_error()
+        {
+            _requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be("MinChangeVersion must be less than or equal to MaxChangeVersion.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Change_Version_Range : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
+        {
+            return new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithStartQueryFieldMapping()
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+        }
+
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
+        {
+            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            {
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
+                PathComponents = new(
+                    ProjectEndpointName: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            docRefContext.ResourceSchema = new ResourceSchema(
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
+            );
+            return docRefContext;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var queryParameters = new Dictionary<string, string>
+            {
+                { "minChangeVersion", "1" },
+                { "maxChangeVersion", "2" },
+            };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters,
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_provides_no_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_sets_the_parsed_change_version_range()
+        {
+            _requestInfo.ChangeVersionRange.Should().Be(new ChangeVersionRange(1, 2));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Change_Version_Parameters_Are_Not_Treated_As_Query_Fields
+        : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
+        {
+            return new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithStartQueryFieldMapping()
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+        }
+
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
+        {
+            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            {
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
+                PathComponents = new(
+                    ProjectEndpointName: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            docRefContext.ResourceSchema = new ResourceSchema(
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
+            );
+            return docRefContext;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Mixed casing confirms the reserved-parameter exclusion is case-insensitive.
+            var queryParameters = new Dictionary<string, string>
+            {
+                { "MinChangeVersion", "1" },
+                { "maxChangeVersion", "2" },
+            };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters,
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_should_not_report_an_invalid_query_field()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Mixed_Case_Pagination_Parameter : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
+        {
+            return new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithStartQueryFieldMapping()
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+        }
+
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
+        {
+            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            {
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
+                PathComponents = new(
+                    ProjectEndpointName: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            docRefContext.ResourceSchema = new ResourceSchema(
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
+            );
+            return docRefContext;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // A pagination parameter in non-canonical casing is not parsed as pagination and
+            // must not be silently dropped; it falls through to ordinary query-field matching.
+            var queryParameters = new Dictionary<string, string> { { "Limit", "-1" } };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters,
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_should_send_bad_request()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_report_the_invalid_query_field()
+        {
+            _requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be("The query field 'Limit' is not valid for this resource.");
+        }
+    }
 }

@@ -41,6 +41,8 @@ public static class FailureResponse
         $"{_typePrefix}:system:configuration:security";
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
     private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
+    private static readonly string _parameterValidationFailedType =
+        $"{_badRequestTypePrefix}:parameter-validation-failed";
 
     internal static JsonObject CreateBaseJsonObject(
         string detail,
@@ -97,6 +99,17 @@ public static class FailureResponse
             status: 400,
             correlationId: traceId.Value,
             validationErrors: validationErrors,
+            errors: errors
+        );
+
+    public static JsonNode ForParameterValidation(string[] errors, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "Parameters supplied to the request were invalid.",
+            type: _parameterValidationFailedType,
+            title: "Parameter Validation Failed",
+            status: 400,
+            correlationId: traceId.Value,
+            validationErrors: [],
             errors: errors
         );
 

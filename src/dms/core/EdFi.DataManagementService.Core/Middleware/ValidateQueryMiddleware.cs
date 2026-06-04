@@ -6,6 +6,7 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -17,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : IPipelineStep
 {
-    private static readonly string[] _disallowedQueryFields = ["limit", "offset", "totalCount"];
+    private static readonly string[] _paginationQueryParameters = ["limit", "offset", "totalCount"];
 
     /// <summary>
     /// Finds and sets PaginationParameters on the requestInfo by parsing the client request.
@@ -172,8 +173,40 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             return;
         }
 
-        IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms =
-            requestInfo.FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key);
+        ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
+            requestInfo.FrontendRequest.QueryParameters
+        );
+
+        if (changeVersionResult.Errors.Count > 0)
+        {
+            _logger.LogDebug(
+                "Change-version parameter validation error - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: ForParameterValidation(
+                    [.. changeVersionResult.Errors],
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+            return;
+        }
+
+        requestInfo.ChangeVersionRange = changeVersionResult.Range;
+
+        // Pagination parameters are matched case-sensitively, consistent with how they are
+        // parsed above; change-version parameters are matched case-insensitively, consistent
+        // with how the validator looks them up.
+        IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms = requestInfo
+            .FrontendRequest.QueryParameters.ExceptBy(_paginationQueryParameters, (term) => term.Key)
+            .ExceptBy(
+                ChangeVersionParameterValidator.ReservedParameterNames,
+                (term) => term.Key,
+                StringComparer.OrdinalIgnoreCase
+            );
 
         QueryField[] possibleQueryFields = requestInfo.ResourceSchema.QueryFields.ToArray();
 
