@@ -766,12 +766,12 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return new DeleteAuthorizationPreflightResult.Stop(
-                    BuildDeleteAuthorizationSecurityConfigurationFailure(
-                        mappingSet,
-                        resource,
-                        securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
-                    )
+                return AuthorizeDeleteRelationshipPreflight(
+                    mappingSet,
+                    resource,
+                    null,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    relationalDeleteRequest.AuthorizationContext
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -1250,12 +1250,14 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return new QueryAuthorizationResolution.Complete(
-                    BuildQueryAuthorizationSecurityConfigurationFailure(
-                        mappingSet,
-                        resource,
-                        securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
-                    )
+                return ResolveQueryRelationshipAuthorization(
+                    mappingSet,
+                    resource,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    totalCount,
+                    [],
+                    null
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -1511,11 +1513,14 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                    BuildPostAuthorizationSecurityConfigurationFailure(
-                        mappingSet,
-                        securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
-                    )
+                return AuthorizePostRelationshipBucket(
+                    mappingSet,
+                    resource,
+                    writePlan,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    storedNamespaceAuthorization: null,
+                    proposedNamespaceAuthorization: null
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -1851,11 +1856,14 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                    BuildPutAuthorizationSecurityConfigurationFailure(
-                        mappingSet,
-                        securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
-                    )
+                return AuthorizePutRelationshipBucket(
+                    mappingSet,
+                    resource,
+                    writePlan,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext,
+                    storedNamespaceAuthorization: null,
+                    proposedNamespaceAuthorization: null
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -2606,12 +2614,12 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
-                return new GetByIdAuthorizationPreflightResult.Stop(
-                    BuildGetAuthorizationSecurityConfigurationFailure(
-                        mappingSet,
-                        resource,
-                        securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
-                    )
+                return AuthorizeGetByIdRelationshipPreflight(
+                    mappingSet,
+                    resource,
+                    null,
+                    securityConfigurationError.NonNamespaceConfiguredStrategies,
+                    authorizationContext
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
