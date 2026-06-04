@@ -1087,11 +1087,14 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<string> strategyNames,
         int? limit = null,
         int? offset = null,
-        bool totalCount = true
+        bool totalCount = true,
+        IReadOnlyList<QueryElement>? queryElements = null,
+        Func<MappingSet, MappingSet>? mappingSetTransform = null
     )
     {
         ResetRecorder();
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+        var mappingSet = mappingSetTransform is null ? MappingSet : mappingSetTransform(MappingSet);
 
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
@@ -1099,8 +1102,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         var request = new RelationalQueryRequest(
             ResourceInfo: resourceHandle.ResourceInfo,
             AuthorizationContext: new RelationalAuthorizationContext(claimEducationOrganizationIds),
-            MappingSet: MappingSet,
-            QueryElements: [],
+            MappingSet: mappingSet,
+            QueryElements: queryElements is null ? [] : [.. queryElements],
             AuthorizationSecurableInfo: resourceHandle.ResourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators:
             [

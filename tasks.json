@@ -178,7 +178,7 @@
       "ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=True;Encrypt=True' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~SecurityConfiguration|FullyQualifiedName~Authorization\"",
       "Review backend provider integration assertions to confirm they stop at typed security-configuration results and leave HTTP envelope assertions to Core/API-level tests."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "e2e-tests",

@@ -11,6 +11,29 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 internal static class RelationshipAuthorizationBackendFailureAssertions
 {
+    public static void AssertUnknownStrategySecurityConfiguration(
+        string[] errors,
+        SecurityConfigurationFailureDiagnostic[]? diagnostics,
+        string expectedStrategyName,
+        string expectedResourceFullName
+    )
+    {
+        errors
+            .Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([expectedStrategyName])
+            );
+
+        diagnostics.Should().NotBeNull();
+        var diagnostic = diagnostics!.Should().ContainSingle().Subject;
+        diagnostic
+            .ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.InvalidAuthorizationStrategy");
+        diagnostic.ResourceFullName.Should().Be(expectedResourceFullName);
+        diagnostic.ConfiguredStrategyNames.Should().Equal(expectedStrategyName);
+        diagnostic.ConfiguredStrategyIndexes.Should().Equal(0);
+    }
+
     public static void AssertStoredRootSchoolNoRelationshipFailure(
         RelationshipAuthorizationFailure relationshipFailure,
         long expectedClaimEducationOrganizationId
