@@ -79,6 +79,30 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_post_with_an_unknown_strategy_without_opening_a_session()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory, targetLookupService);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: UnsupportedStrategy(unknownStrategyName)
+            )
+        );
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
     [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_put_with_an_unsupported_strategy_without_executing_sql(
@@ -101,6 +125,30 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             .As<UpdateResult.UpdateFailureNotImplemented>()
             .FailureMessage.Should()
             .Contain(authorizationStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_put_with_an_unknown_strategy_without_opening_a_session()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory, targetLookupService);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: UnsupportedStrategy(unknownStrategyName)
+            )
+        );
+
+        var failure = result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
@@ -743,6 +791,29 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             .As<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
             .NamespaceFailure.FailureKind.Should()
             .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_delete_with_an_unknown_strategy_without_opening_a_session()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            CreateDeleteRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: UnsupportedStrategy(unknownStrategyName)
+            )
+        );
+
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 

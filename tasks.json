@@ -106,7 +106,7 @@
       "rg -n \"ForServerErrorMessageBody|ForSystemError|FailureSecurityConfiguration|ForSecurityConfiguration\" src/dms/core src/dms/backend",
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~HandlerTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",

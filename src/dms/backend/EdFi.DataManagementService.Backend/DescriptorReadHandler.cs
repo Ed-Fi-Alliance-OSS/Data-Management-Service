@@ -690,27 +690,6 @@ internal sealed class DescriptorReadHandler(
         string actionLabel
     )
     {
-        if (
-            !RelationalReadGuardrails.HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired(
-                authorizationStrategyEvaluators
-            )
-        )
-        {
-            return new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    resource,
-                    authorizationStrategyEvaluators,
-                    operationLabel,
-                    actionLabel
-                )
-            );
-        }
-
-        if (!RelationalReadGuardrails.ContainsNamespaceBased(authorizationStrategyEvaluators))
-        {
-            return DescriptorReadAuthorizationPreflightOutcome.Proceed.NoAuthorization;
-        }
-
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
         );
@@ -734,22 +713,37 @@ internal sealed class DescriptorReadHandler(
                 new DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized(
                     NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
                 ),
+            RelationalAuthorizationPlanOutcome.Plan plan
+                when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
+                    plan.NonNamespaceConfiguredStrategies
+                ) => new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
+                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                    resource,
+                    authorizationStrategyEvaluators,
+                    operationLabel,
+                    actionLabel
+                )
+            ),
             RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorReadPlanPreflight(
                 mappingSet,
                 authorizationContext,
                 plan
             ),
-            // Restricting strategies to NamespaceBased / NoFurtherAuthorizationRequired above means the
-            // relationship classifier cannot report still-unsupported or security-configuration
-            // outcomes here, but fail closed if a future strategy reaches this point.
-            RelationalAuthorizationPlanOutcome.StillUnsupported
-            or RelationalAuthorizationPlanOutcome.SecurityConfigurationError =>
+            RelationalAuthorizationPlanOutcome.StillUnsupported =>
                 new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
                     RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
                         resource,
                         authorizationStrategyEvaluators,
                         operationLabel,
                         actionLabel
+                    )
+                ),
+            RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
+                new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    RelationalReadGuardrails.BuildSecurityConfigurationErrors(
+                        mappingSet,
+                        resource,
+                        securityConfigurationError.NonNamespaceConfiguredStrategies
                     )
                 ),
             _ => throw new InvalidOperationException(

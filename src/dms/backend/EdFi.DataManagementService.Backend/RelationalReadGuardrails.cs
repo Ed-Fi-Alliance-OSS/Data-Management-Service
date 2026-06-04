@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 
@@ -54,6 +56,68 @@ internal static class RelationalReadGuardrails
                 StringComparison.Ordinal
             )
         );
+    }
+
+    public static bool HasDescriptorUnsupportedNonNamespaceStrategies(
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
+    )
+    {
+        ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
+
+        return nonNamespaceConfiguredStrategies.Any(static strategy =>
+            !string.Equals(
+                strategy.StrategyName,
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                StringComparison.Ordinal
+            )
+        );
+    }
+
+    public static string[] BuildSecurityConfigurationErrors(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
+
+        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
+            mappingSet,
+            resource,
+            nonNamespaceConfiguredStrategies
+        );
+
+        string[] unavailableStrategyNames =
+        [
+            .. classification
+                .SecurityConfigurationFailures.Select(static failure =>
+                    failure.ConfiguredStrategy?.StrategyName
+                )
+                .Where(static strategyName => strategyName is not null)
+                .Cast<string>(),
+        ];
+
+        if (unavailableStrategyNames.Length == 0)
+        {
+            unavailableStrategyNames =
+            [
+                .. nonNamespaceConfiguredStrategies
+                    .Where(static strategy =>
+                        !string.Equals(
+                            strategy.StrategyName,
+                            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .Select(static strategy => strategy.StrategyName),
+            ];
+        }
+
+        return
+        [
+            SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(unavailableStrategyNames),
+        ];
     }
 
     public static string BuildAuthorizationNotImplementedMessage(
