@@ -79,40 +79,6 @@ internal static class NamespaceAuthorizationProviderFailureMapper
                 is NamespaceAuthorizationCheckValueSource.Stored;
     }
 
-    /// <summary>
-    /// Whether <paramref name="exception"/> is an AUTH1 provider failure this namespace executor should
-    /// fail closed on (a namespace <c>ns1|…</c> payload — mappable or not — or any malformed/unknown
-    /// AUTH1 payload). A relationship <c>1|…</c> payload returns <see langword="false"/> so it rethrows,
-    /// because it should never reach the namespace-only execution path.
-    /// </summary>
-    public static bool IsNamespaceAuthorizationProviderFailure(
-        SqlDialect dialect,
-        DbException exception,
-        IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor
-    )
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        ArgumentNullException.ThrowIfNull(providerFailureExtractor);
-
-        var providerFailure = providerFailureExtractor.Extract(exception);
-
-        if (
-            !RelationalAuthorizationAuth1Dispatcher.TryDispatch(
-                dialect,
-                providerFailure.ErrorCode,
-                providerFailure.Message,
-                out var dispatchResult
-            )
-        )
-        {
-            return false;
-        }
-
-        return dispatchResult
-            is RelationalAuthorizationAuth1DispatchResult.Namespace
-                or RelationalAuthorizationAuth1DispatchResult.InvalidPayload;
-    }
-
     public static bool TryBuildInvalidAuthorizationFailureDiagnostics(
         SqlDialect dialect,
         DbException exception,

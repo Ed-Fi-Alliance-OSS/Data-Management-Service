@@ -349,5 +349,20 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit"
     ],
     "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Remove the unused namespace authorization provider failure helper left behind after invalid AUTH1 diagnostics were centralized.",
+    "acceptance-criteria": [
+      "NamespaceAuthorizationProviderFailureMapper no longer contains the unused IsNamespaceAuthorizationProviderFailure method or its stale XML documentation.",
+      "No production or test code references IsNamespaceAuthorizationProviderFailure.",
+      "NamespaceAuthorizationExecutor continues to handle invalid namespace AUTH1 provider failures through TryBuildInvalidAuthorizationFailureDiagnostics and keeps the existing security-configuration diagnostics behavior."
+    ],
+    "steps-to-verify": [
+      "rg -n \"IsNamespaceAuthorizationProviderFailure\" src/dms",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/NamespaceAuthorizationProviderFailureMapper.cs and src/dms/backend/EdFi.DataManagementService.Backend/NamespaceAuthorizationExecutor.cs for the remaining invalid AUTH1 failure flow.",
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/NamespaceAuthorizationProviderFailureMapper.cs"
+    ],
+    "completed": true
   }
 ]

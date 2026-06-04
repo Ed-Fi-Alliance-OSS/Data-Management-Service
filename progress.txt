@@ -137,3 +137,10 @@ Key decisions: Added shared backend diagnostics helper for stable ProviderOrPlan
 Files changed: Backend diagnostics helper; namespace/relationship executors and failure mappers; relational repository/descriptor/write orchestration result propagation; backend unit/integration assertions; tasks.json; progress.txt.
 Verification: dotnet csharpier format backend/core touched areas. Backend unit task filter passed 229 tests. Core handler/logger filter passed 139 tests. MSSQL file-style integration filter selected no tests; corrected Given_A_Mssql_Relational_Backend_Security_Configuration_Authorization_Fixture passed 4 tests using temporary dms-codex-mssql on 1434, then container stopped. git diff --check clean.
 Blockers/notes: None.
+
+Task completed: Remove unused namespace authorization provider failure helper left behind after invalid AUTH1 diagnostics were centralized.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: Deleted unused IsNamespaceAuthorizationProviderFailure and stale docs only. NamespaceAuthorizationExecutor still uses stale-target, namespace failure, and invalid AUTH1 diagnostics mappers.
+Files changed: NamespaceAuthorizationProviderFailureMapper.cs; tasks.json; progress.txt.
+Verification: rg IsNamespaceAuthorizationProviderFailure has no matches. dotnet csharpier format NamespaceAuthorizationProviderFailureMapper.cs. dotnet test Backend.Tests.Unit FullyQualifiedName~Given_NamespaceAuthorizationExecutor passed 14 tests. git diff --check clean.
+Blockers/notes: None.
