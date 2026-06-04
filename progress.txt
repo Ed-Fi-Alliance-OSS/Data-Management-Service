@@ -53,3 +53,10 @@ Key decisions: Audit found focused unit coverage already present from prior impl
 Files changed: tasks.json; progress.txt.
 Verification: dotnet test Core.Tests.Unit with FullyQualifiedName~Given_FailureResponse_For_Security_Configuration|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~HandlerTests passed 141 tests. dotnet test Backend.Plans.Tests.Unit with FullyQualifiedName~Given_RelationshipAuthorizationStrategyClassifier passed 17 tests. dotnet test Backend.Tests.Unit with FullyQualifiedName~Authorization passed 107 tests.
 Blockers/notes: Next iteration should start API-level integration coverage for representative relational ProblemDetails responses.
+
+Task completed: Add API-level integration coverage for representative relational security-configuration ProblemDetails responses.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: Added shared in-process HTTP scenario with fixed/empty/configurable claim-set catalogs. Coverage proves missing metadata on resource read, empty strategies on resource write, unknown resource read strategy, unknown descriptor read strategy, and no matching resource/action stays 403. Change-query route absent in current DMS pipeline; no case added.
+Files changed: API integration StaticClaimSetProvider; SecurityConfigurationProblemDetailsScenario; PostgreSQL/MSSQL wrapper tests; tasks.json; progress.txt.
+Verification: dotnet csharpier format touched integration files. Initial broad API filter compiled but skipped without DB env. PostgreSQL SecurityConfiguration passed 5 tests with local 5435 connection. MSSQL SecurityConfiguration passed 5 tests using temporary dms-mssql-integration on 14333, then container stopped. Broader PostgreSQL SecurityConfiguration|Authorization filter passed 19 tests. git diff --check clean.
+Blockers/notes: Next iteration should add backend provider integration coverage for typed security-configuration result propagation.

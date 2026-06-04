@@ -161,7 +161,7 @@
       "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~SecurityConfiguration\"",
       "Review skipped/conditional integration tests to confirm any absent descriptor or change-query authorization surface is explicitly gated rather than silently ignored."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",
