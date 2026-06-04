@@ -650,7 +650,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
@@ -662,7 +667,13 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
     }
 
     [Test]
@@ -761,7 +772,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
@@ -773,7 +789,13 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
     }
 
     [Test]
@@ -951,7 +973,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         var sut = CreateSut(sessionFactory);
@@ -963,7 +990,13 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
     }
 
     [Test]

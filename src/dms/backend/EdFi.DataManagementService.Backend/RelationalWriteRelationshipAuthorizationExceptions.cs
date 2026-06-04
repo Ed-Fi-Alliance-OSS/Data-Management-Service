@@ -15,11 +15,15 @@ public sealed class RelationalWriteRelationshipAuthorizationNotAuthorizedExcepti
         relationshipFailure ?? throw new ArgumentNullException(nameof(relationshipFailure));
 }
 
-public sealed class RelationalWriteInvalidRelationshipAuthorizationFailureException(string failureMessage)
-    : Exception(failureMessage)
+public sealed class RelationalWriteInvalidRelationshipAuthorizationFailureException(
+    string failureMessage,
+    SecurityConfigurationFailureDiagnostic[]? diagnostics = null
+) : Exception(failureMessage)
 {
     public string FailureMessage { get; } =
         string.IsNullOrWhiteSpace(failureMessage)
             ? throw new ArgumentException("Failure message is required.", nameof(failureMessage))
             : failureMessage;
+
+    public SecurityConfigurationFailureDiagnostic[]? Diagnostics { get; } = diagnostics;
 }

@@ -182,7 +182,11 @@ public class Given_A_Mssql_Relational_Backend_Security_Configuration_Authorizati
                     nonAuthorizationParameterCount: ParameterBudgetQueryFilterCount + 2
                 )
             );
-        failure.Diagnostics.Should().BeNull();
+        var diagnostic = failure.Diagnostics.Should().ContainSingle().Subject;
+        diagnostic
+            .ProviderOrPlannerFailureKind.Should()
+            .Be("AuthorizationParameterBudget.CommandParameterCapExceeded");
+        diagnostic.ResourceFullName.Should().Be(ResourceFullName);
         _context.AssertNoHydration();
     }
 

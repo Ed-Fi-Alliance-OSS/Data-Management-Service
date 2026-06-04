@@ -373,7 +373,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                 request.OperationKind,
-                [ex.FailureMessage]
+                [ex.FailureMessage],
+                ex.Diagnostics
             );
         }
         catch (DbException ex)

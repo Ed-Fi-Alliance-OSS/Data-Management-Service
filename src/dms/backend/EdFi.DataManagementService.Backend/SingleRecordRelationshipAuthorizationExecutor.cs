@@ -33,8 +33,10 @@ public abstract record SingleRecordRelationshipAuthorizationExecutionResult
 
     public sealed record StaleTarget() : SingleRecordRelationshipAuthorizationExecutionResult;
 
-    public sealed record InvalidAuthorizationFailure(string FailureMessage)
-        : SingleRecordRelationshipAuthorizationExecutionResult;
+    public sealed record InvalidAuthorizationFailure(
+        string FailureMessage,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : SingleRecordRelationshipAuthorizationExecutionResult;
 }
 
 public interface ISingleRecordRelationshipAuthorizationExecutor
@@ -87,13 +89,31 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
 
         try
         {
-            return await _commandExecutor
+            var result = await _commandExecutor
                 .ExecuteReaderAsync(
                     BuildCommand(sqlPlan, request, _parameterConfigurator),
                     ReadAuthorizedResultAsync,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            if (
+                result is SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure
+                {
+                    Diagnostics: null,
+                } invalidFailure
+            )
+            {
+                return invalidFailure with
+                {
+                    Diagnostics =
+                        AuthorizationSecurityConfigurationDiagnostics.ForRelationshipInvalidAuthorizationResult(
+                            request.CheckSpecs
+                        ),
+                };
+            }
+
+            return result;
         }
         catch (DbException ex)
         {
@@ -123,7 +143,11 @@ internal sealed class SingleRecordRelationshipAuthorizationExecutor(
                 );
 
                 return new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                    RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+                    RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
+                    AuthorizationSecurityConfigurationDiagnostics.ForRelationshipAuthorizationAuth1(
+                        invalidFailureDiagnostic,
+                        request.CheckSpecs
+                    )
                 );
             }
 

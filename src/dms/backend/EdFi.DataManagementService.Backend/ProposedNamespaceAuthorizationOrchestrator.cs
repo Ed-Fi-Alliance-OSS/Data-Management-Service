@@ -53,7 +53,10 @@ internal sealed class ProposedNamespaceAuthorizationOrchestrator(
             return new ProposedNamespaceAuthorizationBoundary(
                 RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                     request.OperationKind,
-                    [invalid.FailureMessage]
+                    [invalid.FailureMessage],
+                    AuthorizationSecurityConfigurationDiagnostics.ForNamespaceProposedValueExtraction(
+                        namespaceAuthorization.Checks
+                    )
                 )
             );
         }
@@ -95,7 +98,8 @@ internal sealed class ProposedNamespaceAuthorizationOrchestrator(
                 new ProposedNamespaceAuthorizationBoundary(
                     RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                         request.OperationKind,
-                        [invalidFailure.FailureMessage]
+                        [invalidFailure.FailureMessage],
+                        invalidFailure.Diagnostics
                     )
                 ),
             // Proposed-value checks bind no stored DocumentId, so they never raise the stale stored-target

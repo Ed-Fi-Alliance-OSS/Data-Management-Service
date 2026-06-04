@@ -796,7 +796,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
                     new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                        RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+                        RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
+                        [
+                            new SecurityConfigurationFailureDiagnostic(
+                                ProviderOrPlannerFailureKind: "RelationshipAuthorization.Auth1.PayloadParseFailed"
+                            ),
+                        ]
                     )
                 )
             );
@@ -809,6 +814,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Equal(
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadParseFailed");
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -7854,7 +7864,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
         ConfigureDeleteNamespaceAuthorization(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on malformed AUTH1."));
@@ -7869,7 +7884,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -8067,7 +8088,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
         ConfigureDeleteRelationshipAuthorization(
             new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: "RelationshipAuthorization.Auth1.PayloadMappingFailed"
+                    ),
+                ]
             )
         );
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
@@ -8094,6 +8120,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Equal(
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadMappingFailed");
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);

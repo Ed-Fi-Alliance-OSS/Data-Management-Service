@@ -487,10 +487,11 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
                         request.OperationKind,
                         failure
                     ),
-                onInvalidAuthorizationFailure: failureMessage =>
+                onInvalidAuthorizationFailure: (failureMessage, diagnostics) =>
                     RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                         request.OperationKind,
-                        [failureMessage]
+                        [failureMessage],
+                        diagnostics
                     ),
                 onStaleTarget: () =>
                     RelationalWriteExecutorResults.BuildStaleTargetResult(request.OperationKind),
@@ -557,7 +558,8 @@ internal sealed class StoredRelationshipAuthorizationOrchestrator(
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                     request.OperationKind,
-                    [invalidFailure.FailureMessage]
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
                 ),
             _ => throw new InvalidOperationException(
                 $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."
@@ -601,7 +603,7 @@ internal static class StoredNamespaceAuthorizationExecution
         long documentId,
         RelationalWriteNamespaceAuthorization namespaceAuthorization,
         Func<NamespaceAuthorizationFailure, TResult> onNotAuthorized,
-        Func<string, TResult> onInvalidAuthorizationFailure,
+        Func<string, SecurityConfigurationFailureDiagnostic[]?, TResult> onInvalidAuthorizationFailure,
         Func<TResult> onStaleTarget,
         CancellationToken cancellationToken = default
     )
@@ -629,7 +631,7 @@ internal static class StoredNamespaceAuthorizationExecution
                 notAuthorized.Failure
             ),
             NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                onInvalidAuthorizationFailure(invalidFailure.FailureMessage),
+                onInvalidAuthorizationFailure(invalidFailure.FailureMessage, invalidFailure.Diagnostics),
             NamespaceAuthorizationExecutionResult.StaleTarget => onStaleTarget(),
             _ => throw new InvalidOperationException(
                 $"Unsupported namespace authorization execution result '{executionResult.GetType().Name}'."

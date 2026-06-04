@@ -821,12 +821,16 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
             return new DeleteAuthorizationPreflightResult.Stop(
-                new DeleteResult.DeleteFailureSecurityConfiguration([securityConfigurationMessage])
+                new DeleteResult.DeleteFailureSecurityConfiguration(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                )
             );
         }
 
@@ -904,9 +908,8 @@ public sealed class RelationalDocumentStoreRepository(
                 documentId,
                 storedNamespaceAuthorization,
                 onNotAuthorized: failure => new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
-                onInvalidAuthorizationFailure: failureMessage => new DeleteResult.DeleteFailureSecurityConfiguration([
-                    failureMessage,
-                ]),
+                onInvalidAuthorizationFailure: (failureMessage, diagnostics) =>
+                    new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage], diagnostics),
                 // The target is row-locked before this check, so a stale target is not expected; map it
                 // to not-exists defensively for the rare case where the lock did not hold.
                 onStaleTarget: () => new DeleteResult.DeleteFailureNotExists()
@@ -966,7 +969,10 @@ public sealed class RelationalDocumentStoreRepository(
             SingleRecordRelationshipAuthorizationExecutionResult.StaleTarget =>
                 new DeleteResult.DeleteFailureNotExists(),
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                new DeleteResult.DeleteFailureSecurityConfiguration([invalidFailure.FailureMessage]),
+                new DeleteResult.DeleteFailureSecurityConfiguration(
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
+                ),
             _ => throw new InvalidOperationException(
                 $"Unsupported single-record authorization execution result '{authorizationExecutionResult.GetType().Name}'."
             ),
@@ -1188,6 +1194,7 @@ public sealed class RelationalDocumentStoreRepository(
         if (
             BuildQueryParameterBudgetFailure(
                 mappingSet.Key.Dialect,
+                resource,
                 pageQueryAuthorization?.NamespacePrefixParameterization,
                 pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization,
                 nonAuthorizationParameterCount
@@ -1306,12 +1313,16 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
             return new QueryAuthorizationResolution.Complete(
-                new QueryResult.QueryFailureSecurityConfiguration([securityConfigurationMessage])
+                new QueryResult.QueryFailureSecurityConfiguration(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                )
             );
         }
 
@@ -1399,6 +1410,7 @@ public sealed class RelationalDocumentStoreRepository(
     /// </summary>
     private static QueryResult? BuildQueryParameterBudgetFailure(
         SqlDialect dialect,
+        QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
         AuthorizationClaimEducationOrganizationIdParameterization? claimEducationOrganizationIdParameterization,
         int nonAuthorizationParameterCount
@@ -1416,13 +1428,16 @@ public sealed class RelationalDocumentStoreRepository(
             return null;
         }
 
-        return new QueryResult.QueryFailureSecurityConfiguration([
-            NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
-                namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
-                claimEducationOrganizationIdParameterization?.ClaimEducationOrganizationIds.Count ?? 0,
-                nonAuthorizationParameterCount
-            ),
-        ]);
+        return new QueryResult.QueryFailureSecurityConfiguration(
+            [
+                NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
+                    namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
+                    claimEducationOrganizationIdParameterization?.ClaimEducationOrganizationIds.Count ?? 0,
+                    nonAuthorizationParameterCount
+                ),
+            ],
+            AuthorizationSecurityConfigurationDiagnostics.ForCommandParameterCapExceeded(resource)
+        );
     }
 
     private static PageDocumentIdAuthorizationSpec? ComposePageQueryAuthorization(
@@ -1555,12 +1570,16 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                new UpsertResult.UpsertFailureSecurityConfiguration([securityConfigurationMessage])
+                new UpsertResult.UpsertFailureSecurityConfiguration(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                )
             );
         }
 
@@ -1894,12 +1913,16 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                new UpdateResult.UpdateFailureSecurityConfiguration([securityConfigurationMessage])
+                new UpdateResult.UpdateFailureSecurityConfiguration(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                )
             );
         }
 
@@ -2641,12 +2664,16 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
             return new GetByIdAuthorizationPreflightResult.Stop(
-                new GetResult.GetFailureSecurityConfiguration([securityConfigurationMessage])
+                new GetResult.GetFailureSecurityConfiguration(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                )
             );
         }
 
@@ -2867,7 +2894,10 @@ public sealed class RelationalDocumentStoreRepository(
             ),
             NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 new GetAuthorizationOutcome(
-                    new GetResult.GetFailureSecurityConfiguration([invalidFailure.FailureMessage]),
+                    new GetResult.GetFailureSecurityConfiguration(
+                        [invalidFailure.FailureMessage],
+                        invalidFailure.Diagnostics
+                    ),
                     null,
                     false
                 ),
@@ -2931,7 +2961,10 @@ public sealed class RelationalDocumentStoreRepository(
             ),
             SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
                 new GetAuthorizationOutcome(
-                    new GetResult.GetFailureSecurityConfiguration([invalidFailure.FailureMessage]),
+                    new GetResult.GetFailureSecurityConfiguration(
+                        [invalidFailure.FailureMessage],
+                        invalidFailure.Diagnostics
+                    ),
                     null,
                     false
                 ),

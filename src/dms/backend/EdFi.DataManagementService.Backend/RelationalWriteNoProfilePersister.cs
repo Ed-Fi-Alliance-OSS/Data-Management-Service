@@ -680,7 +680,11 @@ internal sealed class RelationalWriteNoProfilePersister(
             );
 
             throw new RelationalWriteInvalidRelationshipAuthorizationFailureException(
-                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
+                AuthorizationSecurityConfigurationDiagnostics.ForRelationshipAuthorizationAuth1(
+                    invalidFailureDiagnostic,
+                    relationshipAuthorizationRuntimeCheck.CheckSpecs
+                )
             );
         }
 

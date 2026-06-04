@@ -191,10 +191,14 @@ internal sealed class DescriptorWriteHandler(
                     return new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceFailure);
 
                 case DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
-                    var namespaceFailureMessage
+                    var namespaceFailureMessage,
+                    var diagnostics
                 ):
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureSecurityConfiguration([namespaceFailureMessage]);
+                    return new UpsertResult.UpsertFailureSecurityConfiguration(
+                        [namespaceFailureMessage],
+                        diagnostics
+                    );
 
                 case DescriptorLockedPreconditionResult.Mismatch:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -366,10 +370,14 @@ internal sealed class DescriptorWriteHandler(
                         return new UpdateResult.UpdateFailureNamespaceNotAuthorized(namespaceFailure);
 
                     case DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
-                        var namespaceFailureMessage
+                        var namespaceFailureMessage,
+                        var diagnostics
                     ):
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return new UpdateResult.UpdateFailureSecurityConfiguration([namespaceFailureMessage]);
+                        return new UpdateResult.UpdateFailureSecurityConfiguration(
+                            [namespaceFailureMessage],
+                            diagnostics
+                        );
 
                     case DescriptorLockedPreconditionResult.Mismatch:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -671,8 +679,12 @@ internal sealed class DescriptorWriteHandler(
                         DescriptorLockedPreconditionResult.NamespaceNotAuthorized(var namespaceFailure) =>
                             new DeleteResult.DeleteFailureNamespaceNotAuthorized(namespaceFailure),
                         DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
-                            var failureMessage
-                        ) => new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage]),
+                            var failureMessage,
+                            var diagnostics
+                        ) => new DeleteResult.DeleteFailureSecurityConfiguration(
+                            [failureMessage],
+                            diagnostics
+                        ),
                         DescriptorLockedPreconditionResult.Mismatch =>
                             new DeleteResult.DeleteFailureETagMisMatch(),
                         DescriptorLockedPreconditionResult.Loaded =>
@@ -1113,12 +1125,16 @@ internal sealed class DescriptorWriteHandler(
                 request.MappingSet.Key.Dialect,
                 request.RelationalAuthorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
             return new DescriptorDeleteAuthorizationPreflightResult.Stop(
-                new DeleteResult.DeleteFailureSecurityConfiguration([securityConfigurationMessage])
+                new DeleteResult.DeleteFailureSecurityConfiguration(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                )
             );
         }
 
@@ -1163,7 +1179,8 @@ internal sealed class DescriptorWriteHandler(
         MapNamespaceAuthorizationToResult<DeleteResult>(
             executionResult,
             static failure => new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
-            static failureMessage => new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage]),
+            static (failureMessage, diagnostics) =>
+                new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage], diagnostics),
             static () => new DeleteResult.DeleteFailureNotExists()
         );
 
@@ -1294,13 +1311,15 @@ internal sealed class DescriptorWriteHandler(
                 request.MappingSet.Key.Dialect,
                 request.RelationalAuthorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
-            return new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError([
-                securityConfigurationMessage,
-            ]);
+            return new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                [securityConfigurationMessage],
+                securityConfigurationDiagnostics
+            );
         }
 
         var stored = NamespaceAuthorizationFactory.SplitByValueSource(
@@ -1542,7 +1561,8 @@ internal sealed class DescriptorWriteHandler(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
             ),
             static failure => new UpsertResult.UpsertFailureNamespaceNotAuthorized(failure),
-            static failureMessage => new UpsertResult.UpsertFailureSecurityConfiguration([failureMessage]),
+            static (failureMessage, diagnostics) =>
+                new UpsertResult.UpsertFailureSecurityConfiguration([failureMessage], diagnostics),
             static () => new UpsertResult.UpsertFailureWriteConflict(),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPostUpsertAsync(
@@ -1579,7 +1599,8 @@ internal sealed class DescriptorWriteHandler(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
             ),
             static failure => new UpdateResult.UpdateFailureNamespaceNotAuthorized(failure),
-            static failureMessage => new UpdateResult.UpdateFailureSecurityConfiguration([failureMessage]),
+            static (failureMessage, diagnostics) =>
+                new UpdateResult.UpdateFailureSecurityConfiguration([failureMessage], diagnostics),
             static () => new UpdateResult.UpdateFailureNotExists(),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPutAsync(
@@ -1604,7 +1625,7 @@ internal sealed class DescriptorWriteHandler(
         Func<TResult> missingDocumentResultFactory,
         Func<long, TResult> missingDescriptorResultFactory,
         Func<NamespaceAuthorizationFailure, TResult> namespaceNotAuthorizedFactory,
-        Func<string, TResult> namespaceAuthorizationInvalidFactory,
+        Func<string, SecurityConfigurationFailureDiagnostic[]?, TResult> namespaceAuthorizationInvalidFactory,
         Func<TResult> namespaceStaleTargetFactory,
         Func<
             PersistedDescriptorState,
@@ -1755,9 +1776,8 @@ internal sealed class DescriptorWriteHandler(
                 var proposedFailure = MapNamespaceAuthorizationToResult<UpsertResult>(
                     proposedResult,
                     static failure => new UpsertResult.UpsertFailureNamespaceNotAuthorized(failure),
-                    static failureMessage => new UpsertResult.UpsertFailureSecurityConfiguration([
-                        failureMessage,
-                    ]),
+                    static (failureMessage, diagnostics) =>
+                        new UpsertResult.UpsertFailureSecurityConfiguration([failureMessage], diagnostics),
                     static () => new UpsertResult.UpsertFailureWriteConflict()
                 );
 
@@ -1791,7 +1811,7 @@ internal sealed class DescriptorWriteHandler(
     private static TResult? MapNamespaceAuthorizationToResult<TResult>(
         NamespaceAuthorizationExecutionResult executionResult,
         Func<NamespaceAuthorizationFailure, TResult> namespaceNotAuthorizedFactory,
-        Func<string, TResult> namespaceAuthorizationInvalidFactory,
+        Func<string, SecurityConfigurationFailureDiagnostic[]?, TResult> namespaceAuthorizationInvalidFactory,
         Func<TResult> staleTargetFactory
     )
         where TResult : class =>
@@ -1801,7 +1821,10 @@ internal sealed class DescriptorWriteHandler(
             NamespaceAuthorizationExecutionResult.NotAuthorized notAuthorized =>
                 namespaceNotAuthorizedFactory(notAuthorized.Failure),
             NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
-                namespaceAuthorizationInvalidFactory(invalidFailure.FailureMessage),
+                namespaceAuthorizationInvalidFactory(
+                    invalidFailure.FailureMessage,
+                    invalidFailure.Diagnostics
+                ),
             // Descriptor write/delete paths row-lock the target before the namespace check, so a stale
             // target is not expected; the caller maps it defensively to its conflict/not-exists outcome.
             NamespaceAuthorizationExecutionResult.StaleTarget => staleTargetFactory(),
@@ -1832,9 +1855,11 @@ internal sealed class DescriptorWriteHandler(
         return MapNamespaceAuthorizationToResult<DescriptorLockedPreconditionResult>(
             result,
             static failure => new DescriptorLockedPreconditionResult.NamespaceNotAuthorized(failure),
-            static failureMessage => new DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
-                failureMessage
-            ),
+            static (failureMessage, diagnostics) =>
+                new DescriptorLockedPreconditionResult.NamespaceAuthorizationInvalid(
+                    failureMessage,
+                    diagnostics
+                ),
             // The If-Match path locks the target before this check, so a stale target maps to the same
             // missing-document precondition the caller already resolves to not-exists/conflict.
             static () => DescriptorLockedPreconditionResult.MissingDocument.Instance
@@ -2197,8 +2222,10 @@ internal sealed class DescriptorWriteHandler(
         public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
             : DescriptorLockedPreconditionResult;
 
-        public sealed record NamespaceAuthorizationInvalid(string FailureMessage)
-            : DescriptorLockedPreconditionResult;
+        public sealed record NamespaceAuthorizationInvalid(
+            string FailureMessage,
+            SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+        ) : DescriptorLockedPreconditionResult;
 
         public sealed record Mismatch : DescriptorLockedPreconditionResult
         {

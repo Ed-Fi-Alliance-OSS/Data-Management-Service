@@ -130,3 +130,10 @@ Key decisions: RelationalAuthorizationPlanOutcome.SecurityConfigurationError now
 Files changed: Backend.Plans RelationalAuthorizationPlanner.cs; Backend RelationalReadGuardrails.cs; DescriptorReadHandler.cs; DescriptorWriteHandler.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format backend/plans backend test projects. Task filter with file-style names selected no tests; corrected Given_ descriptor namespace authorization filter passed 63 tests. RelationalAuthorizationPlanner plan tests passed 16 tests. git diff --check clean.
 Blockers/notes: None for this task.
+
+Task completed: Preserve backend security-configuration failure kinds in structured logs for parameter-cap and invalid AUTH1 response paths.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: Added shared backend diagnostics helper for stable ProviderOrPlannerFailureKind categories. Parameter-cap, namespace prefix/preflight, namespace AUTH1 invalid metadata, relationship AUTH1 invalid payload, and proposed extraction failures now carry SecurityConfigurationFailureDiagnostic through repository/descriptor/write-result boundaries. Relationship AUTH1 diagnostics include configured strategy names/indexes when check specs have them; provider message fragments stay only in existing sanitized provider diagnostic logs.
+Files changed: Backend diagnostics helper; namespace/relationship executors and failure mappers; relational repository/descriptor/write orchestration result propagation; backend unit/integration assertions; tasks.json; progress.txt.
+Verification: dotnet csharpier format backend/core touched areas. Backend unit task filter passed 229 tests. Core handler/logger filter passed 139 tests. MSSQL file-style integration filter selected no tests; corrected Given_A_Mssql_Relational_Backend_Security_Configuration_Authorization_Fixture passed 4 tests using temporary dms-codex-mssql on 1434, then container stopped. git diff --check clean.
+Blockers/notes: None.

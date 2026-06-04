@@ -27,8 +27,10 @@ public abstract record NamespaceAuthorizationExecutionResult
     public sealed record NotAuthorized(NamespaceAuthorizationFailure Failure)
         : NamespaceAuthorizationExecutionResult;
 
-    public sealed record InvalidAuthorizationFailure(string FailureMessage)
-        : NamespaceAuthorizationExecutionResult;
+    public sealed record InvalidAuthorizationFailure(
+        string FailureMessage,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : NamespaceAuthorizationExecutionResult;
 
     /// <summary>
     /// The stored target row no longer exists: it was deleted between the unlocked target lookup and the
@@ -132,15 +134,19 @@ internal sealed class NamespaceAuthorizationExecutor(
             return new NamespaceAuthorizationExecutionResult.NotAuthorized(namespaceFailure!);
         }
         catch (DbException ex)
-            when (NamespaceAuthorizationProviderFailureMapper.IsNamespaceAuthorizationProviderFailure(
+            when (NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
                     dialect,
                     ex,
-                    _providerFailureExtractor
+                    _providerFailureExtractor,
+                    plannedCheckValueSources,
+                    request.Checks,
+                    out var diagnostics
                 )
             )
         {
             return new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                NamespaceAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata
+                NamespaceAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata,
+                diagnostics
             );
         }
     }

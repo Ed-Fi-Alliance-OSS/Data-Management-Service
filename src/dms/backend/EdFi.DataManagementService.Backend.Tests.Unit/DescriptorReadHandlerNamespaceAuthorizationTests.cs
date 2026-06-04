@@ -193,13 +193,17 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             CreateGetByIdRequest(namespacePrefixes: [""], authorizationStrategy: NamespaceStrategy())
         );
 
-        result
-            .Should()
-            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
-            .Which.Errors.Should()
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
             .ContainSingle()
             .Which.Should()
             .Be(NamespaceAuthorizationSecurityConfigurationMessages.InvalidNamespacePrefix);
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidNamespacePrefix);
         commandExecutor.Commands.Should().BeEmpty();
     }
 

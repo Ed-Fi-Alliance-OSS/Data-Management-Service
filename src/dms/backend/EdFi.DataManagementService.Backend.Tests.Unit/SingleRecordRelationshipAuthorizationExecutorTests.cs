@@ -257,13 +257,23 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             )
         );
 
-        result
+        var invalidFailure = result
             .Should()
             .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
-            .Which.FailureMessage.Should()
+            .Subject;
+        invalidFailure
+            .FailureMessage.Should()
             .Be(
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
+        var diagnostic = invalidFailure.Diagnostics.Should().ContainSingle().Subject;
+        diagnostic
+            .ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.EmittedAuth1IndexMismatch");
+        diagnostic
+            .ConfiguredStrategyNames.Should()
+            .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly);
+        diagnostic.ConfiguredStrategyIndexes.Should().Equal(0);
 
         var logRecord = logger.Records.Should().ContainSingle().Subject;
         logRecord.Level.Should().Be(LogLevel.Error);
@@ -299,13 +309,20 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             )
         );
 
-        result
+        var invalidFailure = result
             .Should()
             .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
-            .Which.FailureMessage.Should()
+            .Subject;
+        invalidFailure
+            .FailureMessage.Should()
             .Be(
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
+        invalidFailure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadParseFailed");
     }
 
     [Test]
@@ -337,13 +354,20 @@ public class Given_SingleRecordRelationshipAuthorizationExecutor
             )
         );
 
-        result
+        var invalidFailure = result
             .Should()
             .BeOfType<SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure>()
-            .Which.FailureMessage.Should()
+            .Subject;
+        invalidFailure
+            .FailureMessage.Should()
             .Be(
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
+        invalidFailure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadNotExtracted");
     }
 
     [Test]

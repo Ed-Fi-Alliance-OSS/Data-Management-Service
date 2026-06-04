@@ -330,5 +330,24 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit"
     ],
     "completed": true
+  },
+  {
+    "category": "logging",
+    "description": "Low: Preserve backend security-configuration failure kinds in structured logs for parameter-cap and invalid AUTH1 response paths.",
+    "acceptance-criteria": [
+      "Backend-created security-configuration results for SQL Server authorization parameter-cap failures include SecurityConfigurationFailureDiagnostic entries with ProviderOrPlannerFailureKind values such as AuthorizationParameterBudget.CommandParameterCapExceeded and the affected request/resource context.",
+      "Namespace authorization invalid-metadata results from prefix parameterization, stored/proposed namespace AUTH1 mapping failures, and descriptor namespace paths include SecurityConfigurationFailureDiagnostic entries that identify the namespace failure kind without adding provider exception text, SQL, stack traces, raw JWTs, or secrets.",
+      "Relationship authorization invalid AUTH1 payload results include SecurityConfigurationFailureDiagnostic entries that identify the relationship AUTH1 payload mapping failure category and configured authorization strategy context when available.",
+      "Invalid relationship AUTH1 payload handling does not emit duplicate error-level logs for the same response; the final SecurityConfigurationFailure log contains the stable failure kind/category needed for diagnosis, and any provider message fragment logging follows the existing sanitized provider diagnostic convention.",
+      "Existing wire ProblemDetails errors and status codes remain unchanged for parameter-cap and invalid AUTH1 security-configuration responses."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs, DescriptorReadHandler.cs, DescriptorWriteHandler.cs, NamespaceAuthorizationExecutor.cs, SingleRecordRelationshipAuthorizationExecutor.cs, and RelationalWriteExecutorResults.cs for diagnostics passed with every security-configuration result in these paths.",
+      "Review src/dms/core/EdFi.DataManagementService.Core/Response/SecurityConfigurationFailureLogger.cs and focused handler tests to confirm ProviderOrPlannerFailureKinds is populated for these backend failures.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DescriptorReadHandlerNamespaceAuthorizationTests|FullyQualifiedName~DescriptorWriteHandlerNamespaceAuthorizationTests|FullyQualifiedName~NamespaceAuthorizationExecutorTests|FullyQualifiedName~SingleRecordRelationshipAuthorizationExecutor\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~MssqlRelationalSecurityConfigurationAuthorizationTests\"",
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit"
+    ],
+    "completed": true
   }
 ]

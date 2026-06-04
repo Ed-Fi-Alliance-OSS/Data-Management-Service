@@ -69,7 +69,10 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
                             mergeResult,
                             RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                                 request.OperationKind,
-                                [invalid.FailureMessage]
+                                [invalid.FailureMessage],
+                                AuthorizationSecurityConfigurationDiagnostics.ForRelationshipProposedValueExtraction(
+                                    authorized.CheckSpecs
+                                )
                             )
                         );
 

@@ -257,6 +257,7 @@ internal sealed class DescriptorReadHandler(
         if (
             BuildDescriptorQueryParameterBudgetFailure(
                 request.MappingSet.Key.Dialect,
+                request.Resource,
                 proceed.NamespacePrefixParameterization,
                 preprocessingResult.QueryElementsInOrder.Count
             ) is
@@ -319,6 +320,7 @@ internal sealed class DescriptorReadHandler(
     /// </summary>
     private static QueryResult? BuildDescriptorQueryParameterBudgetFailure(
         SqlDialect dialect,
+        QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
         int queryFilterParameterCount
     )
@@ -340,13 +342,16 @@ internal sealed class DescriptorReadHandler(
             return null;
         }
 
-        return new QueryResult.QueryFailureSecurityConfiguration([
-            NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
-                namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
-                0,
-                nonAuthorizationParameterCount
-            ),
-        ]);
+        return new QueryResult.QueryFailureSecurityConfiguration(
+            [
+                NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
+                    namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
+                    0,
+                    nonAuthorizationParameterCount
+                ),
+            ],
+            AuthorizationSecurityConfigurationDiagnostics.ForCommandParameterCapExceeded(resource)
+        );
     }
 
     internal Task<DescriptorQueryRowsPage> ReadQueryRowsAsync(
@@ -788,13 +793,15 @@ internal sealed class DescriptorReadHandler(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
-            return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError([
-                securityConfigurationMessage,
-            ]);
+            return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+                [securityConfigurationMessage],
+                securityConfigurationDiagnostics
+            );
         }
 
         return new DescriptorReadAuthorizationPreflightOutcome.Proceed(
