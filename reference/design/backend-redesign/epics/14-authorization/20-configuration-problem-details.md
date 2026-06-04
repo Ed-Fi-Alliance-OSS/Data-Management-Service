@@ -41,6 +41,7 @@ NOTE: Some of these checks might have already been implemented.
 
 - Custom view-based authorization strategy execution is not currently implemented in the backend-redesign path. DMS-1099 may standardize request-time security-configuration ProblemDetails for custom view-related failures if an existing shared classifier or staged path already surfaces them, but it must not implement custom view-based authorization, custom view SQL execution, or custom view join/path planning. That work is outside the scope of this story and remains with the view-based authorization stories.
 - Change-query runtime route classification is not currently implemented in the backend-redesign path. DMS-1099 must not introduce or change `/deletes` or `/keyChanges` routing. When those endpoints land, they should reuse the DMS-1099 security-configuration ProblemDetails formatter, structured logging, and error-text rules.
+- CI hardening fixed a pre-existing flaky `ConnectionStringDecryptionService` unit test: AES-CBC without authentication cannot guarantee that decrypting with a wrong key throws, because random plaintext can occasionally have valid padding. The test now verifies the same `InvalidOperationException` decrypt-failure wrapper with deterministic malformed ciphertext instead of asserting wrong-key detection.
 
 ## Clarifying Questions and Answers
 
