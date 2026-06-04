@@ -1,0 +1,220 @@
+[
+  {
+    "category": "implementation",
+    "description": "Centralize the DMS-1099 security-configuration response contract and canonical wire messages used by request-time authorization code.",
+    "acceptance-criteria": [
+      "FailureResponse.ForSecurityConfiguration returns the full DMS ProblemDetails envelope with type urn:ed-fi:api:system:configuration:security, title Security Configuration Error, status 500, detail A security configuration problem was detected. The request cannot be authorized., validationErrors {}, an errors array populated from the supplied security-configuration messages, and correlationId.",
+      "Canonical helpers or constants exist for the four DMS-1099 messages: missing security metadata, empty matched strategy list, unknown strategy implementations, and custom-view basis property/path failure.",
+      "The no-strategies helper accepts the CMS action name, deterministic matched resource claim URI list, and matched resource claim Name value; it does not use the API client's assigned claim-set name as claimName.",
+      "The no-strategies helper formats the canonical phrase against resource URIs ['{uri1}', '{uri2}'] and never falls back to the older resource ['{resourceName}'] wording.",
+      "The unknown-strategy helper aggregates one or more unavailable strategy names in deterministic order.",
+      "When request-time authorization discovers multiple deterministic security-configuration failures before selecting a response, the supplied errors array preserves configured or order-of-discovery order.",
+      "Existing scenario-specific security-configuration diagnostics from relationship, namespace, invalid namespace prefix, SQL Server parameter-cap, and invalid AUTH1 payload paths remain available and are not remapped unless they exactly match a DMS-1099 canonical scenario.",
+      "The DMS-1099 checks are request-time response checks and do not introduce or depend on startup validation beyond the existing DMS-1091 startup tasks."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Response/FailureResponse.cs and any new message helper file for the exact ProblemDetails shape and message text.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~FailureResponseTests\"",
+      "dotnet csharpier format src/dms/core"
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Update ResourceActionAuthorizationMiddleware to classify claim-set metadata outcomes according to the DMS-1099 500-versus-403 boundary.",
+    "acceptance-criteria": [
+      "When claim-set lookup succeeds but returns an empty claim-set catalog, the request returns the canonical missing-security-metadata 500 response.",
+      "When claim-set lookup succeeds but the authenticated client's assigned claim-set name is absent from the returned catalog, the request returns the canonical missing-security-metadata 500 response.",
+      "When the assigned claim set exists but has zero resource claims, no matching resource claim, or no matching action claim for the requested resource/action, the request remains an authorization-denied 403.",
+      "When one or more matching resource/action claims exist but the effective authorization strategy list is empty, the request returns the canonical no-strategies security-configuration 500 response using the deterministic matched resource claim URI list and matched resource claim Name.",
+      "Matching resource/action claim selection is deterministic and does not turn duplicate or multi-match authorization metadata into a generic 500 response.",
+      "Claim-set provider transport failures, cache/provider exceptions, deserialization failures, and timeouts remain generic system failures with diagnostic logging instead of missing-security-metadata responses."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Middleware/ResourceActionAuthorizationMiddleware.cs for the missing-metadata, denied-action, and empty-strategy branches.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests\"",
+      "dotnet csharpier format src/dms/core"
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Carry request-surface and CMS action metadata through authorization resolution so DMS-1099 responses and logs can distinguish normal CRUD/read actions from change-query ReadChanges actions.",
+    "acceptance-criteria": [
+      "Normal resource and descriptor routes continue to map POST, GET, PUT, and DELETE to CMS actions Create, Read, Update, and Delete.",
+      "Existing change-query /deletes and /keyChanges routes, if implemented in the DMS request pipeline, map to the CMS action ReadChanges before strategy lookup and no-strategies message formatting.",
+      "Change-query route detection happens before the generic GET-to-Read mapping so supported /deletes and /keyChanges requests cannot accidentally format Read in security-configuration responses.",
+      "If no change-query route is currently implemented in the DMS request pipeline, the implementation leaves a small regression test or code assertion proving the current routes cannot accidentally format Read instead of ReadChanges for a supported change-query surface.",
+      "The selected action value is reused consistently in ResourceActionAuthorizationMiddleware, backend authorization request models, no-strategies responses, and structured diagnostic logs."
+    ],
+    "steps-to-verify": [
+      "Review path parsing and authorization action selection in src/dms/core/EdFi.DataManagementService.Core/Middleware for resource, descriptor, and any change-query routes.",
+      "rg -n \"ReadChanges|keyChanges|deletes|changeQueries\" src/dms/core src/dms/backend src/dms/frontend src/dms/tests",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~ParsePathMiddlewareTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Normalize relational backend strategy-name classification and security-configuration message mapping for unknown, custom-view-convention, and known-but-staged authorization strategies.",
+    "acceptance-criteria": [
+      "Relational authorization planning classifies built-in strategy names before applying the custom-view {BasisResource}With... convention.",
+      "A non-built-in strategy whose basis resource or descriptor resolves for the requested operation is treated as custom view-based metadata, not as an unknown strategy.",
+      "A strategy name that does not match the convention, whose convention basis cannot be resolved, or whose resolved custom-view strategy is invalid for the requested authorization surface returns the canonical unknown-strategy security-configuration 500 message.",
+      "Unknown or unavailable strategy names use the DMS-1099 wire message Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.; richer relational planner details remain in logs or internal diagnostics, not the response body for this canonical scenario.",
+      "Known valid strategies that are intentionally staged behind a sibling story continue to return explicit 501 Not Implemented guardrails where those guardrails already own the surface.",
+      "ReadChanges strategies unsupported for the change-query authorization surface return the canonical unknown-strategy security-configuration 500 message instead of a staged 501 when change-query authorization exists."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationStrategyClassifier.cs and src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs for classification and message formatting.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationStrategyClassifierTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationProviderFailureMapperTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Map custom view-based authorization basis path failures to the DMS-1099 security-configuration ProblemDetails without implementing custom view authorization execution.",
+    "acceptance-criteria": [
+      "When a custom view-based strategy resolves a basis resource or descriptor but no usable authorization join/path can be established from the requested authorization subject to that basis, the response uses the canonical custom-view basis-property security-configuration message.",
+      "The wire message formats targetEntityName and basisEntityName as schema-qualified resource names such as edfi.CourseTranscript and edfi.Student, including descriptors as schema-qualified descriptor resource names.",
+      "The propertyName placeholder is chosen deterministically from the missing basis identity/readable property; if only a surrogate DocumentId path failure is available, the logs include the DocumentId anchor and the wire response uses the closest readable basis identity property.",
+      "This work does not add custom view SQL execution, custom auth view DDL, custom view join planning beyond existing/staged path resolution, or CRUD/GET-many custom view strategy semantics owned by DMS-1062 and DMS-1063."
+    ],
+    "steps-to-verify": [
+      "Review relational planner and repository mapping code for custom-view security-configuration failures and absence of new custom view execution SQL.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~CustomView|FullyQualifiedName~RelationshipAuthorization\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~CustomView|FullyQualifiedName~Authorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Ensure every relational request-time authorization surface that can emit a security-configuration failure uses FailureResponse.ForSecurityConfiguration and the DMS-1099 status/body contract.",
+    "acceptance-criteria": [
+      "GET-many, GET-by-id, POST, PUT, and DELETE resource paths map backend Query/Get/Upsert/Update/Delete security-configuration result variants to HTTP 500 application/problem+json responses from FailureResponse.ForSecurityConfiguration.",
+      "Descriptor read, write, and delete paths that pass through relational authorization use the same security-configuration result mapping and do not fall back to generic system 500 bodies for metadata misconfiguration.",
+      "Change-query /deletes and /keyChanges paths that pass through request-time authorization use the same security-configuration result mapping for ReadChanges metadata misconfiguration.",
+      "Existing request-time authorization misconfiguration paths that currently return generic 500 bodies or inconsistent security-configuration bodies are converted to the shared formatter, while unrelated non-authorization generic 500 paths are left unchanged.",
+      "The implementation scope stays on the relational backend-redesign path plus shared Core middleware/result mapping; Old.Postgresql-specific authorization helpers are not changed unless they already pass through a shared path being corrected.",
+      "No DMS-1099 response path is implemented as a startup validation, startup cache warm-up failure, or DMS-1091 startup task behavior change.",
+      "The response body never includes raw JWTs, secrets, provider exception text, SQL text, or stack traces."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Handler and descriptor-related backend handlers for all *FailureSecurityConfiguration result mappings.",
+      "rg -n \"ForServerErrorMessageBody|ForSystemError|FailureSecurityConfiguration|ForSecurityConfiguration\" src/dms/core src/dms/backend",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~HandlerTests\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "implementation",
+    "description": "Add structured error logging for every DMS-1099 security-configuration response path using local logging conventions.",
+    "acceptance-criteria": [
+      "Each security-configuration response path emits one error-level structured log entry when the response is produced, without duplicate logs for the same failure as it flows from backend result to HTTP response.",
+      "Middleware-originated failures log tenant, correlationId, HTTP method, route/resource path, request surface, CMS action, assigned claim set, matched resource claim URI or URIs when available, configured strategy name or names when available, and the stable wire error message.",
+      "Backend/planner-originated failures log tenant and correlationId when available, request surface, HTTP method, route/resource path when available, CMS action, resource full name, configured strategy names and configured indexes when available, provider or planner failure kind, and the stable wire error message.",
+      "Custom-view failures also log target resource full name, basis resource or descriptor full name, missing/readable property, and any resolved physical table/column path when available.",
+      "Structured diagnostic fields do not include raw JWTs, secrets, SQL text, or stack traces, and provider exception text remains out of the wire response."
+    ],
+    "steps-to-verify": [
+      "Review the middleware, handler, and backend repository/planner paths that create FailureResponse.ForSecurityConfiguration responses for structured LogError calls.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~HandlerTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Authorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused unit tests for DMS-1099 response formatting, middleware classification, action mapping, strategy classification, handler mapping, and structured diagnostics.",
+    "acceptance-criteria": [
+      "FailureResponse unit tests assert the exact DMS-1099 envelope, dynamic correlationId presence, validationErrors {}, and errors array behavior.",
+      "ResourceActionAuthorizationMiddleware unit tests cover empty claim-set catalog, missing assigned claim set, existing claim set with zero resource claims, no matching resource claim, no matching action claim, empty matched strategy list, and claim-set provider exception boundaries.",
+      "Middleware tests assert canonical no-strategies wording with action, deterministic resource claim URI list, and matched resource claim Name, and assert 403 remains for ordinary permission denial.",
+      "Existing tests that assert the older no-strategies wording with resource ['{resourceName}'] or the API client's assigned claim-set name are updated to assert the canonical resource URIs ['{uri1}', '{uri2}'] and matched resource claim Name wording.",
+      "Strategy classifier and backend mapper tests cover built-in, custom-view-convention resolved, custom-view-convention unresolved, non-convention unknown, known-but-staged 501, and ReadChanges unsupported-strategy behavior where applicable.",
+      "Handler tests cover Query, Get, Upsert, Update, and Delete security-configuration result mapping to HTTP 500 application/problem+json.",
+      "Representative log assertions verify structured diagnostic fields for a middleware no-strategies failure and a backend planner/provider security-configuration failure."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~FailureResponseTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~HandlerTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationshipAuthorizationStrategyClassifierTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Authorization\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add API-level integration coverage for representative relational DMS-1099 responses through the in-process DMS pipeline.",
+    "acceptance-criteria": [
+      "PostgreSQL API-level integration tests in src/dms/tests/EdFi.DataManagementService.Tests.Integration cover at least one resource read security-configuration failure and one write-side security-configuration failure through the in-process DMS pipeline.",
+      "PostgreSQL API-level integration tests cover at least one descriptor authorization security-configuration failure if descriptors pass through relational authorization.",
+      "PostgreSQL API-level integration tests cover change-query ReadChanges security-configuration behavior if /deletes or /keyChanges authorization exists in the DMS pipeline.",
+      "SQL Server API-level integration tests cover the same representative HTTP mappings where the relational authorization path is supported and local MSSQL test prerequisites are available.",
+      "API-level integration tests assert the stable ProblemDetails members exactly and assert correlationId is present and non-empty rather than fixed.",
+      "API-level integration tests assert that ordinary no matching resource/action permission cases remain 403 and are not accidentally converted to DMS-1099 500 responses.",
+      "API-level integration tests do not require an exhaustive verb-by-surface matrix; they use focused cases that exercise resource read/write, descriptor, and change-query path families where those surfaces exist."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~SecurityConfiguration|FullyQualifiedName~Authorization\"",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~SecurityConfiguration\"",
+      "Review skipped/conditional integration tests to confirm any absent descriptor or change-query authorization surface is explicitly gated rather than silently ignored."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add backend provider integration coverage for planner, executor, and provider-originated security-configuration failures before Core HTTP response mapping.",
+    "acceptance-criteria": [
+      "PostgreSQL backend integration tests in src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration cover representative query, single-record read, and write-side security-configuration failures that originate below the Core HTTP pipeline.",
+      "SQL Server backend integration tests in src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration cover the same representative security-configuration result propagation where the relational authorization path is supported.",
+      "Provider-specific failure cases, including SQL Server authorization parameter-cap failures where applicable, return typed Query/Get/Upsert/Update/Delete security-configuration results with stable error entries.",
+      "Backend provider integration tests assert typed backend results and error messages, not HTTP ProblemDetails members that belong to Core handler/API-level tests.",
+      "Backend provider integration coverage stays on the backend-redesign relational providers and does not add Old.Postgresql-specific authorization parity work."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~SecurityConfiguration|FullyQualifiedName~Authorization\"",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=True;Encrypt=True' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~SecurityConfiguration|FullyQualifiedName~Authorization\"",
+      "Review backend provider integration assertions to confirm they stop at typed security-configuration results and leave HTTP envelope assertions to Core/API-level tests."
+    ],
+    "completed": false
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Add focused relational-backend E2E coverage using real CMS claim-set metadata for the externally observable DMS-1099 cases.",
+    "acceptance-criteria": [
+      "A relational-backend E2E scenario with a matched resource/action claim and an empty authorization strategy list returns the canonical no-strategies 500 ProblemDetails response.",
+      "A relational-backend E2E scenario with an unknown strategy name or an invalid custom-view strategy name returns the canonical unknown-strategy 500 ProblemDetails response.",
+      "A relational-backend E2E scenario where claim-set metadata lookup succeeds but no usable metadata exists for the authenticated client returns the canonical missing-security-metadata 500 ProblemDetails response.",
+      "E2E assertions validate type, title, status, detail, validationErrors {}, errors, and a present non-empty correlationId; they do not assert a fixed generated correlationId unless the test intentionally sends the configured correlation-id header.",
+      "The scenarios use CMS setup data and the relational dms-local stack; they do not depend on direct in-memory claim-set providers."
+    ],
+    "steps-to-verify": [
+      "./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@security-configuration'",
+      "If a focused security-configuration category is not added, run the specific generated Reqnroll scenario names from src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization using the same build-dms.ps1 relational command.",
+      "Inspect dms-local container logs for SecurityConfigurationFailure entries matching the E2E correlationId values."
+    ],
+    "completed": false
+  },
+  {
+    "category": "verification",
+    "description": "Run final formatting and targeted verification for the DMS-1099 implementation without changing unrelated production or test behavior.",
+    "acceptance-criteria": [
+      "All touched DMS source and test files are formatted with csharpier.",
+      "Core unit tests, backend planner/backend unit tests, focused API-level integration tests, and focused backend provider integration tests for DMS-1099 pass.",
+      "Relational-backend E2E security-configuration scenarios pass through build-dms.ps1 with the relational environment file.",
+      "A final source review confirms DMS-1099 did not implement custom view SQL execution, alter unrelated generic 500 paths, or update Old.Postgresql-specific authorization helpers except through shared paths.",
+      "A final source review confirms 403 authorization-denied behavior remains for ordinary no matching resource/action permission cases."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Authorization\"",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~SecurityConfiguration|FullyQualifiedName~Authorization\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~SecurityConfiguration|FullyQualifiedName~Authorization\"",
+      "./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@security-configuration'"
+    ],
+    "completed": false
+  }
+]
