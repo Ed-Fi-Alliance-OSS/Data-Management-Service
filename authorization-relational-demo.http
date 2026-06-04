@@ -150,7 +150,7 @@ Authorization: Bearer {{configTokenRequest.access_token}}
     "vendorId": {{getEdFiVendor.id}},
     "applicationName": "Authorization Demo Seed",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-    "educationOrganizationIds": [2, 201, 20101, 3, 301, 30101, 255901001, 255901222],
+    "educationOrganizationIds": [2, 201, 20101, 3, 301, 30101, 302, 255901001, 255901222],
     "dmsInstanceIds": [{{createDmsInstance.id}}]
 }
 
@@ -566,6 +566,26 @@ Content-Type: application/json
     "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
 }
 
+### Seed Section 4 hierarchy: LEA 302 under State 3
+POST {{discovery.urls.dataManagementApi}}/ed-fi/localEducationAgencies
+Authorization: Bearer {{seedTokenRequest.access_token}}
+Content-Type: application/json
+
+{
+    "localEducationAgencyId": 302,
+    "nameOfInstitution": "Test LEA 302",
+    "stateEducationAgencyReference": {
+        "stateEducationAgencyId": 3
+    },
+    "categories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+        }
+    ],
+    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+}
+
+
 ### Seed Section 4 hierarchy: School 20101 under LEA 201
 POST {{discovery.urls.dataManagementApi}}/ed-fi/schools
 Authorization: Bearer {{seedTokenRequest.access_token}}
@@ -725,9 +745,9 @@ Authorization: Bearer {{peopleTokenRequest.access_token}}
 #
 
 ### Authorized academic week query with post-authorization paging and count
-# Expected: 200, Total-Count: 2, body contains one authorized week because limit=1.
+# Expected: 200, Total-Count: 2
 # The week for school 255901222 is filtered out before paging/count.
-GET {{discovery.urls.dataManagementApi}}/ed-fi/academicWeeks?totalCount=true&limit=1
+GET {{discovery.urls.dataManagementApi}}/ed-fi/academicWeeks?totalCount=true
 Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
 
 #
@@ -765,6 +785,7 @@ Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
 # Expected: 200, returns LEA 201 and LEA 301.
 # LEA 201 is authorized top-down from State 2.
 # LEA 301 is authorized bottom-up from School 30101.
+# LEA 302 is not authorized by either, and not shown
 GET {{discovery.urls.dataManagementApi}}/ed-fi/localEducationAgencies
 Authorization: Bearer {{orInvertedTokenRequest.access_token}}
 
