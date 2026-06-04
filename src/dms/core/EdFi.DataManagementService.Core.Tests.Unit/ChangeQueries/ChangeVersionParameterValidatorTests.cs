@@ -132,6 +132,10 @@ public class ChangeVersionParameterValidatorTests
         public void It_sets_both_bounds_to_zero() => _result.Range.Should().Be(new ChangeVersionRange(0, 0));
     }
 
+    // Empty and whitespace-only values are deliberately accepted as absent, not rejected
+    // as unparseable: ODS binds these parameters as nullable longs, and ASP.NET model
+    // binding converts empty/whitespace query values to null before any parse is
+    // attempted, so ODS returns 200 (unfiltered on that bound) for the same input.
     [TestFixture]
     [Parallelizable]
     public class Given_Both_Values_Are_Empty : ChangeVersionParameterValidatorTests

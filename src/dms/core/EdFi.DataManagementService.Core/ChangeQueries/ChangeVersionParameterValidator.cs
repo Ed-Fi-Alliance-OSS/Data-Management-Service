@@ -13,7 +13,10 @@ namespace EdFi.DataManagementService.Core.ChangeQueries;
 /// used by live resource and descriptor GET-many requests and, in later stories,
 /// the /deletes and /keyChanges endpoints. Parses each bound as a long greater than
 /// or equal to 0 and enforces min &lt;= max when both are supplied. Present-but-empty
-/// or whitespace-only values are treated as absent. Parameter lookup
+/// or whitespace-only values are deliberately treated as absent rather than invalid:
+/// ODS binds these parameters as nullable longs, and ASP.NET model binding converts
+/// empty and whitespace query values to null before any parse is attempted, so ODS
+/// never returns a validation error for them. Parameter lookup
 /// is case-insensitive so all callers behave the same regardless of client casing.
 /// </summary>
 internal static class ChangeVersionParameterValidator
