@@ -15,7 +15,7 @@ Note: The derived relational model changes described here and in the `change-que
 
 ## Acceptance Criteria
 
-- The derived model includes `ReadChangesAuthorizationViewInfo` for:
+- The static `AuthObjectDefinitions` inventory includes `ReadChangesAuthorizationViewInfo` for:
   - `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes`
   - `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes`
   - `auth.EducationOrganizationIdToStaffDocumentIdIncludingDeletes`

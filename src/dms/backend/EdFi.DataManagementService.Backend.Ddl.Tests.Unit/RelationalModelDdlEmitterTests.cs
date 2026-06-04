@@ -95,6 +95,35 @@ public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
         ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
     }
 
+    [Test]
+    public void It_should_not_emit_readchanges_views_when_one_tracked_change_table_is_missing()
+    {
+        // HasReadChangesTrackedChangeTables requires all five association tables; a single missing
+        // table must suppress every ReadChanges view, not just the arms that join it.
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        var missingTableName = AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames[^1];
+        var modelSetWithMissingTrackedTable = modelSet with
+        {
+            TrackedChangeTablesInNameOrder =
+            [
+                .. modelSet.TrackedChangeTablesInNameOrder.Where(trackedChangeTable =>
+                    trackedChangeTable.Table.Name != missingTableName
+                ),
+            ],
+        };
+        modelSetWithMissingTrackedTable
+            .TrackedChangeTablesInNameOrder.Should()
+            .HaveCount(modelSet.TrackedChangeTablesInNameOrder.Count - 1);
+
+        AuthObjectDefinitions
+            .HasReadChangesTrackedChangeTables(modelSetWithMissingTrackedTable.TrackedChangeTablesInNameOrder)
+            .Should()
+            .BeFalse();
+        var ddl = EmitPgsql(modelSetWithMissingTrackedTable);
+        ddl.Should().Contain(StudentViewName);
+        ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
+    }
+
     private static void AssertPeopleViewsUnavailableWithoutMissingAssociations(
         DerivedRelationalModelSet modelSet
     )

@@ -1126,9 +1126,10 @@ The derived model must include SQL-free inventory for:
 - `TrackedChangeDescriptorJoinInfo` entries for descriptor reference paths that must be materialized as `Namespace` and `CodeValue`.
 - `TrackedChangePersonJoinInfo` entries for Student, Contact, and Staff `SecurableElements` paths that must materialize the person resource `DocumentId`.
 - `TriggerKindParameters.ChangeTracking` on the affected `DbTriggerKind.DocumentStamping` trigger inventory entries.
-- `ReadChangesAuthorizationViewInfo` entries for the `*IncludingDeletes` authorization views used by `ReadChanges`.
 
-The model derivation pass owns the semantic decisions: which resources get tracked-change tables, which columns are included, how duplicate canonical columns are de-duplicated, which descriptor/person joins are needed, and which authorization view arms exist. PostgreSQL and SQL Server emitters render this inventory mechanically into tables, triggers, indexes, views, manifests, and fixture outputs. Runtime Change Query SQL planning must consume the same inventory so endpoint selection, authorization, generated DDL, and manifests cannot drift.
+The `*IncludingDeletes` authorization views used by `ReadChanges` are the exception: their `ReadChangesAuthorizationViewInfo` entries are a static structural inventory owned by `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` in `Backend.External`, not part of `DerivedRelationalModelSet`, because their shape never varies with the effective schema (see [compiled-mapping-set.md](compiled-mapping-set.md)). Their emission is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables.
+
+The model derivation pass owns the semantic decisions: which resources get tracked-change tables, which columns are included, how duplicate canonical columns are de-duplicated, and which descriptor/person joins are needed. PostgreSQL and SQL Server emitters render this inventory mechanically into tables, triggers, indexes, views, manifests, and fixture outputs. Runtime Change Query SQL planning must consume the same inventory so endpoint selection, authorization, generated DDL, and manifests cannot drift.
 
 #### `tracked_changes*` tables
 
@@ -1552,7 +1553,7 @@ Additionally, the tracked-changes tables column names include the `Old_` and `Ne
 
 Following the existing DMS authorization approach, the `*IncludingDeletes` authorization views return `DocumentId` columns rather than USIs and are renamed accordingly.
 
-Each `*IncludingDeletes` authorization view is represented by `ReadChangesAuthorizationViewInfo` in the shared derived model. The inventory records the view name, output columns, and ordered union arms over current tables and tracked-change tables. Dialect emitters render the views from that inventory, and runtime authorization/query planning consume the same view metadata when composing `/deletes` and `/keyChanges` authorization predicates.
+Each `*IncludingDeletes` authorization view is represented by `ReadChangesAuthorizationViewInfo` in the static `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` inventory in `Backend.External` — like the people auth views they extend, their shape never varies with the effective schema, so they are not part of `DerivedRelationalModelSet` (see [compiled-mapping-set.md](compiled-mapping-set.md)). The inventory records the view name, output columns, and ordered union arms over current tables and tracked-change tables. Dialect emitters render the views from that inventory, and runtime authorization/query planning consume the same view metadata when composing `/deletes` and `/keyChanges` authorization predicates.
 
 The full inventory of `*IncludingDeletes` views DMS emits:
 - `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes`              
