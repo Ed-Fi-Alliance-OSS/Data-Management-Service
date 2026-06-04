@@ -79,10 +79,10 @@ public class ConfigurationServiceApplicationProvider(
             }
 
             logger.LogDebug(
-                "Successfully fetched application context for clientId: {ClientId}, ApplicationId: {ApplicationId}, DmsInstanceIds: [{DmsInstanceIds}]",
+                "Successfully fetched application context for clientId: {ClientId}, ApplicationId: {ApplicationId}, DataStoreIds: [{DataStoreIds}]",
                 clientId,
                 applicationContext.ApplicationId,
-                string.Join(", ", applicationContext.DmsInstanceIds)
+                string.Join(", ", applicationContext.DataStoreIds)
             );
 
             return applicationContext;

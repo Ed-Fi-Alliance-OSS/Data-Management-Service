@@ -29,19 +29,17 @@ public static class TestMockHelper
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored)).Returns([]);
         services.AddTransient(x => claimSetProvider);
 
-        // Mock IDmsInstanceProvider
-        var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-        var mockInstance = new DmsInstance(1, "Test", "TestInstance", "test-connection-string", []);
-        A.CallTo(() => dmsInstanceProvider.LoadDmsInstances(A<string?>.Ignored)).Returns([mockInstance]);
-        A.CallTo(() => dmsInstanceProvider.LoadTenants()).Returns(new List<string> { "TestTenant" });
-        A.CallTo(() => dmsInstanceProvider.GetAll(A<string?>.Ignored)).Returns([mockInstance]);
-        A.CallTo(() => dmsInstanceProvider.GetById(A<long>.Ignored, A<string?>.Ignored))
-            .Returns(mockInstance);
-        A.CallTo(() => dmsInstanceProvider.IsLoaded(A<string?>.Ignored)).Returns(true);
-        A.CallTo(() => dmsInstanceProvider.TenantExists(A<string>.That.IsNotNull())).Returns(true);
-        A.CallTo(() => dmsInstanceProvider.GetLoadedTenantKeys())
-            .Returns(new List<string> { "" }.AsReadOnly());
-        services.AddTransient(x => dmsInstanceProvider);
+        // Mock IDataStoreProvider
+        var dataStoreProvider = A.Fake<IDataStoreProvider>();
+        var mockInstance = new DataStore(1, "Test", "TestInstance", "test-connection-string", []);
+        A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored)).Returns([mockInstance]);
+        A.CallTo(() => dataStoreProvider.LoadTenants()).Returns(new List<string> { "TestTenant" });
+        A.CallTo(() => dataStoreProvider.GetAll(A<string?>.Ignored)).Returns([mockInstance]);
+        A.CallTo(() => dataStoreProvider.GetById(A<long>.Ignored, A<string?>.Ignored)).Returns(mockInstance);
+        A.CallTo(() => dataStoreProvider.IsLoaded(A<string?>.Ignored)).Returns(true);
+        A.CallTo(() => dataStoreProvider.TenantExists(A<string>.That.IsNotNull())).Returns(true);
+        A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys()).Returns(new List<string> { "" }.AsReadOnly());
+        services.AddTransient(x => dataStoreProvider);
 
         // Mock ITenantValidator
         var tenantValidator = A.Fake<ITenantValidator>();

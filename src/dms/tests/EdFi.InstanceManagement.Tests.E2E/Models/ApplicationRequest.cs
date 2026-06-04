@@ -10,5 +10,5 @@ public record ApplicationRequest(
     string ApplicationName,
     string ClaimSetName,
     int[] EducationOrganizationIds,
-    int[] DmsInstanceIds
+    int[] DataStoreIds
 );

@@ -214,7 +214,7 @@ The existing Application endpoints are extended to support profile assignment:
   "vendorId": 1,
   "claimSetName": "SIS Vendor",
   "educationOrganizationIds": [255901],
-  "dmsInstanceIds": [1],
+  "dataStoreIds": [1],
   "profileIds": [123, 456]
 }
 ```
@@ -228,7 +228,7 @@ The existing Application endpoints are extended to support profile assignment:
   "vendorId": 1,
   "claimSetName": "SIS Vendor",
   "educationOrganizationIds": [255901],
-  "dmsInstanceIds": [1],
+  "dataStoreIds": [1],
   "profileIds": [123, 456]
 }
 ```
@@ -242,7 +242,7 @@ The existing Application endpoints are extended to support profile assignment:
   "vendorId": 1,
   "claimSetName": "SIS Vendor",
   "educationOrganizationIds": [255901],
-  "dmsInstanceIds": [1],
+  "dataStoreIds": [1],
   "profileIds": [123, 456],
   "createdAt": "2025-01-15T10:30:00Z",
   "createdBy": "admin@example.com",

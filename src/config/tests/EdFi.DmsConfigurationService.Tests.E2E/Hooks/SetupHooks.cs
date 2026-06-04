@@ -41,9 +41,9 @@ public static class SetupHooks
             await conn.OpenAsync();
 
             // Delete in reverse dependency order
-            await DeleteData("dmscs.DmsInstanceRouteContext");
-            await DeleteData("dmscs.DmsInstance");
-            await DeleteData("dmscs.ApiClientDmsInstance");
+            await DeleteData("dmscs.DataStoreContext");
+            await DeleteData("dmscs.DataStore");
+            await DeleteData("dmscs.ApiClientDataStore");
             await DeleteData("dmscs.ApiClient");
             await DeleteData("dmscs.Application");
             await DeleteData("dmscs.Vendor");

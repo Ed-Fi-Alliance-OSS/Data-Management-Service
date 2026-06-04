@@ -411,12 +411,12 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteCreateBaseline",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteCreateBaseline",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -461,7 +461,7 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
         services.AddSingleton<IHostApplicationLifetime, NoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();

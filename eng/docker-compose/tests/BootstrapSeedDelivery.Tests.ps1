@@ -120,7 +120,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         }
 
         # Dot-source the production seed script to expose its helpers (Resolve-SeedSource,
-        # Initialize-CoreSeedSource, New-SeedWorkspace, Get-SeedFileTargetName, Resolve-SeedTargetInstances,
+        # Initialize-CoreSeedSource, New-SeedWorkspace, Get-SeedFileTargetName, Resolve-SeedTargetDataStores,
         # Get-SeedXsdDirectory, Invoke-BulkLoadClient, etc.). The orchestration block is guarded
         # against dot-sourcing via the InvocationName check at the bottom of the script.
         Import-Module "$script:sourceDockerComposeRoot/bootstrap-manifest.psm1" -Force
@@ -188,8 +188,8 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             } | Should -Throw -ExpectedMessage "*mutually exclusive*"
         }
 
-        It "rejects both InstanceId and SchoolYear when supplied together" {
-            # Regression: passing -InstanceId @(7) -SchoolYear @(2024) would short-circuit instance
+        It "rejects both DataStoreId and SchoolYear when supplied together" {
+            # Regression: passing -DataStoreId @(7) -SchoolYear @(2024) would short-circuit instance
             # selection to id 7 but the orchestrator loop still iterated $SchoolYear, building
             # /{year} URLs that routed to whichever instance had the matching route context - not
             # instance 7. The credentials and the URL silently disagreed.
@@ -201,17 +201,17 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             {
                 Assert-SeedSelectionInputs `
                     -Manifest $manifest `
-                    -InstanceId @(7) `
+                    -DataStoreId @(7) `
                     -SchoolYear @(2024)
-            } | Should -Throw -ExpectedMessage "*-InstanceId and -SchoolYear are mutually exclusive*"
+            } | Should -Throw -ExpectedMessage "*-DataStoreId and -SchoolYear are mutually exclusive*"
 
             # Each in isolation is still accepted
-            { Assert-SeedSelectionInputs -Manifest $manifest -InstanceId @(7) } | Should -Not -Throw
+            { Assert-SeedSelectionInputs -Manifest $manifest -DataStoreId @(7) } | Should -Not -Throw
             { Assert-SeedSelectionInputs -Manifest $manifest -SchoolYear @(2024) } | Should -Not -Throw
         }
 
-        It "rejects multiple -InstanceId values because the unqualified path cannot disambiguate" {
-            # Regression: -InstanceId @(1,2) flowed through Resolve-SeedTargetInstances as a 2-id array,
+        It "rejects multiple -DataStoreId values because the unqualified path cannot disambiguate" {
+            # Regression: -DataStoreId @(1,2) flowed through Resolve-SeedTargetDataStores as a 2-id array,
             # New-SeedLoaderCredentials minted one credential authorized for both, and the orchestrator's
             # non-SchoolYear branch issued a single bulk-load pass against the unqualified base URL.
             # DMS cannot pick between two authorized instances without a route qualifier in the URL.
@@ -222,13 +222,13 @@ Describe "DMS-1152 API seed delivery bootstrap" {
 
             $thrown = $null
             try {
-                Assert-SeedSelectionInputs -Manifest $manifest -InstanceId @(1, 2)
+                Assert-SeedSelectionInputs -Manifest $manifest -DataStoreId @(1, 2)
             }
             catch {
                 $thrown = $_.Exception.Message
             }
             $thrown | Should -Not -BeNullOrEmpty
-            $thrown | Should -Match "Multiple -InstanceId values"
+            $thrown | Should -Match "Multiple -DataStoreId values"
             $thrown | Should -Match "1, 2"
         }
 
@@ -1612,142 +1612,142 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
                 Should -Be "$base/Tenant1/2024"
         }
 
-        It "selects DMS instances via explicit InstanceId, SchoolYear matching, or single auto-select" {
-            # Explicit InstanceId now does a CMS lookup so it can verify the instance is route-unqualified
-            # (see "rejects -InstanceId targeting a route-qualified instance" below).
-            function script:Get-DmsInstances {
+        It "selects data stores via explicit DataStoreId, SchoolYear matching, or single auto-select" {
+            # Explicit DataStoreId now does a CMS lookup so it can verify the instance is route-unqualified
+            # (see "rejects -DataStoreId targeting a route-qualified instance" below).
+            function script:Get-DataStore {
                 @(
-                    [pscustomobject]@{ id = [long]42; instanceName = "A"; dmsInstanceRouteContexts = @() },
-                    [pscustomobject]@{ id = [long]99; instanceName = "B"; dmsInstanceRouteContexts = @() }
+                    [pscustomobject]@{ id = [long]42; name          = "A"; dataStoreContexts     = @() },
+                    [pscustomobject]@{ id = [long]99; name          = "B"; dataStoreContexts     = @() }
                 )
             }
             try {
-                $result = Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" -InstanceId @(42, 99)
-                $result.InstanceIds | Should -Be @([long]42, [long]99)
+                $result = Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(42, 99)
+                $result.DataStoreIds | Should -Be @([long]42, [long]99)
             }
             finally {
-                Remove-Item function:script:Get-DmsInstances -ErrorAction SilentlyContinue
+                Remove-Item function:script:Get-DataStore -ErrorAction SilentlyContinue
             }
 
-            # SchoolYear matching: shadow Get-DmsInstances with a script-scope function so the
-            # dot-sourced Resolve-SeedTargetInstances picks up the test stub via standard lookup.
-            function script:Get-DmsInstances {
+            # SchoolYear matching: shadow Get-DataStore with a script-scope function so the
+            # dot-sourced Resolve-SeedTargetDataStores picks up the test stub via standard lookup.
+            function script:Get-DataStore {
                 @(
                     [pscustomobject]@{
                         id = [long]7
-                        instanceName = "Year 2024"
-                        dmsInstanceRouteContexts = @(
+                        name          = "Year 2024"
+                        dataStoreContexts     = @(
                             [pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" }
                         )
                     },
                     [pscustomobject]@{
                         id = [long]8
-                        instanceName = "Year 2025"
-                        dmsInstanceRouteContexts = @(
+                        name          = "Year 2025"
+                        dataStoreContexts     = @(
                             [pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2025" }
                         )
                     }
                 )
             }
             try {
-                $result = Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" -SchoolYear @(2024)
-                $result.InstanceIds | Should -Be @([long]7)
+                $result = Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -SchoolYear @(2024)
+                $result.DataStoreIds | Should -Be @([long]7)
 
                 # Single instance auto-selects
-                function script:Get-DmsInstances {
-                    @([pscustomobject]@{ id = [long]5; instanceName = "Single"; dmsInstanceRouteContexts = @() })
+                function script:Get-DataStore {
+                    @([pscustomobject]@{ id = [long]5; name          = "Single"; dataStoreContexts     = @() })
                 }
-                $result = Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused"
-                $result.InstanceIds | Should -Be @([long]5)
+                $result = Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused"
+                $result.DataStoreIds | Should -Be @([long]5)
             }
             finally {
-                Remove-Item function:script:Get-DmsInstances -ErrorAction SilentlyContinue
+                Remove-Item function:script:Get-DataStore -ErrorAction SilentlyContinue
             }
         }
 
-        It "rejects -InstanceId targeting a route-qualified instance or an unknown id" {
+        It "rejects -DataStoreId targeting a route-qualified instance or an unknown id" {
             # DMS rejects requests whose URL qualifier count doesn't match the instance's route
-            # contexts; -InstanceId alone can't produce the qualifier values, so the seed phase must
+            # contexts; -DataStoreId alone can't produce the qualifier values, so the seed phase must
             # surface this at validation rather than at the first BulkLoadClient POST.
-            function script:Get-DmsInstances {
+            function script:Get-DataStore {
                 @(
                     [pscustomobject]@{
                         id = [long]11
-                        instanceName = "Route-qualified"
-                        dmsInstanceRouteContexts = @(
+                        name          = "Route-qualified"
+                        dataStoreContexts     = @(
                             [pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2026" }
                         )
                     },
                     [pscustomobject]@{
                         id = [long]12
-                        instanceName = "Plain"
-                        dmsInstanceRouteContexts = @()
+                        name          = "Plain"
+                        dataStoreContexts     = @()
                     }
                 )
             }
             try {
-                { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" -InstanceId @(11) } |
+                { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(11) } |
                     Should -Throw -ExpectedMessage "*route context*schoolYear*"
-                { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" -InstanceId @(999) } |
+                { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(999) } |
                     Should -Throw -ExpectedMessage "*was not found in CMS*"
 
                 # Plain instance still resolves
-                $result = Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" -InstanceId @(12)
-                $result.InstanceIds | Should -Be @([long]12)
+                $result = Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(12)
+                $result.DataStoreIds | Should -Be @([long]12)
             }
             finally {
-                Remove-Item function:script:Get-DmsInstances -ErrorAction SilentlyContinue
+                Remove-Item function:script:Get-DataStore -ErrorAction SilentlyContinue
             }
         }
 
         It "rejects auto-select when the single instance carries a route context" {
-            # Symmetric to the explicit -InstanceId route-qualified rejection: a route-qualified
+            # Symmetric to the explicit -DataStoreId route-qualified rejection: a route-qualified
             # instance cannot be auto-selected because the orchestrator's single-instance branch
             # posts to {base}[/{tenant}] without composing the required qualifier segments.
-            function script:Get-DmsInstances {
+            function script:Get-DataStore {
                 @(
                     [pscustomobject]@{
                         id = [long]42
-                        instanceName = "Year 2024"
-                        dmsInstanceRouteContexts = @(
+                        name          = "Year 2024"
+                        dataStoreContexts     = @(
                             [pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2024" }
                         )
                     }
                 )
             }
             try {
-                { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" } |
-                    Should -Throw -ExpectedMessage "*Single DMS instance*route context*schoolYear*"
+                { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" } |
+                    Should -Throw -ExpectedMessage "*Single data store*route context*schoolYear*"
             }
             finally {
-                Remove-Item function:script:Get-DmsInstances -ErrorAction SilentlyContinue
+                Remove-Item function:script:Get-DataStore -ErrorAction SilentlyContinue
             }
         }
 
         It "fails when no selector resolves or multiple instances match without explicit selection" {
             try {
                 # Zero instances, no selector.
-                function script:Get-DmsInstances { @() }
-                { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" } | Should -Throw -ExpectedMessage "*No DMS instances*"
+                function script:Get-DataStore { @() }
+                { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" } | Should -Throw -ExpectedMessage "*No DMS data stores*"
 
                 # Multiple instances, no selector.
-                function script:Get-DmsInstances {
+                function script:Get-DataStore {
                     @(
-                        [pscustomobject]@{ id = [long]1; instanceName = "A"; dmsInstanceRouteContexts = @() },
-                        [pscustomobject]@{ id = [long]2; instanceName = "B"; dmsInstanceRouteContexts = @() }
+                        [pscustomobject]@{ id = [long]1; name          = "A"; dataStoreContexts     = @() },
+                        [pscustomobject]@{ id = [long]2; name          = "B"; dataStoreContexts     = @() }
                     )
                 }
-                { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" } | Should -Throw -ExpectedMessage "*Multiple DMS instances*"
+                { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" } | Should -Throw -ExpectedMessage "*Multiple data stores*"
 
                 # SchoolYear with no matching instance
-                { Resolve-SeedTargetInstances -CmsUrl "http://unused" -AccessToken "unused" -SchoolYear @(2099) } | Should -Throw -ExpectedMessage "*No DMS instance found*schoolYear*2099*"
+                { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -SchoolYear @(2099) } | Should -Throw -ExpectedMessage "*No data store found*schoolYear*2099*"
             }
             finally {
-                Remove-Item function:script:Get-DmsInstances -ErrorAction SilentlyContinue
+                Remove-Item function:script:Get-DataStore -ErrorAction SilentlyContinue
             }
         }
 
-        It "orchestrator reads CONFIG_SERVICE_TENANT from env and forwards it to Resolve-SeedTargetInstances and New-SeedLoaderCredentials" {
+        It "orchestrator reads CONFIG_SERVICE_TENANT from env and forwards it to Resolve-SeedTargetDataStores and New-SeedLoaderCredentials" {
             # Regression: a prior implementation never read CONFIG_SERVICE_TENANT from envValues,
             # so in multi-tenant local stacks the seed flow could not see tenant-scoped instances
             # and created seed credentials in the wrong tenant context.
@@ -1755,7 +1755,7 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             $content = Get-Content -LiteralPath $scriptPath -Raw
 
             $content | Should -Match '\$tenant\s*=.*CONFIG_SERVICE_TENANT'
-            $content | Should -Match '(?s)Resolve-SeedTargetInstances\b[^#]*?-Tenant\s+\$tenant'
+            $content | Should -Match '(?s)Resolve-SeedTargetDataStores\b[^#]*?-Tenant\s+\$tenant'
             $content | Should -Match '(?s)New-SeedLoaderCredentials\b[^#]*?-Tenant\s+\$tenant'
         }
 
@@ -2257,7 +2257,7 @@ EdFi.BulkLoadClient.Console fake
             $declaredParams | Should -Not -Contain "LoadSeedData"
         }
 
-        It "bootstrap-local-dms.ps1 declares -LoadSeedData and seed-owned flags without exposing -InstanceId" {
+        It "bootstrap-local-dms.ps1 declares -LoadSeedData and seed-owned flags without exposing -DataStoreId" {
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             Test-Path -LiteralPath $wrapperScript | Should -BeTrue
 
@@ -2272,7 +2272,7 @@ EdFi.BulkLoadClient.Console fake
             $wrapperParams | Should -Contain "AdditionalNamespacePrefix"
             $wrapperParams | Should -Contain "IdentityProvider"
             $wrapperParams | Should -Contain "EnvironmentFile"
-            $wrapperParams | Should -Not -Contain "InstanceId"
+            $wrapperParams | Should -Not -Contain "DataStoreId"
         }
 
         It "bootstrap-local-dms.ps1 gates the seed phase on -LoadSeedData" {
@@ -2579,7 +2579,7 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "bootstrap-published-dms.ps1 declares -LoadSeedData and seed-owned flags without exposing -InstanceId" {
+        It "bootstrap-published-dms.ps1 declares -LoadSeedData and seed-owned flags without exposing -DataStoreId" {
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
             Test-Path -LiteralPath $wrapperScript | Should -BeTrue
 
@@ -2596,7 +2596,7 @@ EdFi.BulkLoadClient.Console fake
             $wrapperParams | Should -Contain "EnvironmentFile"
             $wrapperParams | Should -Contain "EnableConfig"
             $wrapperParams | Should -Contain "AddExtensionSecurityMetadata"
-            $wrapperParams | Should -Not -Contain "InstanceId"
+            $wrapperParams | Should -Not -Contain "DataStoreId"
         }
 
         It "bootstrap-published-dms.ps1 gates the seed phase on -LoadSeedData" {

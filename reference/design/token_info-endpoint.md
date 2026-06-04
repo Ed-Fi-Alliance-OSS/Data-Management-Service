@@ -118,7 +118,7 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
   "client_name": "For ed orgs",
   "permission": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
   "http://schemas.microsoft.com/ws/2008/06/identity/claims/role": ["dms-client"],
-  "dmsInstanceIds": "2"
+  "dataStoreIds": "2"
 }
 ```
 
@@ -209,7 +209,7 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
   "typ": "Bearer",
   "azp": "5296a732-b986-44b6-b48c-2d5e1fcbb5c0",
   "scope": "EdFiSandbox",
-  "dmsInstanceIds": "2",
+  "dataStoreIds": "2",
   "clientHost": "172.19.0.1",
   "namespacePrefixes": "uri://ed-fi.org",
   "educationOrganizationIds": "255,255901",

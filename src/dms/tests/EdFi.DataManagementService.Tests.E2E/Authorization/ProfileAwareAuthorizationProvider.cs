@@ -65,8 +65,8 @@ public static class ProfileAwareAuthorizationProvider
             systemAdministratorToken
         );
 
-        // Create DmsInstance first
-        int dmsInstanceId = await CreateDmsInstance();
+        // Create DataStore first
+        int dataStoreId = await CreateDataStore();
 
         // Create vendor
         int vendorId = await CreateVendor(company, contactName, contactEmailAddress, namespacePrefixes);
@@ -78,7 +78,7 @@ public static class ProfileAwareAuthorizationProvider
         long[] educationOrganizationIds = ParseEducationOrganizationIds(edOrgIds);
 
         // Create application with profiles
-        await CreateApplication(vendorId, claimSetName, educationOrganizationIds, dmsInstanceId, profileIds);
+        await CreateApplication(vendorId, claimSetName, educationOrganizationIds, dataStoreId, profileIds);
     }
 
     /// <summary>
@@ -222,23 +222,23 @@ public static class ProfileAwareAuthorizationProvider
         return accessTokenProperty.GetString() ?? "";
     }
 
-    private static async Task<int> CreateDmsInstance()
+    private static async Task<int> CreateDataStore()
     {
-        var dmsInstanceRequest = new
+        var dataStoreRequest = new
         {
-            instanceType = "Test",
-            instanceName = $"E2E Profile Test DMS Instance {Guid.NewGuid():N}",
-            connectionString = DmsInstanceConnectionStringProvider.Create(),
+            dataStoreType = "Test",
+            name = $"E2E Profile Test Data Store {Guid.NewGuid():N}",
+            connectionString = DataStoreConnectionStringProvider.Create(),
         };
 
         using StringContent content = new(
-            JsonSerializer.Serialize(dmsInstanceRequest),
+            JsonSerializer.Serialize(dataStoreRequest),
             Encoding.UTF8,
             "application/json"
         );
 
         using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
-            "v2/dmsInstances",
+            "v2/dataStores",
             content
         );
 
@@ -337,7 +337,7 @@ public static class ProfileAwareAuthorizationProvider
         int vendorId,
         string claimSetName,
         long[] educationOrganizationIds,
-        int dmsInstanceId,
+        int dataStoreId,
         int[] profileIds
     )
     {
@@ -351,7 +351,7 @@ public static class ProfileAwareAuthorizationProvider
                 applicationName = $"E2E Profile Test {Guid.NewGuid():N}",
                 claimSetName,
                 educationOrganizationIds,
-                dmsInstanceIds = new[] { dmsInstanceId },
+                dataStoreIds = new[] { dataStoreId },
                 profileIds,
             };
         }
@@ -363,7 +363,7 @@ public static class ProfileAwareAuthorizationProvider
                 applicationName = $"E2E Profile Test {Guid.NewGuid():N}",
                 claimSetName,
                 educationOrganizationIds,
-                dmsInstanceIds = new[] { dmsInstanceId },
+                dataStoreIds = new[] { dataStoreId },
             };
         }
 

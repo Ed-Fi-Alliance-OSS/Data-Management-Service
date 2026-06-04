@@ -48,7 +48,7 @@ successor story.
   running DMS host or already-provisioned database may still depend on.
 - The schema files hashed in bootstrap are the same files later read by Docker-hosted DMS and by
   IDE-hosted DMS.
-- Bootstrap derives the target databases from the DMS instances selected or created for the run.
+- Bootstrap derives the target databases from the data stores selected or created for the run.
 - After target selection, `provision-dms-schema.ps1` always invokes the authoritative
   SchemaTools/runtime-owned provisioning and validation path against those targets before any DMS process
   is expected to serve requests.
@@ -82,9 +82,9 @@ successor story.
 
 ## Tasks
 
-1. Supply `provision-dms-schema.ps1` with target instance details from `configure-local-dms-instance.ps1`:
-   within a single wrapper invocation, accept in-memory instance IDs forwarded by `bootstrap-local-dms.ps1`;
-   in a manual phase flow, resolve target instances through explicit `-InstanceId <long[]>` or
+1. Supply `provision-dms-schema.ps1` with target data store details from `configure-local-data-store.ps1`:
+   within a single wrapper invocation, accept in-memory data store IDs forwarded by `bootstrap-local-dms.ps1`;
+   in a manual phase flow, resolve target data stores through explicit `-DataStoreId <long[]>` or
    `-SchoolYear <int[]>` selectors via CMS-backed lookup (auto-select when exactly one match, fail fast
    on zero or multiple without an explicit selector). The CMS-backed lookup and database connection defaults
    come from the shared `-EnvironmentFile` local-settings resolver. Supply the staged schema context produced by

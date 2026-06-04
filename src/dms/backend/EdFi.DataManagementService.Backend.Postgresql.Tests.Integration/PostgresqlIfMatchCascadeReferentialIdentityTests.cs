@@ -110,7 +110,7 @@ file static class PostgresqlIfMatchCascadeReferentialIdentityTestSupport
         services.AddSingleton<IHostApplicationLifetime, PostgresqlIfMatchCascadeHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
@@ -436,12 +436,12 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlIfMatchCascadeReferentialIdentity",
+                    DataStoreType: "test",
+                    Name: "PostgresqlIfMatchCascadeReferentialIdentity",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

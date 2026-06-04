@@ -116,22 +116,22 @@ Feature: OWASP critical attack path protections
              Then it should respond with 404 or 405
 
         Scenario: 14 SQL injection payload in JSON body id field is rejected
-             When a POST request is made to "/v2/dmsInstances" with
+             When a POST request is made to "/v2/dataStores" with
                   """
                   {
-                    "instanceType": "Test",
-                    "instanceName": "SQLi JSON Validation",
+                    "dataStoreType": "Test",
+                    "name": "SQLi JSON Validation",
                     "connectionString": "Server=sqlijson;Database=SqliJsonDb;"
                   }
                   """
              Then it should respond with 201
 
-             When a PUT request is made to "/v2/dmsInstances/{dmsInstanceId}" with
+             When a PUT request is made to "/v2/dataStores/{dataStoreId}" with
                   """
                   {
-                    "id": "'; DROP TABLE dmscs.DmsInstance; --",
-                    "instanceType": "Test",
-                    "instanceName": "SQLi JSON Validation Updated",
+                    "id": "'; DROP TABLE dmscs.DataStore; --",
+                    "dataStoreType": "Test",
+                    "name": "SQLi JSON Validation Updated",
                     "connectionString": "Server=sqlijson;Database=SqliJsonDb;"
                   }
                   """

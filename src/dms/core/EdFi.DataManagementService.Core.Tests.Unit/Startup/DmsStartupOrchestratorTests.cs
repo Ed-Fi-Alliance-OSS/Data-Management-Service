@@ -345,7 +345,7 @@ public class DmsStartupOrchestratorTests
     private static CacheClaimSetsTask CreateClaimSetsTask(IClaimSetProvider claimSetProvider) =>
         new(
             claimSetProvider,
-            A.Fake<IDmsInstanceProvider>(),
+            A.Fake<IDataStoreProvider>(),
             Options.Create(AuthAppSettings(multiTenancy: false)),
             NullLogger<CacheClaimSetsTask>.Instance
         );

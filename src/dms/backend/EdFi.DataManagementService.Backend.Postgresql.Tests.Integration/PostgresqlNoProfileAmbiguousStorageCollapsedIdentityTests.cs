@@ -169,12 +169,12 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlNoProfileAmbiguousStorageCollapsed",
+                    DataStoreType: "test",
+                    Name: "PostgresqlNoProfileAmbiguousStorageCollapsed",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -223,7 +223,7 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
         >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();

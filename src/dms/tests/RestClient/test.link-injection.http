@@ -94,19 +94,19 @@ Authorization: bearer {{configToken}}
 @vendorId={{getVendor.response.body.id}}
 
 ### 1.3 Create a DMS instance pointing at the RELATIONAL database
-# @name createDmsInstance
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStore
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "instanceType": "Test",
-    "instanceName": "DMS-1145 Link Injection Instance",
+    "dataStoreType": "Test",
+    "name": "DMS-1145 Link Injection Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password={{postgresPassword}};database={{relationalDbName}};"
 }
 
 ###
-@dmsInstanceId={{createDmsInstance.response.body.id}}
+@dataStoreId={{createDataStore.response.body.id}}
 
 ### 1.4 Create an application with NoFurtherAuthorizationRequired
 # (matches the E2E relational-backend lane; avoids namespace-authz noise for the demo)
@@ -120,7 +120,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "DMS-1145 Link Injection Demo",
     "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
     "educationOrganizationIds": [ 255, 255901 ],
-    "dmsInstanceIds": [ {{dmsInstanceId}} ]
+    "dataStoreIds": [ {{dataStoreId}} ]
 }
 
 ###

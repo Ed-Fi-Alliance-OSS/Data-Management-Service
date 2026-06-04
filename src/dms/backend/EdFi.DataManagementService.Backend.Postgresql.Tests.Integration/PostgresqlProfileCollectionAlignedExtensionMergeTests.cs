@@ -139,7 +139,7 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
         >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -194,12 +194,12 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileCollectionAlignedExtension",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileCollectionAlignedExtension",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -236,12 +236,12 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileCollectionAlignedExtension",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileCollectionAlignedExtension",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -279,12 +279,12 @@ internal static class PostgresqlProfileCollectionAlignedExtensionSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileCollectionAlignedExtension",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileCollectionAlignedExtension",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )

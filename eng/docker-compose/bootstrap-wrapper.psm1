@@ -172,15 +172,14 @@ function Resolve-WrapperIdentityProvider {
     return "self-contained"
 }
 
-function Resolve-WrapperSelectedInstanceIds {
+function Resolve-WrapperSelectedDataStoreIds {
     <#
     .SYNOPSIS
-    Extracts the configured DMS instance ids from configure-local-dms-instance.ps1's
-    structured result, preferring the documented SelectedInstanceIds property and falling
-    back to the legacy InstanceIds alias so the wrapper stays compatible with both shapes
-    during the transition. See command-boundaries.md Section 3.4.
+    Extracts the configured data store ids from configure-local-data-store.ps1's
+    structured result, preferring the documented SelectedDataStoreIds property and falling
+    back to DataStoreIds. See command-boundaries.md Section 3.4.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Helper returns a collection of instance ids; the plural noun is the documented contract.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Helper returns a collection of data store ids; the plural noun is the documented contract.')]
     param(
         [Parameter(Mandatory)]
         $ConfigureResult
@@ -190,7 +189,7 @@ function Resolve-WrapperSelectedInstanceIds {
         return [long[]]@()
     }
 
-    foreach ($name in @("SelectedInstanceIds", "InstanceIds")) {
+    foreach ($name in @("SelectedDataStoreIds", "DataStoreIds")) {
         if ($ConfigureResult -is [System.Collections.IDictionary]) {
             if ($ConfigureResult.Contains($name)) {
                 $value = $ConfigureResult[$name]
@@ -207,7 +206,7 @@ function Resolve-WrapperSelectedInstanceIds {
         }
     }
 
-    throw "configure-local-dms-instance.ps1 result is missing SelectedInstanceIds (and the legacy InstanceIds alias)."
+    throw "configure-local-data-store.ps1 result is missing SelectedDataStoreIds (and the DataStoreIds alias)."
 }
 
 function Invoke-BootstrapWrapper {
@@ -244,7 +243,7 @@ function Invoke-BootstrapWrapper {
 
         [Switch]$AddExtensionSecurityMetadata,
 
-        [Switch]$NoDmsInstance,
+        [Switch]$NoDataStore,
 
         [Switch]$AddSmokeTestCredentials,
 
@@ -373,7 +372,7 @@ function Invoke-BootstrapWrapper {
             throw "$StartScriptName failed with exit code $LASTEXITCODE."
         }
 
-        $configureScriptPath = "$PSScriptRoot/configure-local-dms-instance.ps1"
+        $configureScriptPath = "$PSScriptRoot/configure-local-data-store.ps1"
         $provisionScriptPath = "$PSScriptRoot/provision-dms-schema.ps1"
         if (-not (Test-Path -LiteralPath $configureScriptPath) -or -not (Test-Path -LiteralPath $provisionScriptPath)) {
             # Isolated wrapper Pester fixtures copy only the wrapper and stub phase scripts. The
@@ -398,27 +397,27 @@ function Invoke-BootstrapWrapper {
         }
 
         $configureArgs = @{ EnvironmentFile = $effectiveEnvFile }
-        if ($NoDmsInstance) { $configureArgs.NoDmsInstance = $true }
+        if ($NoDataStore) { $configureArgs.NoDataStore = $true }
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
 
-        # configure-local-dms-instance.ps1 throws on failure (no exit code); clear any stale native exit code first.
+        # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
-        $configurationResult = & "$PSScriptRoot/configure-local-dms-instance.ps1" @configureArgs
+        $configurationResult = & "$PSScriptRoot/configure-local-data-store.ps1" @configureArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-            throw "configure-local-dms-instance.ps1 failed with exit code $LASTEXITCODE."
+            throw "configure-local-data-store.ps1 failed with exit code $LASTEXITCODE."
         }
 
         $configurationResults = @($configurationResult)
         if ($configurationResults.Count -ne 1) {
-            throw "configure-local-dms-instance.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
+            throw "configure-local-data-store.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
         }
         $configured = $configurationResults[0]
-        $configuredInstanceIds = [long[]]@(Resolve-WrapperSelectedInstanceIds -ConfigureResult $configured)
+        $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
 
         $provisionArgs = @{
             EnvironmentFile = $effectiveEnvFile
-            InstanceId = $configuredInstanceIds
+            DataStoreId = $configuredDataStoreIds
         }
 
         # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
@@ -457,8 +456,8 @@ function Invoke-BootstrapWrapper {
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
             $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
         }
-        elseif (-not $configured.HasRouteQualifiedInstances -and $configuredInstanceIds.Count -eq 1) {
-            $seedArgs.InstanceId = [long[]]@([long]$configuredInstanceIds[0])
+        elseif (-not $configured.HasRouteQualifiedDataStores -and $configuredDataStoreIds.Count -eq 1) {
+            $seedArgs.DataStoreId = [long[]]@([long]$configuredDataStoreIds[0])
         }
 
         & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
@@ -471,4 +470,4 @@ function Invoke-BootstrapWrapper {
     }
 }
 
-Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedInstanceIds
+Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedDataStoreIds

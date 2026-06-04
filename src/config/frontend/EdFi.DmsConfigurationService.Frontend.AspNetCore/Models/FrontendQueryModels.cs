@@ -125,24 +125,24 @@ public class FrontendApiClientQuery : FrontendPagingQuery
     public ApiClientQuery ToQuery() => ApplyPagingTo(new ApiClientQuery { ApplicationId = ApplicationId });
 }
 
-public class FrontendDmsInstanceQuery : FrontendPagingQuery
+public class FrontendDataStoreQuery : FrontendPagingQuery
 {
     [FromQuery(Name = "id")]
     public long? Id { get; set; }
 
-    [FromQuery(Name = "instanceName")]
-    public string? InstanceName { get; set; }
+    [FromQuery(Name = "name")]
+    public string? Name { get; set; }
 
-    [FromQuery(Name = "instanceType")]
-    public string? InstanceType { get; set; }
+    [FromQuery(Name = "dataStoreType")]
+    public string? DataStoreType { get; set; }
 
-    public DmsInstanceQuery ToQuery() =>
+    public DataStoreQuery ToQuery() =>
         ApplyPagingTo(
-            new DmsInstanceQuery
+            new DataStoreQuery
             {
                 Id = Id,
-                InstanceName = InstanceName,
-                InstanceType = InstanceType,
+                Name = Name,
+                DataStoreType = DataStoreType,
             }
         );
 }

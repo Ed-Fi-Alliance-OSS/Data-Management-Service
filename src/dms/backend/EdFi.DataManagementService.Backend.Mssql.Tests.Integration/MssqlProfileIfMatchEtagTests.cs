@@ -82,7 +82,7 @@ file static class MssqlProfileIfMatchEtagTestSupport
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddNoOpDocumentLinkSlugResolver();
@@ -293,12 +293,12 @@ file static class MssqlProfileIfMatchEtagTestSupport
     private static void SetSelectedInstance(IServiceProvider serviceProvider, string connectionString)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileIfMatchEtag",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileIfMatchEtag",
                     ConnectionString: connectionString,
                     RouteContext: []
                 )

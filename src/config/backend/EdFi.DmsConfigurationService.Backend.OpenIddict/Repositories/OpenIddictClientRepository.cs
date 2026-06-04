@@ -94,15 +94,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         }
 
         /// <summary>
-        /// Updates or adds the dmsInstanceIds claim in the protocol mappers JSON.
+        /// Updates or adds the dataStoreIds claim in the protocol mappers JSON.
         /// </summary>
         /// <param name="existingProtocolMappersJson">Existing protocol mappers JSON string.</param>
-        /// <param name="dmsInstanceIds">Array of DMS instance IDs.</param>
+        /// <param name="dataStoreIds">Array of data store IDs.</param>
         /// <returns>Updated protocol mappers JSON string.</returns>
-        private static string MergeDmsInstanceIdsClaim(
-            string existingProtocolMappersJson,
-            long[] dmsInstanceIds
-        )
+        private static string MergeDataStoreIdsClaim(string existingProtocolMappersJson, long[] dataStoreIds)
         {
             List<Dictionary<string, string>> protocolMappers = new();
             if (!string.IsNullOrWhiteSpace(existingProtocolMappersJson))
@@ -119,13 +116,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     protocolMappers = new List<Dictionary<string, string>>();
                 }
             }
-            // Remove any existing dmsInstanceIds claim
-            protocolMappers.RemoveAll(m =>
-                m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds"
-            );
-            // Add the updated dmsInstanceIds claim as sorted comma-separated string
-            var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
-            protocolMappers.Add(ClientClaimHelper.CreateDmsInstanceIdsClaim(sortedInstanceIds));
+            // Remove any existing dataStoreIds claim
+            protocolMappers.RemoveAll(m => m.ContainsKey("claim.name") && m["claim.name"] == "dataStoreIds");
+            // Add the updated dataStoreIds claim as sorted comma-separated string
+            var sortedDataStoreIds = string.Join(",", dataStoreIds.OrderBy(id => id));
+            protocolMappers.Add(ClientClaimHelper.CreateDataStoreIdsClaim(sortedDataStoreIds));
             return JsonSerializer.Serialize(protocolMappers);
         }
 
@@ -137,7 +132,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string scope,
             string namespacePrefixes,
             string educationOrganizationIds,
-            long[]? dmsInstanceIds = null,
+            long[]? dataStoreIds = null,
             // isApproved is intentionally unused here: for the OpenIddict backend the approval gate is
             // enforced in OpenIddictTokenManager which reads BOOL_AND(ApiClient.IsApproved) from the
             // database; this repository only manages the OpenIddictApplication record. For the Keycloak
@@ -175,11 +170,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     educationOrgClaim,
                 };
 
-                // Add dmsInstanceIds claim if provided
-                if (dmsInstanceIds != null)
+                // Add dataStoreIds claim if provided
+                if (dataStoreIds != null)
                 {
-                    var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
-                    protocolMappers.Add(ClientClaimHelper.CreateDmsInstanceIdsClaim(sortedInstanceIds));
+                    var sortedDataStoreIds = string.Join(",", dataStoreIds.OrderBy(id => id));
+                    protocolMappers.Add(ClientClaimHelper.CreateDataStoreIdsClaim(sortedDataStoreIds));
                 }
 
                 // Hash the client secret for secure storage
@@ -256,7 +251,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string displayName,
             string scope,
             string educationOrganizationIds,
-            long[]? dmsInstanceIds = null,
+            long[]? dataStoreIds = null,
             // isApproved is intentionally unused here: for the OpenIddict backend the approval gate is
             // enforced in OpenIddictTokenManager which reads BOOL_AND(ApiClient.IsApproved) from the
             // database; this repository only manages the OpenIddictApplication record. For the Keycloak
@@ -290,10 +285,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     educationOrganizationIds
                 );
 
-                // Merge the dmsInstanceIds claim with existing protocol mappers if provided
-                if (dmsInstanceIds != null)
+                // Merge the dataStoreIds claim with existing protocol mappers if provided
+                if (dataStoreIds != null)
                 {
-                    protocolMappersJson = MergeDmsInstanceIdsClaim(protocolMappersJson, dmsInstanceIds);
+                    protocolMappersJson = MergeDataStoreIdsClaim(protocolMappersJson, dataStoreIds);
                 }
 
                 var permissions =

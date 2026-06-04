@@ -135,11 +135,11 @@ internal class JwtValidationService(
                 .ToList()
             ?? [];
 
-        List<DmsInstanceId> dmsInstanceIds =
+        List<DataStoreId> dataStoreIds =
             claims
-                .Find(c => c.Type == "dmsInstanceIds")
+                .Find(c => c.Type == "dataStoreIds")
                 ?.Value.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                .Select(id => new DmsInstanceId(long.Parse(id)))
+                .Select(id => new DataStoreId(long.Parse(id)))
                 .ToList()
             ?? [];
 
@@ -149,7 +149,7 @@ internal class JwtValidationService(
             ClaimSetName: claimSetName,
             EducationOrganizationIds: educationOrganizationIds,
             NamespacePrefixes: namespacePrefixes.Select(np => new NamespacePrefix(np)).ToList(),
-            DmsInstanceIds: dmsInstanceIds
+            DataStoreIds: dataStoreIds
         );
     }
 }

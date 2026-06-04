@@ -6,17 +6,17 @@
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Provides database connection strings for DMS instances
+/// Provides database connection strings for data stores
 /// </summary>
 public interface IConnectionStringProvider
 {
     /// <summary>
-    /// Gets the database connection string for the specified DMS instance ID
+    /// Gets the database connection string for the specified data store ID
     /// </summary>
-    /// <param name="dmsInstanceId">The DMS instance ID</param>
+    /// <param name="dataStoreId">The data store ID</param>
     /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
     /// <returns>The connection string for the instance, or null if not found</returns>
-    string? GetConnectionString(long dmsInstanceId, string? tenant = null);
+    string? GetConnectionString(long dataStoreId, string? tenant = null);
 
     /// <summary>
     /// Gets a database connection string for health check purposes.

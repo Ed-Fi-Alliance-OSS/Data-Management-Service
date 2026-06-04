@@ -80,19 +80,19 @@ Authorization: bearer {{configToken}}
 @vendorId={{getVendor.response.body.id}}
 
 ### Step 5: DMS instance (relational backend)
-# @name createDmsInstance
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStore
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "instanceType": "Test",
-    "instanceName": "Profile Write Demo Instance",
+    "dataStoreType": "Test",
+    "name": "Profile Write Demo Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_relational;"
 }
 
 ###
-@dmsInstanceId={{createDmsInstance.response.body.id}}
+@dataStoreId={{createDataStore.response.body.id}}
 
 ### Step 6: Application WITH profile
 # @name createAppWithProfile
@@ -104,7 +104,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Write Profile Demo App",
     "claimSetName": "EdFiSandbox",
-    "dmsInstanceIds": [{{dmsInstanceId}}],
+    "dataStoreIds": [{{dataStoreId}}],
     "profileIds": [{{schoolWriteProfileId}}]
 }
 
@@ -122,7 +122,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "No Profile Demo App",
     "claimSetName": "EdFiSandbox",
-    "dmsInstanceIds": [{{dmsInstanceId}}]
+    "dataStoreIds": [{{dataStoreId}}]
 }
 
 ###

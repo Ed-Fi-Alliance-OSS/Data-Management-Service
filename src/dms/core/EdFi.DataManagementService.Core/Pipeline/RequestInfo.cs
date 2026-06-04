@@ -140,7 +140,7 @@ internal class RequestInfo(
 
     /// <summary>
     /// Route qualifiers extracted from the URL path (e.g., district ID, school year)
-    /// that determine which DMS instance to route the request to.
+    /// that determine which data store to route the request to.
     /// Empty if no route qualifiers are configured.
     /// </summary>
     public Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers { get; set; } = [];

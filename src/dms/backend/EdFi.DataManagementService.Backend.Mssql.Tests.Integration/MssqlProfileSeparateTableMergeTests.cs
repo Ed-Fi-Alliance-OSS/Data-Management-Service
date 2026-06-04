@@ -153,7 +153,7 @@ internal static class MssqlProfileSeparateTableMergeSupport
     {
         ServiceCollection services = [];
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -249,12 +249,12 @@ internal static class MssqlProfileSeparateTableMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileSeparateTableMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileSeparateTableMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -289,12 +289,12 @@ internal static class MssqlProfileSeparateTableMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileSeparateTableMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileSeparateTableMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -330,12 +330,12 @@ internal static class MssqlProfileSeparateTableMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileSeparateTableMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileSeparateTableMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )

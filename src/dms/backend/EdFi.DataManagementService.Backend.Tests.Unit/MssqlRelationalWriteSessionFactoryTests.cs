@@ -17,16 +17,16 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_MssqlRelationalWriteSessionFactory
 {
     [Test]
-    public async Task It_uses_the_selected_dms_instance_for_sql_server_attempts()
+    public async Task It_uses_the_selected_data_store_for_sql_server_attempts()
     {
         const string connectionString =
             "Server=localhost;Database=test;User Id=sa;Password=TestPassword1!;TrustServerCertificate=true";
 
-        var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
-        var dmsInstance = new DmsInstance(
+        var dataStoreSelection = A.Fake<IDataStoreSelection>();
+        var dataStore = new DataStore(
             Id: 7,
-            InstanceType: "Test",
-            InstanceName: "Test Instance",
+            DataStoreType: "Test",
+            Name: "Test Instance",
             ConnectionString: connectionString,
             RouteContext: []
         );
@@ -34,10 +34,10 @@ public class Given_MssqlRelationalWriteSessionFactory
             new RecordingDbCommand(new DataTable().CreateDataReader())
         );
 
-        A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance()).Returns(dmsInstance);
+        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).Returns(dataStore);
 
         var sut = new MssqlRelationalWriteSessionFactory(
-            dmsInstanceSelection,
+            dataStoreSelection,
             selectedConnectionString =>
             {
                 selectedConnectionString.Should().Be(connectionString);
@@ -55,7 +55,7 @@ public class Given_MssqlRelationalWriteSessionFactory
         );
         var rowsAffected = await command.ExecuteNonQueryAsync();
 
-        A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).MustHaveHappenedOnceExactly();
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.LastOpenAsyncCancellationToken.Should().Be(CancellationToken.None);
         connection.BeginTransactionCallCount.Should().Be(1);

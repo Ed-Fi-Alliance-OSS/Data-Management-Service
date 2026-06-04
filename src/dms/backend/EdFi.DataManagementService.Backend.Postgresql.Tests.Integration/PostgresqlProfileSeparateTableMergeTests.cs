@@ -196,7 +196,7 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
         >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -301,12 +301,12 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileSeparateTableMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileSeparateTableMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -341,12 +341,12 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileSeparateTableMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileSeparateTableMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -382,12 +382,12 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileSeparateTableMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileSeparateTableMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )

@@ -42,7 +42,7 @@ When implementing database segmentation in DMS, you need to make two key decisio
 
 **Implicit Segmentation:**
 
-- Each API client credential has access to a single DMS instance
+- Each API client credential has access to a single data store
 - The database routing is transparent - clients don't specify which instance in
   the URL
 - Simplest for API clients but requires separate credentials for each instance
@@ -93,7 +93,7 @@ The Ed-Fi Data Management Service (DMS) supports explicit data segmentation
 through context-based routing using route qualifiers. This approach allows
 API requests to include contextual values (such as school year, district ID, or
 other identifiers) in the URL path, enabling the same API client to access
-multiple DMS instances with a single set of credentials.
+multiple data stores with a single set of credentials.
 
 ### Key Concept
 
@@ -155,18 +155,18 @@ client_id={your_admin_client_id}
 &scope=edfi_admin_api/full_access
 ```
 
-### Step 2: Create DMS Instances
+### Step 2: Create Data Stores
 
-Create a separate DMS instance for each database you want to route to:
+Create a separate data store for each database you want to route to:
 
 ```http
-POST http://localhost:8081/v2/dmsInstances
+POST http://localhost:8081/v2/dataStores
 Authorization: bearer {config_token}
 Content-Type: application/json
 
 {
-  "instanceType": "District",
-  "instanceName": "District 255901 - School Year 2024",
+  "dataStoreType": "District",
+  "name": "District 255901 - School Year 2024",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=yourpassword;database=edfi_datamanagementservice_d255901_sy2024;"
 }
 ```
@@ -175,34 +175,34 @@ The response will include an `id` field that you'll use to associate route conte
 
 ### Step 3: Define Route Contexts
 
-For each instance, create route context entries that define how URL segments map
-to that instance:
+For each data store, create route context entries that define how URL segments map
+to that data store:
 
 ```http
-POST http://localhost:8081/v2/dmsInstanceRouteContexts
+POST http://localhost:8081/v2/dataStoreContexts
 Authorization: bearer {config_token}
 Content-Type: application/json
 
 {
-  "instanceId": 1,
+  "dataStoreId": 1,
   "contextKey": "districtId",
   "contextValue": "255901"
 }
 ```
 
 ```http
-POST http://localhost:8081/v2/dmsInstanceRouteContexts
+POST http://localhost:8081/v2/dataStoreContexts
 Authorization: bearer {config_token}
 Content-Type: application/json
 
 {
-  "instanceId": 1,
+  "dataStoreId": 1,
   "contextKey": "schoolYear",
   "contextValue": "2024"
 }
 ```
 
-**Important:** Each instance can have multiple route contexts. DMS requires **all**
+**Important:** Each data store can have multiple route contexts. DMS requires **all**
 context keys to match for routing to succeed.
 
 ### Step 4: Create Vendor and Application
@@ -232,7 +232,7 @@ Content-Type: application/json
   "applicationName": "Multi-Instance Application",
   "claimSetName": "SIS Vendor",
   "educationOrganizationIds": [255901, 255902],
-  "dmsInstanceIds": [1, 2, 3]
+  "dataStoreIds": [1, 2, 3]
 }
 ```
 
@@ -371,7 +371,7 @@ Response: 404 Not Found or 400 Bad Request
   (e.g., districtId and schoolYear), the request URL must provide values for all
   of them in the correct order.
 - **Application access control**: Applications must be explicitly granted access
-  to instances via the `dmsInstanceIds` field when creating the application.
+  to instances via the `dataStoreIds` field when creating the application.
 - **Route qualifier order**: The order of route qualifiers in the URL should be
   consistent across your API implementation.
 - **Discovery API**: Route qualifiers are included in Location headers and
@@ -381,24 +381,24 @@ Response: 404 Not Found or 400 Bad Request
 
 ### Viewing Configuration
 
-#### List All DMS Instances
+#### List All data stores
 
 ```http
-GET http://localhost:8081/v2/dmsInstances?offset=0&limit=25
+GET http://localhost:8081/v2/dataStores?offset=0&limit=25
 Authorization: bearer {config_token}
 ```
 
 #### List All Route Contexts
 
 ```http
-GET http://localhost:8081/v2/dmsInstanceRouteContexts?offset=0&limit=25
+GET http://localhost:8081/v2/dataStoreContexts?offset=0&limit=25
 Authorization: bearer {config_token}
 ```
 
-#### Get Specific Instance
+#### Get Specific Data Store
 
 ```http
-GET http://localhost:8081/v2/dmsInstances/{instanceId}
+GET http://localhost:8081/v2/dataStores/{id}
 Authorization: bearer {config_token}
 ```
 
@@ -409,6 +409,6 @@ If you're migrating from the Ed-Fi ODS/API platform that used `OdsContextRouteTe
 | ODS/API Feature | DMS Equivalent |
 |-----------------|----------------|
 | `OdsContextRouteTemplate` in ApiSettings | Route contexts defined via Configuration Service API |
-| `dbo.OdsInstances` table | `POST /v2/dmsInstances` endpoint |
-| `dbo.OdsInstanceContext` table | `POST /v2/dmsInstanceRouteContexts` endpoint |
+| `dbo.OdsInstances` table | `POST /v2/dataStores` endpoint |
+| `dbo.OdsInstanceContext` table | `POST /v2/dataStoreContexts` endpoint |
 | ASP.NET route template syntax | Standard URL path segments |

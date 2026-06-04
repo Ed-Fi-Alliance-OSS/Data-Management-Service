@@ -78,31 +78,31 @@ public abstract class PostgresqlRuntimeInstanceMappingValidatorTests
         );
     }
 
-    protected static DmsInstance CreateInstance(
+    protected static DataStore CreateInstance(
         long id,
         string name,
         string connectionString = ConnectionString
     )
     {
-        return new DmsInstance(
+        return new DataStore(
             Id: id,
-            InstanceType: "test",
-            InstanceName: name,
+            DataStoreType: "test",
+            Name: name,
             ConnectionString: connectionString,
             RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
         );
     }
 
-    protected static IDmsInstanceProvider CreateInstanceProvider(
-        params (string? Tenant, DmsInstance Instance)[] entries
+    protected static IDataStoreProvider CreateInstanceProvider(
+        params (string? Tenant, DataStore Instance)[] entries
     )
     {
-        var provider = A.Fake<IDmsInstanceProvider>();
+        var provider = A.Fake<IDataStoreProvider>();
         var entriesByTenant = entries
             .GroupBy(entry => entry.Tenant ?? string.Empty)
             .ToDictionary(
                 grouping => grouping.Key,
-                grouping => (IReadOnlyList<DmsInstance>)grouping.Select(entry => entry.Instance).ToArray(),
+                grouping => (IReadOnlyList<DataStore>)grouping.Select(entry => entry.Instance).ToArray(),
                 StringComparer.Ordinal
             );
 
@@ -112,7 +112,7 @@ public abstract class PostgresqlRuntimeInstanceMappingValidatorTests
                 (string? tenant) =>
                     entriesByTenant.TryGetValue(tenant ?? string.Empty, out var instances)
                         ? instances
-                        : Array.Empty<DmsInstance>()
+                        : Array.Empty<DataStore>()
             );
 
         return provider;
@@ -130,9 +130,9 @@ public abstract class PostgresqlRuntimeInstanceMappingValidatorTests
         );
     }
 
-    protected static void AssertFailureContext(string message, DmsInstance instance, MappingSet mappingSet)
+    protected static void AssertFailureContext(string message, DataStore instance, MappingSet mappingSet)
     {
-        message.Should().Contain(instance.InstanceName);
+        message.Should().Contain(instance.Name);
         message.Should().Contain(instance.Id.ToString());
         message.Should().Contain(mappingSet.Key.EffectiveSchemaHash);
         message.Should().Contain(mappingSet.Key.RelationalMappingVersion);
@@ -145,7 +145,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_With_Matching_Finge
     : PostgresqlRuntimeInstanceMappingValidatorTests
 {
     private MappingSet _mappingSet = null!;
-    private IDmsInstanceProvider _instanceProvider = null!;
+    private IDataStoreProvider _instanceProvider = null!;
     private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
     private PostgresqlValidatedResourceKeyMapCache _validatedResourceKeyMapCache = null!;
     private PostgresqlRuntimeInstanceMappingValidator _validator = null!;
@@ -206,7 +206,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_With_EffectiveSchem
 {
     private Exception _exception = null!;
     private MappingSet _mappingSet = null!;
-    private DmsInstance _instance = null!;
+    private DataStore _instance = null!;
 
     [SetUp]
     public async Task Setup()
@@ -252,7 +252,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_With_ResourceKey_Fi
 {
     private Exception _exception = null!;
     private MappingSet _mappingSet = null!;
-    private DmsInstance _instance = null!;
+    private DataStore _instance = null!;
 
     [SetUp]
     public void Setup()
@@ -304,7 +304,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_With_Missing_Effect
 {
     private Exception _exception = null!;
     private MappingSet _mappingSet = null!;
-    private DmsInstance _instance = null!;
+    private DataStore _instance = null!;
 
     [SetUp]
     public void Setup()
@@ -342,7 +342,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_With_Missing_Effect
 {
     private Exception _exception = null!;
     private MappingSet _mappingSet = null!;
-    private DmsInstance _instance = null!;
+    private DataStore _instance = null!;
 
     [SetUp]
     public void Setup()

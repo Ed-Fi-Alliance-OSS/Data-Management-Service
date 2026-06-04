@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 /// <summary>
-/// Provides the Discovery API endpoint that returns metadata about the DMS instance,
+/// Provides the Discovery API endpoint that returns metadata about the data store,
 /// including version information, data models, and available API URLs.
 /// </summary>
 public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointModule
@@ -78,7 +78,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
     }
 
     /// <summary>
-    /// Handles the discovery API request and returns metadata about the DMS instance.
+    /// Handles the discovery API request and returns metadata about the data store.
     /// When multi-tenancy is enabled and a tenant is provided, validates the tenant exists.
     /// </summary>
     private static async Task BuildDiscoveryResponse(

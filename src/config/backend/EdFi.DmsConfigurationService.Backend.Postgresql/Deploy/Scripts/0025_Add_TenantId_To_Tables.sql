@@ -55,16 +55,16 @@ BEGIN
     END IF;
 END$$;
 
--- Add TenantId to DmsInstance table
+-- Add TenantId to DataStore table
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'dmscs' AND table_name = 'dmsinstance' AND column_name = 'tenantid'
+        WHERE table_schema = 'dmscs' AND table_name = 'datastore' AND column_name = 'tenantid'
     ) THEN
-        ALTER TABLE dmscs.DmsInstance ADD COLUMN TenantId BIGINT NULL;
-        ALTER TABLE dmscs.DmsInstance ADD CONSTRAINT fk_dmsinstance_tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE CASCADE;
-        COMMENT ON COLUMN dmscs.DmsInstance.TenantId IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
+        ALTER TABLE dmscs.DataStore ADD COLUMN TenantId BIGINT NULL;
+        ALTER TABLE dmscs.DataStore ADD CONSTRAINT fk_datastore_tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE CASCADE;
+        COMMENT ON COLUMN dmscs.DataStore.TenantId IS 'Tenant id for multi-tenancy support (null when multi-tenancy is disabled)';
     END IF;
 END$$;
 
@@ -73,4 +73,4 @@ CREATE INDEX IF NOT EXISTS idx_vendor_tenantid ON dmscs.Vendor (TenantId);
 CREATE INDEX IF NOT EXISTS idx_claimset_tenantid ON dmscs.ClaimSet (TenantId);
 CREATE INDEX IF NOT EXISTS idx_authorizationstrategy_tenantid ON dmscs.AuthorizationStrategy (TenantId);
 CREATE INDEX IF NOT EXISTS idx_resourceclaim_tenantid ON dmscs.ResourceClaim (TenantId);
-CREATE INDEX IF NOT EXISTS idx_dmsinstance_tenantid ON dmscs.DmsInstance (TenantId);
+CREATE INDEX IF NOT EXISTS idx_datastore_tenantid ON dmscs.DataStore (TenantId);

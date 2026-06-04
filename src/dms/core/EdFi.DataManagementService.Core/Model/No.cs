@@ -174,6 +174,6 @@ internal static class No
         ClaimSetName: "",
         EducationOrganizationIds: [],
         NamespacePrefixes: [],
-        DmsInstanceIds: []
+        DataStoreIds: []
     );
 }

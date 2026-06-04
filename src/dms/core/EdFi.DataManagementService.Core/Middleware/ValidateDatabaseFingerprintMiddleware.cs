@@ -47,20 +47,20 @@ internal class ValidateDatabaseFingerprintMiddleware(
             return;
         }
 
-        // ResolveDmsInstanceMiddleware should already enforce this invariant, but
+        // ResolveDataStoreMiddleware should already enforce this invariant, but
         // guard here so fingerprint validation returns a clear configuration
         // error even if upstream selection behavior changes.
         var selectedInstance = requestInfo
-            .ScopedServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .GetSelectedDmsInstance();
+            .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .GetSelectedDataStore();
         var connectionString = selectedInstance.ConnectionString;
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             logger.LogError(
-                "Selected DMS instance {InstanceId} ({InstanceName}) has no connection string configured during database fingerprint validation. TraceId: {TraceId}",
+                "Selected data store {DataStoreId} ({Name}) has no connection string configured during database fingerprint validation. TraceId: {TraceId}",
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -86,9 +86,9 @@ internal class ValidateDatabaseFingerprintMiddleware(
         {
             logger.LogError(
                 ex,
-                "Malformed dms.EffectiveSchema fingerprint for DMS instance {InstanceId} ({InstanceName}). Restart DMS after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
+                "Malformed dms.EffectiveSchema fingerprint for data store {DataStoreId} ({Name}). Restart DMS after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -109,10 +109,10 @@ internal class ValidateDatabaseFingerprintMiddleware(
         {
             logger.LogError(
                 ex,
-                "Database fingerprint read failed for DMS instance {InstanceId} ({InstanceName}). "
+                "Database fingerprint read failed for data store {DataStoreId} ({Name}). "
                     + "This is a transient error and will be retried on the next request. TraceId: {TraceId}",
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -131,8 +131,8 @@ internal class ValidateDatabaseFingerprintMiddleware(
         if (fingerprint == null)
         {
             logger.LogWarning(
-                "Database not provisioned (no dms.EffectiveSchema row) for instance {InstanceName} - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                "Database not provisioned (no dms.EffectiveSchema row) for data store {Name} - TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -150,10 +150,10 @@ internal class ValidateDatabaseFingerprintMiddleware(
         if (!string.Equals(fingerprint.EffectiveSchemaHash, expectedHash, StringComparison.Ordinal))
         {
             logger.LogError(
-                "EffectiveSchemaHash mismatch for instance {InstanceId} ({InstanceName}): "
+                "EffectiveSchemaHash mismatch for data store {DataStoreId} ({Name}): "
                     + "database has {DbHash}, process expects {ExpectedHash}. TraceId: {TraceId}",
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 LoggingSanitizer.SanitizeForLogging(fingerprint.EffectiveSchemaHash),
                 LoggingSanitizer.SanitizeForLogging(expectedHash),
                 requestInfo.FrontendRequest.TraceId.Value

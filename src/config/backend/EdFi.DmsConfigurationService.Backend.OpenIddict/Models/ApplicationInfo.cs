@@ -75,10 +75,10 @@ public class ApplicationInfo
     public string ProtocolMappers { get; set; } = string.Empty;
 
     /// <summary>
-    /// List of DMS instance IDs associated with this API client.
-    /// These IDs are included in the dmsInstanceIds claim in issued JWT tokens.
+    /// List of data store IDs associated with this API client.
+    /// These IDs are included in the dataStoreIds claim in issued JWT tokens.
     /// </summary>
-    public long[] DmsInstanceIds { get; set; } = [];
+    public long[] DataStoreIds { get; set; } = [];
 
     /// <summary>
     /// Indicates whether all API clients associated with this application are approved.

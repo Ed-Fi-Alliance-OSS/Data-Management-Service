@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// <summary>
 /// Computes a deterministic hash of the effective API schema.
 /// This hash is used to verify that database instances are provisioned
-/// for the same schema version as the running DMS instance.
+/// for the same schema version as the running data store.
 /// </summary>
 public interface IEffectiveSchemaHashProvider
 {

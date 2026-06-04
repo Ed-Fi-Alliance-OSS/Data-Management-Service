@@ -193,7 +193,7 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
         >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -376,12 +376,12 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
     private static void SetInstanceSelection(IServiceScope scope, PostgresqlGeneratedDdlTestDatabase database)
     {
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ReferenceBackedTopLevelCollectionMerge",
+                    DataStoreType: "test",
+                    Name: "ReferenceBackedTopLevelCollectionMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )

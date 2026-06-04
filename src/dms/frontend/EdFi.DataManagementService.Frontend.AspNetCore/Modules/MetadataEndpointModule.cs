@@ -26,7 +26,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     /// </summary>
     private static JsonArray GetServers(
         HttpContext httpContext,
-        IDmsInstanceProvider dmsInstanceProvider,
+        IDataStoreProvider dataStoreProvider,
         IOptions<Configuration.AppSettings> appSettings
     )
     {
@@ -42,7 +42,7 @@ public partial class MetadataEndpointModule : IEndpointModule
 
         if (multiTenancyEnabled)
         {
-            List<string> tenantValues = dmsInstanceProvider
+            List<string> tenantValues = dataStoreProvider
                 .GetLoadedTenantKeys()
                 .Where(t => !string.IsNullOrWhiteSpace(t))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -55,7 +55,7 @@ public partial class MetadataEndpointModule : IEndpointModule
 
         if (routeQualifierSegments.Length > 0)
         {
-            var qualifierValues = CollectRouteQualifierValues(dmsInstanceProvider, routeQualifierSegments);
+            var qualifierValues = CollectRouteQualifierValues(dataStoreProvider, routeQualifierSegments);
 
             foreach (string segmentName in routeQualifierSegments)
             {
@@ -101,7 +101,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     }
 
     private static Dictionary<string, List<string>> CollectRouteQualifierValues(
-        IDmsInstanceProvider dmsInstanceProvider,
+        IDataStoreProvider dataStoreProvider,
         string[] routeQualifierSegments
     )
     {
@@ -116,7 +116,7 @@ public partial class MetadataEndpointModule : IEndpointModule
             return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         }
 
-        IReadOnlyList<string> tenantKeys = dmsInstanceProvider.GetLoadedTenantKeys();
+        IReadOnlyList<string> tenantKeys = dataStoreProvider.GetLoadedTenantKeys();
         if (tenantKeys.Count == 0)
         {
             AppendValues(null);
@@ -137,7 +137,7 @@ public partial class MetadataEndpointModule : IEndpointModule
 
         void AppendValues(string? tenantKey)
         {
-            IReadOnlyList<DmsInstance> instances = dmsInstanceProvider.GetAll(tenantKey);
+            IReadOnlyList<DataStore> instances = dataStoreProvider.GetAll(tenantKey);
             foreach (var instance in instances)
             {
                 foreach (
@@ -327,11 +327,11 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal static async Task GetResourceOpenApiSpec(
         HttpContext httpContext,
         IApiService apiService,
-        IDmsInstanceProvider dmsInstanceProvider,
+        IDataStoreProvider dataStoreProvider,
         IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dmsInstanceProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -339,11 +339,11 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal static async Task GetDescriptorOpenApiSpec(
         HttpContext httpContext,
         IApiService apiService,
-        IDmsInstanceProvider dmsInstanceProvider,
+        IDataStoreProvider dataStoreProvider,
         IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dmsInstanceProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -354,13 +354,13 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal static async Task GetProfileResourceOpenApiSpec(
         HttpContext httpContext,
         string profileName,
-        IDmsInstanceProvider dmsInstanceProvider,
+        IDataStoreProvider dataStoreProvider,
         IApiService apiService,
         IOptions<Configuration.AppSettings> appSettings
     )
     {
         string? tenant = ExtractTenantFromRoute(httpContext);
-        JsonArray servers = GetServers(httpContext, dmsInstanceProvider, appSettings);
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings);
 
         JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
             profileName,
@@ -412,7 +412,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         HttpContext httpContext,
         IContentProvider contentProvider,
         IOptions<Configuration.AppSettings> options,
-        IDmsInstanceProvider dmsInstanceProvider
+        IDataStoreProvider dataStoreProvider
     )
     {
         var request = httpContext.Request;
@@ -435,7 +435,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         )
         {
             var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
-            content["servers"] = GetServers(httpContext, dmsInstanceProvider, options);
+            content["servers"] = GetServers(httpContext, dataStoreProvider, options);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else

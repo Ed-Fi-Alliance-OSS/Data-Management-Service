@@ -310,12 +310,12 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalDeleteById",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalDeleteById",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -584,7 +584,7 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<ILogger<RelationalDocumentStoreRepository>>(recordingLogger);
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();

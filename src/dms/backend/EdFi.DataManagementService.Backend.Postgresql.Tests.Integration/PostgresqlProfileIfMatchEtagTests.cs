@@ -93,7 +93,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
         services.AddSingleton<IHostApplicationLifetime, PostgresqlProfileIfMatchHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
@@ -305,12 +305,12 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
     private static void SetSelectedInstance(IServiceProvider serviceProvider, string connectionString)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileIfMatchEtag",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileIfMatchEtag",
                     ConnectionString: connectionString,
                     RouteContext: []
                 )

@@ -84,45 +84,45 @@ Authorization: bearer {{configToken}}
 
 ###
 ### 2.2 DMS instances
-# @name createDmsInstanceZulu
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStoreZulu
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-  "instanceType": "Test",
-  "instanceName": "Zulu Instance",
+  "dataStoreType": "Test",
+  "name": "Zulu Instance",
   "connectionString": "Server=zulu;Database=ZuluDb;"
 }
 
 ###
-# @name createDmsInstanceAlpha
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStoreAlpha
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-  "instanceType": "Test",
-  "instanceName": "Alpha Instance",
+  "dataStoreType": "Test",
+  "name": "Alpha Instance",
   "connectionString": "Server=alpha;Database=AlphaDb;"
 }
 
 ###
-@dmsInstanceAlphaId={{createDmsInstanceAlpha.response.body.id}}
+@dataStoreAlphaId={{createDataStoreAlpha.response.body.id}}
 
-# @name createDmsInstanceMango
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStoreMango
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-  "instanceType": "Test",
-  "instanceName": "Mango Instance",
+  "dataStoreType": "Test",
+  "name": "Mango Instance",
   "connectionString": "Server=mango;Database=MangoDb;"
 }
 
 ###
-@dmsInstanceMangoId={{createDmsInstanceMango.response.body.id}}
+@dataStoreMangoId={{createDataStoreMango.response.body.id}}
 
 ### 2.3 Claim sets
 # @name createClaimSetZulu
@@ -166,7 +166,7 @@ Authorization: bearer {{configToken}}
   "applicationName": "Zulu Application",
   "claimSetName": "Zulu-ClaimSet",
   "educationOrganizationIds": [],
-  "dmsInstanceIds": [{{dmsInstanceAlphaId}}]
+  "dataStoreIds": [{{dataStoreAlphaId}}]
 }
 
 ###
@@ -180,7 +180,7 @@ Authorization: bearer {{configToken}}
   "applicationName": "Alpha Application",
   "claimSetName": "Alpha-ClaimSet",
   "educationOrganizationIds": [],
-  "dmsInstanceIds": [{{dmsInstanceAlphaId}}]
+  "dataStoreIds": [{{dataStoreAlphaId}}]
 }
 
 ###
@@ -194,7 +194,7 @@ Authorization: bearer {{configToken}}
   "applicationName": "Mango Application",
   "claimSetName": "Mango-ClaimSet",
   "educationOrganizationIds": [],
-  "dmsInstanceIds": [{{dmsInstanceMangoId}}]
+  "dataStoreIds": [{{dataStoreMangoId}}]
 }
 
 ###
@@ -218,8 +218,8 @@ Authorization: bearer {{configToken}}
 GET http://localhost:{{configPort}}/v2/apiClients?offset=0&limit=2&orderBy=name&direction=DESC
 Authorization: bearer {{configToken}}
 
-### 3.5 DMS instances - sorted by instanceName ascending
-GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=2&orderBy=instanceName&direction=ASC
+### 3.5 Data stores - sorted by name ascending
+GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=2&orderBy=name&direction=ASC
 Authorization: bearer {{configToken}}
 
 ### 3.6 Claim sets - sorted by name descending

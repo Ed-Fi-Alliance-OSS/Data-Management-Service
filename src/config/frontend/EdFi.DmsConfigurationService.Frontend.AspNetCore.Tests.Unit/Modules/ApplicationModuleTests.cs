@@ -111,7 +111,7 @@ public class ApplicationModuleTests
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                             ProfileIds = [1],
                         },
                     ])
@@ -127,7 +127,7 @@ public class ApplicationModuleTests
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                             ProfileIds = [1],
                         }
                     )
@@ -194,7 +194,7 @@ public class ApplicationModuleTests
                       "ClaimSetName": "Test",
                       "VendorId": 1,
                       "EducationOrganizationIds": [1],
-                      "DmsInstanceIds": [1]
+                      "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -214,7 +214,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "Test",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1]
+                        "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -272,7 +272,7 @@ public class ApplicationModuleTests
                       "ClaimSetName": "Test",
                       "VendorId": 1,
                       "EducationOrganizationIds": [1],
-                      "DmsInstanceIds": [1]
+                      "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -319,7 +319,7 @@ public class ApplicationModuleTests
                     "ClaimSetName": "",
                     "VendorId":1,
                     "EducationOrganizationIds": [0],
-                    "DmsInstanceIds": []
+                    "DataStoreIds": []
                 }
                 """;
 
@@ -329,7 +329,7 @@ public class ApplicationModuleTests
                     "ClaimSetName": "ClaimSet name with white space",
                     "VendorId":1,
                     "EducationOrganizationIds": [255901],
-                    "DmsInstanceIds": [1]
+                    "DataStoreIds": [1]
                 }
                 """;
 
@@ -417,7 +417,7 @@ public class ApplicationModuleTests
                     "ClaimSetName": "TestClaimSet",
                     "VendorId":1,
                     "EducationOrganizationIds": [255901],
-                    "DmsInstanceIds": [1],
+                    "DataStoreIds": [1],
                     "ProfileIds": [0]
                 }
                 """;
@@ -504,7 +504,7 @@ public class ApplicationModuleTests
                         "claimSetName": "Test",
                         "vendorId":1,
                         "educationOrganizationIds": [1],
-                        "dmsInstanceIds": [1]
+                        "dataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -604,7 +604,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "Test",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1]
+                        "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -623,7 +623,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "Test",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1]
+                        "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -707,7 +707,7 @@ public class ApplicationModuleTests
                       "ClaimSetName": "Test",
                       "VendorId": 1,
                       "EducationOrganizationIds": [1],
-                      "DmsInstanceIds": [1]
+                      "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -726,7 +726,7 @@ public class ApplicationModuleTests
                       "ClaimSetName": "Test",
                       "VendorId": 1,
                       "EducationOrganizationIds": [1],
-                      "DmsInstanceIds": [1]
+                      "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -816,7 +816,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "Test",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1]
+                        "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -864,7 +864,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "Test",
                         "VendorId":1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1]
+                        "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -982,7 +982,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1]
+                        "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -1031,7 +1031,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1]
+                        "DataStoreIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -1088,7 +1088,7 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
-    public class FailureDmsInstanceNotFoundTests : ApplicationModuleTests
+    public class FailureDataStoreNotFoundTests : ApplicationModuleTests
     {
         [SetUp]
         public void SetUp()
@@ -1127,7 +1127,7 @@ public class ApplicationModuleTests
                         A<ApiClientCommand>.Ignored
                     )
                 )
-                .Returns(new ApplicationInsertResult.FailureDmsInstanceNotFound());
+                .Returns(new ApplicationInsertResult.FailureDataStoreNotFound());
 
             A.CallTo(() =>
                     _applicationRepository.UpdateApplication(
@@ -1135,7 +1135,7 @@ public class ApplicationModuleTests
                         A<ApiClientCommand>.Ignored
                     )
                 )
-                .Returns(new ApplicationUpdateResult.FailureDmsInstanceNotFound());
+                .Returns(new ApplicationUpdateResult.FailureDataStoreNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(
@@ -1157,7 +1157,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_invalid_dms_instance_id_on_insert()
+        public async Task Should_return_bad_request_for_invalid_data_store_id_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1172,7 +1172,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [999]
+                        "DataStoreIds": [999]
                     }
                     """,
                     Encoding.UTF8,
@@ -1193,8 +1193,8 @@ public class ApplicationModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "DmsInstanceId": [
-                      "DMS instance does not exist."
+                    "DataStoreId": [
+                      "Data store does not exist."
                     ]
                   },
                   "errors": []
@@ -1205,7 +1205,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_invalid_dms_instance_id_on_update()
+        public async Task Should_return_bad_request_for_invalid_data_store_id_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1221,7 +1221,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [999]
+                        "DataStoreIds": [999]
                     }
                     """,
                     Encoding.UTF8,
@@ -1242,8 +1242,8 @@ public class ApplicationModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "DmsInstanceId": [
-                      "DMS instance does not exist."
+                    "DataStoreId": [
+                      "Data store does not exist."
                     ]
                   },
                   "errors": []
@@ -1339,7 +1339,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1],
+                        "DataStoreIds": [1],
                         "ProfileIds": [999]
                     }
                     """,
@@ -1389,7 +1389,7 @@ public class ApplicationModuleTests
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
                         "EducationOrganizationIds": [1],
-                        "DmsInstanceIds": [1],
+                        "DataStoreIds": [1],
                         "ProfileIds": [999]
                     }
                     """,
@@ -1695,7 +1695,7 @@ public class ApplicationModuleTests
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
-                            DmsInstanceIds = [1],
+                            DataStoreIds = [1],
                             ProfileIds = [],
                         }
                     )
@@ -1726,7 +1726,7 @@ public class ApplicationModuleTests
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
-                            DmsInstanceIds = [],
+                            DataStoreIds = [],
                             ProfileIds = [],
                             Enabled = true,
                         },
@@ -1759,7 +1759,7 @@ public class ApplicationModuleTests
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [],
-                            DmsInstanceIds = [],
+                            DataStoreIds = [],
                             ProfileIds = [],
                             Enabled = false,
                         },
@@ -1792,7 +1792,7 @@ public class ApplicationModuleTests
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [],
-                            DmsInstanceIds = [],
+                            DataStoreIds = [],
                             ProfileIds = [],
                             Enabled = false,
                         }

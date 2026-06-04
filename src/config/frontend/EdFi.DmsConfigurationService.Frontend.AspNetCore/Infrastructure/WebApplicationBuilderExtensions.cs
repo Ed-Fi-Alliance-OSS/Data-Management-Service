@@ -108,17 +108,17 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
         webApplicationBuilder.Services.AddTransient<
-            IDmsInstanceRouteContextRepository,
-            DmsInstanceRouteContextRepository
+            IDataStoreContextRepository,
+            DataStoreContextRepository
         >();
         webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
         webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
         webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
         webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
-        webApplicationBuilder.Services.AddTransient<IDmsInstanceRepository, DmsInstanceRepository>();
+        webApplicationBuilder.Services.AddTransient<IDataStoreRepository, DataStoreRepository>();
         webApplicationBuilder.Services.AddTransient<
-            IDmsInstanceDerivativeRepository,
-            DmsInstanceDerivativeRepository
+            IDataStoreDerivativeRepository,
+            DataStoreDerivativeRepository
         >();
         webApplicationBuilder.Services.AddTransient<IProfileRepository, ProfileRepository>();
         webApplicationBuilder.Services.AddSingleton<

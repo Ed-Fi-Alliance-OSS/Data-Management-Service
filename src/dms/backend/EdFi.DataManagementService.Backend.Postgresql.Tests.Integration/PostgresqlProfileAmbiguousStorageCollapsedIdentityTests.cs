@@ -255,7 +255,7 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
         >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -271,12 +271,12 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileAmbiguousStorageCollapsed",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileAmbiguousStorageCollapsed",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -322,12 +322,12 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileAmbiguousStorageCollapsed",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileAmbiguousStorageCollapsed",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

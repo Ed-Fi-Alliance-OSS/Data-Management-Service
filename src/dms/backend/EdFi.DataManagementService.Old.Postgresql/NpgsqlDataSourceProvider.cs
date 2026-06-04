@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Old.Postgresql;
 /// used across different instance contexts.
 /// </summary>
 public sealed class NpgsqlDataSourceProvider(
-    IDmsInstanceSelection dmsInstanceSelection,
+    IDataStoreSelection dataStoreSelection,
     NpgsqlDataSourceCache dataSourceCache,
     ILogger<NpgsqlDataSourceProvider> logger
 )
@@ -33,7 +33,7 @@ public sealed class NpgsqlDataSourceProvider(
         get
         {
             // Always check current instance to handle potential scope issues
-            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            var selectedInstance = dataStoreSelection.GetSelectedDataStore();
 
             // Check if we've already cached this instance's data source
             if (_cachedDataSources.TryGetValue(selectedInstance.Id, out var cachedDataSource))
@@ -45,7 +45,7 @@ public sealed class NpgsqlDataSourceProvider(
             string connectionString = selectedInstance.ConnectionString!;
 
             logger.LogDebug(
-                "NpgsqlDataSourceProvider caching data source for instance {InstanceId}",
+                "NpgsqlDataSourceProvider caching data source for data store {DataStoreId}",
                 selectedInstance.Id
             );
 

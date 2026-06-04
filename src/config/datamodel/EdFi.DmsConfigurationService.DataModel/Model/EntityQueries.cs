@@ -40,13 +40,13 @@ public class ApiClientQuery : PagingQuery
     public long? ApplicationId { get; set; }
 }
 
-public class DmsInstanceQuery : PagingQuery
+public class DataStoreQuery : PagingQuery
 {
     public long? Id { get; set; }
 
-    public string? InstanceName { get; set; }
+    public string? Name { get; set; }
 
-    public string? InstanceType { get; set; }
+    public string? DataStoreType { get; set; }
 }
 
 public class ClaimSetQuery : PagingQuery

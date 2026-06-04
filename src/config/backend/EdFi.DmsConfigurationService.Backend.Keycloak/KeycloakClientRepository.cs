@@ -33,7 +33,7 @@ public class KeycloakClientRepository(
         string scope,
         string namespacePrefixes,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null,
+        long[]? dataStoreIds = null,
         bool isApproved = true
     )
     {
@@ -43,11 +43,11 @@ public class KeycloakClientRepository(
             protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
             protocolMappers.Add(EducationOrganizationProtocolMapper(educationOrganizationIds));
 
-            // Add DMS instance IDs as sorted comma-separated string
-            if (dmsInstanceIds != null && dmsInstanceIds.Length > 0)
+            // Add data store IDs as sorted comma-separated string
+            if (dataStoreIds != null && dataStoreIds.Length > 0)
             {
-                var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
-                protocolMappers.Add(DmsInstanceIdsProtocolMapper(sortedInstanceIds));
+                var sortedDataStoreIds = string.Join(",", dataStoreIds.OrderBy(id => id));
+                protocolMappers.Add(DataStoreIdsProtocolMapper(sortedDataStoreIds));
             }
 
             Client client = new()
@@ -296,7 +296,7 @@ public class KeycloakClientRepository(
         string displayName,
         string scope,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null,
+        long[]? dataStoreIds = null,
         bool isApproved = true,
         string role = ""
     )
@@ -316,7 +316,7 @@ public class KeycloakClientRepository(
                 await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
                 var protocolMappers = client.ProtocolMappers.ToList();
                 CheckAndUpdateEducationOrganizationIds(protocolMappers);
-                CheckAndUpdateDmsInstanceIds(protocolMappers, dmsInstanceIds);
+                CheckAndUpdateDataStoreIds(protocolMappers, dataStoreIds);
                 Client newClient = new()
                 {
                     ClientId = client.ClientId,
@@ -404,18 +404,18 @@ public class KeycloakClientRepository(
             }
         }
 
-        void CheckAndUpdateDmsInstanceIds(List<ClientProtocolMapper> protocolMappers, long[]? dmsInstanceIds)
+        void CheckAndUpdateDataStoreIds(List<ClientProtocolMapper> protocolMappers, long[]? dataStoreIds)
         {
-            // Remove existing DMS instance IDs claim
+            // Remove existing data store IDs claim
             protocolMappers.RemoveAll(x =>
-                x.Config.ContainsKey("claim.name") && x.Config["claim.name"].Equals("dmsInstanceIds")
+                x.Config.ContainsKey("claim.name") && x.Config["claim.name"].Equals("dataStoreIds")
             );
 
-            // Add updated DMS instance IDs if provided
-            if (dmsInstanceIds != null && dmsInstanceIds.Length > 0)
+            // Add updated data store IDs if provided
+            if (dataStoreIds != null && dataStoreIds.Length > 0)
             {
-                var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
-                protocolMappers.Add(DmsInstanceIdsProtocolMapper(sortedInstanceIds));
+                var sortedDataStoreIds = string.Join(",", dataStoreIds.OrderBy(id => id));
+                protocolMappers.Add(DataStoreIdsProtocolMapper(sortedDataStoreIds));
             }
         }
     }
@@ -430,9 +430,9 @@ public class KeycloakClientRepository(
         return ProtocolMapper("Education Organization Ids", "educationOrganizationIds", value);
     }
 
-    private ClientProtocolMapper DmsInstanceIdsProtocolMapper(string value)
+    private ClientProtocolMapper DataStoreIdsProtocolMapper(string value)
     {
-        return ProtocolMapper("DMS Instance IDs", "dmsInstanceIds", value);
+        return ProtocolMapper("Data Store IDs", "dataStoreIds", value);
     }
 
     private ClientProtocolMapper ProtocolMapper(string name, string claimName, string value)

@@ -82,7 +82,7 @@ After these phases, request processing becomes purely “consume cached schema +
 In `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`, the intended ordering
 becomes:
 
-1. `InitializeDmsInstances(app)` (already present)
+1. `InitializeDataStores(app)` (already present)
 2. Optional DB deploy (`InitializeDatabase(app)`; already present)
 3. **New**: `InitializeApiSchemas(app)` (Core)
 4. **New**: `InitializeBackendMappings(app)` (backend-specific)
@@ -161,7 +161,7 @@ At startup, the backend initializer needs:
   - `EffectiveSchemaHash` (computed deterministically from the same inputs as DDL generation / pack
     generation).
 - **Database instances** from Core:
-  - list of `DmsInstance` records (possibly per tenant),
+  - list of `DataStore` records (possibly per tenant),
   - connection strings.
 - **Pack store / compiler** backend implementation:
   - `.mpack` loader (filesystem, embedded resource, or other store),
@@ -234,7 +234,7 @@ For a single host process serving a single effective schema set:
    - resolve mapping pack key: `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`,
    - load `.mpack` or compile mapping set,
    - validate pack payload invariants (including recompute seed hash from embedded seed list),
-   - for each configured `DmsInstance`:
+   - for each configured `DataStore`:
      - connect and read `dms.EffectiveSchema` (and `dms.SchemaComponent` if required),
      - validate `EffectiveSchemaHash` matches,
      - validate `ResourceKeySeedHash/Count` fast path (and diff `dms.ResourceKey` only on mismatch).

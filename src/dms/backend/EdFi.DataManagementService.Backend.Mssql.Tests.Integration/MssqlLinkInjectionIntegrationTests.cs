@@ -183,7 +183,7 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -438,12 +438,12 @@ public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlLinkInjection",
+                    DataStoreType: "test",
+                    Name: "MssqlLinkInjection",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

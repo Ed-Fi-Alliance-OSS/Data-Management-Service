@@ -19,16 +19,16 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_MssqlRelationalCommandExecutor
 {
     [Test]
-    public async Task It_opens_a_connection_for_the_selected_dms_instance_and_executes_the_relational_command()
+    public async Task It_opens_a_connection_for_the_selected_data_store_and_executes_the_relational_command()
     {
         const string connectionString =
             "Server=localhost;Database=test;User Id=sa;Password=TestPassword1!;TrustServerCertificate=true";
 
-        var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
-        var dmsInstance = new DmsInstance(
+        var dataStoreSelection = A.Fake<IDataStoreSelection>();
+        var dataStore = new DataStore(
             Id: 7,
-            InstanceType: "Test",
-            InstanceName: "Test Instance",
+            DataStoreType: "Test",
+            Name: "Test Instance",
             ConnectionString: connectionString,
             RouteContext: []
         );
@@ -52,10 +52,10 @@ public class Given_MssqlRelationalCommandExecutor
             )
         );
 
-        A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance()).Returns(dmsInstance);
+        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).Returns(dataStore);
 
         var sut = new MssqlRelationalCommandExecutor(
-            dmsInstanceSelection,
+            dataStoreSelection,
             selectedConnectionString =>
             {
                 selectedConnectionString.Should().Be(connectionString);
@@ -75,7 +75,7 @@ public class Given_MssqlRelationalCommandExecutor
             ReferenceLookupResultReader.ReadAsync
         );
 
-        A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).MustHaveHappenedOnceExactly();
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.LastOpenAsyncCancellationToken.Should().Be(CancellationToken.None);
         connection.CreateCommandCallCount.Should().Be(1);

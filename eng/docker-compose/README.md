@@ -120,7 +120,7 @@ This is the same sequence used by the `E2ETests` build target
 
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the
-affected instances return HTTP 503 (Service Unavailable). To recover, run the
+affected data stores return HTTP 503 (Service Unavailable). To recover, run the
 provisioning script and restart DMS as in steps 2 and 3 above.
 
 If you want to use Keycloak as the identity provider, pass the `-IdentityProvider keycloak` parameter to the startup script. This will configure the environment to use Keycloak authentication, and you must ensure Keycloak is running and properly configured.
@@ -255,11 +255,11 @@ change, recover by running `./start-local-dms.ps1 -d -v -RemoveBootstrap`
 * Kafka UI: [http://localhost:8088/](http://localhost:8088/)
 * Swagger UI: [http://localhost:8082](http://localhost:8082)
 
-## Multi-Instance Testing with Route Qualifiers
+## Multi-Data-Store Testing with Route Qualifiers
 
-The DMS supports multi-instance routing with route qualifiers, allowing you to route requests to different databases based on URL path segments.
+The DMS supports multi-data-store routing with route qualifiers, allowing you to route requests to different databases based on URL path segments.
 
-### Step 1: Configure Environment for Multi-Instance
+### Step 1: Configure Environment for Multi-Data-Store
 
 ```powershell
 # Navigate to docker-compose directory
@@ -270,17 +270,17 @@ cp .env.example .env
 
 # Edit .env and set the ROUTE_QUALIFIER_SEGMENTS line:
 # Find this section in .env:
-#   # Multi-Instance Route Qualifiers (Optional)
+#   # Multi-Data-Store Route Qualifiers (Optional)
 #   #ROUTE_QUALIFIER_SEGMENTS=districtId,schoolYear
 #
 # Change to (uncomment the line):
 #   ROUTE_QUALIFIER_SEGMENTS=districtId,schoolYear
 ```
 
-### Step 2: Deploy DMS with Multi-Instance Configuration
+### Step 2: Deploy DMS with Multi-Data-Store Configuration
 
 ```powershell
-# Deploy with multi-instance configuration enabled
+# Deploy with multi-data-store configuration enabled
 ./start-local-dms.ps1 -EnableConfig -r
 ```
 
@@ -288,7 +288,7 @@ Wait for all services to start (check with `docker ps`).
 
 ### Step 3: Create Additional Databases
 
-The main `.env` file creates the main database, but you need to create the additional databases for each instance:
+The main `.env` file creates the main database, but you need to create the additional databases for each data store:
 
 ```powershell
 # Create databases
@@ -316,18 +316,18 @@ docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d25590
 
 ### Step 5: Run the REST Client Tests
 
-1. Open `src/dms/tests/RestClient/multi-instance-route-qualifiers.http` in VS Code
+1. Open `src/dms/tests/RestClient/multi-data-store-route-qualifiers.http` in VS Code
 2. Execute the requests in order (they build on each other)
 3. Follow the instructions in the comments
 
 Key testing steps:
 
 1. **Get Config Service Token** - Authenticates with the configuration service
-2. **Create DMS Instances** - Sets up 3 instances with different route contexts:
-   * Instance 1: District 255901, School Year 2024
-   * Instance 2: District 255901, School Year 2025
-   * Instance 3: District 255902, School Year 2024
-3. **Create Application** - Creates an app associated with all instances
+2. **Create Data Stores** - Sets up 3 data stores with different route contexts:
+   * Data store 1: District 255901, School Year 2024
+   * Data store 2: District 255901, School Year 2025
+   * Data store 3: District 255902, School Year 2024
+3. **Create Application** - Creates an app associated with all data stores
 4. **Get DMS Token** - Authenticates with DMS using app credentials
 5. **Test Routing** - Creates descriptors via different routes and verifies they go to the correct database
 
@@ -362,20 +362,20 @@ When you make requests to:
 * Verify the environment variable in the container: `docker exec docker-compose-dms-1 printenv | grep ROUTE`
 * Verify the DMS logs: `docker logs docker-compose-dms-1`
 
-**404 - No database instance found or "No candidates found for the request path":**
+**404 - No database data store found or "No candidates found for the request path":**
 
-* **Most common cause**: DMS container needs to be restarted after creating instances in the Configuration Service
-* Verify DMS loaded all instances by checking the logs:
+* **Most common cause**: DMS container needs to be restarted after creating data stores in the Configuration Service
+* Verify DMS loaded all data stores by checking the logs:
 
   ```powershell
   docker logs docker-compose-dms-1 | grep "Successfully fetched"
-  # Should show: "Successfully fetched 4 DMS instances" (or your expected count)
+  # Should show: "Successfully fetched 4 data stores" (or your expected count)
   ```
 
 * Verify route contexts are created correctly in the Configuration Service
 
-* Check that the application is associated with the instances
-* Verify the JWT token includes the correct `dms_instance_ids` claim
+* Check that the application is associated with the data stores
+* Verify the JWT token includes the correct `dataStoreIds` claim
 
 **Connection errors:**
 
@@ -404,33 +404,33 @@ cd eng/docker-compose
 pwsh teardown-local-dms.ps1
 ```
 
-## Kafka Topic-Per-Instance Architecture
+## Kafka Topic-Per-Data-Store Architecture
 
 For E2E testing and production deployments that require strict data isolation,
-DMS supports topic-per-instance architecture where each instance publishes to
+DMS supports topic-per-data-store architecture where each data store publishes to
 its own dedicated Kafka topic.
 
 ### Overview
 
 **Standard Setup:**
 
-* All instances → Single topic: `edfi.dms.document`
+* All data stores → Single topic: `edfi.dms.document`
 
-**Topic-Per-Instance Setup:**
+**Topic-Per-Data-Store Setup:**
 
-* Instance 1 → Topic: `edfi.dms.1.document`
-* Instance 2 → Topic: `edfi.dms.2.document`
-* Instance 3 → Topic: `edfi.dms.3.document`
+* Data store 1 → Topic: `edfi.dms.1.document`
+* Data store 2 → Topic: `edfi.dms.2.document`
+* Data store 3 → Topic: `edfi.dms.3.document`
 
 This architecture is critical for:
 
-* **FERPA Compliance**: Prevents cross-instance data leakage
+* **FERPA Compliance**: Prevents cross-data-store data leakage
 * **Multi-tenant Isolation**: Each tenant/district has isolated message streams
-* **Selective Consumption**: Consumers can subscribe to specific instances
+* **Selective Consumption**: Consumers can subscribe to specific data stores
 
 ### Automated Setup for E2E Tests
 
-The Instance Management E2E tests automatically configure topic-per-instance via the build script:
+The Instance Management E2E tests automatically configure topic-per-data-store via the build script:
 
 ```powershell
 .\build-dms.ps1 InstanceE2ETest -Configuration Release
@@ -438,26 +438,26 @@ The Instance Management E2E tests automatically configure topic-per-instance via
 
 The build script:
 
-1. Creates test databases for each instance
+1. Creates test databases for each data store
 2. Creates PostgreSQL publications for CDC
-3. Configures instance-specific Debezium connectors
+3. Configures data-store-specific Debezium connectors
 4. Runs E2E tests with Kafka validation
 
 ### Manual Setup for Development
 
 #### 1. Create PostgreSQL Publications
 
-Each instance database needs its own publication for Debezium:
+Each data store database needs its own publication for Debezium:
 
 ```powershell
-# Instance 1
-docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "CREATE PUBLICATION to_debezium_instance_1 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
+# Data store 1
+docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "CREATE PUBLICATION to_debezium_datastore_1 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
 
-# Instance 2
-docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "CREATE PUBLICATION to_debezium_instance_2 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
+# Data store 2
+docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "CREATE PUBLICATION to_debezium_datastore_2 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
 
-# Instance 3
-docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "CREATE PUBLICATION to_debezium_instance_3 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
+# Data store 3
+docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "CREATE PUBLICATION to_debezium_datastore_3 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
 ```
 
 #### 2. Configure Debezium Connectors
@@ -465,16 +465,16 @@ docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d25590
 Use the automated setup script (from `eng/docker-compose` directory):
 
 ```powershell
-$instances = @(
-    @{ InstanceId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
-    @{ InstanceId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
-    @{ InstanceId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
+$dataStores = @(
+    @{ DataStoreId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
+    @{ DataStoreId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
+    @{ DataStoreId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
 )
 
-.\setup-instance-kafka-connectors.ps1 -Instances $instances
+.\setup-data-store-kafka-connectors.ps1 -DataStores $dataStores
 ```
 
-This creates separate Debezium connectors with instance-specific topics.
+This creates separate Debezium connectors with data-store-specific topics.
 
 #### 3. Verify Topics Were Created
 
@@ -485,15 +485,15 @@ docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server 
 
 ### Files
 
-* **`instance_connector_template.json`**: Template for instance-specific Debezium connectors
-* **`setup-instance-kafka-connectors.ps1`**: Automated script to deploy connectors
+* **`data_store_connector_template.json`**: Template for data-store-specific Debezium connectors
+* **`setup-data-store-kafka-connectors.ps1`**: Automated script to deploy connectors
 * **`postgresql_connector.json`**: Standard single-topic connector (for reference)
 
 ### Monitoring
 
 ```powershell
 # Check connector status
-curl http://localhost:8083/connectors/postgresql-source-instance-1/status
+curl http://localhost:8083/connectors/postgresql-source-datastore-1/status
 
 # View messages in Kafka UI
 # Open http://localhost:8088

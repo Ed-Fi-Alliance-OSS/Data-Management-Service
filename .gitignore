@@ -464,3 +464,5 @@ tmpclaude*
 
 # Language server / IDE project metadata cache (C# Dev Kit, Rider, etc.)
 *.lscache
+
+./docs/superpowers/**

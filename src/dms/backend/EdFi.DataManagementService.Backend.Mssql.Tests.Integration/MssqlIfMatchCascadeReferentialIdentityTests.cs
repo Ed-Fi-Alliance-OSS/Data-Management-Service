@@ -97,7 +97,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddNoOpDocumentLinkSlugResolver();
@@ -429,12 +429,12 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlIfMatchCascadeReferentialIdentity",
+                    DataStoreType: "test",
+                    Name: "MssqlIfMatchCascadeReferentialIdentity",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

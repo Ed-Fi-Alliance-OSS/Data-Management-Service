@@ -751,7 +751,7 @@ public class QueryRequestHandlerTests
                     new NamespacePrefix("uri://sample-a.org"),
                     new NamespacePrefix("uri://sample-b.org"),
                 ],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (queryHandler, serviceProvider) = Handler(_repository);

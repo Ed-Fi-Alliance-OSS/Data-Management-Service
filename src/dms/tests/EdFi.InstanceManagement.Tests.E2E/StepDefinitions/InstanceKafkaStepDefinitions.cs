@@ -42,7 +42,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
             return;
         }
 
-        if (context.InstanceIds.Count == 0)
+        if (context.DataStoreIds.Count == 0)
         {
             throw new InvalidOperationException(
                 "Cannot start Kafka collector: No instances have been created yet. "
@@ -54,7 +54,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
             Environment.GetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS") ?? "localhost:9092";
         _logger.LogInformation(
             "Starting Kafka message collection for {InstanceCount} instances using {BootstrapServers}",
-            context.InstanceIds.Count,
+            context.DataStoreIds.Count,
             LogSanitizer.Sanitize(bootstrapServers)
         );
         _logger.LogDebug(
@@ -63,7 +63,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
         );
 
         // Convert List<int> to IEnumerable<long> for the collector
-        IEnumerable<long> instanceIds = context.InstanceIds.Select(id => (long)id);
+        IEnumerable<long> instanceIds = context.DataStoreIds.Select(id => (long)id);
 
         context.KafkaCollector = new InstanceKafkaMessageCollector(
             instanceIds,
@@ -327,13 +327,13 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
             throw new InvalidOperationException("Kafka message collector not initialized");
         }
 
-        if (context.InstanceIds.Count == 0)
+        if (context.DataStoreIds.Count == 0)
         {
             throw new InvalidOperationException("No instances found to validate");
         }
 
         var allMessages = context.KafkaCollector.GetRecentMessages().ToList();
-        IEnumerable<long> instanceIds = context.InstanceIds.Select(id => (long)id);
+        IEnumerable<long> instanceIds = context.DataStoreIds.Select(id => (long)id);
 
         bool isIsolated = KafkaTopicHelper.ValidateNoMessageLeakage(allMessages, instanceIds, _logger);
 
@@ -351,7 +351,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
     [Then("Kafka consumer should be able to connect to all instance topics")]
     public void ThenKafkaConsumerShouldBeAbleToConnectToAllInstanceTopics()
     {
-        if (context.InstanceIds.Count == 0)
+        if (context.DataStoreIds.Count == 0)
         {
             throw new InvalidOperationException("No instances found");
         }
@@ -374,7 +374,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
             // Check if expected topics exist
             var configuration = new InstanceKafkaTestConfiguration();
             var expectedTopics = configuration.GetTopicNamesForInstances(
-                context.InstanceIds.Select(id => (long)id)
+                context.DataStoreIds.Select(id => (long)id)
             );
 
             foreach (var expectedTopic in expectedTopics)
@@ -429,11 +429,11 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
     /// </summary>
     private long GetInstanceIdFromRouteQualifier(string routeQualifier)
     {
-        if (!context.RouteQualifierToInstanceId.TryGetValue(routeQualifier, out int instanceId))
+        if (!context.RouteQualifierToDataStoreId.TryGetValue(routeQualifier, out int instanceId))
         {
             throw new InvalidOperationException(
                 $"No instance found for route qualifier '{LogSanitizer.Sanitize(routeQualifier)}'. "
-                    + $"Available routes: {string.Join(", ", context.RouteQualifierToInstanceId.Keys.Select(LogSanitizer.Sanitize))}"
+                    + $"Available routes: {string.Join(", ", context.RouteQualifierToDataStoreId.Keys.Select(LogSanitizer.Sanitize))}"
             );
         }
 

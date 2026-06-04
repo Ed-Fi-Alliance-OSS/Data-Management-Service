@@ -64,26 +64,26 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
 {
     private readonly Func<CancellationToken, Task<DbConnection>> _openConnectionAsync;
 
-    public MssqlDocumentHydrator(IDmsInstanceSelection dmsInstanceSelection)
-        : this(dmsInstanceSelection, connectionString => new SqlConnection(connectionString)) { }
+    public MssqlDocumentHydrator(IDataStoreSelection dataStoreSelection)
+        : this(dataStoreSelection, connectionString => new SqlConnection(connectionString)) { }
 
     internal MssqlDocumentHydrator(
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         Func<string, DbConnection> createConnection
     )
     {
-        ArgumentNullException.ThrowIfNull(dmsInstanceSelection);
+        ArgumentNullException.ThrowIfNull(dataStoreSelection);
         ArgumentNullException.ThrowIfNull(createConnection);
 
         _openConnectionAsync = async cancellationToken =>
         {
-            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            var selectedInstance = dataStoreSelection.GetSelectedDataStore();
             var connectionString = selectedInstance.ConnectionString;
 
             if (string.IsNullOrWhiteSpace(connectionString))
             {
                 throw new InvalidOperationException(
-                    $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
+                    $"Selected data store '{selectedInstance.Id}' does not have a valid connection string."
                 );
             }
 

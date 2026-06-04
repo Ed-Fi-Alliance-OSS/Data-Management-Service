@@ -249,7 +249,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();
@@ -333,7 +333,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();
@@ -401,7 +401,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware(clientRole: string.Empty);
@@ -474,7 +474,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();

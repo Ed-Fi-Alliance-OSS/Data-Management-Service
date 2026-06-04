@@ -73,12 +73,12 @@ internal sealed class MssqlRelationalQueryExecutionRecorder
 }
 
 internal sealed class RecordingMssqlDocumentHydrator(
-    IDmsInstanceSelection dmsInstanceSelection,
+    IDataStoreSelection dataStoreSelection,
     MssqlRelationalQueryExecutionRecorder recorder
 ) : IDocumentHydrator
 {
-    private readonly IDmsInstanceSelection _dmsInstanceSelection =
-        dmsInstanceSelection ?? throw new ArgumentNullException(nameof(dmsInstanceSelection));
+    private readonly IDataStoreSelection _dataStoreSelection =
+        dataStoreSelection ?? throw new ArgumentNullException(nameof(dataStoreSelection));
     private readonly MssqlRelationalQueryExecutionRecorder _recorder =
         recorder ?? throw new ArgumentNullException(nameof(recorder));
 
@@ -92,7 +92,7 @@ internal sealed class RecordingMssqlDocumentHydrator(
         await _recorder.InvokeBeforeHydrationAsync(ct);
         _recorder.HydrationKeysets.Add(keyset);
 
-        var selectedInstance = _dmsInstanceSelection.GetSelectedDmsInstance();
+        var selectedInstance = _dataStoreSelection.GetSelectedDataStore();
 
         await using var connection = new SqlConnection(selectedInstance.ConnectionString);
         await connection.OpenAsync(ct);
@@ -415,7 +415,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -747,12 +747,12 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlRelationalQueryExecution",
+                    DataStoreType: "test",
+                    Name: "MssqlRelationalQueryExecution",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

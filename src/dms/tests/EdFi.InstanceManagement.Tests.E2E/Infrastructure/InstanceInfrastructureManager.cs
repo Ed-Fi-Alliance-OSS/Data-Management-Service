@@ -19,7 +19,7 @@ public class InstanceInfrastructureManager : IDisposable
     private readonly DebeziumConnectorClient _debeziumClient;
     private readonly PostgresReplicationCleanup _postgresCleanup;
     private readonly ILogger<InstanceInfrastructureManager> _logger;
-    private readonly List<(int InstanceId, string DatabaseName)> _createdInstances = [];
+    private readonly List<(int DataStoreId, string DatabaseName)> _createdInstances = [];
     private bool _disposed;
 
     public InstanceInfrastructureManager(
@@ -43,43 +43,43 @@ public class InstanceInfrastructureManager : IDisposable
     /// 4. Wait for connector to be ready
     /// </summary>
     public async Task SetupInstanceInfrastructureAsync(
-        int instanceId,
+        int dataStoreId,
         string databaseName,
         CancellationToken cancellationToken = default
     )
     {
         _logger.LogInformation(
-            "Setting up infrastructure for instance {InstanceId} with database {Database}",
-            instanceId,
+            "Setting up infrastructure for data store {DataStoreId} with database {Database}",
+            dataStoreId,
             LogSanitizer.Sanitize(databaseName)
         );
 
         try
         {
             // 1. Create Kafka topic first
-            await _kafkaAdmin.CreateTopicAsync(instanceId, cancellationToken);
+            await _kafkaAdmin.CreateTopicAsync(dataStoreId, cancellationToken);
 
             // 2. Clean up any stale PostgreSQL replication resources
             await _postgresCleanup.CleanupReplicationResourcesAsync(
-                instanceId,
+                dataStoreId,
                 databaseName,
                 cancellationToken
             );
 
             // 3. Create Debezium connector
-            await _debeziumClient.CreateConnectorAsync(instanceId, databaseName, cancellationToken);
+            await _debeziumClient.CreateConnectorAsync(dataStoreId, databaseName, cancellationToken);
 
             // 4. Wait for topic to be fully ready
-            await _kafkaAdmin.WaitForTopicReadyAsync(instanceId, TimeSpan.FromSeconds(10), cancellationToken);
+            await _kafkaAdmin.WaitForTopicReadyAsync(dataStoreId, TimeSpan.FromSeconds(10), cancellationToken);
 
             // Track for cleanup
-            _createdInstances.Add((instanceId, databaseName));
+            _createdInstances.Add((dataStoreId, databaseName));
 
-            _logger.LogInformation("Infrastructure setup complete for instance {InstanceId}", instanceId);
+            _logger.LogInformation("Infrastructure setup complete for data store {DataStoreId}", dataStoreId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to setup infrastructure for instance {InstanceId}", instanceId);
+            _logger.LogError(ex, "Failed to setup infrastructure for data store {DataStoreId}", dataStoreId);
             throw;
         }
     }
@@ -91,31 +91,31 @@ public class InstanceInfrastructureManager : IDisposable
     /// 3. Clean up PostgreSQL replication resources
     /// </summary>
     public async Task TeardownInstanceInfrastructureAsync(
-        int instanceId,
+        int dataStoreId,
         string databaseName,
         CancellationToken cancellationToken = default
     )
     {
-        _logger.LogInformation("Tearing down infrastructure for instance {InstanceId}", instanceId);
+        _logger.LogInformation("Tearing down infrastructure for data store {DataStoreId}", dataStoreId);
 
         // Order matters: connector first, then topic, then postgres cleanup
 
         // 1. Delete Debezium connector
-        await _debeziumClient.DeleteConnectorAsync(instanceId, cancellationToken);
+        await _debeziumClient.DeleteConnectorAsync(dataStoreId, cancellationToken);
 
         // 2. Give connector time to release replication slot
         await Task.Delay(2000, cancellationToken);
 
         // 3. Clean up PostgreSQL replication resources
-        await _postgresCleanup.CleanupReplicationResourcesAsync(instanceId, databaseName, cancellationToken);
+        await _postgresCleanup.CleanupReplicationResourcesAsync(dataStoreId, databaseName, cancellationToken);
 
         // 4. Delete Kafka topic
-        await _kafkaAdmin.DeleteTopicAsync(instanceId, cancellationToken);
+        await _kafkaAdmin.DeleteTopicAsync(dataStoreId, cancellationToken);
 
         // Remove from tracking
-        _createdInstances.RemoveAll(i => i.InstanceId == instanceId);
+        _createdInstances.RemoveAll(i => i.DataStoreId == dataStoreId);
 
-        _logger.LogInformation("Infrastructure teardown complete for instance {InstanceId}", instanceId);
+        _logger.LogInformation("Infrastructure teardown complete for data store {DataStoreId}", dataStoreId);
     }
 
     /// <summary>
@@ -132,18 +132,18 @@ public class InstanceInfrastructureManager : IDisposable
         // Copy list to avoid modification during iteration
         var instances = _createdInstances.ToList();
 
-        foreach (var (instanceId, databaseName) in instances)
+        foreach (var (dataStoreId, databaseName) in instances)
         {
             try
             {
-                await TeardownInstanceInfrastructureAsync(instanceId, databaseName, cancellationToken);
+                await TeardownInstanceInfrastructureAsync(dataStoreId, databaseName, cancellationToken);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "Failed to teardown infrastructure for instance {InstanceId}",
-                    instanceId
+                    "Failed to teardown infrastructure for data store {DataStoreId}",
+                    dataStoreId
                 );
             }
         }

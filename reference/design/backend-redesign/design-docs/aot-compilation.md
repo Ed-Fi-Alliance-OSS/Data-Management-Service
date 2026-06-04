@@ -80,7 +80,7 @@ At runtime, after a request is routed to a database instance and DMS reads that 
 This document assumes the per-database schema fingerprint selection described in `transactions-and-concurrency.md`:
 
 1. Request arrives
-2. DMS routes to a `DmsInstance` → connection string
+2. DMS routes to a `DataStore` → connection string
 3. DMS reads the database’s `EffectiveSchemaHash` (cached per connection string)
 4. **NEW (AOT option)**: DMS ensures a matching mapping set is available:
    - load pack from file if present, otherwise compile at runtime (if allowed)

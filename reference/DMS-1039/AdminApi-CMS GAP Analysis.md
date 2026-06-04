@@ -42,12 +42,12 @@ The CMS contract relies on specific status codes (for example `201 Created` for 
 | ApiClient   | DELETE | /v2/apiclients/{{apiclientsId}}     | 204        | /v2/apiclients/{{apiclientsId}}           | 200              | AdminApi returns _{ "title": "ApiClient deleted successfully" }_ |
 | Application | PUT    | /v2/applications                   | 204        | /v2/applications                         | 200              | |
 | Application | DELETE | /v2/applications/{{applicationId}}  | 204        | /v2/applications/{{applicationId}}        | 200              | AdminApi returns _{ "title": "Application deleted successfully" }_ |
-| Instance      | PUT    | /v2/dmsinstances/{instanceId}} | 204        | /v2/odsInstances/{{instanceId}} | 200              | |
-| Instance      | DELETE | /v2/dmsinstances{{instanceId}} | 204        | /v2/odsInstances/{{instanceId}} | 200              | AdminApi returns _{ "title": "Vendor deleted successfully" }_ |
-| Instance Derivative | PUT    | /v2/dmsInstanceDerivatives/{instanceDerivativeId}} | 204        | /v2/odsInstanceDerivatives /{{instanceDerivativeId}} | 200              | |
-| Instance Derivative | DELETE | /v2/dmsInstanceDerivatives{{instanceDerivativeId}} | 204        | /v2/odsInstanceDerivatives /{{instanceDerivativeId}}                  | 200              |  |
-| Instance Route Context | PUT    | /v2/dmsinstanceroutecontexts/{instanceDerivativeId}}            | 204        |  /v2/OdsInstanceContexts /{{instanceDerivativeId}} | 200              | |
-| Instance Route Context | DELETE | /v2/dmsinstanceroutecontexts{{instanceDerivativeId}}            | 204        | /v2/OdsInstanceContexts /{{instanceDerivativeId}}  | 200              |  |
+| Instance      | PUT    | /v2/dataStores/{id}} | 204        | /v2/odsInstances/{{instanceId}} | 200              | |
+| Instance      | DELETE | /v2/dataStores{{id}} | 204        | /v2/odsInstances/{{instanceId}} | 200              | AdminApi returns _{ "title": "Vendor deleted successfully" }_ |
+| Instance Derivative | PUT    | /v2/dataStoreDerivatives/{instanceDerivativeId}} | 204        | /v2/odsInstanceDerivatives /{{instanceDerivativeId}} | 200              | |
+| Instance Derivative | DELETE | /v2/dataStoreDerivatives{{instanceDerivativeId}} | 204        | /v2/odsInstanceDerivatives /{{instanceDerivativeId}}                  | 200              |  |
+| Instance Route Context | PUT    | /v2/dataStoreContexts/{instanceDerivativeId}}            | 204        |  /v2/OdsInstanceContexts /{{instanceDerivativeId}} | 200              | |
+| Instance Route Context | DELETE | /v2/dataStoreContexts{{instanceDerivativeId}}            | 204        | /v2/OdsInstanceContexts /{{instanceDerivativeId}}  | 200              |  |
 | Vendor      | POST   | /v2/vendors                        | 201        | /v2/vendors                              | 200              | |
 | Vendor      | PUT    | /v2/vendors/{{vendorId}}            | 204        | /v2/vendors/{{vendorId}}                  | 200              | |
 | Vendor      | DELETE | /v2/vendors/{{vendorId}}            | 204        | /v2/vendors/{{vendorId}}                  | 200              | AdminApi returns _{ "title": "Vendor deleted successfully" }_ |
@@ -72,9 +72,9 @@ Location: http://localhost:8081/v2/profiles/2
 |-------------|--------|-------------------|-------------------|----------------------|-------------------------|---------------------|
 | ApiClient     | POST   | /v2/apiClients/      | Location: <http://localhost:8081/v2/apiClients/1>   | /v2/apiclients/         | Location:  /apiclients/1    | |
 | Application     | POST   | /v2/applications/      | Location: <http://localhost:8081/v2/applications/1>   | /v2/applications/         | Location: /applications/1    | |
-| Instances     | POST   | /v2/dmsinstances      | Location: <http://localhost:8081/v2/dmsInstances/1>   | /v2/odsInstances         | Location: /odsInstances/1    | |
-| Instance Derivatives  | POST   | /v2/dmsInstanceDerivatives      | Location: <http://localhost:8081/v2/dmsInstanceDerivatives/1>   | /v2/odsInstanceDerivatives         | Location: /odsInstanceDerivatives/1    | |
-| Instance Route Context  | POST   | /v2/dmsinstanceroutecontexts      | Location: <http://localhost:8081/v2/dmsinstanceroutecontexts/1>   | /v2/odsInstanceContexts         | Location: /odsInstanceContexts/1    | |
+| Instances     | POST   | /v2/dataStores      | Location: <http://localhost:8081/v2/dataStores/1>   | /v2/odsInstances         | Location: /odsInstances/1    | |
+| Instance Derivatives  | POST   | /v2/dataStoreDerivatives      | Location: <http://localhost:8081/v2/dataStoreDerivatives/1>   | /v2/odsInstanceDerivatives         | Location: /odsInstanceDerivatives/1    | |
+| Instance Route Context  | POST   | /v2/dataStoreContexts      | Location: <http://localhost:8081/v2/dataStoreContexts/1>   | /v2/odsInstanceContexts         | Location: /odsInstanceContexts/1    | |
 | Profile     | POST   | /v2/profiles/      | Location: <http://localhost:8081/v2/profiles/1>   | /v2/profiles/         | Location: /profiles/1    | |
 | Vendor     | POST   | /v2/vendors/      | Location: <http://localhost:8081/v2/vendors/1>       | /v2/vendors/         | Location: /vendors/1    | CMS returns { "id": 3, "status": 200, "title": "Vendor Sample Vendor has been updated successfully." } |
 
@@ -84,15 +84,15 @@ CMS endpoints generally do not support query parameters for sorting or limiting 
 
 ### Instance naming (`ods*` vs `dms*`)
 
-The Admin API schema, DTOs, and query parameters consistently use the `odsInstance` naming. CMS renamed every element to `dmsInstance`. Because these shapes appear throughout applications, API clients, and instance-management routes, the casing and naming must match exactly (for example, `odsInstanceIds` arrays, `instanceName` vs `name`).
+The Admin API schema, DTOs, and query parameters consistently use the `odsInstance` naming. CMS renamed every element to `dataStore`. Because these shapes appear throughout applications, API clients, and instance-management routes, the casing and naming must match exactly (for example, `odsInstanceIds` arrays, `instanceName` vs `name`).
 
 | AdminApi                | CMS                        |
 |-------------------------|----------------------------|
-| odsInstance             | dmsInstance                |
-| odsInstanceRouteContexts| dmsInstanceRouteContexts   |
-| odsInstanceDerivatives  | dmsInstanceDerivatives     |
+| odsInstance             | dataStore                |
+| odsInstanceRouteContexts| dataStoreContexts        |
+| odsInstanceDerivatives  | dataStoreDerivatives     |
 
-**Action: _GET /v2/dmsInstances_**
+**Action: _GET /v2/dataStores_**
 
 - Response Payload (CMS)
 
@@ -100,11 +100,11 @@ The Admin API schema, DTOs, and query parameters consistently use the `odsInstan
 [
   {
     "id": 1,
-    "instanceType": "Development",
-    "instanceName": "Local Development Instance",
+    "dataStoreType": "Development",
+    "name": "Local Development Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
-    "dmsInstanceRouteContexts": [],
-    "dmsInstanceDerivatives": [],
+    "dataStoreContexts": [],
+    "dataStoreDerivatives": [],
     "tenantId": null
   }
 ]
@@ -234,7 +234,7 @@ Admin API accepts spaces in `claimSetName` when creating an application. CMS rej
 
 #### GET Applications
 
-Admin API returns the full `applicationModel`, including `enabled`, `educationOrganizationIds`, `profileIds`, and `odsInstanceIds`. CMS exposes renames the instance array to `dmsInstanceIds`, so callers lose required context.
+Admin API returns the full `applicationModel`, including `enabled`, `educationOrganizationIds`, `profileIds`, and `odsInstanceIds`. CMS exposes renames the instance array to `dataStoreIds`, so callers lose required context.
 
 **Action: _GET /v2/applications_**
 
@@ -251,7 +251,7 @@ Admin API returns the full `applicationModel`, including `enabled`, `educationOr
       255,
       255901
     ],
-    "dmsInstanceIds": [
+    "dataStoreIds": [
       3
     ],
     "profileIds": []
@@ -278,11 +278,11 @@ Admin API returns the full `applicationModel`, including `enabled`, `educationOr
 
 ### API clients
 
-CMS camel-cases every route segment (`/v2/apiClients`), accepts both integers and strings for IDs, omits some fields and renames `odsInstanceIds` to `dmsInstanceIds`. Admin API also returns the newly issued key/secret on POST/PUT/reset, while CMS returns an empty `200`.
+CMS camel-cases every route segment (`/v2/apiClients`), accepts both integers and strings for IDs, omits some fields and renames `odsInstanceIds` to `dataStoreIds`. Admin API also returns the newly issued key/secret on POST/PUT/reset, while CMS returns an empty `200`.
 
 #### GET payload shape
 
-Admin API and CMS return different payloads for ApiClient records. CMS renames the instance array to `dmsInstanceIds` and omits some fields, so callers lose required context.
+Admin API and CMS return different payloads for ApiClient records. CMS renames the instance array to `dataStoreIds` and omits some fields, so callers lose required context.
 
 **Action: _GET /v2/apiClients_**
 
@@ -297,7 +297,7 @@ Admin API and CMS return different payloads for ApiClient records. CMS renames t
     "clientUuid": "cbcf7711-10f8-40e9-8c6e-8746e4a7830a",
     "name": "For ed orgs",
     "isApproved": true,
-    "dmsInstanceIds": [
+    "dataStoreIds": [
       2
     ]
   }
@@ -344,7 +344,7 @@ Also, AdminAPI uses id to filter the GET apiClient but CMS uses the clientUuid.
     "clientUuid": "01fa1cfb-806e-4a03-91c4-f87fbe3b8839",
     "name": "Sample Application",
     "isApproved": true,
-    "dmsInstanceIds": [1]
+    "dataStoreIds": [1]
   }
 ]
 ```
@@ -449,9 +449,9 @@ Admin API emits the full resource-claim tree (actions, default strategies, overr
 
 ### Instances and derivatives
 
-Admin API models instances with `name`, `instanceType`, and optional details. CMS adds connection metadata but renames fields (`instanceName`) and nests derivative/context collections differently.
+Admin API models instances with `name`, `instanceType`, and optional details. CMS adds connection metadata but renames fields (`dataStoreType`, `name`) and nests derivative/context collections differently.
 
-**Action: AdminApi (_GET /v2/odsInstances_) and CMS (_GET /v2/dmsInstances_)
+**Action: AdminApi (_GET /v2/odsInstances_) and CMS (_GET /v2/dataStores_)
 
 - Response Payload (CMS)
 
@@ -459,11 +459,11 @@ Admin API models instances with `name`, `instanceType`, and optional details. CM
 [
   {
     "id": 1,
-    "instanceType": "Development",
-    "instanceName": "Local Development Instance",
+    "dataStoreType": "Development",
+    "name": "Local Development Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
-    "dmsInstanceRouteContexts": [],
-    "dmsInstanceDerivatives": [],
+    "dataStoreContexts": [],
+    "dataStoreDerivatives": [],
     "tenantId": null
   }
 ]

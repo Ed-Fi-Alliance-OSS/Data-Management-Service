@@ -288,7 +288,7 @@ public class UpsertHandlerTests
                     new NamespacePrefix("uri://sample.org"),
                     new NamespacePrefix("uri://ed-fi.org"),
                 ],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (upsertHandler, serviceProvider) = Handler(_repository);

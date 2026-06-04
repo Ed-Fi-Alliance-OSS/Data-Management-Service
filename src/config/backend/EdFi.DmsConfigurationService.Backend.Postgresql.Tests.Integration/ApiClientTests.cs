@@ -75,7 +75,7 @@ public class ApiClientTests : DatabaseTest
                     ApplicationId = _applicationId,
                     Name = $"ApiClient-{i:D3}",
                     IsApproved = true,
-                    DmsInstanceIds = [],
+                    DataStoreIds = [],
                 };
                 var insertResult = await _apiClientRepository.InsertApiClient(
                     apiClientCommand,
@@ -160,7 +160,7 @@ public class ApiClientTests : DatabaseTest
                     ApplicationId = _applicationId,
                     Name = name,
                     IsApproved = true,
-                    DmsInstanceIds = [],
+                    DataStoreIds = [],
                 };
                 var insertResult = await _apiClientRepository.InsertApiClient(
                     apiClientCommand,

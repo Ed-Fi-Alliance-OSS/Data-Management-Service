@@ -107,26 +107,26 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
 
                 // Delete instances for this tenant
                 var instancesForTenant = context
-                    .InstanceIdToTenant.Where(kvp => kvp.Value == tenantName)
+                    .DataStoreIdToTenant.Where(kvp => kvp.Value == tenantName)
                     .Select(kvp => kvp.Key)
                     .OrderByDescending(id => id)
                     .ToList();
 
-                foreach (var instanceId in instancesForTenant)
+                foreach (var dataStoreId in instancesForTenant)
                 {
                     _logger?.LogInformation(
-                        "Deleting instance {InstanceId} for tenant {TenantName}",
-                        instanceId,
+                        "Deleting instance {DataStoreId} for tenant {TenantName}",
+                        dataStoreId,
                         tenantName
                     );
                     try
                     {
-                        await tenantClient.DeleteInstanceAsync(instanceId);
-                        _logger?.LogInformation("Instance {InstanceId} deleted successfully", instanceId);
+                        await tenantClient.DeleteInstanceAsync(dataStoreId);
+                        _logger?.LogInformation("Instance {DataStoreId} deleted successfully", dataStoreId);
                     }
                     catch (Exception ex)
                     {
-                        _logger?.LogWarning(ex, "Failed to delete instance {InstanceId}", instanceId);
+                        _logger?.LogWarning(ex, "Failed to delete instance {DataStoreId}", dataStoreId);
                     }
                 }
 
@@ -181,16 +181,16 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
                 }
 
                 // Delete legacy instances
-                foreach (var instanceId in context.InstanceIds.OrderByDescending(id => id))
+                foreach (var dataStoreId in context.DataStoreIds.OrderByDescending(id => id))
                 {
-                    _logger?.LogInformation("Deleting legacy instance {InstanceId}", instanceId);
+                    _logger?.LogInformation("Deleting legacy instance {DataStoreId}", dataStoreId);
                     try
                     {
-                        await legacyClient.DeleteInstanceAsync(instanceId);
+                        await legacyClient.DeleteInstanceAsync(dataStoreId);
                     }
                     catch (Exception ex)
                     {
-                        _logger?.LogWarning(ex, "Failed to delete legacy instance {InstanceId}", instanceId);
+                        _logger?.LogWarning(ex, "Failed to delete legacy instance {DataStoreId}", dataStoreId);
                     }
                 }
 

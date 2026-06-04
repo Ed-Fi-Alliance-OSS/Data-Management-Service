@@ -82,7 +82,7 @@ public class ApplicationModule : IEndpointModule
             command.ClaimSetName,
             namespacePrefixes,
             string.Join(",", command.EducationOrganizationIds),
-            command.DmsInstanceIds
+            command.DataStoreIds
         );
 
         switch (clientCreateResult)
@@ -106,7 +106,7 @@ public class ApplicationModule : IEndpointModule
                     {
                         ClientId = clientId,
                         ClientUuid = clientSuccess.ClientUuid,
-                        DmsInstanceIds = command.DmsInstanceIds,
+                        DataStoreIds = command.DataStoreIds,
                     }
                 );
 
@@ -128,10 +128,10 @@ public class ApplicationModule : IEndpointModule
                         throw new ValidationException([
                             new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
                         ]);
-                    case ApplicationInsertResult.FailureDmsInstanceNotFound:
+                    case ApplicationInsertResult.FailureDataStoreNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
                         throw new ValidationException([
-                            new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
+                            new ValidationFailure("DataStoreId", "Data store does not exist."),
                         ]);
                     case ApplicationInsertResult.FailureProfileNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -226,7 +226,7 @@ public class ApplicationModule : IEndpointModule
                         command.ApplicationName,
                         command.ClaimSetName,
                         string.Join(",", command.EducationOrganizationIds),
-                        command.DmsInstanceIds,
+                        command.DataStoreIds,
                         client.IsApproved,
                         identitySettings.Value.ClientRole
                     );
@@ -239,7 +239,7 @@ public class ApplicationModule : IEndpointModule
                                 {
                                     ClientId = client.ClientId,
                                     ClientUuid = updateSuccess.ClientUuid,
-                                    DmsInstanceIds = command.DmsInstanceIds,
+                                    DataStoreIds = command.DataStoreIds,
                                 }
                             );
 
@@ -253,10 +253,10 @@ public class ApplicationModule : IEndpointModule
                                 ]);
                             }
 
-                            if (applicationUpdateResult is ApplicationUpdateResult.FailureDmsInstanceNotFound)
+                            if (applicationUpdateResult is ApplicationUpdateResult.FailureDataStoreNotFound)
                             {
                                 throw new ValidationException([
-                                    new ValidationFailure("DmsInstanceId", $"DMS instance does not exist."),
+                                    new ValidationFailure("DataStoreId", $"Data store does not exist."),
                                 ]);
                             }
 
