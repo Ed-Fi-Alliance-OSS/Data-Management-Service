@@ -116,3 +116,10 @@ Key decisions: Added @relational-ci-shard-3 to each SecurityConfigurationProblem
 Files changed: E2E SecurityConfigurationProblemDetails.feature; tasks.json; progress.txt.
 Verification: dotnet build E2E csproj Debug and Release regenerated Reqnroll code; generated SecurityConfigurationProblemDetails.feature.cs contains relational-backend, relational-ci-shard-3, and security-configuration for all three scenarios. First build-dms E2E shard run selected no tests because Release assembly was stale after only Debug build. After dotnet build -c Release, env -u NODE_OPTIONS pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3&Category=@security-configuration' passed 3 tests.
 Blockers/notes: Remaining incomplete tasks are CmsAction logging precedence and descriptor single-classification cleanup.
+
+Task completed: Honor backend security-configuration diagnostics' CMS action when logging non-CRUD authorization failures.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: SecurityConfigurationFailureLogger now resolves CmsAction from explicit caller argument, then first diagnostic CmsAction, then HTTP method fallback. Added GET-backed ReadChanges diagnostic log coverage while leaving existing CRUD/middleware Read fallback assertions intact.
+Files changed: Core SecurityConfigurationFailureLogger; Core QueryRequestHandlerTests; tasks.json; progress.txt.
+Verification: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit. dotnet test Core.Tests.Unit with FullyQualifiedName~QueryRequestHandlerTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 58 tests.
+Blockers/notes: Remaining incomplete task is descriptor single-classification cleanup.

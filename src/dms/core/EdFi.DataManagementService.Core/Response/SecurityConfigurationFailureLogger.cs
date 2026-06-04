@@ -60,7 +60,7 @@ internal static class SecurityConfigurationFailureLogger
                 .Select(static diagnostic => diagnostic.RequestSurface)
                 .FirstOrDefault(static requestSurface => !string.IsNullOrWhiteSpace(requestSurface))
             ?? BuildRequestSurface(requestInfo);
-        string resolvedCmsAction = cmsAction ?? GetCmsActionName(requestInfo);
+        string resolvedCmsAction = ResolveCmsAction(cmsAction, diagnosticsArray, requestInfo);
         string resourceFullName =
             diagnosticResourceFullNames.FirstOrDefault() ?? BuildResourceFullName(requestInfo);
         IReadOnlyList<string> resolvedMatchedResourceClaimUris = matchedResourceClaimUris ?? [];
@@ -119,6 +119,18 @@ internal static class SecurityConfigurationFailureLogger
 
         return $"{operation}{resourceKind}";
     }
+
+    private static string ResolveCmsAction(
+        string? cmsAction,
+        SecurityConfigurationFailureDiagnostic[] diagnostics,
+        RequestInfo requestInfo
+    ) =>
+        !string.IsNullOrWhiteSpace(cmsAction)
+            ? cmsAction
+            : diagnostics
+                .Select(static diagnostic => diagnostic.CmsAction)
+                .FirstOrDefault(static diagnosticCmsAction => !string.IsNullOrWhiteSpace(diagnosticCmsAction))
+                ?? GetCmsActionName(requestInfo);
 
     private static string GetCmsActionName(RequestInfo requestInfo) =>
         requestInfo.Method switch

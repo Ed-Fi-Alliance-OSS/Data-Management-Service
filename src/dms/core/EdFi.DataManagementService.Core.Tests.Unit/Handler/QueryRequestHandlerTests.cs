@@ -291,6 +291,72 @@ public class QueryRequestHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_ReadChanges_Security_Configuration_Failure
+        : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string[] ResponseErrors =
+            [
+                "Change query authorization metadata is invalid for resource 'Ed-Fi.School'.",
+            ];
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                return Task.FromResult<QueryResult>(
+                    new QueryResult.QueryFailureSecurityConfiguration(
+                        ResponseErrors,
+                        [
+                            new SecurityConfigurationFailureDiagnostic(
+                                ProviderOrPlannerFailureKind: "ChangeQueryAuthorization.InvalidAuthorizationStrategy",
+                                ResourceFullName: "Ed-Fi.School",
+                                RequestSurface: "ReadChangesResource",
+                                CmsAction: "ReadChanges"
+                            ),
+                        ]
+                    )
+                );
+            }
+        }
+
+        private static readonly string _traceId = "readchanges-security-config";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private RecordingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger();
+            var (queryHandler, serviceProvider) = Handler(new Repository(), _logger);
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                Path = "ed-fi/schools/deletes",
+            };
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_logs_the_backend_diagnostic_cms_action_instead_of_the_get_fallback()
+        {
+            var logRecord = _logger
+                .Records.Where(static record => record.Level == LogLevel.Error)
+                .Should()
+                .ContainSingle()
+                .Subject;
+
+            logRecord.Properties["HttpMethod"].Should().Be("GET");
+            logRecord.Properties["RoutePath"].Should().Be("ed-fi/schools/deletes");
+            logRecord.Properties["RequestSurface"].Should().Be("ReadChangesResource");
+            logRecord.Properties["CmsAction"].Should().Be("ReadChanges");
+            ((IEnumerable<string>)logRecord.Properties["SecurityConfigurationErrors"]!)
+                .Should()
+                .Equal(Repository.ResponseErrors);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Namespace_Not_Authorized : QueryRequestHandlerTests
     {
         internal static readonly NamespaceAuthorizationFailure Failure = new(
