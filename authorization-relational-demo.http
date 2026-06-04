@@ -10,14 +10,25 @@
 # This demo is based on recent authorization work in:
 # reference/design/backend-redesign/epics/14-authorization/EPIC.md
 #
-# Start the relational E2E Docker environment before using this file, then run this
-# provision-only command from the repository root:
+# Start from a clean relational E2E Docker environment before using this file:
 #
+# cd src/dms/tests/EdFi.DataManagementService.Tests.E2E
+# pwsh ./teardown-local-dms.ps1
+# pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
+# cd /home/brad/work/dms-root/DMS-1206
 # pwsh -NoProfile -Command "./eng/docker-compose/provision-relational-e2e-database.ps1 -EnvironmentFile './eng/docker-compose/.env.e2e.relational' -Configuration Release; docker restart dms-local-dms-1"
+#
+# Optional sanity check:
+#
+# docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'UseRelationalBackend|Datastore|QueryHandler'
+#
+# Expected values include AppSettings__UseRelationalBackend=true,
+# AppSettings__Datastore=postgresql, and AppSettings__QueryHandler=postgresql.
 #
 # The DMS instance below intentionally points to edfi_datamanagementservice_relational.
 # Run this file once against that freshly provisioned relational database. Before rerunning,
-# provision again because this file uses fixed demo IDs and captured Location headers.
+# perform the full teardown/setup/provision sequence again because this file uses fixed demo
+# IDs and captured Location headers.
 
 @configPort=8081
 @dmsPort=8080
