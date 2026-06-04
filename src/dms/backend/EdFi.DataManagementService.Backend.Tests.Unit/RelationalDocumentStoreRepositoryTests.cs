@@ -4519,23 +4519,37 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
-        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().HaveCount(2);
-        result
-            .As<QueryResult.QueryFailureSecurityConfiguration>()
-            .Errors.Should()
-            .Contain(
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().HaveCount(2);
+        failure
+            .Errors[0]
+            .Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
+            .And.Contain("GET-many relationship query execution boundary")
+            .And.NotContain("GET-many EdOrg-only relationship query execution boundary");
+        failure
+            .Errors[1]
+            .Should()
+            .Be(
                 SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
                     "CustomAuthorizationStrategy",
                 ])
-            )
-            .And.Contain(error =>
-                error.Contains(AuthorizationStrategyNameConstants.OwnershipBased, StringComparison.Ordinal)
-                && error.Contains("GET-many relationship query execution boundary", StringComparison.Ordinal)
-                && !error.Contains(
-                    "GET-many EdOrg-only relationship query execution boundary",
-                    StringComparison.Ordinal
-                )
+            );
+        failure.Diagnostics.Should().NotBeNull().And.HaveCount(2);
+        failure
+            .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyNames ?? [])
+            .Should()
+            .Equal(AuthorizationStrategyNameConstants.OwnershipBased, "CustomAuthorizationStrategy");
+        failure
+            .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyIndexes ?? [])
+            .Should()
+            .Equal(0, 1);
+        failure
+            .Diagnostics!.Select(static diagnostic => diagnostic.ProviderOrPlannerFailureKind)
+            .Should()
+            .Equal(
+                $"RelationshipAuthorization.{RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy}",
+                $"RelationshipAuthorization.{RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy}"
             );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(

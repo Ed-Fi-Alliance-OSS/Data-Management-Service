@@ -217,5 +217,53 @@
       "./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@security-configuration'"
     ],
     "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Remove obsolete descriptor namespace guardrail helpers left behind after descriptor authorization preflight moved to the unified relational planner.",
+    "acceptance-criteria": [
+      "RelationalReadGuardrails no longer contains HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired or ContainsNamespaceBased.",
+      "No production or test code references the removed helper names.",
+      "Descriptor read, write, and delete preflight logic continues to use RelationalAuthorizationPlanner for namespace, unknown-strategy, and staged 501 classification."
+    ],
+    "steps-to-verify": [
+      "rg -n \"HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired|ContainsNamespaceBased\" src/dms",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs and src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs for planner-based descriptor authorization preflight.",
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadGuardrails.cs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "bugfix",
+    "description": "Medium: Preserve mixed GET-many security-configuration failure details when invalid strategy metadata is configured alongside a known-but-not-enabled strategy.",
+    "acceptance-criteria": [
+      "ResolveQueryAuthorization does not collapse RelationalAuthorizationPlanOutcome.SecurityConfigurationError to only the canonical unknown-strategy message when the same non-namespace strategy set also contains known-but-not-enabled metadata.",
+      "A GET-many request configured with OwnershipBased and an invalid strategy returns QueryFailureSecurityConfiguration with both the canonical unknown-strategy error and the known-but-not-enabled relationship-query boundary error in deterministic strategy order.",
+      "The security-configuration diagnostics for that mixed GET-many failure include both configured strategy names, both configured indexes, and both planner failure kinds.",
+      "The mixed failure still short-circuits before query planning, hydration, or database execution, and true security-configuration errors continue to take precedence over staged 501 outcomes.",
+      "Single-invalid-strategy GET-many failures continue to return the canonical unknown-strategy security-configuration message without extra staged-strategy text."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs around ResolveQueryAuthorization and BuildQueryAuthorizationSecurityConfigurationFailure.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests.It_returns_security_configuration_failure_when_query_authorization_includes_invalid_and_known_out_of_scope_strategies|FullyQualifiedName~RelationalDocumentStoreRepositoryTests.It_returns_query_security_configuration_failure_when_query_authorization_strategy_metadata_is_invalid\"",
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit"
+    ],
+    "completed": true
+  },
+  {
+    "category": "logging",
+    "description": "Low: Log all available configured authorization strategy names for security-configuration responses even when backend diagnostics only identify a subset of failing strategies.",
+    "acceptance-criteria": [
+      "SecurityConfigurationFailureLogger resolves ConfiguredStrategyNames from the union of diagnostic strategy names and the explicit configured strategy list or RequestInfo.ResourceActionAuthStrategies, rather than replacing the request-level list whenever diagnostics are present.",
+      "Backend-originated security-configuration logs keep diagnostic ConfiguredStrategyIndexes and ProviderOrPlannerFailureKinds tied to the failures that supplied them.",
+      "A focused Core unit test covers a security-configuration response where RequestInfo.ResourceActionAuthStrategies contains two strategy names and diagnostics mention only one; the log entry includes both configured strategy names.",
+      "The logging change does not add raw JWTs, secrets, SQL text, stack traces, or provider exception text to structured log fields."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Response/SecurityConfigurationFailureLogger.cs.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~QueryRequestHandlerTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests\"",
+      "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit"
+    ],
+    "completed": false
   }
 ]

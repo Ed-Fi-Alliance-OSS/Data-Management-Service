@@ -81,3 +81,10 @@ Key decisions: Final pass found no source patch needed. PostgreSQL API integrati
 Files changed: tasks.json; progress.txt.
 Verification: dotnet csharpier format src/dms clean. Core.Tests.Unit passed 2540 tests. Backend.Plans.Tests.Unit passed 1262 tests. Backend.Tests.Unit FullyQualifiedName~Authorization passed 107 tests. API Integration Postgresql SecurityConfiguration|Authorization passed 19 tests with local 5435 connection after initial no-env skip-only run. Backend.Postgresql Integration SecurityConfiguration|Authorization passed 99 tests. env -u NODE_OPTIONS pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@security-configuration' passed 3 tests.
 Blockers/notes: Final verification complete; no PROBLEMS.md created.
+
+Task completed: Preserve mixed GET-many security-configuration failure details when invalid strategy metadata is configured alongside a known-but-not-enabled strategy.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: Route RelationalAuthorizationPlanOutcome.SecurityConfigurationError through the shared query relationship authorization resolver so relationship planner failures preserve both known-but-not-enabled and invalid-strategy details in configured order. Strengthened mixed-case test to assert errors, diagnostics strategy names/indexes, planner failure kinds, and no hydration.
+Files changed: Backend RelationalDocumentStoreRepository.cs; Backend unit tests RelationalDocumentStoreRepositoryTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit. Focused RelationalDocumentStoreRepository mixed/single-invalid filter passed 2 tests. Backend.Tests.Unit FullyQualifiedName~Authorization passed 107 tests. git diff --check clean.
+Blockers/notes: Remaining open follow-ups are cleanup of obsolete descriptor guardrail helpers and logging configured-strategy union behavior.
