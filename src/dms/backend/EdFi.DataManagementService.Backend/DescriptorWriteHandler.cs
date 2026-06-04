@@ -1087,17 +1087,9 @@ internal sealed class DescriptorWriteHandler(
                 ),
             RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
                 new DescriptorDeleteAuthorizationPreflightResult.Stop(
-                    new DeleteResult.DeleteFailureSecurityConfiguration(
-                        RelationalReadGuardrails.BuildSecurityConfigurationErrors(
-                            request.MappingSet,
-                            request.Resource,
-                            securityConfigurationError.NonNamespaceConfiguredStrategies
-                        ),
-                        RelationalReadGuardrails.BuildSecurityConfigurationDiagnostics(
-                            request.MappingSet,
-                            request.Resource,
-                            securityConfigurationError.NonNamespaceConfiguredStrategies
-                        )
+                    BuildDescriptorDeleteSecurityConfigurationError(
+                        request.Resource,
+                        securityConfigurationError
                     )
                 ),
             _ => throw new InvalidOperationException(
@@ -1249,22 +1241,42 @@ internal sealed class DescriptorWriteHandler(
                     )
                 ),
             RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
-                new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
-                    RelationalReadGuardrails.BuildSecurityConfigurationErrors(
-                        request.MappingSet,
-                        request.Resource,
-                        securityConfigurationError.NonNamespaceConfiguredStrategies
-                    ),
-                    RelationalReadGuardrails.BuildSecurityConfigurationDiagnostics(
-                        request.MappingSet,
-                        request.Resource,
-                        securityConfigurationError.NonNamespaceConfiguredStrategies
-                    )
-                ),
+                BuildDescriptorWriteSecurityConfigurationError(request.Resource, securityConfigurationError),
             _ => throw new InvalidOperationException(
                 $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
             ),
         };
+    }
+
+    private static DeleteResult.DeleteFailureSecurityConfiguration BuildDescriptorDeleteSecurityConfigurationError(
+        QualifiedResourceName resource,
+        RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError
+    )
+    {
+        var failure = RelationalReadGuardrails.BuildSecurityConfigurationFailure(
+            resource,
+            securityConfigurationError.NonNamespaceConfiguredStrategies,
+            securityConfigurationError.RelationshipClassification
+        );
+
+        return new DeleteResult.DeleteFailureSecurityConfiguration(failure.Errors, failure.Diagnostics);
+    }
+
+    private static DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError BuildDescriptorWriteSecurityConfigurationError(
+        QualifiedResourceName resource,
+        RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError
+    )
+    {
+        var failure = RelationalReadGuardrails.BuildSecurityConfigurationFailure(
+            resource,
+            securityConfigurationError.NonNamespaceConfiguredStrategies,
+            securityConfigurationError.RelationshipClassification
+        );
+
+        return new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+            failure.Errors,
+            failure.Diagnostics
+        );
     }
 
     private static DescriptorWriteAuthorizationPreflightOutcome BuildDescriptorWritePlanPreflight(

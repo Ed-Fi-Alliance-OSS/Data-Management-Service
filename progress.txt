@@ -123,3 +123,10 @@ Key decisions: SecurityConfigurationFailureLogger now resolves CmsAction from ex
 Files changed: Core SecurityConfigurationFailureLogger; Core QueryRequestHandlerTests; tasks.json; progress.txt.
 Verification: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit. dotnet test Core.Tests.Unit with FullyQualifiedName~QueryRequestHandlerTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 58 tests.
 Blockers/notes: Remaining incomplete task is descriptor single-classification cleanup.
+
+Task completed: Derive descriptor security-configuration errors and diagnostics from a single relationship strategy classification pass.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: RelationalAuthorizationPlanOutcome.SecurityConfigurationError now carries the precomputed RelationshipAuthorizationClassification from RelationalAuthorizationPlanner. RelationalReadGuardrails builds descriptor wire errors and diagnostics from that classification in one shared helper, preserving the existing fallback for non-namespace strategy names and leaving staged 501 paths unchanged.
+Files changed: Backend.Plans RelationalAuthorizationPlanner.cs; Backend RelationalReadGuardrails.cs; DescriptorReadHandler.cs; DescriptorWriteHandler.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format backend/plans backend test projects. Task filter with file-style names selected no tests; corrected Given_ descriptor namespace authorization filter passed 63 tests. RelationalAuthorizationPlanner plan tests passed 16 tests. git diff --check clean.
+Blockers/notes: None for this task.

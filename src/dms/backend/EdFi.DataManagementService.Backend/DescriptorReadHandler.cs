@@ -748,22 +748,28 @@ internal sealed class DescriptorReadHandler(
                     )
                 ),
             RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
-                new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
-                    RelationalReadGuardrails.BuildSecurityConfigurationErrors(
-                        mappingSet,
-                        resource,
-                        securityConfigurationError.NonNamespaceConfiguredStrategies
-                    ),
-                    RelationalReadGuardrails.BuildSecurityConfigurationDiagnostics(
-                        mappingSet,
-                        resource,
-                        securityConfigurationError.NonNamespaceConfiguredStrategies
-                    )
-                ),
+                BuildDescriptorReadSecurityConfigurationError(resource, securityConfigurationError),
             _ => throw new InvalidOperationException(
                 $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
             ),
         };
+    }
+
+    private static DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError BuildDescriptorReadSecurityConfigurationError(
+        QualifiedResourceName resource,
+        RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError
+    )
+    {
+        var failure = RelationalReadGuardrails.BuildSecurityConfigurationFailure(
+            resource,
+            securityConfigurationError.NonNamespaceConfiguredStrategies,
+            securityConfigurationError.RelationshipClassification
+        );
+
+        return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+            failure.Errors,
+            failure.Diagnostics
+        );
     }
 
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadPlanPreflight(

@@ -28,24 +28,18 @@ internal static class RelationalReadGuardrails
         );
     }
 
-    public static string[] BuildSecurityConfigurationErrors(
-        MappingSet mappingSet,
+    public static RelationalReadSecurityConfigurationFailure BuildSecurityConfigurationFailure(
         QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationClassification relationshipClassification
     )
     {
-        ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
-
-        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
-            mappingSet,
-            resource,
-            nonNamespaceConfiguredStrategies
-        );
+        ArgumentNullException.ThrowIfNull(relationshipClassification);
 
         string[] unavailableStrategyNames =
         [
-            .. classification
+            .. relationshipClassification
                 .SecurityConfigurationFailures.Select(static failure =>
                     failure.ConfiguredStrategy?.StrategyName
                 )
@@ -69,32 +63,32 @@ internal static class RelationalReadGuardrails
             ];
         }
 
-        return
+        string[] errors =
         [
             SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(unavailableStrategyNames),
         ];
+
+        return new RelationalReadSecurityConfigurationFailure(
+            errors,
+            BuildSecurityConfigurationDiagnostics(
+                resource,
+                nonNamespaceConfiguredStrategies,
+                relationshipClassification
+            )
+        );
     }
 
-    public static SecurityConfigurationFailureDiagnostic[] BuildSecurityConfigurationDiagnostics(
-        MappingSet mappingSet,
+    private static SecurityConfigurationFailureDiagnostic[] BuildSecurityConfigurationDiagnostics(
         QualifiedResourceName resource,
-        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationClassification relationshipClassification
     )
     {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
-
-        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
-            mappingSet,
-            resource,
-            nonNamespaceConfiguredStrategies
-        );
-
-        if (classification.SecurityConfigurationFailures.Count > 0)
+        if (relationshipClassification.SecurityConfigurationFailures.Count > 0)
         {
             return
             [
-                .. classification.SecurityConfigurationFailures.Select(
+                .. relationshipClassification.SecurityConfigurationFailures.Select(
                     static failure => new SecurityConfigurationFailureDiagnostic(
                         ProviderOrPlannerFailureKind: $"RelationshipAuthorization.{failure.FailureKind}",
                         ResourceFullName: RelationalWriteSupport.FormatResource(failure.Resource),
@@ -190,3 +184,8 @@ internal static class RelationalReadGuardrails
         return (int)totalCount.Value;
     }
 }
+
+internal sealed record RelationalReadSecurityConfigurationFailure(
+    string[] Errors,
+    SecurityConfigurationFailureDiagnostic[] Diagnostics
+);

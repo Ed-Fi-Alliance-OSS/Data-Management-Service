@@ -52,11 +52,12 @@ public abstract record RelationalAuthorizationPlanOutcome
     /// <summary>
     /// At least one configured strategy is unrecognized or otherwise invalid. The relationship
     /// classifier reports a security configuration error and the request fails with 500. The
-    /// non-namespace strategies are carried so the caller can re-run the relationship planner and
-    /// surface the exact security-configuration diagnostics.
+    /// non-namespace strategies and classification are carried so the caller can surface the exact
+    /// security-configuration response and diagnostics without reclassifying the strategy set.
     /// </summary>
     public sealed record SecurityConfigurationError(
-        IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies
+        IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationClassification RelationshipClassification
     ) : RelationalAuthorizationPlanOutcome;
 }
 
@@ -119,7 +120,10 @@ public static class RelationalAuthorizationPlanner
             { Outcome: RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError }
         )
         {
-            return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(nonNamespaceStrategies);
+            return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
+                nonNamespaceStrategies,
+                relationshipClassification
+            );
         }
 
         NamespaceAuthorizationPlanOutcome? namespaceOutcome =
