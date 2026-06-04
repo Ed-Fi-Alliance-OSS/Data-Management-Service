@@ -4346,7 +4346,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors[0]
             .Should()
-            .Contain(invalidStrategyName);
+            .Be(SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([invalidStrategyName]));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -4522,7 +4522,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors.Should()
-            .Contain(error => error.Contains("CustomAuthorizationStrategy", StringComparison.Ordinal))
+            .Contain(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+                    "CustomAuthorizationStrategy",
+                ])
+            )
             .And.Contain(error =>
                 error.Contains(AuthorizationStrategyNameConstants.OwnershipBased, StringComparison.Ordinal)
                 && error.Contains("GET-many relationship query execution boundary", StringComparison.Ordinal)
@@ -4998,12 +5002,55 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors[0]
             .Should()
-            .Contain("CustomAuthorizationStrategy");
+            .Be(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+                    "CustomAuthorizationStrategy",
+                ])
+            );
         result
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors[0]
             .Should()
-            .Contain("{BasisResource}With...");
+            .NotContain("{BasisResource}With...");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_aggregates_unknown_query_authorization_strategy_names_in_the_canonical_security_configuration_message()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("ZCustomAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator("ACustomAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator("ZCustomAuthorizationStrategy"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+                    "ACustomAuthorizationStrategy",
+                    "ZCustomAuthorizationStrategy",
+                ])
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,

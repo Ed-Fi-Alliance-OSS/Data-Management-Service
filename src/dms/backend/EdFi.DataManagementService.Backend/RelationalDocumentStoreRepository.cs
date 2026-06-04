@@ -3074,17 +3074,15 @@ public sealed class RelationalDocumentStoreRepository(
             ]);
         }
 
-        return new GetResult.GetFailureSecurityConfiguration([
-            .. failures.Select(failure =>
-                BuildSecurityConfigurationFailureMessage(
-                    mappingSet,
-                    failure,
-                    operationLabel: "GET-by-id",
-                    effectiveAuthorizationLabel: "GET",
-                    executionBoundaryName: "single-record relationship execution boundary"
-                )
-            ),
-        ]);
+        return new GetResult.GetFailureSecurityConfiguration(
+            BuildSecurityConfigurationFailureMessages(
+                mappingSet,
+                failures,
+                operationLabel: "GET-by-id",
+                effectiveAuthorizationLabel: "GET",
+                executionBoundaryName: "single-record relationship execution boundary"
+            )
+        );
     }
 
     private static DeleteResult.DeleteFailureSecurityConfiguration BuildDeleteAuthorizationSecurityConfigurationFailure(
@@ -3109,17 +3107,15 @@ public sealed class RelationalDocumentStoreRepository(
             ]);
         }
 
-        return new DeleteResult.DeleteFailureSecurityConfiguration([
-            .. failures.Select(failure =>
-                BuildSecurityConfigurationFailureMessage(
-                    mappingSet,
-                    failure,
-                    operationLabel: "DELETE",
-                    effectiveAuthorizationLabel: "DELETE",
-                    executionBoundaryName: "single-record relationship execution boundary"
-                )
-            ),
-        ]);
+        return new DeleteResult.DeleteFailureSecurityConfiguration(
+            BuildSecurityConfigurationFailureMessages(
+                mappingSet,
+                failures,
+                operationLabel: "DELETE",
+                effectiveAuthorizationLabel: "DELETE",
+                executionBoundaryName: "single-record relationship execution boundary"
+            )
+        );
     }
 
     private static UpsertResult.UpsertFailureSecurityConfiguration BuildPostAuthorizationSecurityConfigurationFailure(
@@ -3130,17 +3126,15 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(failures);
 
-        return new UpsertResult.UpsertFailureSecurityConfiguration([
-            .. failures.Select(failure =>
-                BuildSecurityConfigurationFailureMessage(
-                    mappingSet,
-                    failure,
-                    operationLabel: "POST",
-                    effectiveAuthorizationLabel: "POST",
-                    executionBoundaryName: "POST create-new relationship execution boundary"
-                )
-            ),
-        ]);
+        return new UpsertResult.UpsertFailureSecurityConfiguration(
+            BuildSecurityConfigurationFailureMessages(
+                mappingSet,
+                failures,
+                operationLabel: "POST",
+                effectiveAuthorizationLabel: "POST",
+                executionBoundaryName: "POST create-new relationship execution boundary"
+            )
+        );
     }
 
     private static UpdateResult.UpdateFailureSecurityConfiguration BuildPutAuthorizationSecurityConfigurationFailure(
@@ -3151,17 +3145,15 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(failures);
 
-        return new UpdateResult.UpdateFailureSecurityConfiguration([
-            .. failures.Select(failure =>
-                BuildSecurityConfigurationFailureMessage(
-                    mappingSet,
-                    failure,
-                    operationLabel: "PUT",
-                    effectiveAuthorizationLabel: "PUT",
-                    executionBoundaryName: "PUT relationship execution boundary"
-                )
-            ),
-        ]);
+        return new UpdateResult.UpdateFailureSecurityConfiguration(
+            BuildSecurityConfigurationFailureMessages(
+                mappingSet,
+                failures,
+                operationLabel: "PUT",
+                effectiveAuthorizationLabel: "PUT",
+                executionBoundaryName: "PUT relationship execution boundary"
+            )
+        );
     }
 
     private static string BuildKnownButNotEnabledQueryAuthorizationMessage(
@@ -3333,18 +3325,75 @@ public sealed class RelationalDocumentStoreRepository(
             ]);
         }
 
-        return new QueryResult.QueryFailureSecurityConfiguration([
-            .. failures.Select(failure =>
+        return new QueryResult.QueryFailureSecurityConfiguration(
+            BuildSecurityConfigurationFailureMessages(
+                mappingSet,
+                failures,
+                operationLabel: "query",
+                effectiveAuthorizationLabel: "GET-many",
+                executionBoundaryName: "GET-many relationship query execution boundary"
+            )
+        );
+    }
+
+    private static string[] BuildSecurityConfigurationFailureMessages(
+        MappingSet mappingSet,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures,
+        string operationLabel,
+        string effectiveAuthorizationLabel,
+        string executionBoundaryName
+    )
+    {
+        string[] unknownStrategyNames =
+        [
+            .. failures
+                .Where(IsUnknownAuthorizationStrategyFailure)
+                .Select(static failure => failure.ConfiguredStrategy?.StrategyName)
+                .Where(static strategyName => strategyName is not null)
+                .Cast<string>(),
+        ];
+
+        var canUseCanonicalUnknownStrategyMessage = unknownStrategyNames.Length > 0;
+        var canonicalUnknownStrategyMessageAdded = false;
+        List<string> messages = [];
+
+        foreach (var failure in failures)
+        {
+            if (IsUnknownAuthorizationStrategyFailure(failure) && canUseCanonicalUnknownStrategyMessage)
+            {
+                if (!canonicalUnknownStrategyMessageAdded)
+                {
+                    messages.Add(
+                        SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(
+                            unknownStrategyNames
+                        )
+                    );
+                    canonicalUnknownStrategyMessageAdded = true;
+                }
+
+                continue;
+            }
+
+            messages.Add(
                 BuildSecurityConfigurationFailureMessage(
                     mappingSet,
                     failure,
-                    operationLabel: "query",
-                    effectiveAuthorizationLabel: "GET-many",
-                    executionBoundaryName: "GET-many relationship query execution boundary"
+                    operationLabel,
+                    effectiveAuthorizationLabel,
+                    executionBoundaryName
                 )
-            ),
-        ]);
+            );
+        }
+
+        return [.. messages];
     }
+
+    private static bool IsUnknownAuthorizationStrategyFailure(
+        RelationshipAuthorizationFailureMetadata failure
+    ) =>
+        failure.FailureKind
+            is RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy
+                or RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource;
 
     private static bool HasOnlyEdOrgSubjectSelectionFailures(
         IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
