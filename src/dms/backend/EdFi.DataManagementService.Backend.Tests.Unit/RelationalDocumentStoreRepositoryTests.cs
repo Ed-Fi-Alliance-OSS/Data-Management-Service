@@ -3964,6 +3964,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
             ]
         );
 
@@ -3972,6 +3973,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
         var failure = result.As<QueryResult.QueryFailureNotImplemented>();
         failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        failure.FailureMessage.Should().Contain("SchoolWithCustomAuthorization");
         failure
             .FailureMessage.Should()
             .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");

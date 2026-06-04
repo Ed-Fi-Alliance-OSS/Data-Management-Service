@@ -2387,6 +2387,35 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_keep_resolved_custom_view_strategies_as_known_but_not_enabled()
+    {
+        var targetResource = new QualifiedResourceName("Ed-Fi", "School");
+        var basisResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var strategyName = "StudentWithSchoolAuthorization";
+        var planner = CreatePlanner();
+
+        var result = planner.PlanStoredValues(
+            CreateMinimalMappingSet(targetResource, basisResource),
+            targetResource,
+            CreateConfiguredAuthorizationStrategies(strategyName),
+            new RelationalAuthorizationContext([42L], [])
+        );
+
+        result.Should().BeOfType<RelationshipAuthorizationResult.KnownButNotEnabled>();
+
+        var failure = ((RelationshipAuthorizationResult.KnownButNotEnabled)result)
+            .Failures.Should()
+            .ContainSingle()
+            .Subject;
+
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy);
+        failure.ConfiguredStrategy?.StrategyName.Should().Be(strategyName);
+        failure.RelationshipLocalOrder.Should().Be(0);
+        failure.Location?.AuthorizationObjectName.Should().Be("Ed-Fi.Student");
+        failure.Hint.Should().Contain("Basis resource: 'Ed-Fi.Student'");
+    }
+
+    [Test]
     public void It_should_leave_direct_claim_match_disabled_for_non_edorg_auth_objects()
     {
         var authObject = new RelationshipAuthorizationAuthObject(
@@ -3116,18 +3145,25 @@ public class Given_RelationshipAuthorizationPlannerTests
         return CreateMappingSet(concreteResources);
     }
 
-    private static MappingSet CreateMinimalMappingSet(QualifiedResourceName resource) =>
-        CreateMappingSet(
-            CreateConcrete(
-                resource.ResourceName,
-                CreateModelWithTables(
-                    resource.ResourceName,
-                    CreateRootTable(Table(resource.ResourceName)),
-                    []
+    private static MappingSet CreateMinimalMappingSet(
+        QualifiedResourceName resource,
+        params QualifiedResourceName[] additionalResources
+    ) =>
+        CreateMappingSet([
+            .. new[] { resource }
+                .Concat(additionalResources)
+                .Select(static resource =>
+                    CreateConcrete(
+                        resource.ResourceName,
+                        CreateModelWithTables(
+                            resource.ResourceName,
+                            CreateRootTable(Table(resource.ResourceName)),
+                            []
+                        ),
+                        new ResourceSecurableElements([], [], [], [], [])
+                    )
                 ),
-                new ResourceSecurableElements([], [], [], [], [])
-            )
-        );
+        ]);
 
     private static DbColumnModel CreatePersonDocumentIdColumn(
         DbColumnName documentIdColumn,
