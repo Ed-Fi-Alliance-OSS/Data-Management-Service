@@ -245,34 +245,28 @@ public sealed record TrackedChangeTableInfo(
     IReadOnlyList<TrackedChangePersonJoinInfo> PersonJoinsInNameOrder
 );
 
-public enum ReadChangesAuthorizationViewKind
+// The four ReadChanges authorization views (see `change-queries.md` §"Authorization views")
+// are a static structural inventory, not a per-schema derived inventory: like the
+// people auth views they extend, their shape never varies with the effective schema. They are
+// owned by `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` in `Backend.External`,
+// where `AuthViewDefinition` (view name, set operator, union arms) is the shared structural shape
+// rendered by both the DDL emitter and the manifest emitter. The fourth kind is named
+// `StudentDeletedResponsibility` (view `...StudentDocumentIdDeletedResponsibility`, exactly 63
+// characters) because the ODS-era `ThroughDeletedResponsibility` name exceeds PostgreSQL's
+// 63-character identifier limit; see `change-queries.md` for the rename rationale.
+public enum ReadChangesAuthViewKind
 {
-    EducationOrganizationToStudentDocumentIdIncludingDeletes,
-    EducationOrganizationToContactDocumentIdIncludingDeletes,
-    EducationOrganizationToStaffDocumentIdIncludingDeletes,
-    EducationOrganizationToStudentDocumentIdThroughResponsibilityIncludingDeletes
+    Student,
+    Contact,
+    Staff,
+    StudentDeletedResponsibility,
 }
 
-public sealed record ReadChangesAuthorizationJoin(
-    DbTableName FromTable,
-    DbColumnName FromColumn,
-    DbTableName ToTable,
-    DbColumnName ToColumn,
-    bool UsesTrackedChangeTable
-);
-
-public sealed record ReadChangesAuthorizationViewArm(
-    string ArmName,
-    IReadOnlyList<ReadChangesAuthorizationJoin> JoinsInOrder,
-    DbColumnName OutputPersonDocumentIdColumn
-);
-
 public sealed record ReadChangesAuthorizationViewInfo(
-    ReadChangesAuthorizationViewKind Kind,
-    DbTableName ViewName,
-    DbColumnName SourceEducationOrganizationIdColumn,
-    DbColumnName OutputPersonDocumentIdColumn,
-    IReadOnlyList<ReadChangesAuthorizationViewArm> UnionArmsInOrder
+    ReadChangesAuthViewKind Kind,
+    AuthViewDefinition ViewDefinition,
+    DbColumnName PersonDocumentIdOutputColumn,
+    DbColumnName ClaimEducationOrganizationIdColumn
 );
 
 public enum DbIndexKind
@@ -380,7 +374,6 @@ public sealed record DerivedRelationalModelSet(
     IReadOnlyList<AbstractIdentityTableInfo> AbstractIdentityTablesInNameOrder,
     IReadOnlyList<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder,
     IReadOnlyList<TrackedChangeTableInfo> TrackedChangeTablesInNameOrder,
-    IReadOnlyList<ReadChangesAuthorizationViewInfo> ReadChangesAuthorizationViewsInNameOrder,
     IReadOnlyList<DbIndexInfo> IndexesInCreateOrder,
     IReadOnlyList<DbTriggerInfo> TriggersInCreateOrder
 );
@@ -399,7 +392,8 @@ Notes:
     - authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
     - the shared descriptor tracked-change table (`tracked_changes_edfi.Descriptor`) and its `DbTriggerKind.DocumentStamping`/`TriggerKindParameters.ChangeTracking` trigger are represented in tracked-change inventory because their columns and discriminator coverage are driven by descriptor resources in the effective schema.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
-- `TrackedChangeTablesInNameOrder` and `ReadChangesAuthorizationViewsInNameOrder` are stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, authorization view generation, manifests, and tests must consume these inventories rather than re-deriving table columns, descriptor joins, person joins, or view arms from emitted SQL strings.
+- `TrackedChangeTablesInNameOrder` is stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, manifests, and tests must consume this inventory rather than re-deriving table columns, descriptor joins, or person joins from emitted SQL strings.
+- The ReadChanges authorization view inventory is not part of `DerivedRelationalModelSet`: it is the static `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` list in `Backend.External` (see the `ReadChangesAuthViewKind` note above). Emission of these views is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables in `TrackedChangeTablesInNameOrder`; the DDL emitter and the manifest emitter apply the same guard so the manifest never advertises views the DDL does not create.
 - `TrackedChangeTableInfo` separates system columns from `ValueColumnsInTableOrder`:
   - When `Kind = Resource`, `ResourceKey` is required and identifies the single resource represented by the tracked-change table.
   - When `Kind = SharedDescriptor`, `ResourceKey` is `null`; the table covers every `ConcreteResourceModel` whose `StorageKind = SharedDescriptorTable` in the same `DerivedRelationalModelSet`. Consumers must not duplicate descriptor coverage lists inside `TrackedChangeTableInfo`.

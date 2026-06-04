@@ -60,7 +60,12 @@ public static class DerivedModelSetManifestEmitter
             WriteIndexes(writer, modelSet.IndexesInCreateOrder);
             WriteTriggers(writer, modelSet.TriggersInCreateOrder);
             WriteTrackedChangeTables(writer, modelSet.TrackedChangeTablesInNameOrder);
-            WriteAuthObjects(writer, modelSet.AuthEdOrgHierarchy, modelSet.ConcreteResourcesInNameOrder);
+            WriteAuthObjects(
+                writer,
+                modelSet.AuthEdOrgHierarchy,
+                modelSet.ConcreteResourcesInNameOrder,
+                modelSet.TrackedChangeTablesInNameOrder
+            );
 
             if (detailedResources is not null)
             {
@@ -610,7 +615,8 @@ public static class DerivedModelSetManifestEmitter
     private static void WriteAuthObjects(
         Utf8JsonWriter writer,
         AuthEdOrgHierarchy? authHierarchy,
-        IReadOnlyList<ConcreteResourceModel> concreteResources
+        IReadOnlyList<ConcreteResourceModel> concreteResources,
+        IReadOnlyList<TrackedChangeTableInfo> trackedChangeTables
     )
     {
         var peopleAuthViewAvailability = AuthObjectDefinitions.GetPeopleAuthViewAvailability(
@@ -631,7 +637,14 @@ public static class DerivedModelSetManifestEmitter
         if (peopleAuthViewAvailability.IsAvailable)
         {
             WritePeopleAuthViews(writer, AuthObjectDefinitions.PeopleAuthViews);
-            WriteReadChangesAuthViews(writer, AuthObjectDefinitions.ReadChangesAuthViews);
+
+            // Same guard as RelationalModelDdlEmitter.EmitReadChangesAuthViews: the ReadChanges
+            // views join tracked_changes_edfi tables, so a model set without the tracked-change
+            // inventory must not advertise views the DDL will not create.
+            if (AuthObjectDefinitions.HasReadChangesTrackedChangeTables(trackedChangeTables))
+            {
+                WriteReadChangesAuthViews(writer, AuthObjectDefinitions.ReadChangesAuthViews);
+            }
         }
 
         writer.WriteEndObject();

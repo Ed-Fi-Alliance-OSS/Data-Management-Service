@@ -729,6 +729,30 @@ public class Given_A_Model_Set_With_People_Auth_Availability_When_Emitting_Manif
         authObjects.ContainsKey("read_changes_views").Should().BeFalse();
     }
 
+    [Test]
+    public void It_should_omit_read_changes_views_when_tracked_change_tables_are_missing()
+    {
+        // Mirrors the DDL emitter guard: without the tracked_changes_edfi inventory the people
+        // views are still advertised but the ReadChanges views must not be, or the manifest would
+        // describe views the DDL refuses to create.
+        var modelSet = BuildModelSetWithAssociations(
+            AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames
+        ) with
+        {
+            TrackedChangeTablesInNameOrder = [],
+        };
+
+        var manifest = DerivedModelSetManifestEmitter.Emit(modelSet);
+
+        var root = (JsonObject)JsonNode.Parse(manifest)!;
+        var authObjects =
+            root["auth_objects"] as JsonObject
+            ?? throw new InvalidOperationException("Expected auth_objects to be a JSON object.");
+
+        authObjects.ContainsKey("views").Should().BeTrue();
+        authObjects.ContainsKey("read_changes_views").Should().BeFalse();
+    }
+
     private static DerivedRelationalModelSet BuildModelSetWithAssociations(
         IReadOnlyList<string> associationResourceNames
     )
@@ -806,6 +830,21 @@ public class Given_A_Model_Set_With_People_Auth_Availability_When_Emitting_Manif
             ),
         ]);
 
+        // Minimal tracked-change inventory for the same associations, so the model set satisfies
+        // the ReadChanges availability guard the same way a full derived model would.
+        var trackedChangeTables = associationResourceNames
+            .Select(resourceName => new TrackedChangeTableInfo(
+                new DbTableName(new DbSchemaName("tracked_changes_edfi"), resourceName),
+                TrackedChangeTableKind.Resource,
+                new DbTableName(schema, resourceName),
+                ValueColumnsInTableOrder: [],
+                SystemColumns: [],
+                PrimaryKeyColumns: [],
+                DescriptorJoins: [],
+                PersonJoins: []
+            ))
+            .ToArray();
+
         return new DerivedRelationalModelSet(
             effectiveSchema,
             SqlDialect.Pgsql,
@@ -824,7 +863,8 @@ public class Given_A_Model_Set_With_People_Auth_Availability_When_Emitting_Manif
             AbstractUnionViewsInNameOrder: [],
             IndexesInCreateOrder: [],
             TriggersInCreateOrder: [],
-            AuthEdOrgHierarchy: authHierarchy
+            AuthEdOrgHierarchy: authHierarchy,
+            TrackedChangeTablesInNameOrder: trackedChangeTables
         );
     }
 }
