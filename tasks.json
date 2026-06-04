@@ -17,7 +17,7 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~FailureResponseTests\"",
       "dotnet csharpier format src/dms/core"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",

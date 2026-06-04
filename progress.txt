@@ -1,0 +1,6 @@
+Task completed: Centralize story security-configuration response contract and canonical wire messages used by request-time authorization code.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: Put stable ProblemDetails constants and the four story messages in Core.External so Core middleware/response and backend layers can share them. Unknown strategy helper sorts/distincts names for deterministic wire output. No-strategies helper requires resource claim URI list and matched resource claim Name, not client claim-set name.
+Files changed: Core.External Backend/SecurityConfigurationResponse.cs; Core Response/FailureResponse.cs; Core Middleware/ResourceActionAuthorizationMiddleware.cs; Core unit tests for FailureResponse and ResourceActionAuthorizationMiddleware; tasks.json.
+Verification: dotnet csharpier format src/dms/core. dotnet test Core.Tests.Unit with FullyQualifiedName~Given_FailureResponse passed 8 tests. dotnet test Core.Tests.Unit with FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 33 tests. Documented FullyQualifiedName~FailureResponseTests filter selected no tests in current naming.
+Blockers/notes: progress.txt was missing at start; created this iteration. Next iteration should continue with middleware 500-vs-403 claim-set metadata classification.

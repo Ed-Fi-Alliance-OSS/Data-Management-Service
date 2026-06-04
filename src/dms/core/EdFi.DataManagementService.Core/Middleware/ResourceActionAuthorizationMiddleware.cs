@@ -6,6 +6,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -84,7 +85,15 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             }
 
             IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedAction!);
-            if (!ValidateAuthorizationStrategies(requestInfo, strategies, actionName, claimSet.Name))
+            if (
+                !ValidateAuthorizationStrategies(
+                    requestInfo,
+                    strategies,
+                    actionName,
+                    authorizedAction!,
+                    claimSet.Name
+                )
+            )
             {
                 return;
             }
@@ -275,6 +284,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         RequestInfo requestInfo,
         IReadOnlyList<string> strategies,
         string actionName,
+        ResourceClaim authorizedAction,
         string claimSetName
     )
     {
@@ -283,11 +293,14 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
             if (IsRelationalBackendAuthorizationRequest(requestInfo))
             {
+                string matchedResourceClaimName =
+                    authorizedAction.Name
+                    ?? throw new UnreachableException("Matched resource action claims must have a name.");
                 CreateNoStrategiesSecurityConfigurationResponse(
                     requestInfo,
                     actionName,
-                    resourceClaimName,
-                    claimSetName
+                    [matchedResourceClaimName],
+                    matchedResourceClaimName
                 );
                 return false;
             }
@@ -436,8 +449,8 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     private static void CreateNoStrategiesSecurityConfigurationResponse(
         RequestInfo requestInfo,
         string actionName,
-        string resourceClaimName,
-        string claimSetName
+        IReadOnlyList<string> matchedResourceClaimUris,
+        string matchedResourceClaimName
     )
     {
         requestInfo.FrontendResponse = new FrontendResponse(
@@ -445,7 +458,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             Body: FailureResponse.ForSecurityConfiguration(
                 requestInfo.FrontendRequest.TraceId,
                 [
-                    $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
+                    SecurityConfigurationFailureMessages.NoAuthorizationStrategies(
+                        actionName,
+                        matchedResourceClaimUris,
+                        matchedResourceClaimName
+                    ),
                 ]
             ),
             Headers: [],

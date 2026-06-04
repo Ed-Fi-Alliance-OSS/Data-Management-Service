@@ -821,7 +821,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
                 .Should()
                 .Be(
-                    "No authorization strategies were defined for the requested action 'Read' against resource ['School'] matched by the caller's claim 'SIS-Vendor'."
+                    $"No authorization strategies were defined for the requested action 'Read' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'."
                 );
         }
     }
@@ -857,7 +857,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
                 .Should()
                 .Be(
-                    $"No authorization strategies were defined for the requested action '{action}' against resource ['School'] matched by the caller's claim 'SIS-Vendor'."
+                    $"No authorization strategies were defined for the requested action '{action}' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'."
                 );
         }
     }
