@@ -609,3 +609,222 @@ public class Given_An_Index_With_Include_Columns_When_Emitting_Manifest
         );
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// ReadChanges Auth Views Manifest Pin Tests (DMS-1176)
+//
+// Pin the auth_objects.read_changes_views property name and entry
+// shape before golden fixtures are generated, so the property is an
+// explicit contract rather than a golden-diff incidental.
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_A_Model_Set_With_People_Auth_Availability_When_Emitting_Manifest
+{
+    private JsonObject _authObjects = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var manifest = DerivedModelSetManifestEmitter.Emit(
+            BuildModelSetWithAssociations(AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames)
+        );
+
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        _authObjects =
+            root["auth_objects"] as JsonObject
+            ?? throw new InvalidOperationException("Expected auth_objects to be a JSON object.");
+    }
+
+    [Test]
+    public void It_should_write_read_changes_views_with_the_four_views_in_alphabetical_order()
+    {
+        var readChangesViews =
+            _authObjects["read_changes_views"] as JsonArray
+            ?? throw new InvalidOperationException("Expected read_changes_views to be a JSON array.");
+
+        readChangesViews
+            .OfType<JsonObject>()
+            .Select(view => view["view"]!["name"]!.GetValue<string>())
+            .Should()
+            .Equal(
+                "EducationOrganizationIdToContactDocumentIdIncludingDeletes",
+                "EducationOrganizationIdToStaffDocumentIdIncludingDeletes",
+                "EducationOrganizationIdToStudentDocumentIdDeletedResponsibility",
+                "EducationOrganizationIdToStudentDocumentIdIncludingDeletes"
+            );
+    }
+
+    [Test]
+    public void It_should_write_union_set_operator_for_every_read_changes_view()
+    {
+        var readChangesViews = (JsonArray)_authObjects["read_changes_views"]!;
+
+        readChangesViews
+            .OfType<JsonObject>()
+            .Select(view => view["arms_set_operator"]!.GetValue<string>())
+            .Should()
+            .OnlyContain(op => op == "UNION");
+    }
+
+    [Test]
+    public void It_should_write_output_name_only_for_renamed_tracked_projections()
+    {
+        var readChangesViews = (JsonArray)_authObjects["read_changes_views"]!;
+        var studentView = readChangesViews
+            .OfType<JsonObject>()
+            .Single(view =>
+                view["view"]!["name"]!.GetValue<string>()
+                == "EducationOrganizationIdToStudentDocumentIdIncludingDeletes"
+            );
+
+        var outputColumns = studentView["arms"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .SelectMany(arm => arm["output_columns"]!.AsArray().OfType<JsonObject>())
+            .ToList();
+
+        var renamed = outputColumns.Single(column =>
+            column["column"]!.GetValue<string>() == "Old_Student_DocumentId"
+        );
+        renamed["output_name"]!.GetValue<string>().Should().Be("Student_DocumentId");
+
+        outputColumns
+            .Where(column => column["column"]!.GetValue<string>() != "Old_Student_DocumentId")
+            .Should()
+            .OnlyContain(column => !column.ContainsKey("output_name"));
+    }
+
+    [Test]
+    public void It_should_not_write_output_name_in_the_people_auth_views()
+    {
+        // The people auth views predate OutputName; their manifest JSON must stay byte-identical.
+        var peopleViews = (JsonArray)_authObjects["views"]!;
+
+        peopleViews
+            .OfType<JsonObject>()
+            .SelectMany(view => view["arms"]!.AsArray().OfType<JsonObject>())
+            .SelectMany(arm => arm["output_columns"]!.AsArray().OfType<JsonObject>())
+            .Should()
+            .OnlyContain(column => !column.ContainsKey("output_name"));
+    }
+
+    [Test]
+    public void It_should_omit_read_changes_views_when_an_association_resource_is_missing()
+    {
+        var manifest = DerivedModelSetManifestEmitter.Emit(
+            BuildModelSetWithAssociations([
+                .. AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames.Skip(1),
+            ])
+        );
+
+        var root = (JsonObject)JsonNode.Parse(manifest)!;
+        var authObjects =
+            root["auth_objects"] as JsonObject
+            ?? throw new InvalidOperationException("Expected auth_objects to be a JSON object.");
+
+        authObjects.ContainsKey("views").Should().BeFalse();
+        authObjects.ContainsKey("read_changes_views").Should().BeFalse();
+    }
+
+    private static DerivedRelationalModelSet BuildModelSetWithAssociations(
+        IReadOnlyList<string> associationResourceNames
+    )
+    {
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+
+        var concreteResources = associationResourceNames
+            .Select(
+                (resourceName, index) =>
+                {
+                    var resource = new QualifiedResourceName("Ed-Fi", resourceName);
+                    var table = new DbTableModel(
+                        new DbTableName(schema, resourceName),
+                        new JsonPathExpression("$", []),
+                        new TableKey(
+                            $"PK_{resourceName}",
+                            [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+                        ),
+                        [
+                            new DbColumnModel(
+                                documentIdColumn,
+                                ColumnKind.ParentKeyPart,
+                                new RelationalScalarType(ScalarKind.Int64),
+                                IsNullable: false,
+                                SourceJsonPath: null,
+                                TargetResource: null
+                            ),
+                        ],
+                        []
+                    );
+
+                    return new ConcreteResourceModel(
+                        new ResourceKeyEntry((short)(index + 1), resource, "1.0.0", false),
+                        ResourceStorageKind.RelationalTables,
+                        new RelationalResourceModel(
+                            resource,
+                            schema,
+                            ResourceStorageKind.RelationalTables,
+                            table,
+                            [table],
+                            [],
+                            []
+                        )
+                    );
+                }
+            )
+            .ToArray();
+
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "hash",
+            ResourceKeyCount: (short)concreteResources.Length,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    ProjectHash: "hash"
+                ),
+            ],
+            ResourceKeysInIdOrder: [.. concreteResources.Select(resource => resource.ResourceKey)]
+        );
+
+        var authHierarchy = new AuthEdOrgHierarchy([
+            new AuthEdOrgEntity(
+                "StateEducationAgency",
+                new DbTableName(schema, "StateEducationAgency"),
+                new DbColumnName("EducationOrganizationId"),
+                []
+            ),
+        ]);
+
+        return new DerivedRelationalModelSet(
+            effectiveSchema,
+            SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder:
+            [
+                new ProjectSchemaInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    PhysicalSchema: schema
+                ),
+            ],
+            ConcreteResourcesInNameOrder: concreteResources,
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: [],
+            AuthEdOrgHierarchy: authHierarchy
+        );
+    }
+}

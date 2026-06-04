@@ -19,7 +19,7 @@ Note: The derived relational model changes described here and in the `change-que
   - `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes`
   - `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes`
   - `auth.EducationOrganizationIdToStaffDocumentIdIncludingDeletes`
-  - `auth.EducationOrganizationIdToStudentDocumentIdThroughDeletedResponsibility`
+  - `auth.EducationOrganizationIdToStudentDocumentIdDeletedResponsibility`
 - Each view inventory records output columns using `DocumentId`-based people identifiers.
 - Union arms cover current/current, current/tracked, tracked/current, and tracked/tracked association combinations where applicable.
 - View derivation uses the current `auth.EducationOrganizationIdToEducationOrganizationId` hierarchy.

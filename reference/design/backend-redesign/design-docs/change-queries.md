@@ -1558,7 +1558,9 @@ The full inventory of `*IncludingDeletes` views DMS emits:
 - `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes`              
 - `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes`              
 - `auth.EducationOrganizationIdToStaffDocumentIdIncludingDeletes`                
-- `auth.EducationOrganizationIdToStudentDocumentIdThroughDeletedResponsibility`  
+- `auth.EducationOrganizationIdToStudentDocumentIdDeletedResponsibility`  
+
+The fourth view drops the ODS-era "Through" from its name (`...DocumentIdDeletedResponsibility`, exactly 63 characters): the direct DMS rename (`...DocumentIdThroughDeletedResponsibility`) is 70 characters, which exceeds PostgreSQL's 63-character identifier limit and would be silently truncated on `CREATE VIEW`. The same name is used on both PostgreSQL and SQL Server.
 
 Each view is materialized as a union over current and tracked-change PrimaryAssociation arms, joined against the **current** `auth.EducationOrganizationIdToEducationOrganizationId` hierarchy (see `Preserved authorization peculiarities` below for why the hierarchy is not joined against historical state).
 

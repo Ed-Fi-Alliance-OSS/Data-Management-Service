@@ -28,7 +28,10 @@ public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
         );
 
         availability.IsAvailable.Should().BeTrue();
-        EmitPgsql(modelSet).Should().Contain(StudentViewName);
+        var ddl = EmitPgsql(modelSet);
+        ddl.Should().Contain(StudentViewName);
+        // The ReadChanges auth views share the same availability guard (DMS-1178).
+        ddl.Should().Contain(StudentViewName + "IncludingDeletes");
     }
 
     [Test]
@@ -67,7 +70,9 @@ public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
         availability.HasAuthEdOrgHierarchy.Should().BeTrue();
         availability.MissingAssociationResourceNames.Should().Equal(missingResourceName);
         availability.IsAvailable.Should().BeFalse();
-        EmitPgsql(modelSetWithMissingAssociation).Should().NotContain(StudentViewName);
+        var ddl = EmitPgsql(modelSetWithMissingAssociation);
+        ddl.Should().NotContain(StudentViewName);
+        ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
     }
 
     private static void AssertPeopleViewsUnavailableWithoutMissingAssociations(

@@ -1060,6 +1060,178 @@ public class Given_DdlManifest_For_AuthPeopleViews : DdlEmissionGoldenTestBase
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Golden File Tests - ReadChanges Auth Views (DMS-1178)
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlEmitter_With_ReadChangesAuthViews_For_Pgsql : DdlEmissionGoldenTestBase
+{
+    private string _ddlContent = default!;
+    private string _readChangesViewsSection = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        _ddlContent = emitter.Emit(modelSet);
+
+        // The ReadChanges views are the last view block emitted (after the people auth views and
+        // before triggers, of which this fixture has none).
+        var sectionStart = _ddlContent.IndexOf("IncludingDeletes", StringComparison.Ordinal);
+        sectionStart.Should().BeGreaterThan(-1, "ReadChanges auth views should be emitted");
+        _readChangesViewsSection = _ddlContent[sectionStart..];
+    }
+
+    [Test]
+    public void It_should_emit_all_four_readchanges_views()
+    {
+        _ddlContent
+            .Should()
+            .Contain("\"auth\".\"EducationOrganizationIdToContactDocumentIdIncludingDeletes\"")
+            .And.Contain("\"auth\".\"EducationOrganizationIdToStaffDocumentIdIncludingDeletes\"")
+            .And.Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentIdDeletedResponsibility\"")
+            .And.Contain("\"auth\".\"EducationOrganizationIdToStudentDocumentIdIncludingDeletes\"");
+    }
+
+    [Test]
+    public void It_should_combine_arms_with_union_and_never_union_all()
+    {
+        _readChangesViewsSection.Should().Contain("UNION", "arms must be combined with UNION");
+        _readChangesViewsSection
+            .Should()
+            .NotContain(
+                "UNION ALL",
+                "UNION (not UNION ALL) must deduplicate authorization pairs across arms"
+            );
+    }
+
+    [Test]
+    public void It_should_join_tracked_change_tables_on_old_columns()
+    {
+        _readChangesViewsSection
+            .Should()
+            .Contain(
+                "INNER JOIN \"tracked_changes_edfi\".\"StudentSchoolAssociation\" ssa_tc "
+                    + "ON edOrg.\"TargetEducationOrganizationId\" = ssa_tc.\"Old_SchoolId_Unified\""
+            )
+            .And.Contain(
+                "INNER JOIN \"tracked_changes_edfi\".\"StudentEducationOrganizationResponsibilityAssociation\" seora_tc "
+                    + "ON edOrg.\"TargetEducationOrganizationId\" = seora_tc.\"Old_EducationOrganization_EducationOrganizationId\""
+            );
+    }
+
+    [Test]
+    public void It_should_rename_old_person_documentid_projections()
+    {
+        _readChangesViewsSection
+            .Should()
+            .Contain("ssa_tc.\"Old_Student_DocumentId\" AS \"Student_DocumentId\"")
+            .And.Contain("sca_tc.\"Old_Contact_DocumentId\" AS \"Contact_DocumentId\"")
+            .And.Contain("seoaa_tc.\"Old_Staff_DocumentId\" AS \"Staff_DocumentId\"")
+            .And.Contain("seoea_tc.\"Old_Staff_DocumentId\" AS \"Staff_DocumentId\"");
+    }
+
+    [Test]
+    public void It_should_select_current_arms_from_the_people_auth_views()
+    {
+        _readChangesViewsSection
+            .Should()
+            .Contain("FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" edOrgToContact")
+            .And.Contain(
+                "FROM \"auth\".\"EducationOrganizationIdToStudentDocumentIdThroughResponsibility\" edOrgToStudentResp"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_readchanges_views_after_people_views_and_tracked_change_tables()
+    {
+        var trackedTableIndex = _ddlContent.IndexOf(
+            "\"tracked_changes_edfi\".\"StudentSchoolAssociation\"",
+            StringComparison.Ordinal
+        );
+        var peopleViewIndex = _ddlContent.IndexOf(
+            "CREATE OR REPLACE VIEW \"auth\".\"EducationOrganizationIdToStudentDocumentId\"",
+            StringComparison.Ordinal
+        );
+        var readChangesViewIndex = _ddlContent.IndexOf(
+            "CREATE OR REPLACE VIEW \"auth\".\"EducationOrganizationIdToContactDocumentIdIncludingDeletes\"",
+            StringComparison.Ordinal
+        );
+
+        trackedTableIndex.Should().BeGreaterThan(-1);
+        peopleViewIndex.Should().BeGreaterThan(trackedTableIndex);
+        readChangesViewIndex.Should().BeGreaterThan(peopleViewIndex);
+    }
+
+    [Test]
+    public void It_should_use_create_or_replace_view()
+    {
+        _readChangesViewsSection.Should().Contain("CREATE OR REPLACE VIEW");
+    }
+}
+
+[TestFixture]
+public class Given_DdlEmitter_With_ReadChangesAuthViews_For_Mssql : DdlEmissionGoldenTestBase
+{
+    private string _ddlContent = default!;
+    private string _readChangesViewsSection = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Mssql);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        _ddlContent = emitter.Emit(modelSet);
+
+        var sectionStart = _ddlContent.IndexOf("IncludingDeletes", StringComparison.Ordinal);
+        sectionStart.Should().BeGreaterThan(-1, "ReadChanges auth views should be emitted");
+        _readChangesViewsSection = _ddlContent[sectionStart..];
+    }
+
+    [Test]
+    public void It_should_emit_all_four_readchanges_views()
+    {
+        _ddlContent
+            .Should()
+            .Contain("[auth].[EducationOrganizationIdToContactDocumentIdIncludingDeletes]")
+            .And.Contain("[auth].[EducationOrganizationIdToStaffDocumentIdIncludingDeletes]")
+            .And.Contain("[auth].[EducationOrganizationIdToStudentDocumentIdDeletedResponsibility]")
+            .And.Contain("[auth].[EducationOrganizationIdToStudentDocumentIdIncludingDeletes]");
+    }
+
+    [Test]
+    public void It_should_combine_arms_with_union_and_never_union_all()
+    {
+        _readChangesViewsSection.Should().Contain("UNION");
+        _readChangesViewsSection.Should().NotContain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_rename_old_person_documentid_projections()
+    {
+        _readChangesViewsSection
+            .Should()
+            .Contain("ssa_tc.[Old_Student_DocumentId] AS [Student_DocumentId]")
+            .And.Contain("sca_tc.[Old_Contact_DocumentId] AS [Contact_DocumentId]");
+    }
+
+    [Test]
+    public void It_should_use_create_or_alter_view_with_go_separators()
+    {
+        _readChangesViewsSection.Should().Contain("CREATE OR ALTER VIEW");
+        _ddlContent
+            .Should()
+            .Contain(
+                "GO\nCREATE OR ALTER VIEW [auth].[EducationOrganizationIdToContactDocumentIdIncludingDeletes]",
+                "each MSSQL view must be preceded by a GO batch separator"
+            );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // People Auth Views - Negative Test (no auth hierarchy)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1097,6 +1269,21 @@ public class Given_DdlEmitter_Without_AuthHierarchy_Should_Not_Emit_PeopleViews 
             .NotContain(
                 "EducationOrganizationIdToContactDocumentId",
                 "Contact auth view should not be emitted without auth hierarchy"
+            );
+    }
+
+    [Test]
+    public void It_should_not_contain_readchanges_auth_views()
+    {
+        _ddlContent
+            .Should()
+            .NotContain(
+                "IncludingDeletes",
+                "ReadChanges auth views should not be emitted when no auth hierarchy exists"
+            )
+            .And.NotContain(
+                "DeletedResponsibility",
+                "ReadChanges auth views should not be emitted when no auth hierarchy exists"
             );
     }
 }
@@ -3512,6 +3699,80 @@ internal static class AuthPeopleViewsFixture
             IncludeColumns: [AuthNames.SourceEdOrgId]
         );
 
+        // ── Tracked-change tables ───────────────────────────────────────
+        // Minimal tracked_changes_edfi tables for the five associations so the ReadChanges auth
+        // views (which join their Old_* columns) reference tables this fixture actually emits —
+        // keeping the golden snapshot internally consistent and deployable. Value-column entries
+        // model Old_/New_ pairs; only the columns the views join/project are included.
+        var identityAndSecurable =
+            TrackedChangeColumnOrigin.Identity | TrackedChangeColumnOrigin.SecurableElement;
+        var int32Type = new RelationalScalarType(ScalarKind.Int32);
+        var int64Type = new RelationalScalarType(ScalarKind.Int64);
+
+        TrackedChangeColumnInfo TrackedPersonColumn(DbColumnName column) =>
+            BuildTrackedChangeColumn(
+                column,
+                int64Type,
+                TrackedChangeColumnRole.PersonDocumentId,
+                TrackedChangeColumnOrigin.SecurableElement
+            );
+
+        TrackedChangeTableInfo[] trackedChangeTables =
+        [
+            BuildTrackedChangeTable(
+                ssaTableName,
+                [
+                    BuildTrackedChangeColumn(
+                        schoolIdColumn,
+                        int32Type,
+                        TrackedChangeColumnRole.Scalar,
+                        identityAndSecurable
+                    ),
+                    TrackedPersonColumn(studentDocIdColumn),
+                ]
+            ),
+            BuildTrackedChangeTable(
+                scaTableName,
+                [TrackedPersonColumn(studentDocIdColumn), TrackedPersonColumn(contactDocIdColumn)]
+            ),
+            BuildTrackedChangeTable(
+                seoaaTableName,
+                [
+                    BuildTrackedChangeColumn(
+                        edOrgIdColumn,
+                        int32Type,
+                        TrackedChangeColumnRole.Scalar,
+                        identityAndSecurable
+                    ),
+                    TrackedPersonColumn(staffDocIdColumn),
+                ]
+            ),
+            BuildTrackedChangeTable(
+                seoeaTableName,
+                [
+                    BuildTrackedChangeColumn(
+                        edOrgIdColumn,
+                        int32Type,
+                        TrackedChangeColumnRole.Scalar,
+                        identityAndSecurable
+                    ),
+                    TrackedPersonColumn(staffDocIdColumn),
+                ]
+            ),
+            BuildTrackedChangeTable(
+                seoraTableName,
+                [
+                    BuildTrackedChangeColumn(
+                        edOrgIdColumn,
+                        int32Type,
+                        TrackedChangeColumnRole.Scalar,
+                        identityAndSecurable
+                    ),
+                    TrackedPersonColumn(studentDocIdColumn),
+                ]
+            ),
+        ];
+
         return new DerivedRelationalModelSet(
             GoldenEffectiveSchemaFixtureData.Create(
                 "auth-people-views",
@@ -3539,7 +3800,81 @@ internal static class AuthPeopleViewsFixture
             [],
             [authIndex],
             [],
-            authHierarchy
+            authHierarchy,
+            trackedChangeTables
+        );
+    }
+
+    /// <summary>
+    /// Builds a minimal tracked-change table for an association source table: the supplied value
+    /// columns (Old_/New_ pairs) plus the standard Id / ChangeVersion / CreatedAt system columns
+    /// with ChangeVersion as the primary key, mirroring DeriveTrackedChangeInventoryPass.
+    /// </summary>
+    private static TrackedChangeTableInfo BuildTrackedChangeTable(
+        DbTableName sourceTable,
+        IReadOnlyList<TrackedChangeColumnInfo> valueColumns
+    )
+    {
+        var changeVersionColumn = new DbColumnName("ChangeVersion");
+
+        return new TrackedChangeTableInfo(
+            new DbTableName(
+                new DbSchemaName($"tracked_changes_{sourceTable.Schema.Value}"),
+                sourceTable.Name
+            ),
+            TrackedChangeTableKind.Resource,
+            sourceTable,
+            valueColumns,
+            [
+                new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.Id,
+                    new DbColumnName("Id"),
+                    ScalarType: null,
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+                new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.ChangeVersion,
+                    changeVersionColumn,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    IsPrimaryKey: true
+                ),
+                new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.CreatedAt,
+                    new DbColumnName("CreatedAt"),
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+            ],
+            [changeVersionColumn],
+            [],
+            []
+        );
+    }
+
+    /// <summary>
+    /// Builds a tracked-change Old_/New_ value-column pair for a source column.
+    /// </summary>
+    private static TrackedChangeColumnInfo BuildTrackedChangeColumn(
+        DbColumnName sourceColumn,
+        RelationalScalarType scalarType,
+        TrackedChangeColumnRole role,
+        TrackedChangeColumnOrigin origin
+    )
+    {
+        return new TrackedChangeColumnInfo(
+            new DbColumnName($"Old_{sourceColumn.Value}"),
+            new DbColumnName($"New_{sourceColumn.Value}"),
+            SourceJsonPath: $"$.{char.ToLowerInvariant(sourceColumn.Value[0])}{sourceColumn.Value[1..]}",
+            CanonicalStorageColumn: null,
+            IsOldColumnNullable: false,
+            // New_* columns are populated only by key-change rows; tombstones leave them null.
+            IsNewColumnNullable: true,
+            scalarType,
+            role,
+            origin
         );
     }
 }

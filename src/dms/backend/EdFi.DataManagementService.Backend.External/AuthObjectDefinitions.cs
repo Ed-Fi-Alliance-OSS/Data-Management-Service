@@ -45,8 +45,11 @@ public sealed record AuthEdOrgTableDefinition(
 /// One output column of an auth view arm: the alias of the source table/join and the underlying
 /// column name. Both fields are independently meaningful — the alias drives the SQL projection
 /// (<c>edOrg.SourceEducationOrganizationId</c>) and is recorded in the manifest verbatim.
+/// When <paramref name="OutputName"/> is set, the projection is renamed
+/// (<c>sca_tc.Old_Contact_DocumentId AS Contact_DocumentId</c>); when <c>null</c>, the column is
+/// projected under its own name.
 /// </summary>
-public sealed record AuthViewOutputColumn(string Alias, DbColumnName Column);
+public sealed record AuthViewOutputColumn(string Alias, DbColumnName Column, DbColumnName? OutputName = null);
 
 /// <summary>
 /// One ON-clause predicate of an auth view join, expressed as a column-equality between two
@@ -102,6 +105,31 @@ public sealed record AuthPeopleAuthViewDefinition(
     DbColumnName PersonDocumentIdOutputColumn,
     DbColumnName ClaimEducationOrganizationIdColumn,
     string FailureHint
+)
+{
+    public DbTableName View => ViewDefinition.View;
+}
+
+public enum ReadChangesAuthViewKind
+{
+    Student,
+    Contact,
+    Staff,
+    StudentDeletedResponsibility,
+}
+
+/// <summary>
+/// Inventory entry for a <c>ReadChanges</c> authorization view used by Change Query
+/// <c>/deletes</c> and <c>/keyChanges</c> endpoints. The view definition unions
+/// current-association arms with tracked-change (<c>tracked_changes_*</c>) arms, always joined
+/// against the current <c>auth.EducationOrganizationIdToEducationOrganizationId</c> hierarchy.
+/// Consumed by the DDL emitter (renders SQL) and the manifest emitter (serializes JSON).
+/// </summary>
+public sealed record ReadChangesAuthorizationViewInfo(
+    ReadChangesAuthViewKind Kind,
+    AuthViewDefinition ViewDefinition,
+    DbColumnName PersonDocumentIdOutputColumn,
+    DbColumnName ClaimEducationOrganizationIdColumn
 )
 {
     public DbTableName View => ViewDefinition.View;
@@ -176,6 +204,29 @@ public static class AuthObjectDefinitions
     public static readonly IReadOnlyList<AuthViewDefinition> PeopleAuthViews =
     [
         .. PeopleAuthViewDefinitions.Select(static definition => definition.ViewDefinition),
+    ];
+
+    /// <summary>
+    /// The four <c>ReadChanges</c> authorization views in alphabetical name order: Contact, Staff,
+    /// StudentDeletedResponsibility, StudentIncludingDeletes. Declared after
+    /// <see cref="PeopleAuthViewDefinitions"/> because the current/current arms select from the
+    /// people auth views by name.
+    /// </summary>
+    /// <remarks>
+    /// The fourth view is named <c>EducationOrganizationIdToStudentDocumentIdDeletedResponsibility</c>
+    /// (exactly 63 characters) rather than the design's
+    /// <c>...ThroughDeletedResponsibility</c> (70 characters), which exceeds PostgreSQL's 63-character
+    /// identifier limit and would be silently truncated on CREATE.
+    /// </remarks>
+    public static readonly IReadOnlyList<ReadChangesAuthorizationViewInfo> ReadChangesAuthorizationViewDefinitions =
+        BuildReadChangesAuthorizationViewDefinitions();
+
+    /// <summary>
+    /// The emitted structural definitions for the four <c>ReadChanges</c> authorization views.
+    /// </summary>
+    public static readonly IReadOnlyList<AuthViewDefinition> ReadChangesAuthViews =
+    [
+        .. ReadChangesAuthorizationViewDefinitions.Select(static definition => definition.ViewDefinition),
     ];
 
     public static AuthPeopleAuthViewDefinition GetPeopleAuthViewDefinition(AuthPeopleViewKind kind)
@@ -402,5 +453,343 @@ public static class AuthObjectDefinitions
         );
 
         return [contactView, staffView, studentView, studentThroughResponsibilityView];
+    }
+
+    /// <summary>
+    /// Builds the four <c>ReadChanges</c> authorization view definitions. Each view unions a
+    /// current/current arm (selecting from the corresponding people auth view) with tracked-change
+    /// arms joining <c>tracked_changes_edfi</c> association tables — via their <c>Old_*</c>
+    /// identity/securable columns — against the current EdOrg hierarchy. Arms use plain
+    /// <c>SELECT</c> with <c>UNION</c> (not <c>UNION ALL</c>) so duplicate authorization pairs
+    /// across arms are eliminated. See <c>change-queries.md</c> ("Authorization views") for design.
+    /// </summary>
+    private static IReadOnlyList<ReadChangesAuthorizationViewInfo> BuildReadChangesAuthorizationViewDefinitions()
+    {
+        var edfi = new DbSchemaName("edfi");
+        var trackedChanges = new DbSchemaName("tracked_changes_edfi");
+        var authEdOrgTable = AuthNames.EdOrgIdToEdOrgId;
+        var sourceCol = AuthNames.SourceEdOrgId;
+        var targetCol = AuthNames.TargetEdOrgId;
+        var studentDocId = AuthNames.StudentDocumentId;
+        var contactDocId = AuthNames.ContactDocumentId;
+        var staffDocId = AuthNames.StaffDocumentId;
+        const string edOrgAlias = "edOrg";
+
+        // Old_* tracked-change column names: "Old_" + the current-table column the tracked-change
+        // derivation captured (DeriveTrackedChangeInventoryPass), verified against the authoritative
+        // ds-5.2 tracked-change manifest.
+        var oldSchoolIdUnified = new DbColumnName("Old_" + AuthNames.SchoolIdUnified.Value);
+        var oldStudentDocId = new DbColumnName("Old_" + studentDocId.Value);
+        var oldContactDocId = new DbColumnName("Old_" + contactDocId.Value);
+        var oldStaffDocId = new DbColumnName("Old_" + staffDocId.Value);
+        var oldEdOrgEdOrgId = new DbColumnName("Old_" + AuthNames.EdOrgEdOrgId.Value);
+
+        var trackedSsa = new DbTableName(trackedChanges, "StudentSchoolAssociation");
+        var trackedSca = new DbTableName(trackedChanges, "StudentContactAssociation");
+        var trackedSeoaa = new DbTableName(trackedChanges, "StaffEducationOrganizationAssignmentAssociation");
+        var trackedSeoea = new DbTableName(trackedChanges, "StaffEducationOrganizationEmploymentAssociation");
+        var trackedSeora = new DbTableName(
+            trackedChanges,
+            "StudentEducationOrganizationResponsibilityAssociation"
+        );
+
+        // An arm selecting the current people auth view verbatim (current/current combination).
+        static AuthViewArm CurrentViewArm(AuthPeopleViewKind kind, string alias, DbColumnName personDocId)
+        {
+            var currentView = GetPeopleAuthViewDefinition(kind).View;
+            return new AuthViewArm(
+                SelectDistinct: false,
+                SourceAlias: alias,
+                SourceTable: currentView,
+                OutputColumns:
+                [
+                    new AuthViewOutputColumn(alias, AuthNames.SourceEdOrgId),
+                    new AuthViewOutputColumn(alias, personDocId),
+                ],
+                Joins: []
+            );
+        }
+
+        // 1. EducationOrganizationIdToContactDocumentIdIncludingDeletes — UNION of four arms:
+        // current/current, current SSA / tracked SCA, tracked SSA / current SCA, tracked/tracked.
+        var contactView = new ReadChangesAuthorizationViewInfo(
+            Kind: ReadChangesAuthViewKind.Contact,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(
+                    AuthNames.AuthSchema,
+                    "EducationOrganizationIdToContactDocumentIdIncludingDeletes"
+                ),
+                ArmsSetOperator: AuthViewSetOperator.Union,
+                Arms:
+                [
+                    CurrentViewArm(AuthPeopleViewKind.Contact, "edOrgToContact", contactDocId),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("sca_tc", oldContactDocId, contactDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "ssa",
+                                new DbTableName(edfi, "StudentSchoolAssociation"),
+                                [
+                                    new AuthViewJoinPredicate(
+                                        edOrgAlias,
+                                        targetCol,
+                                        "ssa",
+                                        AuthNames.SchoolIdUnified
+                                    ),
+                                ]
+                            ),
+                            new AuthViewJoin(
+                                "sca_tc",
+                                trackedSca,
+                                [new AuthViewJoinPredicate("ssa", studentDocId, "sca_tc", oldStudentDocId)]
+                            ),
+                        ]
+                    ),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("sca", contactDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "ssa_tc",
+                                trackedSsa,
+                                [
+                                    new AuthViewJoinPredicate(
+                                        edOrgAlias,
+                                        targetCol,
+                                        "ssa_tc",
+                                        oldSchoolIdUnified
+                                    ),
+                                ]
+                            ),
+                            new AuthViewJoin(
+                                "sca",
+                                new DbTableName(edfi, "StudentContactAssociation"),
+                                [new AuthViewJoinPredicate("ssa_tc", oldStudentDocId, "sca", studentDocId)]
+                            ),
+                        ]
+                    ),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("sca_tc", oldContactDocId, contactDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "ssa_tc",
+                                trackedSsa,
+                                [
+                                    new AuthViewJoinPredicate(
+                                        edOrgAlias,
+                                        targetCol,
+                                        "ssa_tc",
+                                        oldSchoolIdUnified
+                                    ),
+                                ]
+                            ),
+                            new AuthViewJoin(
+                                "sca_tc",
+                                trackedSca,
+                                [
+                                    new AuthViewJoinPredicate(
+                                        "ssa_tc",
+                                        oldStudentDocId,
+                                        "sca_tc",
+                                        oldStudentDocId
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: contactDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol
+        );
+
+        // 2. EducationOrganizationIdToStaffDocumentIdIncludingDeletes — UNION of three arms:
+        // current/current, tracked assignment, tracked employment (assignment first, matching the
+        // current staff view's arm order).
+        var staffView = new ReadChangesAuthorizationViewInfo(
+            Kind: ReadChangesAuthViewKind.Staff,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(
+                    AuthNames.AuthSchema,
+                    "EducationOrganizationIdToStaffDocumentIdIncludingDeletes"
+                ),
+                ArmsSetOperator: AuthViewSetOperator.Union,
+                Arms:
+                [
+                    CurrentViewArm(AuthPeopleViewKind.Staff, "edOrgToStaff", staffDocId),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("seoaa_tc", oldStaffDocId, staffDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "seoaa_tc",
+                                trackedSeoaa,
+                                [
+                                    new AuthViewJoinPredicate(
+                                        edOrgAlias,
+                                        targetCol,
+                                        "seoaa_tc",
+                                        oldEdOrgEdOrgId
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("seoea_tc", oldStaffDocId, staffDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "seoea_tc",
+                                trackedSeoea,
+                                [
+                                    new AuthViewJoinPredicate(
+                                        edOrgAlias,
+                                        targetCol,
+                                        "seoea_tc",
+                                        oldEdOrgEdOrgId
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: staffDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol
+        );
+
+        // 3. EducationOrganizationIdToStudentDocumentIdDeletedResponsibility — UNION of two arms:
+        // current/current (through-responsibility view) and tracked responsibility association.
+        // Named without "Through" to fit PostgreSQL's 63-character identifier limit (see field remarks).
+        var studentDeletedResponsibilityView = new ReadChangesAuthorizationViewInfo(
+            Kind: ReadChangesAuthViewKind.StudentDeletedResponsibility,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(
+                    AuthNames.AuthSchema,
+                    "EducationOrganizationIdToStudentDocumentIdDeletedResponsibility"
+                ),
+                ArmsSetOperator: AuthViewSetOperator.Union,
+                Arms:
+                [
+                    CurrentViewArm(
+                        AuthPeopleViewKind.StudentThroughResponsibility,
+                        "edOrgToStudentResp",
+                        studentDocId
+                    ),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("seora_tc", oldStudentDocId, studentDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "seora_tc",
+                                trackedSeora,
+                                [
+                                    new AuthViewJoinPredicate(
+                                        edOrgAlias,
+                                        targetCol,
+                                        "seora_tc",
+                                        oldEdOrgEdOrgId
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: studentDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol
+        );
+
+        // 4. EducationOrganizationIdToStudentDocumentIdIncludingDeletes — UNION of two arms:
+        // current/current and tracked StudentSchoolAssociation.
+        var studentView = new ReadChangesAuthorizationViewInfo(
+            Kind: ReadChangesAuthViewKind.Student,
+            ViewDefinition: new AuthViewDefinition(
+                View: new DbTableName(
+                    AuthNames.AuthSchema,
+                    "EducationOrganizationIdToStudentDocumentIdIncludingDeletes"
+                ),
+                ArmsSetOperator: AuthViewSetOperator.Union,
+                Arms:
+                [
+                    CurrentViewArm(AuthPeopleViewKind.Student, "edOrgToStudent", studentDocId),
+                    new AuthViewArm(
+                        SelectDistinct: false,
+                        SourceAlias: edOrgAlias,
+                        SourceTable: authEdOrgTable,
+                        OutputColumns:
+                        [
+                            new AuthViewOutputColumn(edOrgAlias, sourceCol),
+                            new AuthViewOutputColumn("ssa_tc", oldStudentDocId, studentDocId),
+                        ],
+                        Joins:
+                        [
+                            new AuthViewJoin(
+                                "ssa_tc",
+                                trackedSsa,
+                                [
+                                    new AuthViewJoinPredicate(
+                                        edOrgAlias,
+                                        targetCol,
+                                        "ssa_tc",
+                                        oldSchoolIdUnified
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            PersonDocumentIdOutputColumn: studentDocId,
+            ClaimEducationOrganizationIdColumn: sourceCol
+        );
+
+        // Alphabetical by view name: Contact, Staff, StudentDeletedResponsibility, StudentIncludingDeletes.
+        return [contactView, staffView, studentDeletedResponsibilityView, studentView];
     }
 }
