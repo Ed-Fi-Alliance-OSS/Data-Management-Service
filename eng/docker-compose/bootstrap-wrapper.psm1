@@ -417,7 +417,7 @@ function Invoke-BootstrapWrapper {
 
         $provisionArgs = @{
             EnvironmentFile = $effectiveEnvFile
-            InstanceId = $configuredDataStoreIds
+            DataStoreId = $configuredDataStoreIds
         }
 
         # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
@@ -471,4 +471,3 @@ function Invoke-BootstrapWrapper {
 }
 
 Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedDataStoreIds
-

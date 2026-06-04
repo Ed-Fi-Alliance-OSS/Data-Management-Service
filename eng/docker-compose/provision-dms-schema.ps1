@@ -22,7 +22,8 @@
 [CmdletBinding()]
 param(
     [string]$EnvironmentFile,
-    [long[]]$InstanceId = @(),
+    [Alias("InstanceId")]
+    [long[]]$DataStoreId = @(),
     [int[]]$SchoolYear = @()
 )
 
@@ -474,8 +475,9 @@ function Resolve-ProvisionTargetInstances {
         [object[]]
         $Instances,
 
+        [Alias("InstanceId")]
         [long[]]
-        $InstanceId = @(),
+        $DataStoreId = @(),
 
         [int[]]
         $SchoolYear = @(),
@@ -484,13 +486,13 @@ function Resolve-ProvisionTargetInstances {
         $Tenant = ""
     )
 
-    if ($InstanceId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
-        throw "-InstanceId and -SchoolYear are mutually exclusive. Pass only one selector."
+    if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
+        throw "-DataStoreId and -SchoolYear are mutually exclusive. Pass only one selector."
     }
 
-    if ($InstanceId.Count -gt 0) {
+    if ($DataStoreId.Count -gt 0) {
         $selected = [System.Collections.ArrayList]::new()
-        foreach ($id in $InstanceId) {
+        foreach ($id in $DataStoreId) {
             $matchedInstances = @($Instances | Where-Object { [long](Get-ProvisionProperty -Object $_ -Names @("id", "Id")) -eq [long]$id })
             if ($matchedInstances.Count -eq 0) {
                 throw "Data store $(Format-LogSafeText $id) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'."
@@ -541,7 +543,7 @@ function Resolve-ProvisionTargetInstances {
         $listing = ($Instances | ForEach-Object {
             "id=$(Format-LogSafeText (Get-ProvisionProperty -Object $_ -Names @('id', 'Id'))) name=$(Format-LogSafeText (Get-ProvisionProperty -Object $_ -Names @('name', 'Name')))"
         }) -join "`n"
-        throw "Multiple data stores exist; cannot auto-select. Pass -InstanceId or -SchoolYear to target specific data stores:`n$listing"
+        throw "Multiple data stores exist; cannot auto-select. Pass -DataStoreId or -SchoolYear to target specific data stores:`n$listing"
     }
 
     return @($Instances[0])
@@ -556,14 +558,14 @@ function New-ProvisionTarget {
         $EnvValues
     )
 
-    $rawInstanceId = Get-ProvisionProperty -Object $Instance -Names @("id", "Id")
-    if ($null -eq $rawInstanceId) {
+    $rawDataStoreId = Get-ProvisionProperty -Object $Instance -Names @("id", "Id")
+    if ($null -eq $rawDataStoreId) {
         throw "CMS data store is missing an id."
     }
-    $instanceId = [long]$rawInstanceId
+    $dataStoreId = [long]$rawDataStoreId
     $connectionString = [string](Get-ProvisionProperty -Object $Instance -Names @("connectionString", "ConnectionString"))
     if ([string]::IsNullOrWhiteSpace($connectionString)) {
-        throw "CMS data store $(Format-LogSafeText $instanceId) does not include a connection string."
+        throw "CMS data store $(Format-LogSafeText $dataStoreId) does not include a connection string."
     }
 
     $resolvedConnectionString = Resolve-CmsInstanceConnectionString `
@@ -582,7 +584,7 @@ function New-ProvisionTarget {
     )
 
     return [pscustomobject]@{
-        InstanceId = $instanceId
+        DataStoreId = $dataStoreId
         RouteContexts = $routeContexts
         Dialect = $target.Dialect
         Host = $target.Host
@@ -659,8 +661,8 @@ function Get-ProvisionIdeGuidance {
     else {
         $lines.Add("Provisioned $($ProvisionedTargets.Count) database target(s):")
         foreach ($target in $ProvisionedTargets) {
-            $instanceList = ($target.InstanceIds | ForEach-Object { [string]$_ }) -join ", "
-            $lines.Add("  - database=$(Format-LogSafeText $target.DatabaseName) host=$(Format-LogSafeText $target.Host) port=$(Format-LogSafeText $target.Port) user=$(Format-LogSafeText $target.Username) instance-ids=[$instanceList] status=$($target.Status)")
+            $dataStoreList = ($target.DataStoreIds | ForEach-Object { [string]$_ }) -join ", "
+            $lines.Add("  - database=$(Format-LogSafeText $target.DatabaseName) host=$(Format-LogSafeText $target.Host) port=$(Format-LogSafeText $target.Port) user=$(Format-LogSafeText $target.Username) data-store-ids=[$dataStoreList] status=$($target.Status)")
         }
     }
 
@@ -777,15 +779,16 @@ function Invoke-ProvisionDmsSchema {
         [string]
         $EnvironmentFile,
 
+        [Alias("InstanceId")]
         [long[]]
-        $InstanceId = @(),
+        $DataStoreId = @(),
 
         [int[]]
         $SchoolYear = @()
     )
 
-    if ($InstanceId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
-        throw "-InstanceId and -SchoolYear are mutually exclusive. Pass only one selector."
+    if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
+        throw "-DataStoreId and -SchoolYear are mutually exclusive. Pass only one selector."
     }
 
     $resolvedEnvironmentFile = Resolve-ProvisionEnvironmentFile -Path $EnvironmentFile
@@ -823,7 +826,7 @@ function Invoke-ProvisionDmsSchema {
     }
     $selectedInstances = Resolve-ProvisionTargetInstances `
         -Instances $instances `
-        -InstanceId $InstanceId `
+        -DataStoreId $DataStoreId `
         -SchoolYear $SchoolYear `
         -Tenant $tenant
 
@@ -839,9 +842,9 @@ function Invoke-ProvisionDmsSchema {
 
     foreach ($group in $groups) {
         $target = @($group.Group)[0]
-        $instanceIds = @($group.Group | ForEach-Object { [long]$_.InstanceId })
-        $ids = ($instanceIds | ForEach-Object { [string]$_ }) -join ", "
-        Write-Information "Provisioning target database $(Format-LogSafeText $target.DatabaseName) on $(Format-LogSafeText $target.Host):$(Format-LogSafeText $target.Port) for instance id(s): $(Format-LogSafeText $ids)." -InformationAction Continue
+        $dataStoreIds = @($group.Group | ForEach-Object { [long]$_.DataStoreId })
+        $ids = ($dataStoreIds | ForEach-Object { [string]$_ }) -join ", "
+        Write-Information "Provisioning target database $(Format-LogSafeText $target.DatabaseName) on $(Format-LogSafeText $target.Host):$(Format-LogSafeText $target.Port) for data store id(s): $(Format-LogSafeText $ids)." -InformationAction Continue
         Invoke-DmsSchemaProvision `
             -ToolPath $schemaTool `
             -SchemaPaths $schemaPaths `
@@ -854,7 +857,7 @@ function Invoke-ProvisionDmsSchema {
             Port = $target.Port
             Dialect = $target.Dialect
             Username = $target.Username
-            InstanceIds = [long[]]$instanceIds
+            DataStoreIds = [long[]]$dataStoreIds
             Status = "Provisioned"
         })
     }
@@ -869,6 +872,5 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 
 Invoke-ProvisionDmsSchema `
     -EnvironmentFile $EnvironmentFile `
-    -InstanceId $InstanceId `
+    -DataStoreId $DataStoreId `
     -SchoolYear $SchoolYear
-

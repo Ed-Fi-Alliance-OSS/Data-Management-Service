@@ -252,7 +252,7 @@ exit $ExitCode
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 
             $params | Should -Contain "EnvironmentFile"
-            $params | Should -Contain "InstanceId"
+            $params | Should -Contain "DataStoreId"
             $params | Should -Contain "SchoolYear"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "SeedTemplate"
@@ -432,7 +432,7 @@ exit $ExitCode
 
             function Add-CmsClient { throw "CMS must not be contacted when selectors are invalid." }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) -SchoolYear @(2024) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) -SchoolYear @(2024) } |
                 Should -Throw -ExpectedMessage "*mutually exclusive*"
         }
 
@@ -465,7 +465,7 @@ exit $ExitCode
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1, 2)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1, 2)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             @($captured | Where-Object { $_ -eq "BEGIN" }).Count | Should -Be 1
@@ -506,7 +506,7 @@ exit $ExitCode
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(3)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(3)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -574,7 +574,7 @@ exit $ExitCode
                 )
             }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
                 Should -Throw -ExpectedMessage "*page size (500)*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
@@ -607,7 +607,7 @@ exit $ExitCode
                 return @($target) + @($filler)
             }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
                 Should -Not -Throw
             @(Get-Content -LiteralPath $capturePath) | Should -Contain "provision"
         }
@@ -732,7 +732,7 @@ exit $ExitCode
             }
 
             $output = & {
-                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(5)
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(5)
             } *>&1 | Out-String
 
             $output | Should -Not -Match "secret-pass"
@@ -762,7 +762,7 @@ exit $ExitCode
                 )
             }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(5) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(5) } |
                 Should -Throw -ExpectedMessage "*staged schema workspace fingerprint mismatch*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
@@ -913,8 +913,8 @@ Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRa
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
 
             @"
-param([string] `$EnvironmentFile, [long[]] `$InstanceId)
-Add-Content -LiteralPath '$sequencePath' -Value `"provision ids=`$(`$InstanceId -join ',')`"
+param([string] `$EnvironmentFile, [long[]] `$DataStoreId)
+Add-Content -LiteralPath '$sequencePath' -Value `"provision ids=`$(`$DataStoreId -join ',')`"
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "provision-dms-schema.ps1") -Encoding utf8
 
             @"
@@ -1105,7 +1105,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1, 2)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1, 2)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             @($captured | Where-Object { $_ -eq "BEGIN" }).Count | Should -Be 2
@@ -1138,7 +1138,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1, 2)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1, 2)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             @($captured | Where-Object { $_ -eq "BEGIN" }).Count | Should -Be 2
@@ -1171,7 +1171,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1, 2)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1, 2)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             @($captured | Where-Object { $_ -eq "BEGIN" }).Count | Should -Be 2
@@ -1200,7 +1200,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1232,7 +1232,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1264,7 +1264,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
                 Should -Throw -ExpectedMessage "*Only PostgreSQL provisioning is supported*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
@@ -1290,7 +1290,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1326,7 +1326,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1357,7 +1357,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1396,7 +1396,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1499,13 +1499,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             }
 
             $output = & {
-                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
             } *>&1 | Out-String
 
             $output | Should -Match "Schema Provisioning Summary"
             $output | Should -Match "database=summary_db"
             $output | Should -Match "host=localhost"
-            $output | Should -Match "instance-ids=\[1\]"
+            $output | Should -Match "data-store-ids=\[1\]"
             $output | Should -Match "status=Provisioned"
         }
 
@@ -1531,7 +1531,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             }
 
             $output = & {
-                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(7)
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(7)
             } *>&1 | Out-String
 
             $output | Should -Match "IDE next-step guidance"
@@ -1559,7 +1559,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                     Port = "5432"
                     Dialect = "pgsql"
                     Username = "u"
-                    InstanceIds = [long[]]@(1, 2)
+                    DataStoreIds = [long[]]@(1, 2)
                     Status = "Provisioned"
                 }
             )
@@ -1719,7 +1719,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                     )
                 }
 
-                Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -InstanceId @(1)
+                Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -DataStoreId @(1)
 
                 $captured = @(Get-Content -LiteralPath $capturePath)
                 $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1790,7 +1790,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 )
             }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
                 Should -Not -Throw
         }
 
@@ -1806,7 +1806,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Get-CmsToken { throw "401 Unauthorized: invalid_client" }
             function Get-DataStore { return @() }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
                 Should -Throw -ExpectedMessage "*configure-local-data-store.ps1*"
         }
     }
@@ -1833,7 +1833,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1863,7 +1863,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
@@ -1892,7 +1892,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 )
             }
 
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1) } |
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
                 Should -Throw -ExpectedMessage "*missing a host key*"
         }
     }
@@ -2173,7 +2173,7 @@ $extracted
                     )
                 }
 
-                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
                 return @(Get-Content -LiteralPath $capturePath)
             }
@@ -2246,10 +2246,10 @@ $extracted
             }
 
             $env:DMS_SCHEMA_TOOL_PATH = $fakeTool1
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $env:DMS_SCHEMA_TOOL_PATH = $fakeTool2
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
 
             $first = Get-OrderedSchemaPaths -Captured @(Get-Content -LiteralPath $capturePath1)
             $second = Get-OrderedSchemaPaths -Captured @(Get-Content -LiteralPath $capturePath2)
@@ -2401,7 +2401,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
                 )
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $overrideEnvFile -InstanceId @(1)
+            Invoke-ProvisionDmsSchema -EnvironmentFile $overrideEnvFile -DataStoreId @(1)
 
             $script:capturedGetCmsToken.ClientId | Should -Be "provision-side-admin"
             $script:capturedGetCmsToken.ClientSecret | Should -Be "provision-side-secret"
@@ -2436,7 +2436,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 
             $thrownMessage = $null
             try {
-                Invoke-ProvisionDmsSchema -EnvironmentFile $overrideEnvFile -InstanceId @(1)
+                Invoke-ProvisionDmsSchema -EnvironmentFile $overrideEnvFile -DataStoreId @(1)
             }
             catch {
                 $thrownMessage = $_.Exception.Message
@@ -2560,6 +2560,3 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
         }
     }
 }
-
-
-
