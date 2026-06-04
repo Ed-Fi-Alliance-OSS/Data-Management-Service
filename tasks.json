@@ -280,7 +280,7 @@
       "Regenerate Reqnroll feature code as required by the E2E project workflow and inspect the generated scenario categories.",
       "./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3&Category=@security-configuration'"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "logging",
