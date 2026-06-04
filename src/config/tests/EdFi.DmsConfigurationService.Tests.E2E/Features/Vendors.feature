@@ -3,7 +3,7 @@ Feature: Vendors endpoints
         Background:
             Given valid credentials
               And token received
-              And a POST request is made to "/v2/dataStores" with
+              And a POST request is made to "/v3/dataStores" with
                   """
                     {
                         "dataStoreType": "Test",
@@ -20,7 +20,7 @@ Feature: Vendors endpoints
                   | Test 13 | Test        | test@gmail.com      | Test              |
                   | Test 14 | Test        | test@gmail.com      | Test              |
                   | Test 15 | Test        | test@gmail.com      | Test              |
-             When a GET request is made to "/v2/vendors?offset=0&limit=2"
+             When a GET request is made to "/v3/vendors?offset=0&limit=2"
              Then it should respond with 200
               And the response body is
                   """
@@ -41,7 +41,7 @@ Feature: Vendors endpoints
                   """
 
         Scenario: 02 Ensure clients can create a vendor
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 16",
@@ -54,7 +54,7 @@ Feature: Vendors endpoints
               And the response headers include
                   """
                     {
-                        "location": "/v2/vendors/{vendorId}"
+                        "location": "/v3/vendors/{vendorId}"
                     }
                   """
               And the response body is empty
@@ -70,7 +70,7 @@ Feature: Vendors endpoints
                   """
 
         Scenario: 03 Verify retrieving a single vendor by ID
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 17",
@@ -80,7 +80,7 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a GET request is made to "/v2/vendors/{vendorId}"
+             When a GET request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 200
               And the response body is
                   """
@@ -94,7 +94,7 @@ Feature: Vendors endpoints
                   """
 
         Scenario: 04 Put an existing vendor
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 18",
@@ -104,7 +104,7 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a PUT request is made to "/v2/vendors/{vendorId}" with
+             When a PUT request is made to "/v3/vendors/{vendorId}" with
                   """
                   {
                       "id": {vendorId},
@@ -127,7 +127,7 @@ Feature: Vendors endpoints
                   """
 
         Scenario: 05 Verify deleting a specific vendor by ID
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 19",
@@ -137,11 +137,11 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{vendorId}"
+             When a DELETE request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 204
 
         Scenario: 06 Verify error handling when trying to get an item that has already been deleted
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 20",
@@ -151,13 +151,13 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{vendorId}"
+             When a DELETE request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 204
-             When a GET request is made to "/v2/vendors/{vendorId}"
+             When a GET request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 404
 
         Scenario: 07 Verify error handling when trying to update an item that has already been deleted
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 21",
@@ -167,9 +167,9 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{vendorId}"
+             When a DELETE request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 204
-             When a PUT request is made to "/v2/vendors/{vendorId}" with
+             When a PUT request is made to "/v3/vendors/{vendorId}" with
                   """
                   {
                       "id": {vendorId},
@@ -182,7 +182,7 @@ Feature: Vendors endpoints
              Then it should respond with 404
 
         Scenario: 08 Verify error handling when trying to delete an item that has already been deleted
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 22",
@@ -192,22 +192,22 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{vendorId}"
+             When a DELETE request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 204
-             When a DELETE request is made to "/v2/vendors/{vendorId}"
+             When a DELETE request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 404
 
         Scenario: 09 Verify error handling when trying to get a vendor using a invalid id
-             When a GET request is made to "/v2/vendors/a"
+             When a GET request is made to "/v3/vendors/a"
              Then it should respond with 400
 
         Scenario: 10 Verify error handling when trying to delete a vendor using a invalid id
-             When a DELETE request is made to "/v2/vendors/b"
+             When a DELETE request is made to "/v3/vendors/b"
              Then it should respond with 400
 
         Scenario: 11 Verify error handling when trying to update a vendor using a invalid id
         Scenario: 12 Verify validation invalid company
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "",
@@ -233,7 +233,7 @@ Feature: Vendors endpoints
                   }
                   """
         Scenario: 13 Verify validation invalid contactName
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Acme",
@@ -259,7 +259,7 @@ Feature: Vendors endpoints
                   }
                   """
         Scenario: 14 Verify validation invalid emailAddress
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Acme",
@@ -285,7 +285,7 @@ Feature: Vendors endpoints
                   }
                   """
         Scenario: 15 Verify validation invalid namespacePrefix
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Acme",
@@ -312,7 +312,7 @@ Feature: Vendors endpoints
                   """
 
         Scenario: 16 Verify vendor applications endpoint
-            Given a POST request is made to "/v2/vendors" with
+            Given a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Scenario 16",
@@ -321,7 +321,7 @@ Feature: Vendors endpoints
                         "namespacePrefixes": "Test"
                     }
                   """
-             When a POST request is made to "/v2/applications" with
+             When a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -332,7 +332,7 @@ Feature: Vendors endpoints
                   }
                   """
              Then it should respond with 201
-             When a GET request is made to "/v2/vendors/{vendorId}/applications"
+             When a GET request is made to "/v3/vendors/{vendorId}/applications"
              Then it should respond with 200
               And the response body is
                   """
@@ -355,7 +355,7 @@ Feature: Vendors endpoints
                   """
 
         Scenario: 17 Ensure the location header has correct path when a path base is provided
-             When a POST request is made to "config/v2/vendors" with
+             When a POST request is made to "config/v3/vendors" with
                   """
                     {
                         "company": "Test 99",
@@ -368,7 +368,7 @@ Feature: Vendors endpoints
               And the response headers include
                   """
                     {
-                        "location": "config/v2/vendors/{vendorId}"
+                        "location": "config/v3/vendors/{vendorId}"
                     }
                   """
               And the response body is empty
@@ -385,7 +385,7 @@ Feature: Vendors endpoints
 
 
         Scenario: 18 POST with an existing company name returns 200 and updates the vendor
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                    {
                        "company": "Upsert Co",
@@ -398,11 +398,11 @@ Feature: Vendors endpoints
               And the response headers include
                   """
                     {
-                        "location": "/v2/vendors/{vendorId}"
+                        "location": "/v3/vendors/{vendorId}"
                     }
                   """
               And the response body is empty
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                    {
                        "company": "Upsert Co",
@@ -415,7 +415,7 @@ Feature: Vendors endpoints
               And the response headers include
                   """
                    {
-                       "location": "/v2/vendors/{vendorId}"
+                       "location": "/v3/vendors/{vendorId}"
                    }
                   """
               And the response body is empty

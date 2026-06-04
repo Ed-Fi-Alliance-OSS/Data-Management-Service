@@ -22,7 +22,7 @@ public class VendorModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
-            .MapSecuredPost("/v2/vendors/", InsertVendor)
+            .MapSecuredPost("/v3/vendors/", InsertVendor)
             .Produces(201)
             .Produces(200)
             .AddOpenApiOperationTransformer(
@@ -53,12 +53,12 @@ public class VendorModule : IEndpointModule
                     return Task.CompletedTask;
                 }
             );
-        endpoints.MapSecuredGet("/v2/vendors/", GetAll);
-        endpoints.MapSecuredGet($"/v2/vendors/{{id}}", GetById);
-        endpoints.MapSecuredPut($"/v2/vendors/{{id}}", Update);
-        endpoints.MapSecuredDelete($"/v2/vendors/{{id}}", Delete);
+        endpoints.MapSecuredGet("/v3/vendors/", GetAll);
+        endpoints.MapSecuredGet($"/v3/vendors/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v3/vendors/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v3/vendors/{{id}}", Delete);
         endpoints
-            .MapSecuredGet($"/v2/vendors/{{id}}/applications", GetApplicationsByVendorId)
+            .MapSecuredGet($"/v3/vendors/{{id}}/applications", GetApplicationsByVendorId)
             .Produces<List<ApplicationResponse>>(200);
     }
 

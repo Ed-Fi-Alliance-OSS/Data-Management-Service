@@ -3,7 +3,7 @@ Feature: ApiClients endpoints
         Background:
             Given valid credentials
               And token received
-              And a POST request is made to "/v2/vendors" with
+              And a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test Vendor",
@@ -12,7 +12,7 @@ Feature: ApiClients endpoints
                         "namespacePrefixes": "uri://ed-fi-e2e.org"
                     }
                   """
-              And a POST request is made to "/v2/dataStores" with
+              And a POST request is made to "/v3/dataStores" with
                   """
                     {
                         "dataStoreType": "Test",
@@ -20,7 +20,7 @@ Feature: ApiClients endpoints
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
-              And a POST request is made to "/v2/applications" with
+              And a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -31,7 +31,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 01 Ensure clients can GET all apiClients
-             When a GET request is made to "/v2/apiClients?offset=0&limit=25"
+             When a GET request is made to "/v3/apiClients?offset=0&limit=25"
              Then it should respond with 200
               And the response body is
                   """
@@ -47,7 +47,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 02 Ensure clients can GET apiClient by clientId
-            Given  a POST request is made to "/v2/applications" with
+            Given  a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -56,7 +56,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a GET request is made to "/v2/apiClients/{clientId}"
+             When a GET request is made to "/v3/apiClients/{clientId}"
              Then it should respond with 200
               And the response body is
                   """
@@ -72,11 +72,11 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 03 Verify error handling when trying to get a non-existent apiClient
-             When a GET request is made to "/v2/apiClients/non-existent-client-id"
+             When a GET request is made to "/v3/apiClients/non-existent-client-id"
              Then it should respond with 404
 
         Scenario: 04 Ensure clients can POST a new apiClient successfully
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -85,7 +85,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/dataStores" with
+              And a POST request is made to "/v3/dataStores" with
                   """
                     {
                         "dataStoreType": "Test",
@@ -93,7 +93,7 @@ Feature: ApiClients endpoints
                         "connectionString": "Server=test2;Database=TestDb2;"
                     }
                   """
-             When a POST request is made to "/v2/apiClients" with
+             When a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -115,7 +115,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 05 Verify error handling when posting apiClient with non-existent application
-            Given a POST request is made to "/v2/dataStores" with
+            Given a POST request is made to "/v3/dataStores" with
                   """
                     {
                         "dataStoreType": "Test",
@@ -123,7 +123,7 @@ Feature: ApiClients endpoints
                         "connectionString": "Server=test2;Database=TestDb2;"
                     }
                   """
-             When a POST request is made to "/v2/apiClients" with
+             When a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": 99999,
@@ -150,7 +150,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 06 Verify error handling when posting apiClient with non-existent DataStoreIds
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -159,7 +159,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a POST request is made to "/v2/apiClients" with
+             When a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -186,7 +186,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 07 Ensure clients can not POST apiClient with empty DataStoreIds
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -195,7 +195,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a POST request is made to "/v2/apiClients" with
+             When a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -222,7 +222,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 08 Ensure clients can PUT to update an apiClient successfully
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -231,7 +231,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/dataStores" with
+              And a POST request is made to "/v3/dataStores" with
                   """
                     {
                         "dataStoreType": "Test",
@@ -239,7 +239,7 @@ Feature: ApiClients endpoints
                         "connectionString": "Server=test3;Database=TestDb3;"
                     }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -248,7 +248,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+             When a PUT request is made to "/v3/apiClients/{apiClientId}" with
                   """
                   {
                    "id": {apiClientId},
@@ -261,7 +261,7 @@ Feature: ApiClients endpoints
              Then it should respond with 204
 
         Scenario: 09 Verify updated apiClient has correct values
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -270,7 +270,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/dataStores" with
+              And a POST request is made to "/v3/dataStores" with
                   """
                     {
                         "dataStoreType": "Test",
@@ -278,7 +278,7 @@ Feature: ApiClients endpoints
                         "connectionString": "Server=test4;Database=TestDb4;"
                     }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -287,7 +287,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a PUT request is made to "/v2/apiClients/{apiClientId}" with
+              And a PUT request is made to "/v3/apiClients/{apiClientId}" with
                   """
                   {
                    "id": {apiClientId},
@@ -297,7 +297,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a GET request is made to "/v2/apiClients/{clientId}"
+             When a GET request is made to "/v3/apiClients/{clientId}"
              Then it should respond with 200
               And the response body is
                   """
@@ -313,7 +313,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 10 Verify error handling when updating non-existent apiClient
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -322,7 +322,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a PUT request is made to "/v2/apiClients/99999" with
+             When a PUT request is made to "/v3/apiClients/99999" with
                   """
                   {
                    "id": 99999,
@@ -335,7 +335,7 @@ Feature: ApiClients endpoints
              Then it should respond with 404
 
         Scenario: 11 Verify error handling when updating apiClient with non-existent application
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -344,7 +344,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -353,7 +353,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+             When a PUT request is made to "/v3/apiClients/{apiClientId}" with
                   """
                   {
                    "id": {apiClientId},
@@ -381,7 +381,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 12 Verify error handling when updating apiClient with non-existent DataStoreIds
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -390,7 +390,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -399,7 +399,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+             When a PUT request is made to "/v3/apiClients/{apiClientId}" with
                   """
                   {
                    "id": {apiClientId},
@@ -427,7 +427,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 13 Verify error handling when updating apiClient with empty DataStoreIds
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -436,7 +436,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -445,7 +445,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+             When a PUT request is made to "/v3/apiClients/{apiClientId}" with
                   """
                   {
                    "id": {apiClientId},
@@ -473,7 +473,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 14 Ensure clients can DELETE an apiClient successfully
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -482,7 +482,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -491,11 +491,11 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a DELETE request is made to "/v2/apiClients/{apiClientId}"
+             When a DELETE request is made to "/v3/apiClients/{apiClientId}"
              Then it should respond with 204
 
         Scenario: 15 Verify deleted apiClient no longer exists
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -504,7 +504,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -513,12 +513,12 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a DELETE request is made to "/v2/apiClients/{apiClientId}"
-             When a GET request is made to "/v2/apiClients/{clientId}"
+              And a DELETE request is made to "/v3/apiClients/{apiClientId}"
+             When a GET request is made to "/v3/apiClients/{clientId}"
              Then it should respond with 404
 
         Scenario: 16 Verify error handling when deleting non-existent apiClient
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -527,11 +527,11 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a DELETE request is made to "/v2/apiClients/99999"
+             When a DELETE request is made to "/v3/apiClients/99999"
              Then it should respond with 404
 
         Scenario: 17 Ensure clients can reset credentials for an apiClient
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -540,7 +540,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-              And a POST request is made to "/v2/apiClients" with
+              And a POST request is made to "/v3/apiClients" with
                   """
                   {
                    "applicationId": {applicationId},
@@ -549,7 +549,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a PUT request is made to "/v2/apiClients/{apiClientId}/reset-credential" with
+             When a PUT request is made to "/v3/apiClients/{apiClientId}/reset-credential" with
                   """
                   {}
                   """
@@ -567,7 +567,7 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 18 Verify error handling when resetting credentials for non-existent apiClient
-            Given a POST request is made to "/v2/applications" with
+            Given a POST request is made to "/v3/applications" with
                   """
                   {
                    "vendorId": {vendorId},
@@ -576,7 +576,7 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a PUT request is made to "/v2/apiClients/99999/reset-credential" with
+             When a PUT request is made to "/v3/apiClients/99999/reset-credential" with
                   """
                   {}
                   """

@@ -19,11 +19,11 @@ public class DataStoreDerivativeModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/dataStoreDerivatives/", InsertDataStoreDerivative);
-        endpoints.MapLimitedAccess("/v2/dataStoreDerivatives/", GetAll);
-        endpoints.MapLimitedAccess($"/v2/dataStoreDerivatives/{{id}}", GetById);
-        endpoints.MapSecuredPut($"/v2/dataStoreDerivatives/{{id}}", Update);
-        endpoints.MapSecuredDelete($"/v2/dataStoreDerivatives/{{id}}", Delete);
+        endpoints.MapSecuredPost("/v3/dataStoreDerivatives/", InsertDataStoreDerivative);
+        endpoints.MapLimitedAccess("/v3/dataStoreDerivatives/", GetAll);
+        endpoints.MapLimitedAccess($"/v3/dataStoreDerivatives/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v3/dataStoreDerivatives/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v3/dataStoreDerivatives/{{id}}", Delete);
     }
 
     private static async Task<IResult> InsertDataStoreDerivative(

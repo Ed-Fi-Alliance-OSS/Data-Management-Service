@@ -24,17 +24,17 @@ public class ApiClientModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
-            .MapSecuredPost("/v2/apiClients/", InsertApiClient)
+            .MapSecuredPost("/v3/apiClients/", InsertApiClient)
             .Produces<ApiClientCredentialsResponse>(201);
-        endpoints.MapSecuredPut($"/v2/apiClients/{{id}}", UpdateApiClient);
-        endpoints.MapSecuredDelete($"/v2/apiClients/{{id}}", DeleteApiClient);
+        endpoints.MapSecuredPut($"/v3/apiClients/{{id}}", UpdateApiClient);
+        endpoints.MapSecuredDelete($"/v3/apiClients/{{id}}", DeleteApiClient);
         endpoints
-            .MapSecuredPut($"/v2/apiClients/{{id}}/reset-credential", ResetCredential)
+            .MapSecuredPut($"/v3/apiClients/{{id}}/reset-credential", ResetCredential)
             .Produces<ApiClientCredentialsResponse>(200);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
-        endpoints.MapLimitedAccess("/v2/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
+        endpoints.MapLimitedAccess("/v3/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
         endpoints
-            .MapLimitedAccess("/v2/apiClients/{clientId}", GetByClientId)
+            .MapLimitedAccess("/v3/apiClients/{clientId}", GetByClientId)
             .Produces<ApiClientResponse>(200);
     }
 

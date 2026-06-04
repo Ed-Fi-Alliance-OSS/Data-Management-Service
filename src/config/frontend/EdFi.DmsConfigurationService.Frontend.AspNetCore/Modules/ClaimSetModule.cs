@@ -20,14 +20,14 @@ public class ClaimSetModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/claimSets/", InsertClaimSet);
-        endpoints.MapLimitedAccess("/v2/claimSets/", GetAll);
-        endpoints.MapSecuredGet($"/v2/claimSets/{{id}}", GetById);
-        endpoints.MapSecuredGet($"/v2/claimSets/{{id}}/export", Export);
-        endpoints.MapSecuredPut($"/v2/claimSets/{{id}}", Update);
-        endpoints.MapSecuredDelete($"/v2/claimSets/{{id}}", Delete);
-        endpoints.MapSecuredPost("/v2/claimSets/copy", Copy);
-        endpoints.MapSecuredPost("/v2/claimSets/import", Import);
+        endpoints.MapSecuredPost("/v3/claimSets/", InsertClaimSet);
+        endpoints.MapLimitedAccess("/v3/claimSets/", GetAll);
+        endpoints.MapSecuredGet($"/v3/claimSets/{{id}}", GetById);
+        endpoints.MapSecuredGet($"/v3/claimSets/{{id}}/export", Export);
+        endpoints.MapSecuredPut($"/v3/claimSets/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v3/claimSets/{{id}}", Delete);
+        endpoints.MapSecuredPost("/v3/claimSets/copy", Copy);
+        endpoints.MapSecuredPost("/v3/claimSets/import", Import);
     }
 
     private static async Task<IResult> InsertClaimSet(

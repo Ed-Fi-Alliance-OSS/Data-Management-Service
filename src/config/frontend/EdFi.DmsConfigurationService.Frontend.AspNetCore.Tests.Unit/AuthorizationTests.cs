@@ -135,11 +135,11 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient();
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -153,10 +153,10 @@ public class AuthorizationTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/vendors/1");
+            var getResponse = await client.GetAsync("/v3/vendors?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/vendors/1");
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -171,11 +171,11 @@ public class AuthorizationTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/1");
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-            addResponse.Headers.Location!.ToString().Should().EndWith("/v2/vendors/1");
+            addResponse.Headers.Location!.ToString().Should().EndWith("/v3/vendors/1");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -226,11 +226,11 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient(AuthorizationScopes.ReadOnlyScope.Name);
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
-            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/vendors/1");
+            var getResponse = await client.GetAsync("/v3/vendors?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/vendors/1");
 
             //Assert
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -242,11 +242,11 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient(AuthorizationScopes.ReadOnlyScope.Name);
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -270,11 +270,11 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient(AuthorizationScopes.ReadOnlyScope.Name);
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -299,10 +299,10 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient(AuthorizationScopes.ReadOnlyScope.Name);
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/1");
 
             //Assert
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -366,7 +366,7 @@ public class AuthorizationTests
             var getAuthorizationMetaDataResponse = await client.GetAsync(
                 "/authorizationMetadata?claimSetName=ClaimSet1"
             );
-            var getAllClaimSetsResponse = await client.GetAsync("/v2/claimSets");
+            var getAllClaimSetsResponse = await client.GetAsync("/v3/claimSets");
 
             //Assert
             getAuthorizationMetaDataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -380,7 +380,7 @@ public class AuthorizationTests
             using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
 
             // Act
-            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
+            var getResponse = await client.GetAsync("/v3/vendors?offset=0&limit=25");
 
             //Assert
             getResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -391,11 +391,11 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -419,11 +419,11 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -448,10 +448,10 @@ public class AuthorizationTests
         {
             // Arrange
             using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/1");
 
             //Assert
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);

@@ -142,7 +142,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_200_with_resource_claims()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims");
+            var response = await client.GetAsync("/v3/resourceClaims");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
@@ -154,7 +154,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_200_when_found()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims/1");
+            var response = await client.GetAsync("/v3/resourceClaims/1");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
@@ -167,7 +167,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_404_when_not_found()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims/999");
+            var response = await client.GetAsync("/v3/resourceClaims/999");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
@@ -177,7 +177,7 @@ public class ResourceClaimModuleTests
         {
             var client = SetUpClient();
             var response = await client.GetAsync(
-                "/v2/resourceClaims/1?orderBy=invalidField&direction=sideways&limit=999"
+                "/v3/resourceClaims/1?orderBy=invalidField&direction=sideways&limit=999"
             );
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -190,7 +190,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_200_with_actions()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaimActions");
+            var response = await client.GetAsync("/v3/resourceClaimActions");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
@@ -205,7 +205,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_200_with_auth_strategies()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaimActionAuthStrategies");
+            var response = await client.GetAsync("/v3/resourceClaimActionAuthStrategies");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
@@ -228,7 +228,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_400_for_invalid_orderBy()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/resourceClaims?orderBy=invalidField");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
@@ -237,7 +237,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_400_for_invalid_direction()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims?direction=sideways");
+            var response = await client.GetAsync("/v3/resourceClaims?direction=sideways");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
@@ -246,7 +246,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_400_for_negative_offset()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims?offset=-1");
+            var response = await client.GetAsync("/v3/resourceClaims?offset=-1");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
@@ -255,7 +255,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_400_for_invalid_orderBy_on_actions_endpoint()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaimActions?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/resourceClaimActions?orderBy=invalidField");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
@@ -265,7 +265,7 @@ public class ResourceClaimModuleTests
         {
             var client = SetUpClient();
             var response = await client.GetAsync(
-                "/v2/resourceClaimActionAuthStrategies?orderBy=invalidField"
+                "/v3/resourceClaimActionAuthStrategies?orderBy=invalidField"
             );
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -299,7 +299,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_404_for_get_all()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims");
+            var response = await client.GetAsync("/v3/resourceClaims");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
@@ -308,7 +308,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_404_for_get_by_id()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims/1");
+            var response = await client.GetAsync("/v3/resourceClaims/1");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
@@ -317,7 +317,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_404_for_get_actions()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaimActions");
+            var response = await client.GetAsync("/v3/resourceClaimActions");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
@@ -326,7 +326,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_404_for_get_auth_strategies()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaimActionAuthStrategies");
+            var response = await client.GetAsync("/v3/resourceClaimActionAuthStrategies");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
@@ -371,7 +371,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_500_for_get_all()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims");
+            var response = await client.GetAsync("/v3/resourceClaims");
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
@@ -380,7 +380,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_500_for_get_by_id()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaims/1");
+            var response = await client.GetAsync("/v3/resourceClaims/1");
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
@@ -389,7 +389,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_500_for_get_actions()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaimActions");
+            var response = await client.GetAsync("/v3/resourceClaimActions");
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
@@ -398,7 +398,7 @@ public class ResourceClaimModuleTests
         public async Task It_returns_500_for_get_auth_strategies()
         {
             var client = SetUpClient();
-            var response = await client.GetAsync("/v2/resourceClaimActionAuthStrategies");
+            var response = await client.GetAsync("/v3/resourceClaimActionAuthStrategies");
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
@@ -432,7 +432,7 @@ public class ResourceClaimModuleTests
         public async Task It_passes_id_filter_to_repository()
         {
             var client = SetUpClient();
-            await client.GetAsync("/v2/resourceClaims?id=42");
+            await client.GetAsync("/v3/resourceClaims?id=42");
 
             A.CallTo(() =>
                     _repository.GetResourceClaims(A<ResourceClaimQuery>.That.Matches(q => q.Id == 42L))
@@ -444,7 +444,7 @@ public class ResourceClaimModuleTests
         public async Task It_passes_name_filter_to_repository()
         {
             var client = SetUpClient();
-            await client.GetAsync("/v2/resourceClaims?name=types");
+            await client.GetAsync("/v3/resourceClaims?name=types");
 
             A.CallTo(() =>
                     _repository.GetResourceClaims(A<ResourceClaimQuery>.That.Matches(q => q.Name == "types"))
@@ -456,7 +456,7 @@ public class ResourceClaimModuleTests
         public async Task It_passes_limit_and_offset_to_repository()
         {
             var client = SetUpClient();
-            await client.GetAsync("/v2/resourceClaims?limit=5&offset=10");
+            await client.GetAsync("/v3/resourceClaims?limit=5&offset=10");
 
             A.CallTo(() =>
                     _repository.GetResourceClaims(
@@ -470,7 +470,7 @@ public class ResourceClaimModuleTests
         public async Task It_passes_orderBy_and_direction_to_repository()
         {
             var client = SetUpClient();
-            await client.GetAsync("/v2/resourceClaims?orderBy=name&direction=desc");
+            await client.GetAsync("/v3/resourceClaims?orderBy=name&direction=desc");
 
             A.CallTo(() =>
                     _repository.GetResourceClaims(
@@ -484,7 +484,7 @@ public class ResourceClaimModuleTests
         public async Task It_passes_resourceName_filter_to_actions_repository()
         {
             var client = SetUpClient();
-            await client.GetAsync("/v2/resourceClaimActions?resourceName=types");
+            await client.GetAsync("/v3/resourceClaimActions?resourceName=types");
 
             A.CallTo(() =>
                     _repository.GetResourceClaimActions(
@@ -499,7 +499,7 @@ public class ResourceClaimModuleTests
         {
             var client = SetUpClient();
             await client.GetAsync(
-                "/v2/resourceClaimActions?limit=3&offset=6&orderBy=resourceClaimId&direction=asc"
+                "/v3/resourceClaimActions?limit=3&offset=6&orderBy=resourceClaimId&direction=asc"
             );
 
             A.CallTo(() =>
@@ -519,7 +519,7 @@ public class ResourceClaimModuleTests
         public async Task It_passes_resourceName_filter_to_auth_strategies_repository()
         {
             var client = SetUpClient();
-            await client.GetAsync("/v2/resourceClaimActionAuthStrategies?resourceName=types");
+            await client.GetAsync("/v3/resourceClaimActionAuthStrategies?resourceName=types");
 
             A.CallTo(() =>
                     _repository.GetResourceClaimActionAuthStrategies(
@@ -534,7 +534,7 @@ public class ResourceClaimModuleTests
         {
             var client = SetUpClient();
             await client.GetAsync(
-                "/v2/resourceClaimActionAuthStrategies?limit=2&offset=4&orderBy=claimName&direction=desc"
+                "/v3/resourceClaimActionAuthStrategies?limit=2&offset=4&orderBy=claimName&direction=desc"
             );
 
             A.CallTo(() =>

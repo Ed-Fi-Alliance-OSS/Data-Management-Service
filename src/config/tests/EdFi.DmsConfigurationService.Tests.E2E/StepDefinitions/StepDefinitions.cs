@@ -308,7 +308,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     {
         if (apiResponse.Headers.TryGetValue("location", out string? value))
         {
-            _location = value; //eg `http://localhost:8081/v2/vendors/57`
+            _location = value; //eg `http://localhost:8081/v3/vendors/57`
             var segments = _location.Split('/');
             var id = segments[^1]; // eg 57
             var resource = segments[^2]; // eg 'vendors'
@@ -767,7 +767,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
         // Query the API to get all claim sets
         var response = await playwrightContext.ApiRequestContext?.GetAsync(
-            "/v2/claimSets",
+            "/v3/claimSets",
             new() { Headers = _authHeaders }
         )!;
         response.Status.Should().Be(200, "Failed to fetch claim sets for ID resolution");

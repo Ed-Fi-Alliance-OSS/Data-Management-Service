@@ -21,13 +21,13 @@ public class DataStoreModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/dataStores/", InsertDataStore);
-        endpoints.MapLimitedAccess("/v2/dataStores/", GetAll);
-        endpoints.MapLimitedAccess($"/v2/dataStores/{{id}}", GetById);
-        endpoints.MapSecuredPut($"/v2/dataStores/{{id}}", Update);
-        endpoints.MapSecuredDelete($"/v2/dataStores/{{id}}", Delete);
+        endpoints.MapSecuredPost("/v3/dataStores/", InsertDataStore);
+        endpoints.MapLimitedAccess("/v3/dataStores/", GetAll);
+        endpoints.MapLimitedAccess($"/v3/dataStores/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v3/dataStores/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v3/dataStores/{{id}}", Delete);
         endpoints
-            .MapSecuredGet($"/v2/dataStores/{{id}}/applications/", GetApplicationsByDataStore)
+            .MapSecuredGet($"/v3/dataStores/{{id}}/applications/", GetApplicationsByDataStore)
             .Produces<List<ApplicationResponse>>(200);
     }
 

@@ -58,9 +58,9 @@ Feature: Metadata endpoints
              Then it should respond with 200
               And the OpenAPI paths should include
                   | Path                   |
-                  | /v2/vendors            |
-                  | /v2/applications       |
-                  | /v2/claimSets          |
+                  | /v3/vendors            |
+                  | /v3/applications       |
+                  | /v3/claimSets          |
                   | /authorizationMetadata |
 
         Scenario: 06 Service information URLs should be accessible

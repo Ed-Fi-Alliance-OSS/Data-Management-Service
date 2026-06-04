@@ -5,7 +5,7 @@ Feature: ClaimSets endpoints
               And token received
 
         Scenario: 01 Ensure clients can GET claim sets
-             When a GET request is made to "/v2/claimSets" for first 3 items
+             When a GET request is made to "/v3/claimSets" for first 3 items
              Then it should respond with 200
               And the response body is
                   """
@@ -32,7 +32,7 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 02 Ensure clients can GET claim sets with offset
-             When a GET request is made to "/v2/claimSets" for next 1 items after skipping 1 items
+             When a GET request is made to "/v3/claimSets" for next 1 items after skipping 1 items
              Then it should respond with 200
               And the response body is
                   """
@@ -47,7 +47,7 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 03 Ensure clients can GET a claim set by ID
-             When a GET request is made to "/v2/claimSets/{claimSetId:E2E-NoFurtherAuthRequiredClaimSet}"
+             When a GET request is made to "/v3/claimSets/{claimSetId:E2E-NoFurtherAuthRequiredClaimSet}"
              Then it should respond with 200
               And the response body is
                   """
@@ -60,7 +60,7 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 04 Ensure clients can create, update, get and delete a new claim set
-             When a POST request is made to "/v2/claimSets" with
+             When a POST request is made to "/v3/claimSets" with
                   """
                   {
                       "name": "NewClaimSet"
@@ -70,10 +70,10 @@ Feature: ClaimSets endpoints
               And the response headers include
                   """
                   {
-                      "location": "/v2/claimSets/{claimSetId}"
+                      "location": "/v3/claimSets/{claimSetId}"
                   }
                   """
-             When a PUT request is made to "/v2/claimSets/{claimSetId}" with
+             When a PUT request is made to "/v3/claimSets/{claimSetId}" with
                   """
                     {
                         "id": {claimSetId},
@@ -81,7 +81,7 @@ Feature: ClaimSets endpoints
                     }
                   """
              Then it should respond with 204
-             When a GET request is made to "/v2/claimSets/{claimSetId}"
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
              Then it should respond with 200
               And the response body is
                   """
@@ -92,11 +92,11 @@ Feature: ClaimSets endpoints
                       "_applications": {}
                   }
                   """
-             When a DELETE request is made to "/v2/claimSets/{claimSetId}"
+             When a DELETE request is made to "/v3/claimSets/{claimSetId}"
              Then it should respond with 204
 
         Scenario: 05 Verify error handling when trying to GET a non-existent claim set
-             When a GET request is made to "/v2/claimSets/999"
+             When a GET request is made to "/v3/claimSets/999"
              Then it should respond with 404
               And the response body is
                   """
@@ -114,7 +114,7 @@ Feature: ClaimSets endpoints
             Given the system has these "claimSets"
                   | name                  | isSystemReserved |
                   | DuplicateTestClaimSet | false            |
-             When a POST request is made to "/v2/claimSets" with
+             When a POST request is made to "/v3/claimSets" with
                   """
                   {
                       "name": "DuplicateTestClaimSet"
@@ -138,7 +138,7 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 07 Verify error handling when trying to update a system-reserved claim set
-             When a PUT request is made to "/v2/claimSets/8" with
+             When a PUT request is made to "/v3/claimSets/8" with
                   """
                   {
                       "id": 8,
@@ -159,7 +159,7 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 08 Verify error handling when trying to delete a system-reserved claim set
-             When a DELETE request is made to "/v2/claimSets/8"
+             When a DELETE request is made to "/v3/claimSets/8"
              Then it should respond with 400
               And the response body is
                   """
@@ -174,7 +174,7 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 09 Verify error handling when trying to update a claim set with mismatched IDs
-             When a POST request is made to "/v2/claimSets" with
+             When a POST request is made to "/v3/claimSets" with
                   """
                   {
                       "name": "TestClaimSetMismatchedIds"
@@ -184,10 +184,10 @@ Feature: ClaimSets endpoints
               And the response headers include
                   """
                   {
-                      "location": "/v2/claimSets/{claimSetId}"
+                      "location": "/v3/claimSets/{claimSetId}"
                   }
                   """
-             When a PUT request is made to "/v2/claimSets/{claimSetId}" with
+             When a PUT request is made to "/v3/claimSets/{claimSetId}" with
                   """
                   {
                       "id": 999,
@@ -211,7 +211,7 @@ Feature: ClaimSets endpoints
                   }
                   """
         Scenario: 10 Ensure clients can successfully import a valid claim set
-             When a POST request is made to "/v2/claimSets/import" with
+             When a POST request is made to "/v3/claimSets/import" with
                   """
                   {
                       "name": "AcademicHonorClaimSet",
@@ -241,12 +241,12 @@ Feature: ClaimSets endpoints
               And the response headers include
                   """
                   {
-                      "location": "/v2/claimSets/{claimSetId}"
+                      "location": "/v3/claimSets/{claimSetId}"
                   }
                   """
 
         Scenario: 11 Ensure clients cannot import an invalid claim set with empty actions
-             When a POST request is made to "/v2/claimSets/import" with
+             When a POST request is made to "/v3/claimSets/import" with
                   """
                   {
                       "name": "InvalidClaimSet",

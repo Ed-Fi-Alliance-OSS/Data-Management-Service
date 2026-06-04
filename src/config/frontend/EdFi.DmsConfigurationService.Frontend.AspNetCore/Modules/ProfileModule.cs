@@ -21,11 +21,11 @@ public class ProfileModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/v2/profiles/", GetAll);
-        endpoints.MapSecuredPost("/v2/profiles/", InsertProfile);
-        endpoints.MapSecuredGet($"/v2/profiles/{{id}}", GetById);
-        endpoints.MapSecuredPut($"/v2/profiles/{{id}}", Update);
-        endpoints.MapSecuredDelete($"/v2/profiles/{{id}}", Delete);
+        endpoints.MapSecuredGet("/v3/profiles/", GetAll);
+        endpoints.MapSecuredPost("/v3/profiles/", InsertProfile);
+        endpoints.MapSecuredGet($"/v3/profiles/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v3/profiles/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v3/profiles/{{id}}", Delete);
     }
 
     private static bool IsProfileValid(

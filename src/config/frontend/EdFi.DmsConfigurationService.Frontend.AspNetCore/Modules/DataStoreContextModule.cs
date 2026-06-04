@@ -18,11 +18,11 @@ public class DataStoreContextModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/dataStoreContexts/", InsertDataStoreContext);
-        endpoints.MapLimitedAccess("/v2/dataStoreContexts/", GetAll);
-        endpoints.MapLimitedAccess($"/v2/dataStoreContexts/{{id}}", GetById);
-        endpoints.MapSecuredPut($"/v2/dataStoreContexts/{{id}}", Update);
-        endpoints.MapSecuredDelete($"/v2/dataStoreContexts/{{id}}", Delete);
+        endpoints.MapSecuredPost("/v3/dataStoreContexts/", InsertDataStoreContext);
+        endpoints.MapLimitedAccess("/v3/dataStoreContexts/", GetAll);
+        endpoints.MapLimitedAccess($"/v3/dataStoreContexts/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v3/dataStoreContexts/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v3/dataStoreContexts/{{id}}", Delete);
     }
 
     private static async Task<IResult> InsertDataStoreContext(

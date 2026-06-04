@@ -96,10 +96,10 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
-        response.Headers.Location!.ToString().Should().EndWith("/v2/profiles/1");
+        response.Headers.Location!.ToString().Should().EndWith("/v3/profiles/1");
     }
 
     [Test]
@@ -116,7 +116,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -143,7 +143,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -168,7 +168,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -193,7 +193,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -219,7 +219,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -244,7 +244,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -273,7 +273,7 @@ public class ProfileModuleTests
                 }
             );
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+        var response = await client.GetAsync("/v3/profiles?limit=10&offset=0");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -293,7 +293,7 @@ public class ProfileModuleTests
                 )
             );
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles/1");
+        var response = await client.GetAsync("/v3/profiles/1");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -303,7 +303,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
             .Returns(new ProfileGetResult.FailureNotFound());
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles/999");
+        var response = await client.GetAsync("/v3/profiles/999");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -324,7 +324,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PutAsync("/v2/profiles/1", content);
+        var response = await client.PutAsync("/v3/profiles/1", content);
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
@@ -343,7 +343,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PutAsync("/v2/profiles/1", content);
+        var response = await client.PutAsync("/v3/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -360,7 +360,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.Success());
         using var client = SetUpClient();
-        var response = await client.DeleteAsync("/v2/profiles/1");
+        var response = await client.DeleteAsync("/v3/profiles/1");
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
@@ -370,7 +370,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.FailureNotExists(999));
         using var client = SetUpClient();
-        var response = await client.DeleteAsync("/v2/profiles/999");
+        var response = await client.DeleteAsync("/v3/profiles/999");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -380,7 +380,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.FailureInUse(1));
         using var client = SetUpClient();
-        var response = await client.DeleteAsync("/v2/profiles/1");
+        var response = await client.DeleteAsync("/v3/profiles/1");
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -406,7 +406,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PutAsync("/v2/profiles/1", content);
+        var response = await client.PutAsync("/v3/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -434,7 +434,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PutAsync("/v2/profiles/1", content);
+        var response = await client.PutAsync("/v3/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -462,7 +462,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PutAsync("/v2/profiles/999", content);
+        var response = await client.PutAsync("/v3/profiles/999", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -482,7 +482,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PutAsync("/v2/profiles/1", content);
+        var response = await client.PutAsync("/v3/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -499,7 +499,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(new ProfileGetResult[] { });
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+        var response = await client.GetAsync("/v3/profiles?limit=10&offset=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -548,7 +548,7 @@ public class ProfileModuleTests
                 }
             );
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+        var response = await client.GetAsync("/v3/profiles?limit=10&offset=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -569,7 +569,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(new[] { new ProfileGetResult.FailureUnknown("Database error") });
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+        var response = await client.GetAsync("/v3/profiles?limit=10&offset=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
@@ -580,7 +580,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
             .Returns(new ProfileGetResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles/1");
+        var response = await client.GetAsync("/v3/profiles/1");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
@@ -601,7 +601,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PostAsync("/v2/profiles", content);
+        var response = await client.PostAsync("/v3/profiles", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
@@ -623,7 +623,7 @@ public class ProfileModuleTests
             Encoding.UTF8,
             "application/json"
         );
-        var response = await client.PutAsync("/v2/profiles/1", content);
+        var response = await client.PutAsync("/v3/profiles/1", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
@@ -634,7 +634,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
-        var response = await client.DeleteAsync("/v2/profiles/1");
+        var response = await client.DeleteAsync("/v3/profiles/1");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
@@ -667,7 +667,7 @@ public class ProfileModuleTests
                 }
             );
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+        var response = await client.GetAsync("/v3/profiles?limit=10&offset=0");
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -686,7 +686,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))
             .Returns(Array.Empty<ProfileGetResult>());
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+        var response = await client.GetAsync("/v3/profiles?limit=10&offset=0");
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
@@ -710,7 +710,7 @@ public class ProfileModuleTests
                 )
             );
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles/1");
+        var response = await client.GetAsync("/v3/profiles/1");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -731,7 +731,7 @@ public class ProfileModuleTests
                 )
             );
         using var client = SetUpClient();
-        var response = await client.GetAsync("/v2/profiles/2");
+        var response = await client.GetAsync("/v3/profiles/2");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -759,7 +759,7 @@ public class ProfileModuleTests
 
         using var client = SetUpClient();
         var response = await client.GetAsync(
-            "/v2/profiles?id=42&name=FilteredProfile&orderBy=name&direction=DESC&limit=1&offset=0"
+            "/v3/profiles?id=42&name=FilteredProfile&orderBy=name&direction=DESC&limit=1&offset=0"
         );
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -777,7 +777,7 @@ public class ProfileModuleTests
     {
         using var client = SetUpClient();
 
-        var response = await client.GetAsync("/v2/profiles?orderBy=invalidField");
+        var response = await client.GetAsync("/v3/profiles?orderBy=invalidField");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
