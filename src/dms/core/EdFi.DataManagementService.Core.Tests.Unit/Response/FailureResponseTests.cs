@@ -152,7 +152,7 @@ public class Given_FailureResponse_For_Security_Configuration
     }
 
     [Test]
-    public void It_formats_the_canonical_unknown_strategy_message_in_deterministic_order()
+    public void It_formats_the_canonical_unknown_strategy_message_in_first_occurrence_order()
     {
         string message = SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
             "StudentScope",
@@ -163,7 +163,7 @@ public class Given_FailureResponse_For_Security_Configuration
         message
             .Should()
             .Be(
-                "Could not find authorization strategy implementations for the following strategy names: 'CalendarScope', 'StudentScope'."
+                "Could not find authorization strategy implementations for the following strategy names: 'StudentScope', 'CalendarScope'."
             );
     }
 

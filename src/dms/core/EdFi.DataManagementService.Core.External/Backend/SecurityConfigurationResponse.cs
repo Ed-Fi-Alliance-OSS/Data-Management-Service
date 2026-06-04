@@ -28,7 +28,7 @@ public static class SecurityConfigurationFailureMessages
         $"No authorization strategies were defined for the requested action '{actionName}' against resource URIs {FormatBracketedQuotedList(matchedResourceClaimUris)} matched by the caller's claim '{matchedResourceClaimName}'.";
 
     public static string UnknownAuthorizationStrategies(IEnumerable<string> unavailableStrategyNames) =>
-        $"Could not find authorization strategy implementations for the following strategy names: {FormatQuotedCsv(unavailableStrategyNames.Distinct(StringComparer.Ordinal).OrderBy(static strategyName => strategyName, StringComparer.Ordinal))}.";
+        $"Could not find authorization strategy implementations for the following strategy names: {FormatQuotedCsv(DistinctInFirstOccurrenceOrder(unavailableStrategyNames))}.";
 
     public static string CustomViewBasisPropertyUnavailable(
         string targetEntityName,
@@ -39,6 +39,12 @@ public static class SecurityConfigurationFailureMessages
 
     private static string FormatBracketedQuotedList(IEnumerable<string> values) =>
         $"[{FormatQuotedCsv(values)}]";
+
+    private static string[] DistinctInFirstOccurrenceOrder(IEnumerable<string> values)
+    {
+        HashSet<string> seenValues = new(StringComparer.Ordinal);
+        return [.. values.Where(seenValues.Add)];
+    }
 
     private static string FormatQuotedCsv(IEnumerable<string> values)
     {

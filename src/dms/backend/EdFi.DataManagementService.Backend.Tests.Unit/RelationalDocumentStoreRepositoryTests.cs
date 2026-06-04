@@ -5062,10 +5062,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Which.Should()
             .Be(
-                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
-                    "ACustomAuthorizationStrategy",
-                    "ZCustomAuthorizationStrategy",
-                ])
+                "Could not find authorization strategy implementations for the following strategy names: 'ZCustomAuthorizationStrategy', 'ACustomAuthorizationStrategy'."
             );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(

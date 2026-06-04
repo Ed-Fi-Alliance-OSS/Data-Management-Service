@@ -102,3 +102,10 @@ Key decisions: Deleted unused HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequi
 Files changed: Backend RelationalReadGuardrails.cs; tasks.json; progress.txt.
 Verification: rg helper names now has no matches. dotnet csharpier format RelationalReadGuardrails.cs. Backend project build passed. DescriptorReadHandler|DescriptorWriteHandler backend unit filter passed 18 tests.
 Blockers/notes: All tasks now complete; next iteration should output COMPLETE if no new tasks added.
+
+Task completed: Preserve configured/order-of-discovery ordering when formatting aggregated unknown authorization strategy failures.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: UnknownAuthorizationStrategies now de-dupes by first occurrence instead of ordinal sort, so configured/failure discovery order controls the wire message. Backend query aggregation already passes failure-order names; tightened test asserts Z before A without reusing formatter.
+Files changed: Core.External SecurityConfigurationResponse.cs; Core FailureResponseTests.cs; Backend RelationalDocumentStoreRepositoryTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format src/dms/core src/dms/backend. Documented FullyQualifiedName~FailureResponseTests filter selected no tests; corrected Given_FailureResponse_For_Security_Configuration passed 5 tests. Backend Given_RelationalDocumentStoreRepositoryTests filter passed 220 tests; descriptor read/write namespace authorization fixtures passed 63 tests. git diff --check clean.
+Blockers/notes: Remaining incomplete tasks are E2E shard tags, CmsAction logging precedence, and descriptor classification cleanup.

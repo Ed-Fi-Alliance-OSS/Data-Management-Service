@@ -265,5 +265,70 @@
       "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit"
     ],
     "completed": true
+  },
+  {
+    "category": "e2e-tests",
+    "description": "Medium: Add relational CI shard tags to the security-configuration E2E scenarios so the new relational coverage runs in sharded CI.",
+    "acceptance-criteria": [
+      "Each scenario in src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/SecurityConfigurationProblemDetails.feature has a relational-ci shard tag in addition to @relational-backend and @security-configuration.",
+      "The shard assignment follows the existing Authorization feature convention, using @relational-ci-shard-3 unless the test ownership convention changes.",
+      "Generated Reqnroll metadata includes the relational-backend, relational-ci-shard-3, and security-configuration categories for each security-configuration scenario after regeneration.",
+      "The focused relational E2E shard filter Category=@relational-backend&Category=@relational-ci-shard-3&Category=@security-configuration selects all three security-configuration scenarios."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/SecurityConfigurationProblemDetails.feature for @relational-ci-shard-3 on each scenario.",
+      "Regenerate Reqnroll feature code as required by the E2E project workflow and inspect the generated scenario categories.",
+      "./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3&Category=@security-configuration'"
+    ],
+    "completed": false
+  },
+  {
+    "category": "logging",
+    "description": "Low: Honor backend security-configuration diagnostics' CMS action when logging non-CRUD authorization failures.",
+    "acceptance-criteria": [
+      "SecurityConfigurationFailureLogger resolves CmsAction from the explicit cmsAction argument first, then from the first non-empty SecurityConfigurationFailureDiagnostic.CmsAction value, and only then from the HTTP method fallback.",
+      "A focused Core unit test covers a backend-originated security-configuration response where the request method is GET but diagnostics specify CmsAction ReadChanges; the structured log records ReadChanges.",
+      "Existing CRUD and middleware-originated security-configuration logs continue to record Create, Read, Update, or Delete as before.",
+      "The logging change does not add raw JWTs, secrets, SQL text, stack traces, or provider exception text to structured log fields."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core/Response/SecurityConfigurationFailureLogger.cs for the CmsAction precedence.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~QueryRequestHandlerTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests\"",
+      "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit"
+    ],
+    "completed": false
+  },
+  {
+    "category": "bugfix",
+    "description": "Medium: Preserve configured/order-of-discovery ordering when formatting aggregated unknown authorization strategy failures.",
+    "acceptance-criteria": [
+      "SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies de-duplicates unavailable strategy names while preserving the first occurrence order supplied by the caller instead of alphabetically sorting them.",
+      "Backend paths that aggregate unavailable authorization strategy names pass configured or failure-discovery ordered values into the formatter.",
+      "Focused tests cover a non-alphabetical multi-strategy input and assert the wire message preserves that order.",
+      "Existing deterministic behavior for duplicate strategy names remains stable, and no-strategies resource claim URI ordering is unchanged."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/core/EdFi.DataManagementService.Core.External/Backend/SecurityConfigurationResponse.cs and backend authorization strategy aggregation call sites.",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~FailureResponseTests\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DescriptorReadHandlerNamespaceAuthorizationTests|FullyQualifiedName~DescriptorWriteHandlerNamespaceAuthorizationTests\"",
+      "dotnet csharpier format src/dms/core src/dms/backend"
+    ],
+    "completed": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Low: Derive descriptor security-configuration errors and diagnostics from a single relationship strategy classification pass.",
+    "acceptance-criteria": [
+      "Descriptor read, write, and delete security-configuration preflight paths do not call RelationshipAuthorizationStrategyClassifier.Classify separately for response errors and diagnostics.",
+      "RelationalReadGuardrails exposes a shared helper or accepts a precomputed RelationshipAuthorizationClassification so the wire errors and structured diagnostics are produced from the same classification result.",
+      "Descriptor unknown-strategy security-configuration responses and diagnostics remain behaviorally unchanged apart from eliminating duplicated classification work.",
+      "The refactor does not change staged 501 behavior for known-but-not-enabled descriptor strategies."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadGuardrails.cs, DescriptorReadHandler.cs, and DescriptorWriteHandler.cs for a single classification pass per security-configuration outcome.",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DescriptorReadHandlerNamespaceAuthorizationTests|FullyQualifiedName~DescriptorWriteHandlerNamespaceAuthorizationTests\"",
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit"
+    ],
+    "completed": false
   }
 ]
