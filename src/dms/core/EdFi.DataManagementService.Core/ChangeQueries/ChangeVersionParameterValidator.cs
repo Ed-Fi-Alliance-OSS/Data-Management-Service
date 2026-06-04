@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.ChangeQueries;
 /// used by live resource and descriptor GET-many requests and, in later stories,
 /// the /deletes and /keyChanges endpoints. Parses each bound as a long greater than
 /// or equal to 0 and enforces min &lt;= max when both are supplied. Present-but-empty
-/// values are treated as absent. Parameter lookup
+/// or whitespace-only values are treated as absent. Parameter lookup
 /// is case-insensitive so all callers behave the same regardless of client casing.
 /// </summary>
 internal static class ChangeVersionParameterValidator
@@ -65,9 +65,9 @@ internal static class ChangeVersionParameterValidator
             return null;
         }
 
-        // A present-but-empty value is treated as absent, matching ODS model binding,
-        // which converts an empty query value to null without a validation error.
-        if (string.IsNullOrEmpty(rawValue))
+        // A present-but-empty or whitespace-only value is treated as absent, matching ODS
+        // model binding, which converts such query values to null without a validation error.
+        if (string.IsNullOrWhiteSpace(rawValue))
         {
             return null;
         }
@@ -86,8 +86,7 @@ internal static class ChangeVersionParameterValidator
 
     /// <summary>
     /// Case-insensitive dictionary lookup. When multiple case-variant keys are present,
-    /// the first match in enumeration order wins, consistent with how the frontend
-    /// already resolves duplicate query keys to a single value.
+    /// duplicates collapse to a single value: the first match in enumeration order wins.
     /// </summary>
     private static bool TryGetValueIgnoreCase(
         IReadOnlyDictionary<string, string> source,

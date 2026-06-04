@@ -153,6 +153,25 @@ public class ChangeVersionParameterValidatorTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Both_Values_Are_Whitespace : ChangeVersionParameterValidatorTests
+    {
+        private ChangeVersionValidationResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = ChangeVersionParameterValidator.Validate(
+                new Dictionary<string, string> { { "minChangeVersion", " " }, { "maxChangeVersion", "  " } }
+            );
+
+        [Test]
+        public void It_returns_no_errors() => _result.Errors.Should().BeEmpty();
+
+        [Test]
+        public void It_treats_both_bounds_as_absent() => _result.Range.Should().Be(ChangeVersionRange.None);
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Min_Is_Not_Numeric : ChangeVersionParameterValidatorTests
     {
         private ChangeVersionValidationResult _result = null!;
@@ -320,6 +339,26 @@ public class ChangeVersionParameterValidatorTests
 
         [Test]
         public void It_returns_no_errors() => _result.Errors.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Value_Above_Long_Max : ChangeVersionParameterValidatorTests
+    {
+        private ChangeVersionValidationResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = ChangeVersionParameterValidator.Validate(
+                new Dictionary<string, string> { { "minChangeVersion", "9223372036854775808" } }
+            );
+
+        [Test]
+        public void It_reports_the_min_error() =>
+            _result.Errors.Should().ContainSingle().Which.Should().Be(MinError);
+
+        [Test]
+        public void It_leaves_min_unset() => _result.Range.MinChangeVersion.Should().BeNull();
     }
 
     [TestFixture]
