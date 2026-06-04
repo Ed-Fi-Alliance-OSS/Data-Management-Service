@@ -165,6 +165,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1091` — Formalize Auth Startup as IDmsStartupTask — `reference/design/backend-redesign/epics/14-authorization/18-formalize-auth-startup-task.md`
   - `DMS-1096` — Verification harness for emitted auth DB objects — `reference/design/backend-redesign/epics/14-authorization/19-auth-verification-harness.md`
   - `DMS-1099` — Implement Security Configuration ProblemDetails — `reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md`
+  - `DMS-1207` — Convert token_info Education Organization Lookup to Relational Auth Schema — `reference/design/backend-redesign/epics/14-authorization/21-token-info-relational-auth-schema.md`
 
 - `DMS-1027` — Runtime Plan Compilation + Caching (Shared with AOT Packs) — `reference/design/backend-redesign/epics/15-plan-compilation/EPIC.md`
   - `DMS-1043` — Plan SQL Foundations (Shared Canonical Writer + Dialect Helpers) — `reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md`
