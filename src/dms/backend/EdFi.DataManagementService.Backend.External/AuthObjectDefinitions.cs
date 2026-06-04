@@ -192,6 +192,13 @@ public static class AuthObjectDefinitions
     );
 
     /// <summary>
+    /// The schema holding the core tracked-change tables the <c>ReadChanges</c> auth views join.
+    /// A property (not a field) so it can be read from static field initializers without a
+    /// declaration-order dependency.
+    /// </summary>
+    private static DbSchemaName TrackedChangesEdfiSchema => new("tracked_changes_edfi");
+
+    /// <summary>
     /// The four people auth views in alphabetical name order: Contact, Staff, Student,
     /// StudentThroughResponsibility.
     /// </summary>
@@ -208,9 +215,9 @@ public static class AuthObjectDefinitions
 
     /// <summary>
     /// The four <c>ReadChanges</c> authorization views in alphabetical name order: Contact, Staff,
-    /// StudentDeletedResponsibility, StudentIncludingDeletes. Declared after
-    /// <see cref="PeopleAuthViewDefinitions"/> because the current/current arms select from the
-    /// people auth views by name.
+    /// StudentDeletedResponsibility, StudentIncludingDeletes. The builder resolves the people auth
+    /// view names from a locally built list, so this initializer does not depend on
+    /// <see cref="PeopleAuthViewDefinitions"/> having been initialized first.
     /// </summary>
     /// <remarks>
     /// The fourth view is named <c>EducationOrganizationIdToStudentDocumentIdDeletedResponsibility</c>
@@ -254,6 +261,26 @@ public static class AuthObjectDefinitions
             authHierarchy is { EntitiesInNameOrder.Count: > 0 },
             GetMissingPeopleAuthAssociationResourceNames(concreteResources)
         );
+
+    /// <summary>
+    /// Returns whether the supplied tracked-change inventory contains all five
+    /// <c>tracked_changes_edfi</c> association tables the <c>ReadChanges</c> auth views join. The
+    /// derivation pass creates them unconditionally for every concrete resource, so production model
+    /// sets always satisfy this; the check guards synthetic / partial model sets, where emitting
+    /// views referencing nonexistent tracked-change tables would fail SQL deployment.
+    /// </summary>
+    public static bool HasReadChangesTrackedChangeTables(
+        IReadOnlyList<TrackedChangeTableInfo> trackedChangeTables
+    )
+    {
+        ArgumentNullException.ThrowIfNull(trackedChangeTables);
+
+        return RequiredPeopleAuthAssociationResourceNames.All(requiredResourceName =>
+            trackedChangeTables.Any(t =>
+                t.Table.Schema == TrackedChangesEdfiSchema && t.Table.Name == requiredResourceName
+            )
+        );
+    }
 
     /// <summary>
     /// Returns the concrete core association resource names missing from the supplied model set that
@@ -465,8 +492,11 @@ public static class AuthObjectDefinitions
     /// </summary>
     private static IReadOnlyList<ReadChangesAuthorizationViewInfo> BuildReadChangesAuthorizationViewDefinitions()
     {
+        // Built locally (not read from the PeopleAuthViewDefinitions field) so this builder is safe
+        // to run from a static field initializer regardless of field declaration order.
+        var peopleViewDefinitions = BuildPeopleAuthViewDefinitions();
         var edfi = new DbSchemaName("edfi");
-        var trackedChanges = new DbSchemaName("tracked_changes_edfi");
+        var trackedChanges = TrackedChangesEdfiSchema;
         var authEdOrgTable = AuthNames.EdOrgIdToEdOrgId;
         var sourceCol = AuthNames.SourceEdOrgId;
         var targetCol = AuthNames.TargetEdOrgId;
@@ -494,9 +524,9 @@ public static class AuthObjectDefinitions
         );
 
         // An arm selecting the current people auth view verbatim (current/current combination).
-        static AuthViewArm CurrentViewArm(AuthPeopleViewKind kind, string alias, DbColumnName personDocId)
+        AuthViewArm CurrentViewArm(AuthPeopleViewKind kind, string alias, DbColumnName personDocId)
         {
-            var currentView = GetPeopleAuthViewDefinition(kind).View;
+            var currentView = peopleViewDefinitions.Single(definition => definition.Kind == kind).View;
             return new AuthViewArm(
                 SelectDistinct: false,
                 SourceAlias: alias,

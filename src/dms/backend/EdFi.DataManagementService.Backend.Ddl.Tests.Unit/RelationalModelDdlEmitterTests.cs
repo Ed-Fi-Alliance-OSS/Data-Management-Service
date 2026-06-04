@@ -75,6 +75,26 @@ public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
         ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
     }
 
+    [Test]
+    public void It_should_not_emit_readchanges_views_when_tracked_change_tables_are_missing()
+    {
+        // The ReadChanges views additionally join tracked_changes_edfi tables; without the
+        // tracked-change inventory the people views still emit but the ReadChanges views must not,
+        // or the DDL would reference tables it never creates.
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql) with
+        {
+            TrackedChangeTablesInNameOrder = [],
+        };
+
+        AuthObjectDefinitions
+            .HasReadChangesTrackedChangeTables(modelSet.TrackedChangeTablesInNameOrder)
+            .Should()
+            .BeFalse();
+        var ddl = EmitPgsql(modelSet);
+        ddl.Should().Contain(StudentViewName);
+        ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
+    }
+
     private static void AssertPeopleViewsUnavailableWithoutMissingAssociations(
         DerivedRelationalModelSet modelSet
     )

@@ -206,6 +206,7 @@ public class Given_ReadChanges_Student_View_Definition
         );
 
         var predicate = ReadChangesAuthViewTestHelpers.SinglePredicate(trackedArm, "ssa_tc");
+        predicate.LeftAlias.Should().Be("edOrg");
         predicate.LeftColumn.Should().Be(AuthNames.TargetEdOrgId);
         predicate.RightColumn.Value.Should().Be("Old_SchoolId_Unified");
 
@@ -263,10 +264,12 @@ public class Given_ReadChanges_Contact_View_Definition
         );
 
         var ssaPredicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, "ssa");
+        ssaPredicate.LeftAlias.Should().Be("edOrg");
         ssaPredicate.LeftColumn.Should().Be(AuthNames.TargetEdOrgId);
         ssaPredicate.RightColumn.Should().Be(AuthNames.SchoolIdUnified);
 
         var scaPredicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, "sca_tc");
+        scaPredicate.LeftAlias.Should().Be("ssa");
         scaPredicate.LeftColumn.Should().Be(AuthNames.StudentDocumentId);
         scaPredicate.RightColumn.Value.Should().Be("Old_Student_DocumentId");
 
@@ -286,9 +289,11 @@ public class Given_ReadChanges_Contact_View_Definition
         );
 
         var ssaPredicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, "ssa_tc");
+        ssaPredicate.LeftAlias.Should().Be("edOrg");
         ssaPredicate.RightColumn.Value.Should().Be("Old_SchoolId_Unified");
 
         var scaPredicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, "sca");
+        scaPredicate.LeftAlias.Should().Be("ssa_tc");
         scaPredicate.LeftColumn.Value.Should().Be("Old_Student_DocumentId");
         scaPredicate.RightColumn.Should().Be(AuthNames.StudentDocumentId);
 
@@ -305,7 +310,16 @@ public class Given_ReadChanges_Contact_View_Definition
             "tracked_changes_edfi.StudentContactAssociation"
         );
 
+        var ssaPredicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, "ssa_tc");
+        ssaPredicate.LeftAlias.Should().Be("edOrg");
+        ssaPredicate.LeftColumn.Should().Be(AuthNames.TargetEdOrgId);
+        ssaPredicate.RightColumn.Value.Should().Be("Old_SchoolId_Unified");
+
         var scaPredicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, "sca_tc");
+        // Both sides share the column name Old_Student_DocumentId, so the left alias is the only
+        // thing distinguishing the real join from a self-referential tautology (sca_tc = sca_tc),
+        // which would deploy cleanly and silently over-authorize.
+        scaPredicate.LeftAlias.Should().Be("ssa_tc");
         scaPredicate.LeftColumn.Value.Should().Be("Old_Student_DocumentId");
         scaPredicate.RightColumn.Value.Should().Be("Old_Student_DocumentId");
 
@@ -355,6 +369,7 @@ public class Given_ReadChanges_Staff_View_Definition
         );
 
         var predicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, joinAlias);
+        predicate.LeftAlias.Should().Be("edOrg");
         predicate.LeftColumn.Should().Be(AuthNames.TargetEdOrgId);
         predicate.RightColumn.Value.Should().Be("Old_EducationOrganization_EducationOrganizationId");
 
@@ -405,6 +420,7 @@ public class Given_ReadChanges_Student_Deleted_Responsibility_View_Definition
         );
 
         var predicate = ReadChangesAuthViewTestHelpers.SinglePredicate(arm, "seora_tc");
+        predicate.LeftAlias.Should().Be("edOrg");
         predicate.LeftColumn.Should().Be(AuthNames.TargetEdOrgId);
         predicate.RightColumn.Value.Should().Be("Old_EducationOrganization_EducationOrganizationId");
 

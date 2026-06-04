@@ -144,7 +144,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Phase 6: Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
         EmitPeopleAuthViews(writer, authHierarchy, concreteResources);
-        EmitReadChangesAuthViews(writer, authHierarchy, concreteResources);
+        EmitReadChangesAuthViews(writer, authHierarchy, concreteResources, trackedChangeTables);
 
         var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
 
@@ -2344,18 +2344,23 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// Change Query <c>/deletes</c> and <c>/keyChanges</c>.
     /// </summary>
     /// <remarks>
-    /// Guarded by the same prerequisites as <see cref="EmitPeopleAuthViews"/>: the auth hierarchy
-    /// and all five PrimaryAssociation resources must be present. Must be emitted after the people
-    /// auth views (the current/current arms select from them) and after the tracked-change tables.
+    /// Guarded by the same prerequisites as <see cref="EmitPeopleAuthViews"/> — the auth hierarchy
+    /// and all five PrimaryAssociation resources must be present — plus the five
+    /// <c>tracked_changes_edfi</c> association tables the tracked arms join, so a synthetic /
+    /// partial model set without the tracked-change inventory never emits views referencing
+    /// nonexistent tables. Must be emitted after the people auth views (the current/current arms
+    /// select from them) and after the tracked-change tables.
     /// </remarks>
     private void EmitReadChangesAuthViews(
         SqlWriter writer,
         AuthEdOrgHierarchy? authHierarchy,
-        IReadOnlyList<ConcreteResourceModel> concreteResources
+        IReadOnlyList<ConcreteResourceModel> concreteResources,
+        IReadOnlyList<TrackedChangeTableInfo> trackedChangeTables
     )
     {
         if (
             !AuthObjectDefinitions.GetPeopleAuthViewAvailability(authHierarchy, concreteResources).IsAvailable
+            || !AuthObjectDefinitions.HasReadChangesTrackedChangeTables(trackedChangeTables)
         )
         {
             return;
