@@ -22,7 +22,7 @@
 @configPort=8081
 @dmsPort=8080
 @dmsInstanceDatabase=edfi_datamanagementservice_relational
-# RestClient runs on the host, where Docker service names like dms-config-service do not resolve.
+# httpYac runs on the host, where Docker service names like dms-config-service do not resolve.
 @tokenUrl=http://localhost:{{configPort}}/connect/token
 
 @sysAdminId=sys-admin
@@ -54,21 +54,21 @@ client_id={{sysAdminId}}
 &scope=edfi_admin_api/full_access
 
 ###
-@configToken={{configTokenRequest.response.body.access_token}}
+@configToken={{configTokenRequest.access_token}}
 
 ### Read the DMS discovery document
 # @name discovery
 GET http://localhost:{{dmsPort}}
 
 ###
-@dataApi={{discovery.response.body.urls.dataManagementApi}}
-@tokenInfoUrl={{discovery.response.body.urls.tokenInfo}}
+@dataApi={{discovery.urls.dataManagementApi}}
+@tokenInfoUrl={{discovery.urls.tokenInfo}}
 
 ### Create the relational DMS instance used by all demo applications
 # @name createDmsInstance
 POST http://localhost:{{configPort}}/v2/dmsInstances
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "instanceType": "Test",
@@ -77,13 +77,13 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@dmsInstanceId={{createDmsInstance.response.body.id}}
+@dmsInstanceId={{createDmsInstance.id}}
 
 ### Create the Ed-Fi and TPDM namespace vendor for EdOrg and people tokens
 # @name createEdFiVendor
 POST http://localhost:{{configPort}}/v2/vendors
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "company": "Authorization Demo Ed-Fi Vendor",
@@ -92,22 +92,23 @@ Authorization: bearer {{configToken}}
     "namespacePrefixes": "uri://ed-fi.org,uri://tpdm.ed-fi.org"
 }
 
-###
-@edFiVendorLocation={{createEdFiVendor.response.headers.location}}
+{{
+  exports.edFiVendorLocation = response.headers.location;
+}}
 
 ### Retrieve the Ed-Fi vendor id
 # @name getEdFiVendor
 GET {{edFiVendorLocation}}
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 ###
-@edFiVendorId={{getEdFiVendor.response.body.id}}
+@edFiVendorId={{getEdFiVendor.id}}
 
 ### Create the ns2 namespace vendor
 # @name createNs2Vendor
 POST http://localhost:{{configPort}}/v2/vendors
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "company": "Authorization Demo NS2 Vendor",
@@ -116,22 +117,23 @@ Authorization: bearer {{configToken}}
     "namespacePrefixes": "uri://ns2.org"
 }
 
-###
-@ns2VendorLocation={{createNs2Vendor.response.headers.location}}
+{{
+  exports.ns2VendorLocation = response.headers.location;
+}}
 
 ### Retrieve the ns2 vendor id
 # @name getNs2Vendor
 GET {{ns2VendorLocation}}
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 ###
-@ns2VendorId={{getNs2Vendor.response.body.id}}
+@ns2VendorId={{getNs2Vendor.id}}
 
 ### Create the ns3 namespace vendor
 # @name createNs3Vendor
 POST http://localhost:{{configPort}}/v2/vendors
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "company": "Authorization Demo NS3 Vendor",
@@ -140,22 +142,23 @@ Authorization: bearer {{configToken}}
     "namespacePrefixes": "uri://ns3.org"
 }
 
-###
-@ns3VendorLocation={{createNs3Vendor.response.headers.location}}
+{{
+  exports.ns3VendorLocation = response.headers.location;
+}}
 
 ### Retrieve the ns3 vendor id
 # @name getNs3Vendor
 GET {{ns3VendorLocation}}
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 ###
-@ns3VendorId={{getNs3Vendor.response.body.id}}
+@ns3VendorId={{getNs3Vendor.id}}
 
 ### Create seed application: broad setup token for EdOrg-only data
 # @name createSeedApplication
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "vendorId": {{edFiVendorId}},
@@ -166,14 +169,14 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@seedClientKey={{createSeedApplication.response.body.key}}
-@seedClientSecret={{createSeedApplication.response.body.secret}}
+@seedClientKey={{createSeedApplication.key}}
+@seedClientSecret={{createSeedApplication.secret}}
 
 ### Create school-only application: authorized only for school 255901001
 # @name createSchoolOnlyApplication
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "vendorId": {{edFiVendorId}},
@@ -184,14 +187,14 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@schoolOnlyClientKey={{createSchoolOnlyApplication.response.body.key}}
-@schoolOnlyClientSecret={{createSchoolOnlyApplication.response.body.secret}}
+@schoolOnlyClientKey={{createSchoolOnlyApplication.key}}
+@schoolOnlyClientSecret={{createSchoolOnlyApplication.secret}}
 
 ### Create wrong-school application: authorized only for school 255901222
 # @name createWrongSchoolApplication
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "vendorId": {{edFiVendorId}},
@@ -202,14 +205,14 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@wrongSchoolClientKey={{createWrongSchoolApplication.response.body.key}}
-@wrongSchoolClientSecret={{createWrongSchoolApplication.response.body.secret}}
+@wrongSchoolClientKey={{createWrongSchoolApplication.key}}
+@wrongSchoolClientSecret={{createWrongSchoolApplication.secret}}
 
 ### Create combined-strategy application: State 2 plus School 30101
 # @name createOrInvertedApplication
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "vendorId": {{edFiVendorId}},
@@ -220,14 +223,14 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@orInvertedClientKey={{createOrInvertedApplication.response.body.key}}
-@orInvertedClientSecret={{createOrInvertedApplication.response.body.secret}}
+@orInvertedClientKey={{createOrInvertedApplication.key}}
+@orInvertedClientSecret={{createOrInvertedApplication.secret}}
 
 ### Create people application: EdFiSandbox with State 3 and LEA 6255901
 # @name createPeopleApplication
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "vendorId": {{edFiVendorId}},
@@ -238,14 +241,14 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@peopleClientKey={{createPeopleApplication.response.body.key}}
-@peopleClientSecret={{createPeopleApplication.response.body.secret}}
+@peopleClientKey={{createPeopleApplication.key}}
+@peopleClientSecret={{createPeopleApplication.secret}}
 
 ### Create namespace ns2 application
 # @name createNs2Application
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "vendorId": {{ns2VendorId}},
@@ -256,14 +259,14 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@ns2ClientKey={{createNs2Application.response.body.key}}
-@ns2ClientSecret={{createNs2Application.response.body.secret}}
+@ns2ClientKey={{createNs2Application.key}}
+@ns2ClientSecret={{createNs2Application.secret}}
 
 ### Create namespace ns3 application
 # @name createNs3Application
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {
     "vendorId": {{ns3VendorId}},
@@ -274,92 +277,92 @@ Authorization: bearer {{configToken}}
 }
 
 ###
-@ns3ClientKey={{createNs3Application.response.body.key}}
-@ns3ClientSecret={{createNs3Application.response.body.secret}}
+@ns3ClientKey={{createNs3Application.key}}
+@ns3ClientSecret={{createNs3Application.secret}}
 
 ### Refresh DMS claim-set metadata before creating demo tokens
 POST http://localhost:{{dmsPort}}/management/reload-claimsets
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: Bearer {{configToken}}
 
 {}
 
 ### Create seedToken
 # @name seedTokenRequest
 POST {{tokenUrl}}
-Authorization: basic {{seedClientKey}}:{{seedClientSecret}}
+Authorization: Basic {{seedClientKey}}:{{seedClientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
 
 ###
-@seedToken={{seedTokenRequest.response.body.access_token}}
+@seedToken={{seedTokenRequest.access_token}}
 
 ### Create schoolOnlyToken
 # @name schoolOnlyTokenRequest
 POST {{tokenUrl}}
-Authorization: basic {{schoolOnlyClientKey}}:{{schoolOnlyClientSecret}}
+Authorization: Basic {{schoolOnlyClientKey}}:{{schoolOnlyClientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
 
 ###
-@schoolOnlyToken={{schoolOnlyTokenRequest.response.body.access_token}}
+@schoolOnlyToken={{schoolOnlyTokenRequest.access_token}}
 
 ### Create wrongSchoolToken
 # @name wrongSchoolTokenRequest
 POST {{tokenUrl}}
-Authorization: basic {{wrongSchoolClientKey}}:{{wrongSchoolClientSecret}}
+Authorization: Basic {{wrongSchoolClientKey}}:{{wrongSchoolClientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
 
 ###
-@wrongSchoolToken={{wrongSchoolTokenRequest.response.body.access_token}}
+@wrongSchoolToken={{wrongSchoolTokenRequest.access_token}}
 
 ### Create orInvertedToken
 # @name orInvertedTokenRequest
 POST {{tokenUrl}}
-Authorization: basic {{orInvertedClientKey}}:{{orInvertedClientSecret}}
+Authorization: Basic {{orInvertedClientKey}}:{{orInvertedClientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
 
 ###
-@orInvertedToken={{orInvertedTokenRequest.response.body.access_token}}
+@orInvertedToken={{orInvertedTokenRequest.access_token}}
 
 ### Create peopleToken
 # @name peopleTokenRequest
 POST {{tokenUrl}}
-Authorization: basic {{peopleClientKey}}:{{peopleClientSecret}}
+Authorization: Basic {{peopleClientKey}}:{{peopleClientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
 
 ###
-@peopleToken={{peopleTokenRequest.response.body.access_token}}
+@peopleToken={{peopleTokenRequest.access_token}}
 
 ### Create namespaceNs2Token
 # @name namespaceNs2TokenRequest
 POST {{tokenUrl}}
-Authorization: basic {{ns2ClientKey}}:{{ns2ClientSecret}}
+Authorization: Basic {{ns2ClientKey}}:{{ns2ClientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
 
 ###
-@namespaceNs2Token={{namespaceNs2TokenRequest.response.body.access_token}}
+@namespaceNs2Token={{namespaceNs2TokenRequest.access_token}}
 
 ### Create namespaceNs3Token
 # @name namespaceNs3TokenRequest
 POST {{tokenUrl}}
-Authorization: basic {{ns3ClientKey}}:{{ns3ClientSecret}}
+Authorization: Basic {{ns3ClientKey}}:{{ns3ClientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
 
 ###
-@namespaceNs3Token={{namespaceNs3TokenRequest.response.body.access_token}}
+@namespaceNs3Token={{namespaceNs3TokenRequest.access_token}}
 
 #
 # Preparation: dependency descriptors and demo data.
@@ -367,7 +370,7 @@ grant_type=client_credentials
 
 ### Seed EdOrg and school descriptors
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -379,7 +382,7 @@ Content-Type: application/json
 
 ### Seed EdOrg and school descriptors
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -391,7 +394,7 @@ Content-Type: application/json
 
 ### Seed EdOrg and school descriptors
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -403,7 +406,7 @@ Content-Type: application/json
 
 ### Seed people EdOrg descriptors
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -415,7 +418,7 @@ Content-Type: application/json
 
 ### Seed people EdOrg descriptors
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -427,7 +430,7 @@ Content-Type: application/json
 
 ### Seed grade-level descriptor
 POST {{dataApi}}/ed-fi/gradeLevelDescriptors
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -439,7 +442,7 @@ Content-Type: application/json
 
 ### Seed LEA category descriptor
 POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -451,7 +454,7 @@ Content-Type: application/json
 
 ### Seed exit-withdraw descriptor for StudentSchoolAssociation
 POST {{dataApi}}/ed-fi/exitWithdrawTypeDescriptors
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -463,7 +466,7 @@ Content-Type: application/json
 
 ### Seed post-secondary event category descriptor
 POST {{dataApi}}/ed-fi/postSecondaryEventCategoryDescriptors
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -475,7 +478,7 @@ Content-Type: application/json
 
 ### Seed Section 2 schools: one authorized, one unauthorized for schoolOnlyToken
 POST {{dataApi}}/ed-fi/schools
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -495,7 +498,7 @@ Content-Type: application/json
 
 ### Seed Section 2 schools: one authorized, one unauthorized for schoolOnlyToken
 POST {{dataApi}}/ed-fi/schools
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -515,7 +518,7 @@ Content-Type: application/json
 
 ### Seed unauthorized academic week
 POST {{dataApi}}/ed-fi/academicWeeks
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -530,7 +533,7 @@ Content-Type: application/json
 
 ### Seed authorized academic week 1
 POST {{dataApi}}/ed-fi/academicWeeks
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -545,7 +548,7 @@ Content-Type: application/json
 
 ### Seed authorized academic week 2
 POST {{dataApi}}/ed-fi/academicWeeks
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -560,7 +563,7 @@ Content-Type: application/json
 
 ### Seed Section 4 hierarchy: State 2
 POST {{dataApi}}/ed-fi/stateEducationAgencies
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -575,7 +578,7 @@ Content-Type: application/json
 
 ### Seed Section 4 hierarchy: State 3
 POST {{dataApi}}/ed-fi/stateEducationAgencies
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -590,7 +593,7 @@ Content-Type: application/json
 
 ### Seed Section 4 hierarchy: LEA 201 under State 2
 POST {{dataApi}}/ed-fi/localEducationAgencies
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -609,7 +612,7 @@ Content-Type: application/json
 
 ### Seed Section 4 hierarchy: LEA 301 under State 3
 POST {{dataApi}}/ed-fi/localEducationAgencies
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -628,7 +631,7 @@ Content-Type: application/json
 
 ### Seed Section 4 hierarchy: School 20101 under LEA 201
 POST {{dataApi}}/ed-fi/schools
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -651,7 +654,7 @@ Content-Type: application/json
 
 ### Seed Section 4 hierarchy: School 30101 under LEA 301
 POST {{dataApi}}/ed-fi/schools
-Authorization: bearer {{seedToken}}
+Authorization: Bearer {{seedToken}}
 Content-Type: application/json
 
 {
@@ -674,7 +677,7 @@ Content-Type: application/json
 
 ### Seed Section 5 people hierarchy: LEA 6255901 under existing State 3
 POST {{dataApi}}/ed-fi/localEducationAgencies
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -693,7 +696,7 @@ Content-Type: application/json
 
 ### Seed Section 5 people hierarchy: School 6255901001
 POST {{dataApi}}/ed-fi/schools
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -716,7 +719,7 @@ Content-Type: application/json
 
 ### Seed Section 5 student 61
 POST {{dataApi}}/ed-fi/students
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -729,7 +732,7 @@ Content-Type: application/json
 ### Seed Section 5 StudentSchoolAssociation: Student 61 to School 6255901001
 # @name createPeopleStudentSchoolAssociation
 POST {{dataApi}}/ed-fi/studentSchoolAssociations
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -745,21 +748,22 @@ Content-Type: application/json
     "exitWithdrawTypeDescriptor": "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew"
 }
 
-###
-@studentSchoolAssociationLocation={{createPeopleStudentSchoolAssociation.response.headers.location}}
+{{
+  exports.studentSchoolAssociationLocation = response.headers.location;
+}}
 
 ### Capture StudentSchoolAssociation id for the live delete step
 # @name getPeopleStudentSchoolAssociation
 GET {{studentSchoolAssociationLocation}}
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 
 ###
-@studentSchoolAssociationId={{getPeopleStudentSchoolAssociation.response.body.id}}
+@studentSchoolAssociationId={{getPeopleStudentSchoolAssociation.id}}
 
 ### Seed Section 5 PostSecondaryEvent for Student 61
 # @name createPeoplePostSecondaryEvent
 POST {{dataApi}}/ed-fi/PostSecondaryEvents
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 Content-Type: application/json
 
 {
@@ -770,16 +774,17 @@ Content-Type: application/json
     }
 }
 
-###
-@postSecondaryEventLocation={{createPeoplePostSecondaryEvent.response.headers.location}}
+{{
+  exports.postSecondaryEventLocation = response.headers.location;
+}}
 
 ### Capture PostSecondaryEvent id for the live people relationship demo
 # @name getPeoplePostSecondaryEvent
 GET {{postSecondaryEventLocation}}
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 
 ###
-@postSecondaryEventId={{getPeoplePostSecondaryEvent.response.body.id}}
+@postSecondaryEventId={{getPeoplePostSecondaryEvent.id}}
 
 #
 # Live demo starts here.
@@ -793,7 +798,7 @@ Authorization: bearer {{peopleToken}}
 # Expected: 200. Useful fields: claim_set, education_organizations, namespace_prefixes.
 # @name tokenInfoForSchoolOnly
 POST {{tokenInfoUrl}}
-Authorization: bearer {{schoolOnlyToken}}
+Authorization: Bearer {{schoolOnlyToken}}
 Content-Type: application/json
 
 {
@@ -808,7 +813,7 @@ Content-Type: application/json
 # Expected: 200, Total-Count: 2, body contains one authorized week because limit=1.
 # The week for school 255901222 is filtered out before paging/count.
 GET {{dataApi}}/ed-fi/academicWeeks?totalCount=true&limit=1
-Authorization: bearer {{schoolOnlyToken}}
+Authorization: Bearer {{schoolOnlyToken}}
 
 #
 # Section 3: EdOrg Write Denial
@@ -819,7 +824,7 @@ Authorization: bearer {{schoolOnlyToken}}
 # Error should mention no relationship between EdOrg claim 255901222 and resource item's SchoolId.
 # @name forbiddenAcademicWeekCreate
 POST {{dataApi}}/ed-fi/academicWeeks
-Authorization: bearer {{wrongSchoolToken}}
+Authorization: Bearer {{wrongSchoolToken}}
 Content-Type: application/json
 
 {
@@ -835,7 +840,7 @@ Content-Type: application/json
 ### Prove the denied POST did not create a record
 # Expected: 200, Total-Count: 0, body [].
 GET {{dataApi}}/ed-fi/academicWeeks?weekIdentifier=post%20create%20forbidden&totalCount=true
-Authorization: bearer {{schoolOnlyToken}}
+Authorization: Bearer {{schoolOnlyToken}}
 
 #
 # Section 4: Combined Authorization Strategies
@@ -846,7 +851,7 @@ Authorization: bearer {{schoolOnlyToken}}
 # LEA 201 is authorized top-down from State 2.
 # LEA 301 is authorized bottom-up from School 30101.
 GET {{dataApi}}/ed-fi/localEducationAgencies
-Authorization: bearer {{orInvertedToken}}
+Authorization: Bearer {{orInvertedToken}}
 
 #
 # Section 5: People Relationship Delete Demo
@@ -855,22 +860,22 @@ Authorization: bearer {{orInvertedToken}}
 ### Before removing the relationship, the PostSecondaryEvent is readable
 # Expected: 200.
 GET {{dataApi}}/ed-fi/PostSecondaryEvents/{{postSecondaryEventId}}
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 
 ### Remove the StudentSchoolAssociation relationship
 # Expected: 204.
 DELETE {{dataApi}}/ed-fi/studentSchoolAssociations/{{studentSchoolAssociationId}}
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 
 ### The resource still exists, but the caller no longer has a student relationship path
 # Expected: 403 Authorization Denied.
 GET {{dataApi}}/ed-fi/PostSecondaryEvents/{{postSecondaryEventId}}
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 
 ### Delete is denied for the same reason
 # Expected: 403 Authorization Denied.
 DELETE {{dataApi}}/ed-fi/PostSecondaryEvents/{{postSecondaryEventId}}
-Authorization: bearer {{peopleToken}}
+Authorization: Bearer {{peopleToken}}
 
 #
 # Section 6: Namespace Authorization
@@ -880,7 +885,7 @@ Authorization: bearer {{peopleToken}}
 # Expected: 200 or 201.
 # @name createNamespaceDescriptor
 POST {{dataApi}}/ed-fi/absenceEventCategoryDescriptors
-Authorization: bearer {{namespaceNs2Token}}
+Authorization: Bearer {{namespaceNs2Token}}
 Content-Type: application/json
 
 {
@@ -892,23 +897,24 @@ Content-Type: application/json
     "shortDescription": "Namespace Based"
 }
 
-###
-@namespaceDescriptorLocation={{createNamespaceDescriptor.response.headers.location}}
+{{
+  exports.namespaceDescriptorLocation = response.headers.location;
+}}
 
 ### Capture the ns2 descriptor id
 # @name getNamespaceDescriptorAsNs2
 GET {{namespaceDescriptorLocation}}
-Authorization: bearer {{namespaceNs2Token}}
+Authorization: Bearer {{namespaceNs2Token}}
 
 ###
-@descriptorId={{getNamespaceDescriptorAsNs2.response.body.id}}
+@descriptorId={{getNamespaceDescriptorAsNs2.id}}
 
 ### A token limited to uri://ns3.org cannot read the ns2 descriptor by id
 # Expected: 403 Authorization Denied.
 GET {{dataApi}}/ed-fi/absenceEventCategoryDescriptors/{{descriptorId}}
-Authorization: bearer {{namespaceNs3Token}}
+Authorization: Bearer {{namespaceNs3Token}}
 
 ### Query behavior filters unauthorized namespace data out of the result set
 # Expected: 200 with [].
 GET {{dataApi}}/ed-fi/absenceEventCategoryDescriptors?codeValue=Namespace%20Based
-Authorization: bearer {{namespaceNs3Token}}
+Authorization: Bearer {{namespaceNs3Token}}
