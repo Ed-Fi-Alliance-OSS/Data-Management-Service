@@ -157,7 +157,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                     descriptorEdge,
                     path,
                     origin,
-                    root,
+                    resourceModel,
                     descriptorValueTypes,
                     valueColumns,
                     valueColumnsByOldName,
@@ -169,7 +169,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             var resolved = ResolveScalarColumnModel(resourceModel, root, path, identityColumnByPath);
             if (resolved is { } scalar)
             {
-                AddScalarColumn(scalar, path, origin, valueColumns, valueColumnsByOldName);
+                AddScalarColumn(scalar, path, origin, resource, valueColumns, valueColumnsByOldName);
             }
             else
             {
@@ -318,7 +318,8 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
     /// deterministic first-seen order (identity paths, then EdOrg securables, then Namespace securables).
     /// The returned order is the value-column table order, which renders as physical column order in the
     /// tracked-change DDL, so it is pinned here explicitly rather than relying on dictionary enumeration
-    /// order. Person securable paths are handled separately.
+    /// order. Person securable paths are handled separately. Array-nested securable paths are excluded
+    /// (multiplicity cannot be represented in a single-row tombstone; see the inline comment).
     /// </summary>
     private static IReadOnlyList<(string Path, TrackedChangeColumnOrigin Origin)> BuildOriginByPath(
         RelationalModelBuilderContext builderContext,
@@ -346,19 +347,40 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             Merge(identityPath.Canonical, TrackedChangeColumnOrigin.Identity);
         }
 
+        // Array-nested securable paths (e.g. $.assessmentBatteryParts[*].assessmentBatteryPartReference
+        // .namespace) are excluded: their source column lives on a child collection table with 0..N rows
+        // per document, which a single-row-per-ChangeVersion tracked-change table cannot represent — a
+        // scalar Old_/New_ pair would silently keep one of N values, and a required-within-row child
+        // column would render NOT NULL while the collection itself can be empty (unsatisfiable tombstone
+        // INSERT). Mirrors the array-nested person-path skip in AddPersonKindColumns and matches ODS
+        // parity, where tracked changes capture only old identity values; identity-origin securable
+        // columns (always root scalars) remain available for /deletes authorization.
         var securable = concreteModel.SecurableElements;
-        foreach (var edOrg in securable.EducationOrganization)
+        foreach (var edOrgPath in securable.EducationOrganization.Select(edOrg => edOrg.JsonPath))
         {
-            Merge(edOrg.JsonPath, TrackedChangeColumnOrigin.SecurableElement);
+            if (!IsArrayNestedPath(edOrgPath))
+            {
+                Merge(edOrgPath, TrackedChangeColumnOrigin.SecurableElement);
+            }
         }
 
         foreach (var namespacePath in securable.Namespace)
         {
-            Merge(namespacePath, TrackedChangeColumnOrigin.SecurableElement);
+            if (!IsArrayNestedPath(namespacePath))
+            {
+                Merge(namespacePath, TrackedChangeColumnOrigin.SecurableElement);
+            }
         }
 
         return orderedPaths.Select(path => (path, originByPath[path])).ToArray();
     }
+
+    /// <summary>
+    /// Whether a canonical JSONPath traverses an array (<c>[*]</c>), meaning its value is stored on a
+    /// child collection table with document-relative multiplicity.
+    /// </summary>
+    private static bool IsArrayNestedPath(string canonicalPath) =>
+        canonicalPath.Contains("[*]", StringComparison.Ordinal);
 
     /// <summary>
     /// A scalar source column resolved to its stored model, tracking whether key unification was unwrapped
@@ -429,6 +451,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         ResolvedScalarColumn resolved,
         string sourcePath,
         TrackedChangeColumnOrigin origin,
+        QualifiedResourceName resource,
         List<TrackedChangeColumnInfo> valueColumns,
         Dictionary<string, int> valueColumnsByOldName
     )
@@ -436,10 +459,22 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         var columnModel = resolved.Column;
         var canonicalStorageColumn = resolved.IsUnified ? columnModel.ColumnName : (DbColumnName?)null;
 
+        // Resolved identity/securable scalars are data columns and always carry a scalar type; a null here
+        // would mean the resolver returned a non-data column. Fail loudly rather than silently emitting a
+        // default-string tracked column.
+        if (columnModel.ScalarType is not { } scalarType)
+        {
+            throw new InvalidOperationException(
+                $"Tracked-change derivation for resource '{resource.ProjectName}.{resource.ResourceName}': "
+                    + $"source column '{columnModel.ColumnName.Value}' for path '{sourcePath}' has no "
+                    + "scalar type."
+            );
+        }
+
         var entry = BuildValueColumn(
             columnModel.ColumnName.Value,
             sourcePath,
-            columnModel.ScalarType ?? new RelationalScalarType(ScalarKind.String),
+            scalarType,
             columnModel.IsNullable,
             TrackedChangeColumnRole.Scalar,
             origin
@@ -455,7 +490,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         DescriptorEdgeSource descriptorEdge,
         string sourcePath,
         TrackedChangeColumnOrigin origin,
-        DbTableModel root,
+        RelationalResourceModel resourceModel,
         (RelationalScalarType Namespace, RelationalScalarType CodeValue) descriptorValueTypes,
         List<TrackedChangeColumnInfo> valueColumns,
         Dictionary<string, int> valueColumnsByOldName,
@@ -475,7 +510,14 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         );
 
         // Descriptor identity/securable values are not null on the source row; tombstones leave New_* null.
-        var isOldNullable = FindColumnNullable(root, descriptorEdge.FkColumn) ?? false;
+        // Resolve nullability against the table the edge declares as holding the FK column (always root for
+        // current inputs — identity descriptors live on the root table — but the edge's own table is the
+        // model's record of where the column lives).
+        var sourceTable = resourceModel.TablesInDependencyOrder.FirstOrDefault(table =>
+            table.Table.Equals(descriptorEdge.Table)
+        );
+        var isOldNullable =
+            (sourceTable is null ? null : FindColumnNullable(sourceTable, descriptorEdge.FkColumn)) ?? false;
 
         var namespaceColumn = BuildValueColumn(
             baseName + NamespaceSuffix,

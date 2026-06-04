@@ -56461,19 +56461,6 @@
           },
           "role": "Scalar",
           "origin": "Identity"
-        },
-        {
-          "old_column": "Old_AssessmentBatteryPart_Namespace",
-          "new_column": "New_AssessmentBatteryPart_Namespace",
-          "source_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
-          "is_old_column_nullable": true,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 255
-          },
-          "role": "Scalar",
-          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -56666,19 +56653,6 @@
           },
           "role": "Scalar",
           "origin": "Identity, SecurableElement"
-        },
-        {
-          "old_column": "Old_ObjectiveAssessment_Namespace",
-          "new_column": "New_ObjectiveAssessment_Namespace",
-          "source_json_path": "$.objectiveAssessments[*].objectiveAssessmentReference.namespace",
-          "is_old_column_nullable": true,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 255
-          },
-          "role": "Scalar",
-          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -60056,19 +60030,6 @@
           },
           "role": "Scalar",
           "origin": "Identity"
-        },
-        {
-          "old_column": "Old_RequiredAssessmentAssessment_Namespace",
-          "new_column": "New_RequiredAssessmentAssessment_Namespace",
-          "source_json_path": "$.requiredAssessments[*].assessmentReference.namespace",
-          "is_old_column_nullable": false,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 255
-          },
-          "role": "Scalar",
-          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -61367,19 +61328,6 @@
           },
           "role": "Scalar",
           "origin": "Identity"
-        },
-        {
-          "old_column": "Old_AssessmentItemAssessmentItem_Namespace",
-          "new_column": "New_AssessmentItemAssessmentItem_Namespace",
-          "source_json_path": "$.assessmentItems[*].assessmentItemReference.namespace",
-          "is_old_column_nullable": true,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 255
-          },
-          "role": "Scalar",
-          "origin": "SecurableElement"
         }
       ],
       "system_columns": [
@@ -65331,32 +65279,6 @@
           "is_new_column_nullable": true,
           "scalar_type": {
             "kind": "Int64"
-          },
-          "role": "Scalar",
-          "origin": "SecurableElement"
-        },
-        {
-          "old_column": "Old_StudentAssessmentItemAssessmentItem_Namespace",
-          "new_column": "New_StudentAssessmentItemAssessmentItem_Namespace",
-          "source_json_path": "$.items[*].assessmentItemReference.namespace",
-          "is_old_column_nullable": false,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 255
-          },
-          "role": "Scalar",
-          "origin": "SecurableElement"
-        },
-        {
-          "old_column": "Old_StudentObjectiveAssessmentObjectiveAssessment_Namespace",
-          "new_column": "New_StudentObjectiveAssessmentObjectiveAssessment_Namespace",
-          "source_json_path": "$.studentObjectiveAssessments[*].objectiveAssessmentReference.namespace",
-          "is_old_column_nullable": false,
-          "is_new_column_nullable": true,
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 255
           },
           "role": "Scalar",
           "origin": "SecurableElement"

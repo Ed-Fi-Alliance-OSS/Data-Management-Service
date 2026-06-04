@@ -34,9 +34,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private const string PropagationFallbackPrefix = "PropagateIdentity";
 
     // The shared dms.Descriptor stamping trigger. Defined as local constants because DmsTableNames is
-    // internal to Backend.Ddl and RelationalModel must not depend on the DDL project; a drift-guard test
-    // asserts these match what CoreDdlEmitter renders. Matches the existing local-constant convention in
-    // this layer (e.g. IdentifierCollisionDetector, AbstractIdentityTableAndUnionViewDerivationPass).
+    // internal to Backend.Ddl and RelationalModel must not depend on the DDL project; CoreDdlEmitterTests
+    // and DeriveTriggerInventoryPassTests each independently pin the same literal, so drift on either side
+    // fails that side's tests (no single cross-project assertion exists). Matches the existing
+    // local-constant convention in this layer (e.g. IdentifierCollisionDetector,
+    // AbstractIdentityTableAndUnionViewDerivationPass).
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
     private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
 

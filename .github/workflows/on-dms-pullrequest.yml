@@ -409,20 +409,9 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Increase PostgreSQL lock budget
-        run: |
-          # Schema provisioning and TRUNCATE-all run as single large transactions; with
-          # parallel test fixtures the default lock pool (max_locks_per_transaction=64)
-          # is exhausted (PG error 53200: out of shared memory). Raise it, then restart
-          # the service container so the new postmaster setting takes effect.
-          docker exec ${{ job.services.postgres.id }} sh -c 'echo "max_locks_per_transaction = 256" >> /var/lib/postgresql/data/postgresql.conf'
-          docker restart ${{ job.services.postgres.id }}
-
-          for ($attempt = 1; $attempt -le 30; $attempt++) {
-            docker exec ${{ job.services.postgres.id }} pg_isready -U postgres
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            Start-Sleep -Seconds 2
-          }
-          throw "PostgreSQL did not become ready after restart."
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
 
       - name: Restore Backend PostgreSQL Integration Tests
         run: |
@@ -490,20 +479,9 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Increase PostgreSQL lock budget
-        run: |
-          # Schema provisioning and TRUNCATE-all run as single large transactions; with
-          # parallel test fixtures the default lock pool (max_locks_per_transaction=64)
-          # is exhausted (PG error 53200: out of shared memory). Raise it, then restart
-          # the service container so the new postmaster setting takes effect.
-          docker exec ${{ job.services.postgres.id }} sh -c 'echo "max_locks_per_transaction = 256" >> /var/lib/postgresql/data/postgresql.conf'
-          docker restart ${{ job.services.postgres.id }}
-
-          for ($attempt = 1; $attempt -le 30; $attempt++) {
-            docker exec ${{ job.services.postgres.id }} pg_isready -U postgres
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            Start-Sleep -Seconds 2
-          }
-          throw "PostgreSQL did not become ready after restart."
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
 
       - name: Restore DMS API PostgreSQL Integration Tests
         run: |
@@ -570,20 +548,9 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Increase PostgreSQL lock budget
-        run: |
-          # Schema provisioning and TRUNCATE-all run as single large transactions; with
-          # parallel test fixtures the default lock pool (max_locks_per_transaction=64)
-          # is exhausted (PG error 53200: out of shared memory). Raise it, then restart
-          # the service container so the new postmaster setting takes effect.
-          docker exec ${{ job.services.postgres.id }} sh -c 'echo "max_locks_per_transaction = 256" >> /var/lib/postgresql/data/postgresql.conf'
-          docker restart ${{ job.services.postgres.id }}
-
-          for ($attempt = 1; $attempt -le 30; $attempt++) {
-            docker exec ${{ job.services.postgres.id }} pg_isready -U postgres
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            Start-Sleep -Seconds 2
-          }
-          throw "PostgreSQL did not become ready after restart."
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
 
       - name: Restore Old PostgreSQL Integration Tests
         run: |
@@ -700,20 +667,9 @@ jobs:
           throw "SQL Server did not become ready within the timeout period."
 
       - name: Increase PostgreSQL lock budget
-        run: |
-          # Schema provisioning and TRUNCATE-all run as single large transactions; with
-          # parallel test fixtures the default lock pool (max_locks_per_transaction=64)
-          # is exhausted (PG error 53200: out of shared memory). Raise it, then restart
-          # the service container so the new postmaster setting takes effect.
-          docker exec ${{ job.services.postgres.id }} sh -c 'echo "max_locks_per_transaction = 256" >> /var/lib/postgresql/data/postgresql.conf'
-          docker restart ${{ job.services.postgres.id }}
-
-          for ($attempt = 1; $attempt -le 30; $attempt++) {
-            docker exec ${{ job.services.postgres.id }} pg_isready -U postgres
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            Start-Sleep -Seconds 2
-          }
-          throw "PostgreSQL did not become ready after restart."
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
 
       - name: Restore CLI Integration Tests
         run: |

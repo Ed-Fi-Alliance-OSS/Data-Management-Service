@@ -755,6 +755,43 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
     }
 
     /// <summary>
+    /// It should exclude array-nested securable paths from tracked-change value columns: their source
+    /// columns live on child collection tables with 0..N rows per document, which a single-row-per-
+    /// ChangeVersion tombstone cannot represent. Identity-origin columns (always root scalars) remain.
+    /// </summary>
+    [Test]
+    public void It_should_exclude_array_nested_securable_paths()
+    {
+        // Set-wide invariant: no tracked value column sources from an array-nested path.
+        foreach (var table in _set.TrackedChangeTablesInNameOrder)
+        {
+            table
+                .ValueColumnsInTableOrder.Where(column => column.SourceJsonPath.Contains("[*]"))
+                .Should()
+                .BeEmpty($"table {table.Table.Name} must not track array-nested (child-collection) paths");
+        }
+
+        // Named examples: AssessmentAdministration's battery-part namespace securable
+        // ($.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace) and GraduationPlan's
+        // required-assessment namespace securable are dropped, while identity-origin namespaces remain.
+        var administration = TrackedChangeDerivationTestHelpers.TableBySourceName(
+            _set,
+            "AssessmentAdministration"
+        );
+        administration
+            .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
+            .Should()
+            .NotContain("Old_AssessmentBatteryPart_Namespace")
+            .And.Contain("Old_Assessment_Namespace");
+
+        var graduationPlan = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "GraduationPlan");
+        graduationPlan
+            .ValueColumnsInTableOrder.Select(column => column.OldColumnName.Value)
+            .Should()
+            .NotContain("Old_RequiredAssessmentAssessment_Namespace");
+    }
+
+    /// <summary>
     /// It should materialize a descriptor reference as Namespace/CodeValue columns plus one named join.
     /// </summary>
     [Test]
