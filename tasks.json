@@ -123,7 +123,7 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~HandlerTests\"",
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Authorization\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "unit-tests",

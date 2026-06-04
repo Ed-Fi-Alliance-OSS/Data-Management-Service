@@ -39,7 +39,10 @@ public record QueryResult
     /// A failure because security configuration metadata for the query is invalid.
     /// </summary>
     /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
-    public record QueryFailureSecurityConfiguration(string[] Errors) : QueryResult();
+    public record QueryFailureSecurityConfiguration(
+        string[] Errors,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : QueryResult();
 
     /// <summary>
     /// A failure because namespace authorization denied the query (the §2.9 no-prefixes preflight).

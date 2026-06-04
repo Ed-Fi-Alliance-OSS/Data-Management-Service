@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -16,8 +17,10 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -31,13 +34,14 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 public class QueryRequestHandlerTests
 {
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
-        IQueryHandler queryHandler
+        IQueryHandler queryHandler,
+        ILogger? logger = null
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IQueryHandler))).Returns(queryHandler);
 
-        var handler = new QueryRequestHandler(NullLogger.Instance, ResiliencePipeline.Empty);
+        var handler = new QueryRequestHandler(logger ?? NullLogger.Instance, ResiliencePipeline.Empty);
 
         return (handler, serviceProvider);
     }
@@ -179,18 +183,53 @@ public class QueryRequestHandlerTests
             public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
                 return Task.FromResult<QueryResult>(
-                    new QueryResult.QueryFailureSecurityConfiguration(ResponseErrors)
+                    new QueryResult.QueryFailureSecurityConfiguration(
+                        ResponseErrors,
+                        [
+                            new SecurityConfigurationFailureDiagnostic(
+                                ProviderOrPlannerFailureKind: "RelationshipAuthorization.InvalidAuthorizationStrategy",
+                                ResourceFullName: "Ed-Fi.School",
+                                ConfiguredStrategyNames: ["CustomAuthorizationStrategy"],
+                                ConfiguredStrategyIndexes: [1],
+                                RequestSurface: "GetManyResource",
+                                CmsAction: "Read"
+                            ),
+                        ]
+                    )
                 );
             }
         }
 
         private static readonly string _traceId = "security-config";
         private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+        private RecordingLogger _logger = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _logger = new RecordingLogger();
+            var (queryHandler, serviceProvider) = Handler(new Repository(), _logger);
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                Path = "ed-fi/schools",
+                Tenant = "tenant-a",
+            };
+            _requestInfo.ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []);
+            _requestInfo.PathComponents = new PathComponents(
+                new ProjectEndpointName("ed-fi"),
+                new EndpointName("schools"),
+                new DocumentUuid()
+            );
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("School"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("5.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: No.EducationOrganizationHierarchyInfo,
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.ResourceActionAuthStrategies = ["CustomAuthorizationStrategy"];
             _requestInfo.ScopedServiceProvider = serviceProvider;
             await queryHandler.Execute(_requestInfo, NullNext);
         }
@@ -217,6 +256,36 @@ public class QueryRequestHandlerTests
                     actual: {_requestInfo.FrontendResponse.Body}
                     """
                 );
+        }
+
+        [Test]
+        public void It_logs_security_configuration_failure_with_backend_diagnostics()
+        {
+            var logRecord = _logger
+                .Records.Where(static record => record.Level == LogLevel.Error)
+                .Should()
+                .ContainSingle()
+                .Subject;
+
+            logRecord.Message.Should().Contain("SecurityConfigurationFailure");
+            logRecord.Properties["Tenant"].Should().Be("tenant-a");
+            logRecord.Properties["CorrelationId"].Should().Be(_traceId);
+            logRecord.Properties["HttpMethod"].Should().Be("GET");
+            logRecord.Properties["RoutePath"].Should().Be("ed-fi/schools");
+            logRecord.Properties["RequestSurface"].Should().Be("GetManyResource");
+            logRecord.Properties["CmsAction"].Should().Be("Read");
+            logRecord.Properties["AssignedClaimSet"].Should().Be("SIS-Vendor");
+            logRecord.Properties["ResourceFullName"].Should().Be("Ed-Fi.School");
+            ((IEnumerable<string>)logRecord.Properties["ConfiguredStrategyNames"]!)
+                .Should()
+                .Equal("CustomAuthorizationStrategy");
+            ((IEnumerable<int>)logRecord.Properties["ConfiguredStrategyIndexes"]!).Should().Equal(1);
+            ((IEnumerable<string>)logRecord.Properties["ProviderOrPlannerFailureKinds"]!)
+                .Should()
+                .Equal("RelationshipAuthorization.InvalidAuthorizationStrategy");
+            ((IEnumerable<string>)logRecord.Properties["SecurityConfigurationErrors"]!)
+                .Should()
+                .Equal(Repository.ResponseErrors);
         }
     }
 

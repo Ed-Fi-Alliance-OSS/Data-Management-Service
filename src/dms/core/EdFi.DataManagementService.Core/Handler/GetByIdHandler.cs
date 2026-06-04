@@ -74,14 +74,11 @@ internal class GetByIdHandler(
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            GetFailureSecurityConfiguration failure => new FrontendResponse(
-                StatusCode: 500,
-                Body: FailureResponse.ForSecurityConfiguration(
-                    requestInfo.FrontendRequest.TraceId,
-                    failure.Errors
-                ),
-                Headers: [],
-                ContentType: "application/problem+json"
+            GetFailureSecurityConfiguration failure => CreateSecurityConfigurationFailureResponse(
+                _logger,
+                requestInfo,
+                failure.Errors,
+                failure.Diagnostics
             ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.

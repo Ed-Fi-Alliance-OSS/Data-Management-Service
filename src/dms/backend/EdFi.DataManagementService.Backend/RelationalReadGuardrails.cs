@@ -120,6 +120,74 @@ internal static class RelationalReadGuardrails
         ];
     }
 
+    public static SecurityConfigurationFailureDiagnostic[] BuildSecurityConfigurationDiagnostics(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
+
+        var classification = RelationshipAuthorizationStrategyClassifier.Classify(
+            mappingSet,
+            resource,
+            nonNamespaceConfiguredStrategies
+        );
+
+        if (classification.SecurityConfigurationFailures.Count > 0)
+        {
+            return
+            [
+                .. classification.SecurityConfigurationFailures.Select(
+                    static failure => new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: $"RelationshipAuthorization.{failure.FailureKind}",
+                        ResourceFullName: RelationalWriteSupport.FormatResource(failure.Resource),
+                        ConfiguredStrategyNames: failure.ConfiguredStrategy is null
+                            ? null
+                            : [failure.ConfiguredStrategy.StrategyName],
+                        ConfiguredStrategyIndexes: failure.ConfiguredStrategy is null
+                            ? null
+                            : [failure.ConfiguredStrategy.RawConfiguredIndex],
+                        TargetResourceFullName: failure.FailureKind
+                        is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
+                            ? RelationalWriteSupport.FormatResource(failure.Resource)
+                            : null
+                    )
+                ),
+            ];
+        }
+
+        return
+        [
+            .. nonNamespaceConfiguredStrategies
+                .Where(static strategy =>
+                    !string.Equals(
+                        strategy.StrategyName,
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                        StringComparison.Ordinal
+                    )
+                )
+                .Select(strategy => new SecurityConfigurationFailureDiagnostic(
+                    ProviderOrPlannerFailureKind: "RelationshipAuthorization.UnavailableStrategy",
+                    ResourceFullName: RelationalWriteSupport.FormatResource(resource),
+                    ConfiguredStrategyNames: [strategy.StrategyName],
+                    ConfiguredStrategyIndexes: [strategy.RawConfiguredIndex]
+                )),
+        ];
+    }
+
+    public static SecurityConfigurationFailureDiagnostic[] BuildNoUsableRootColumnDiagnostics(
+        QualifiedResourceName resource
+    ) =>
+        [
+            new SecurityConfigurationFailureDiagnostic(
+                ProviderOrPlannerFailureKind: "NamespaceAuthorization.NoUsableRootColumn",
+                ResourceFullName: RelationalWriteSupport.FormatResource(resource),
+                ConfiguredStrategyNames: [AuthorizationStrategyNameConstants.NamespaceBased]
+            ),
+        ];
+
     public static string BuildAuthorizationNotImplementedMessage(
         QualifiedResourceName resource,
         IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators,

@@ -104,7 +104,10 @@ public record UpsertResult
     /// A failure because security configuration metadata for the POST/upsert operation is invalid.
     /// </summary>
     /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
-    public record UpsertFailureSecurityConfiguration(string[] Errors) : UpsertResult();
+    public record UpsertFailureSecurityConfiguration(
+        string[] Errors,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : UpsertResult();
 
     /// <summary>
     /// A failure because the request body violated a write-path validation guard rail

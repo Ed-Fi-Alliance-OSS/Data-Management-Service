@@ -115,14 +115,11 @@ internal class DeleteByIdHandler(
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            DeleteFailureSecurityConfiguration failure => new FrontendResponse(
-                StatusCode: 500,
-                Body: FailureResponse.ForSecurityConfiguration(
-                    requestInfo.FrontendRequest.TraceId,
-                    failure.Errors
-                ),
-                Headers: [],
-                ContentType: "application/problem+json"
+            DeleteFailureSecurityConfiguration failure => CreateSecurityConfigurationFailureResponse(
+                _logger,
+                requestInfo,
+                failure.Errors,
+                failure.Diagnostics
             ),
             DeleteFailureReference failure => new FrontendResponse(
                 StatusCode: 409,

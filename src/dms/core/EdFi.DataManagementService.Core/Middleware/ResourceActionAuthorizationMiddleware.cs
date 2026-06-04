@@ -287,7 +287,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Validates that authorization strategies exist for the action.
     /// </summary>
-    private static bool ValidateAuthorizationStrategies(
+    private bool ValidateAuthorizationStrategies(
         RequestInfo requestInfo,
         IReadOnlyList<string> strategies,
         string actionName,
@@ -422,14 +422,20 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         );
     }
 
-    private static void CreateMissingSecurityMetadataResponse(RequestInfo requestInfo)
+    private void CreateMissingSecurityMetadataResponse(RequestInfo requestInfo)
     {
+        string[] errors = [SecurityConfigurationFailureMessages.MissingSecurityMetadata];
+        SecurityConfigurationFailureLogger.Log(
+            _logger,
+            requestInfo,
+            errors,
+            assignedClaimSetName: requestInfo.ClientAuthorizations.ClaimSetName,
+            cmsAction: GetActionName(requestInfo)
+        );
+
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: (int)HttpStatusCode.InternalServerError,
-            Body: FailureResponse.ForSecurityConfiguration(
-                requestInfo.FrontendRequest.TraceId,
-                [SecurityConfigurationFailureMessages.MissingSecurityMetadata]
-            ),
+            Body: FailureResponse.ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, errors),
             Headers: [],
             ContentType: "application/problem+json"
         );
@@ -484,25 +490,34 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         );
     }
 
-    private static void CreateNoStrategiesSecurityConfigurationResponse(
+    private void CreateNoStrategiesSecurityConfigurationResponse(
         RequestInfo requestInfo,
         string actionName,
         IReadOnlyList<string> matchedResourceClaimUris,
         string matchedResourceClaimName
     )
     {
+        string[] errors =
+        [
+            SecurityConfigurationFailureMessages.NoAuthorizationStrategies(
+                actionName,
+                matchedResourceClaimUris,
+                matchedResourceClaimName
+            ),
+        ];
+        SecurityConfigurationFailureLogger.Log(
+            _logger,
+            requestInfo,
+            errors,
+            matchedResourceClaimUris,
+            matchedResourceClaimName,
+            requestInfo.ClientAuthorizations.ClaimSetName,
+            actionName
+        );
+
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: (int)HttpStatusCode.InternalServerError,
-            Body: FailureResponse.ForSecurityConfiguration(
-                requestInfo.FrontendRequest.TraceId,
-                [
-                    SecurityConfigurationFailureMessages.NoAuthorizationStrategies(
-                        actionName,
-                        matchedResourceClaimUris,
-                        matchedResourceClaimName
-                    ),
-                ]
-            ),
+            Body: FailureResponse.ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, errors),
             Headers: [],
             ContentType: "application/problem+json"
         );

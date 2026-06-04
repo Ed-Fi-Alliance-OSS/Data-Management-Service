@@ -75,7 +75,10 @@ internal sealed class DescriptorWriteHandler(
                     UpsertFailureNotImplementedReason.StrategyNotEnabled
                 );
             case DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                return new UpsertResult.UpsertFailureSecurityConfiguration(configError.Errors);
+                return new UpsertResult.UpsertFailureSecurityConfiguration(
+                    configError.Errors,
+                    configError.Diagnostics
+                );
             case DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
                 return new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
         }
@@ -304,7 +307,10 @@ internal sealed class DescriptorWriteHandler(
             case DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented:
                 return new UpdateResult.UpdateFailureNotImplemented(notImplemented.FailureMessage);
             case DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                return new UpdateResult.UpdateFailureSecurityConfiguration(configError.Errors);
+                return new UpdateResult.UpdateFailureSecurityConfiguration(
+                    configError.Errors,
+                    configError.Diagnostics
+                );
             case DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
                 return new UpdateResult.UpdateFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
         }
@@ -1036,11 +1042,14 @@ internal sealed class DescriptorWriteHandler(
         {
             RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
                 new DescriptorDeleteAuthorizationPreflightResult.Stop(
-                    new DeleteResult.DeleteFailureSecurityConfiguration([
-                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                        ),
-                    ])
+                    new DeleteResult.DeleteFailureSecurityConfiguration(
+                        [
+                            NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                                RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                            ),
+                        ],
+                        RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                    )
                 ),
             RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
                 new DescriptorDeleteAuthorizationPreflightResult.Stop(
@@ -1080,6 +1089,11 @@ internal sealed class DescriptorWriteHandler(
                 new DescriptorDeleteAuthorizationPreflightResult.Stop(
                     new DeleteResult.DeleteFailureSecurityConfiguration(
                         RelationalReadGuardrails.BuildSecurityConfigurationErrors(
+                            request.MappingSet,
+                            request.Resource,
+                            securityConfigurationError.NonNamespaceConfiguredStrategies
+                        ),
+                        RelationalReadGuardrails.BuildSecurityConfigurationDiagnostics(
                             request.MappingSet,
                             request.Resource,
                             securityConfigurationError.NonNamespaceConfiguredStrategies
@@ -1201,11 +1215,14 @@ internal sealed class DescriptorWriteHandler(
         return orchestratorOutcome switch
         {
             RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
-                new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError([
-                    NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                        RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                    ),
-                ]),
+                new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    [
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ],
+                    RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                ),
             RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
                 new DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized(
                     NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
@@ -1234,6 +1251,11 @@ internal sealed class DescriptorWriteHandler(
             RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
                 new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
                     RelationalReadGuardrails.BuildSecurityConfigurationErrors(
+                        request.MappingSet,
+                        request.Resource,
+                        securityConfigurationError.NonNamespaceConfiguredStrategies
+                    ),
+                    RelationalReadGuardrails.BuildSecurityConfigurationDiagnostics(
                         request.MappingSet,
                         request.Resource,
                         securityConfigurationError.NonNamespaceConfiguredStrategies
@@ -1290,8 +1312,10 @@ internal sealed class DescriptorWriteHandler(
         public sealed record NotImplemented(string FailureMessage)
             : DescriptorWriteAuthorizationPreflightOutcome;
 
-        public sealed record SecurityConfigurationError(string[] Errors)
-            : DescriptorWriteAuthorizationPreflightOutcome;
+        public sealed record SecurityConfigurationError(
+            string[] Errors,
+            SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+        ) : DescriptorWriteAuthorizationPreflightOutcome;
 
         public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
             : DescriptorWriteAuthorizationPreflightOutcome;

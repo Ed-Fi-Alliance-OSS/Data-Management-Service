@@ -17,8 +17,10 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -101,6 +103,15 @@ public class ResourceActionAuthorizationMiddlewareTests
             requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
                 ?? new JsonObject()
         );
+        requestInfo.ResourceInfo = new ResourceInfo(
+            requestInfo.ProjectSchema.ProjectName,
+            requestInfo.ResourceSchema.ResourceName,
+            requestInfo.ResourceSchema.IsDescriptor,
+            requestInfo.ProjectSchema.ResourceVersion,
+            requestInfo.ResourceSchema.AllowIdentityUpdates,
+            No.EducationOrganizationHierarchyInfo,
+            []
+        );
 
         return requestInfo;
     }
@@ -163,7 +174,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
-    internal static IPipelineStep NoAuthStrategyMiddleware(string action = "Create")
+    internal static IPipelineStep NoAuthStrategyMiddleware(string action = "Create", ILogger? logger = null)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
@@ -180,7 +191,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 ),
             ]);
-        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, logger ?? NullLogger.Instance);
     }
 
     [TestFixture]
@@ -947,15 +958,18 @@ public class ResourceActionAuthorizationMiddlewareTests
     public class Given_Relational_Get_Many_With_No_Authorization_Strategies
         : ResourceActionAuthorizationMiddlewareTests
     {
+        private RecordingLogger _logger = null!;
+
         [SetUp]
         public async Task Setup()
         {
+            _logger = new RecordingLogger();
             _requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
             _requestInfo.MappingSet = RelationalWriteSeamFixture
                 .Create()
                 .CreateSupportedMappingSet(SqlDialect.Pgsql);
 
-            await NoAuthStrategyMiddleware("Read").Execute(_requestInfo, NullNext);
+            await NoAuthStrategyMiddleware("Read", _logger).Execute(_requestInfo, NullNext);
         }
 
         [Test]
@@ -981,6 +995,37 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .Be(
                     $"No authorization strategies were defined for the requested action 'Read' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'."
                 );
+        }
+
+        [Test]
+        public void It_logs_security_configuration_failure_with_request_context()
+        {
+            var logRecord = _logger
+                .Records.Where(static record => record.Level == LogLevel.Error)
+                .Should()
+                .ContainSingle()
+                .Subject;
+            string schoolResourceClaimUri = $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school";
+
+            logRecord.Level.Should().Be(LogLevel.Error);
+            logRecord.Message.Should().Contain("SecurityConfigurationFailure");
+            logRecord.Properties["Tenant"].Should().Be(string.Empty);
+            logRecord.Properties["CorrelationId"].Should().Be("traceId");
+            logRecord.Properties["HttpMethod"].Should().Be("GET");
+            logRecord.Properties["RoutePath"].Should().Be("ed-fi/schools");
+            logRecord.Properties["RequestSurface"].Should().Be("GetManyResource");
+            logRecord.Properties["CmsAction"].Should().Be("Read");
+            logRecord.Properties["AssignedClaimSet"].Should().Be("SIS-Vendor");
+            logRecord.Properties["ResourceFullName"].Should().Be("Ed-Fi.School");
+            ((IEnumerable<string>)logRecord.Properties["MatchedResourceClaimUris"]!)
+                .Should()
+                .Equal(schoolResourceClaimUri);
+            logRecord.Properties["MatchedResourceClaimName"].Should().Be(schoolResourceClaimUri);
+            ((IEnumerable<string>)logRecord.Properties["SecurityConfigurationErrors"]!)
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Contain("No authorization strategies were defined");
         }
     }
 

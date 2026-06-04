@@ -205,11 +205,11 @@ internal class UpdateByIdHandler(
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            UpdateFailureSecurityConfiguration failure => new FrontendResponse(
-                StatusCode: 500,
-                Body: ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, failure.Errors),
-                Headers: [],
-                ContentType: "application/problem+json"
+            UpdateFailureSecurityConfiguration failure => CreateSecurityConfigurationFailureResponse(
+                _logger,
+                requestInfo,
+                failure.Errors,
+                failure.Diagnostics
             ),
             UpdateFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),

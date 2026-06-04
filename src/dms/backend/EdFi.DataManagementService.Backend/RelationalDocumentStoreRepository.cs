@@ -748,11 +748,14 @@ public sealed class RelationalDocumentStoreRepository(
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
                 return new DeleteAuthorizationPreflightResult.Stop(
-                    new DeleteResult.DeleteFailureSecurityConfiguration([
-                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                        ),
-                    ])
+                    new DeleteResult.DeleteFailureSecurityConfiguration(
+                        [
+                            NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                                RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                            ),
+                        ],
+                        RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                    )
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
@@ -1222,11 +1225,14 @@ public sealed class RelationalDocumentStoreRepository(
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
                 return new QueryAuthorizationResolution.Complete(
-                    new QueryResult.QueryFailureSecurityConfiguration([
-                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                        ),
-                    ])
+                    new QueryResult.QueryFailureSecurityConfiguration(
+                        [
+                            NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                                RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                            ),
+                        ],
+                        RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                    )
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
@@ -1474,11 +1480,14 @@ public sealed class RelationalDocumentStoreRepository(
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
                 return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                    new UpsertResult.UpsertFailureSecurityConfiguration([
-                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                        ),
-                    ])
+                    new UpsertResult.UpsertFailureSecurityConfiguration(
+                        [
+                            NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                                RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                            ),
+                        ],
+                        RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                    )
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
@@ -1810,11 +1819,14 @@ public sealed class RelationalDocumentStoreRepository(
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
                 return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                    new UpdateResult.UpdateFailureSecurityConfiguration([
-                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                        ),
-                    ])
+                    new UpdateResult.UpdateFailureSecurityConfiguration(
+                        [
+                            NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                                RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                            ),
+                        ],
+                        RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                    )
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
@@ -2561,11 +2573,14 @@ public sealed class RelationalDocumentStoreRepository(
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
                 return new GetByIdAuthorizationPreflightResult.Stop(
-                    new GetResult.GetFailureSecurityConfiguration([
-                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                        ),
-                    ])
+                    new GetResult.GetFailureSecurityConfiguration(
+                        [
+                            NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                                RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                            ),
+                        ],
+                        RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                    )
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
@@ -3063,7 +3078,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (HasOnlyEdOrgSubjectSelectionFailures(failures))
         {
-            return new GetResult.GetFailureSecurityConfiguration([
+            string[] errors =
+            [
                 BuildEdOrgSubjectSelectionFailureMessage(
                     mappingSet,
                     resource,
@@ -3071,17 +3087,25 @@ public sealed class RelationalDocumentStoreRepository(
                     operationLabel: "GET-by-id",
                     effectiveAuthorizationLabel: "GET"
                 ),
-            ]);
+            ];
+
+            return new GetResult.GetFailureSecurityConfiguration(
+                errors,
+                BuildSecurityConfigurationFailureDiagnostics(failures)
+            );
         }
 
+        string[] securityConfigurationErrors = BuildSecurityConfigurationFailureMessages(
+            mappingSet,
+            failures,
+            operationLabel: "GET-by-id",
+            effectiveAuthorizationLabel: "GET",
+            executionBoundaryName: "single-record relationship execution boundary"
+        );
+
         return new GetResult.GetFailureSecurityConfiguration(
-            BuildSecurityConfigurationFailureMessages(
-                mappingSet,
-                failures,
-                operationLabel: "GET-by-id",
-                effectiveAuthorizationLabel: "GET",
-                executionBoundaryName: "single-record relationship execution boundary"
-            )
+            securityConfigurationErrors,
+            BuildSecurityConfigurationFailureDiagnostics(failures)
         );
     }
 
@@ -3096,7 +3120,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (HasOnlyEdOrgSubjectSelectionFailures(failures))
         {
-            return new DeleteResult.DeleteFailureSecurityConfiguration([
+            string[] errors =
+            [
                 BuildEdOrgSubjectSelectionFailureMessage(
                     mappingSet,
                     resource,
@@ -3104,17 +3129,25 @@ public sealed class RelationalDocumentStoreRepository(
                     operationLabel: "DELETE",
                     effectiveAuthorizationLabel: "DELETE"
                 ),
-            ]);
+            ];
+
+            return new DeleteResult.DeleteFailureSecurityConfiguration(
+                errors,
+                BuildSecurityConfigurationFailureDiagnostics(failures)
+            );
         }
 
+        string[] securityConfigurationErrors = BuildSecurityConfigurationFailureMessages(
+            mappingSet,
+            failures,
+            operationLabel: "DELETE",
+            effectiveAuthorizationLabel: "DELETE",
+            executionBoundaryName: "single-record relationship execution boundary"
+        );
+
         return new DeleteResult.DeleteFailureSecurityConfiguration(
-            BuildSecurityConfigurationFailureMessages(
-                mappingSet,
-                failures,
-                operationLabel: "DELETE",
-                effectiveAuthorizationLabel: "DELETE",
-                executionBoundaryName: "single-record relationship execution boundary"
-            )
+            securityConfigurationErrors,
+            BuildSecurityConfigurationFailureDiagnostics(failures)
         );
     }
 
@@ -3126,14 +3159,17 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(failures);
 
+        string[] securityConfigurationErrors = BuildSecurityConfigurationFailureMessages(
+            mappingSet,
+            failures,
+            operationLabel: "POST",
+            effectiveAuthorizationLabel: "POST",
+            executionBoundaryName: "POST create-new relationship execution boundary"
+        );
+
         return new UpsertResult.UpsertFailureSecurityConfiguration(
-            BuildSecurityConfigurationFailureMessages(
-                mappingSet,
-                failures,
-                operationLabel: "POST",
-                effectiveAuthorizationLabel: "POST",
-                executionBoundaryName: "POST create-new relationship execution boundary"
-            )
+            securityConfigurationErrors,
+            BuildSecurityConfigurationFailureDiagnostics(failures)
         );
     }
 
@@ -3145,14 +3181,17 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(failures);
 
+        string[] securityConfigurationErrors = BuildSecurityConfigurationFailureMessages(
+            mappingSet,
+            failures,
+            operationLabel: "PUT",
+            effectiveAuthorizationLabel: "PUT",
+            executionBoundaryName: "PUT relationship execution boundary"
+        );
+
         return new UpdateResult.UpdateFailureSecurityConfiguration(
-            BuildSecurityConfigurationFailureMessages(
-                mappingSet,
-                failures,
-                operationLabel: "PUT",
-                effectiveAuthorizationLabel: "PUT",
-                executionBoundaryName: "PUT relationship execution boundary"
-            )
+            securityConfigurationErrors,
+            BuildSecurityConfigurationFailureDiagnostics(failures)
         );
     }
 
@@ -3314,7 +3353,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (HasOnlyEdOrgSubjectSelectionFailures(failures))
         {
-            return new QueryResult.QueryFailureSecurityConfiguration([
+            string[] errors =
+            [
                 BuildEdOrgSubjectSelectionFailureMessage(
                     mappingSet,
                     resource,
@@ -3322,18 +3362,67 @@ public sealed class RelationalDocumentStoreRepository(
                     operationLabel: "query",
                     effectiveAuthorizationLabel: "GET-many"
                 ),
-            ]);
+            ];
+
+            return new QueryResult.QueryFailureSecurityConfiguration(
+                errors,
+                BuildSecurityConfigurationFailureDiagnostics(failures)
+            );
         }
 
-        return new QueryResult.QueryFailureSecurityConfiguration(
-            BuildSecurityConfigurationFailureMessages(
-                mappingSet,
-                failures,
-                operationLabel: "query",
-                effectiveAuthorizationLabel: "GET-many",
-                executionBoundaryName: "GET-many relationship query execution boundary"
-            )
+        string[] securityConfigurationErrors = BuildSecurityConfigurationFailureMessages(
+            mappingSet,
+            failures,
+            operationLabel: "query",
+            effectiveAuthorizationLabel: "GET-many",
+            executionBoundaryName: "GET-many relationship query execution boundary"
         );
+
+        return new QueryResult.QueryFailureSecurityConfiguration(
+            securityConfigurationErrors,
+            BuildSecurityConfigurationFailureDiagnostics(failures)
+        );
+    }
+
+    private static SecurityConfigurationFailureDiagnostic[] BuildSecurityConfigurationFailureDiagnostics(
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    ) => [.. failures.Select(BuildSecurityConfigurationFailureDiagnostic)];
+
+    private static SecurityConfigurationFailureDiagnostic BuildSecurityConfigurationFailureDiagnostic(
+        RelationshipAuthorizationFailureMetadata failure
+    )
+    {
+        string resourceFullName = RelationalWriteSupport.FormatResource(failure.Resource);
+        string? physicalPath = FormatPhysicalPath(failure.Location);
+
+        return new SecurityConfigurationFailureDiagnostic(
+            ProviderOrPlannerFailureKind: $"RelationshipAuthorization.{failure.FailureKind}",
+            ResourceFullName: resourceFullName,
+            ConfiguredStrategyNames: failure.ConfiguredStrategy is null
+                ? null
+                : [failure.ConfiguredStrategy.StrategyName],
+            ConfiguredStrategyIndexes: failure.ConfiguredStrategy is null
+                ? null
+                : [failure.ConfiguredStrategy.RawConfiguredIndex],
+            TargetResourceFullName: IsCustomViewFailure(failure) ? resourceFullName : null,
+            MissingPropertyName: failure.Location?.ReadableName,
+            PhysicalPath: physicalPath
+        );
+    }
+
+    private static bool IsCustomViewFailure(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource;
+
+    private static string? FormatPhysicalPath(RelationshipAuthorizationFailureLocation? location)
+    {
+        if (location?.Table is null)
+        {
+            return null;
+        }
+
+        return location.Column is null
+            ? location.Table.ToString()
+            : $"{location.Table}.{location.Column.Value}";
     }
 
     private static string[] BuildSecurityConfigurationFailureMessages(

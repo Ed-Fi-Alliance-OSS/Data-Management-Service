@@ -51,3 +51,20 @@ public static class SecurityConfigurationFailureMessages
         return $"'{string.Join("', '", valuesArray)}'";
     }
 }
+
+/// <summary>
+/// Optional structured context for security-configuration failures that originate below the Core HTTP
+/// response boundary. Core combines these fields with request context when it emits the response log.
+/// </summary>
+public sealed record SecurityConfigurationFailureDiagnostic(
+    string? ProviderOrPlannerFailureKind = null,
+    string? ResourceFullName = null,
+    string[]? ConfiguredStrategyNames = null,
+    int[]? ConfiguredStrategyIndexes = null,
+    string? RequestSurface = null,
+    string? CmsAction = null,
+    string? TargetResourceFullName = null,
+    string? BasisResourceFullName = null,
+    string? MissingPropertyName = null,
+    string? PhysicalPath = null
+);
