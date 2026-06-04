@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using FluentAssertions;
@@ -92,16 +93,13 @@ public class Given_FailureResponse_For_Security_Configuration
     {
         var response = FailureResponse.ForSecurityConfiguration(
             _traceId,
-            ["Resource 'Ed-Fi.School' has strategy 'CustomAuthorizationStrategy' with invalid metadata."]
+            [SecurityConfigurationFailureMessages.MissingSecurityMetadata]
         );
 
-        response["type"]!.ToString().Should().Be("urn:ed-fi:api:system:configuration:security");
-        response["title"]!.ToString().Should().Be("Security Configuration Error");
-        response["detail"]!
-            .ToString()
-            .Should()
-            .Be("A security configuration problem was detected. The request cannot be authorized.");
-        response["status"]!.GetValue<int>().Should().Be(500);
+        response["type"]!.ToString().Should().Be(SecurityConfigurationProblemDetails.Type);
+        response["title"]!.ToString().Should().Be(SecurityConfigurationProblemDetails.Title);
+        response["detail"]!.ToString().Should().Be(SecurityConfigurationProblemDetails.Detail);
+        response["status"]!.GetValue<int>().Should().Be(SecurityConfigurationProblemDetails.Status);
         response["correlationId"]!.ToString().Should().Be(_traceId.Value);
         response["validationErrors"]!.AsObject().Count.Should().Be(0);
         response["errors"]!
@@ -110,6 +108,78 @@ public class Given_FailureResponse_For_Security_Configuration
             .Should()
             .ContainSingle()
             .Which.Should()
-            .Contain("CustomAuthorizationStrategy");
+            .Be(SecurityConfigurationFailureMessages.MissingSecurityMetadata);
+    }
+
+    [Test]
+    public void It_preserves_supplied_security_configuration_errors_in_order()
+    {
+        string firstError = SecurityConfigurationFailureMessages.NoAuthorizationStrategies(
+            "Read",
+            ["http://ed-fi.org/identity/claims/ed-fi/school"],
+            "http://ed-fi.org/identity/claims/ed-fi/school"
+        );
+        string secondError = SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+            "RelationshipsWithStudentsOnly",
+        ]);
+
+        var response = FailureResponse.ForSecurityConfiguration(_traceId, [firstError, secondError]);
+
+        response["errors"]!
+            .AsArray()
+            .Select(static error => error!.ToString())
+            .Should()
+            .Equal(firstError, secondError);
+    }
+
+    [Test]
+    public void It_formats_the_canonical_no_strategies_message_with_resource_claim_uris()
+    {
+        string message = SecurityConfigurationFailureMessages.NoAuthorizationStrategies(
+            "ReadChanges",
+            [
+                "http://ed-fi.org/identity/claims/ed-fi/student",
+                "http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssociation",
+            ],
+            "http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssociation"
+        );
+
+        message
+            .Should()
+            .Be(
+                "No authorization strategies were defined for the requested action 'ReadChanges' against resource URIs ['http://ed-fi.org/identity/claims/ed-fi/student', 'http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssociation'] matched by the caller's claim 'http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssociation'."
+            );
+    }
+
+    [Test]
+    public void It_formats_the_canonical_unknown_strategy_message_in_first_occurrence_order()
+    {
+        string message = SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+            "StudentScope",
+            "CalendarScope",
+            "StudentScope",
+        ]);
+
+        message
+            .Should()
+            .Be(
+                "Could not find authorization strategy implementations for the following strategy names: 'StudentScope', 'CalendarScope'."
+            );
+    }
+
+    [Test]
+    public void It_formats_the_canonical_custom_view_basis_property_message()
+    {
+        string message = SecurityConfigurationFailureMessages.CustomViewBasisPropertyUnavailable(
+            "edfi.CourseTranscript",
+            "StudentUniqueId",
+            "edfi.Student"
+        );
+
+        message
+            .Should()
+            .Be(
+                "Unable to find a property on the authorization subject entity type 'edfi.CourseTranscript' corresponding to the 'StudentUniqueId' property on the custom authorization view's basis entity type 'edfi.Student' in order to perform authorization. Should a different authorization strategy be used?"
+            );
     }
 }

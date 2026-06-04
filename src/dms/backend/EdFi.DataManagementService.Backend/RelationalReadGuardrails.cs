@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 
@@ -11,50 +13,129 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalReadGuardrails
 {
-    /// <summary>
-    /// Descriptors authorize against the shared <c>dms.Descriptor</c> root-table Namespace column, so the
-    /// only effective strategies they can evaluate are <c>NamespaceBased</c> and
-    /// <c>NoFurtherAuthorizationRequired</c>. Any other strategy (relationship, ownership, custom view)
-    /// has no descriptor-applicable filter and must fail closed before any database work.
-    /// </summary>
-    public static bool HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired(
-        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    public static bool HasDescriptorUnsupportedNonNamespaceStrategies(
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
     )
     {
-        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+        ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
 
-        return authorizationStrategyEvaluators.All(static evaluator =>
-            string.Equals(
-                evaluator.AuthorizationStrategyName,
-                AuthorizationStrategyNameConstants.NamespaceBased,
-                StringComparison.Ordinal
-            )
-            || string.Equals(
-                evaluator.AuthorizationStrategyName,
+        return nonNamespaceConfiguredStrategies.Any(static strategy =>
+            !string.Equals(
+                strategy.StrategyName,
                 AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
                 StringComparison.Ordinal
             )
         );
     }
 
-    /// <summary>
-    /// Whether <c>NamespaceBased</c> is among the effective strategies, indicating that backend-planned
-    /// namespace authorization must run for the request.
-    /// </summary>
-    public static bool ContainsNamespaceBased(
-        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    public static RelationalReadSecurityConfigurationFailure BuildSecurityConfigurationFailure(
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationClassification relationshipClassification
     )
     {
-        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+        ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
+        ArgumentNullException.ThrowIfNull(relationshipClassification);
 
-        return authorizationStrategyEvaluators.Any(static evaluator =>
-            string.Equals(
-                evaluator.AuthorizationStrategyName,
-                AuthorizationStrategyNameConstants.NamespaceBased,
-                StringComparison.Ordinal
+        string[] unavailableStrategyNames =
+        [
+            .. relationshipClassification
+                .SecurityConfigurationFailures.Select(static failure =>
+                    failure.ConfiguredStrategy?.StrategyName
+                )
+                .Where(static strategyName => strategyName is not null)
+                .Cast<string>(),
+        ];
+
+        if (unavailableStrategyNames.Length == 0)
+        {
+            unavailableStrategyNames =
+            [
+                .. nonNamespaceConfiguredStrategies
+                    .Where(static strategy =>
+                        !string.Equals(
+                            strategy.StrategyName,
+                            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .Select(static strategy => strategy.StrategyName),
+            ];
+        }
+
+        string[] errors =
+        [
+            SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies(unavailableStrategyNames),
+        ];
+
+        return new RelationalReadSecurityConfigurationFailure(
+            errors,
+            BuildSecurityConfigurationDiagnostics(
+                resource,
+                nonNamespaceConfiguredStrategies,
+                relationshipClassification
             )
         );
     }
+
+    private static SecurityConfigurationFailureDiagnostic[] BuildSecurityConfigurationDiagnostics(
+        QualifiedResourceName resource,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
+        RelationshipAuthorizationClassification relationshipClassification
+    )
+    {
+        if (relationshipClassification.SecurityConfigurationFailures.Count > 0)
+        {
+            return
+            [
+                .. relationshipClassification.SecurityConfigurationFailures.Select(
+                    static failure => new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: $"RelationshipAuthorization.{failure.FailureKind}",
+                        ResourceFullName: RelationalWriteSupport.FormatResource(failure.Resource),
+                        ConfiguredStrategyNames: failure.ConfiguredStrategy is null
+                            ? null
+                            : [failure.ConfiguredStrategy.StrategyName],
+                        ConfiguredStrategyIndexes: failure.ConfiguredStrategy is null
+                            ? null
+                            : [failure.ConfiguredStrategy.RawConfiguredIndex],
+                        TargetResourceFullName: failure.FailureKind
+                        is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
+                            ? RelationalWriteSupport.FormatResource(failure.Resource)
+                            : null
+                    )
+                ),
+            ];
+        }
+
+        return
+        [
+            .. nonNamespaceConfiguredStrategies
+                .Where(static strategy =>
+                    !string.Equals(
+                        strategy.StrategyName,
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                        StringComparison.Ordinal
+                    )
+                )
+                .Select(strategy => new SecurityConfigurationFailureDiagnostic(
+                    ProviderOrPlannerFailureKind: "RelationshipAuthorization.UnavailableStrategy",
+                    ResourceFullName: RelationalWriteSupport.FormatResource(resource),
+                    ConfiguredStrategyNames: [strategy.StrategyName],
+                    ConfiguredStrategyIndexes: [strategy.RawConfiguredIndex]
+                )),
+        ];
+    }
+
+    public static SecurityConfigurationFailureDiagnostic[] BuildNoUsableRootColumnDiagnostics(
+        QualifiedResourceName resource
+    ) =>
+        [
+            new SecurityConfigurationFailureDiagnostic(
+                ProviderOrPlannerFailureKind: "NamespaceAuthorization.NoUsableRootColumn",
+                ResourceFullName: RelationalWriteSupport.FormatResource(resource),
+                ConfiguredStrategyNames: [AuthorizationStrategyNameConstants.NamespaceBased]
+            ),
+        ];
 
     public static string BuildAuthorizationNotImplementedMessage(
         QualifiedResourceName resource,
@@ -103,3 +184,8 @@ internal static class RelationalReadGuardrails
         return (int)totalCount.Value;
     }
 }
+
+internal sealed record RelationalReadSecurityConfigurationFailure(
+    string[] Errors,
+    SecurityConfigurationFailureDiagnostic[] Diagnostics
+);

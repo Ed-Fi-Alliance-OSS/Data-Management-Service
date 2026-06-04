@@ -52,16 +52,17 @@ internal static class RelationalWriteExecutorResults
 
     public static RelationalWriteExecutorResult BuildSecurityConfigurationFailureResult(
         RelationalWriteOperationKind operationKind,
-        string[] errors
+        string[] errors,
+        SecurityConfigurationFailureDiagnostic[]? diagnostics = null
     )
     {
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureSecurityConfiguration(errors)
+                new UpsertResult.UpsertFailureSecurityConfiguration(errors, diagnostics)
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateFailureSecurityConfiguration(errors)
+                new UpdateResult.UpdateFailureSecurityConfiguration(errors, diagnostics)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };

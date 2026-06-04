@@ -205,11 +205,11 @@ internal class UpsertHandler(
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            UpsertFailureSecurityConfiguration failure => new(
-                StatusCode: 500,
-                Body: ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, failure.Errors),
-                Headers: [],
-                ContentType: "application/problem+json"
+            UpsertFailureSecurityConfiguration failure => CreateSecurityConfigurationFailureResponse(
+                _logger,
+                requestInfo,
+                failure.Errors,
+                failure.Diagnostics
             ),
             UpsertFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),

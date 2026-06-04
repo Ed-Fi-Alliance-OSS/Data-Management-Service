@@ -109,7 +109,10 @@ public record UpdateResult
     /// A failure because security configuration metadata for the PUT/update operation is invalid.
     /// </summary>
     /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
-    public record UpdateFailureSecurityConfiguration(string[] Errors) : UpdateResult();
+    public record UpdateFailureSecurityConfiguration(
+        string[] Errors,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : UpdateResult();
 
     /// <summary>
     /// A failure because the request body violated a write-path validation guard rail

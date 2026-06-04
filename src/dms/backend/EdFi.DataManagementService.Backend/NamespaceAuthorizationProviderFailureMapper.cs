@@ -79,21 +79,21 @@ internal static class NamespaceAuthorizationProviderFailureMapper
                 is NamespaceAuthorizationCheckValueSource.Stored;
     }
 
-    /// <summary>
-    /// Whether <paramref name="exception"/> is an AUTH1 provider failure this namespace executor should
-    /// fail closed on (a namespace <c>ns1|…</c> payload — mappable or not — or any malformed/unknown
-    /// AUTH1 payload). A relationship <c>1|…</c> payload returns <see langword="false"/> so it rethrows,
-    /// because it should never reach the namespace-only execution path.
-    /// </summary>
-    public static bool IsNamespaceAuthorizationProviderFailure(
+    public static bool TryBuildInvalidAuthorizationFailureDiagnostics(
         SqlDialect dialect,
         DbException exception,
-        IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor
+        IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
+        IReadOnlyList<NamespaceAuthorizationCheckValueSource> plannedCheckValueSources,
+        IReadOnlyList<NamespaceAuthorizationCheckSpec> checks,
+        out SecurityConfigurationFailureDiagnostic[]? diagnostics
     )
     {
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(providerFailureExtractor);
+        ArgumentNullException.ThrowIfNull(plannedCheckValueSources);
+        ArgumentNullException.ThrowIfNull(checks);
 
+        diagnostics = null;
         var providerFailure = providerFailureExtractor.Extract(exception);
 
         if (
@@ -108,9 +108,29 @@ internal static class NamespaceAuthorizationProviderFailureMapper
             return false;
         }
 
-        return dispatchResult
-            is RelationalAuthorizationAuth1DispatchResult.Namespace
-                or RelationalAuthorizationAuth1DispatchResult.InvalidPayload;
+        string providerOrPlannerFailureKind = dispatchResult switch
+        {
+            RelationalAuthorizationAuth1DispatchResult.InvalidPayload =>
+                AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload,
+            RelationalAuthorizationAuth1DispatchResult.Namespace { Payload: var payload }
+                when IsInvalidStaleStoredTargetPayload(payload, plannedCheckValueSources) =>
+                AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidStaleTargetPayload,
+            RelationalAuthorizationAuth1DispatchResult.Namespace =>
+                AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed,
+            RelationalAuthorizationAuth1DispatchResult.Relationship => string.Empty,
+            _ => AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuthorizationMetadata,
+        };
+
+        if (string.IsNullOrEmpty(providerOrPlannerFailureKind))
+        {
+            return false;
+        }
+
+        diagnostics = AuthorizationSecurityConfigurationDiagnostics.ForNamespaceAuthorizationAuth1(
+            providerOrPlannerFailureKind,
+            checks
+        );
+        return true;
     }
 
     private static bool TryDispatchNamespacePayload(
@@ -143,4 +163,15 @@ internal static class NamespaceAuthorizationProviderFailureMapper
 
         return false;
     }
+
+    private static bool IsInvalidStaleStoredTargetPayload(
+        NamespaceAuthorizationAuth1FailurePayload payload,
+        IReadOnlyList<NamespaceAuthorizationCheckValueSource> plannedCheckValueSources
+    ) =>
+        payload.FailureKind is NamespaceAuthorizationAuth1FailureKind.StoredTargetMissing
+        && (
+            payload.EmittedAuth1Index >= plannedCheckValueSources.Count
+            || plannedCheckValueSources[payload.EmittedAuth1Index]
+                is not NamespaceAuthorizationCheckValueSource.Stored
+        );
 }

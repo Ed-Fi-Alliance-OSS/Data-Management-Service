@@ -58,7 +58,10 @@ public abstract record DeleteResult
     /// A failure because security configuration metadata for the delete operation is invalid.
     /// </summary>
     /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
-    public record DeleteFailureSecurityConfiguration(string[] Errors) : DeleteResult();
+    public record DeleteFailureSecurityConfiguration(
+        string[] Errors,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : DeleteResult();
 
     /// <summary>
     /// A failure of unknown category

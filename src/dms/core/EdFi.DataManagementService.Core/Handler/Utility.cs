@@ -7,8 +7,10 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
@@ -78,6 +80,23 @@ public static class Utility
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {
         return new JsonObject { ["error"] = errorInfo, ["correlationId"] = traceId.Value };
+    }
+
+    internal static FrontendResponse CreateSecurityConfigurationFailureResponse(
+        ILogger logger,
+        RequestInfo requestInfo,
+        string[] errors,
+        SecurityConfigurationFailureDiagnostic[]? diagnostics = null
+    )
+    {
+        SecurityConfigurationFailureLogger.Log(logger, requestInfo, errors, diagnostics: diagnostics);
+
+        return new FrontendResponse(
+            StatusCode: 500,
+            Body: FailureResponse.ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, errors),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
     }
 
     internal static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(

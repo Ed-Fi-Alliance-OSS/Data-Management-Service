@@ -61,7 +61,10 @@ public record GetResult
     /// A failure because security configuration metadata for the read operation is invalid.
     /// </summary>
     /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
-    public record GetFailureSecurityConfiguration(string[] Errors) : GetResult();
+    public record GetFailureSecurityConfiguration(
+        string[] Errors,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : GetResult();
 
     /// <summary>
     /// A transient failure due to a retryable condition, for example a serialization issue

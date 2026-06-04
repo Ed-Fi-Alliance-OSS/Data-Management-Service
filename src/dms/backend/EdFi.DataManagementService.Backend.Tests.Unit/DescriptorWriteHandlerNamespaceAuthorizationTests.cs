@@ -79,6 +79,30 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_post_with_an_unknown_strategy_without_opening_a_session()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory, targetLookupService);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: UnsupportedStrategy(unknownStrategyName)
+            )
+        );
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
     [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_put_with_an_unsupported_strategy_without_executing_sql(
@@ -101,6 +125,30 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             .As<UpdateResult.UpdateFailureNotImplemented>()
             .FailureMessage.Should()
             .Contain(authorizationStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_put_with_an_unknown_strategy_without_opening_a_session()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory, targetLookupService);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: UnsupportedStrategy(unknownStrategyName)
+            )
+        );
+
+        var failure = result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
@@ -602,7 +650,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
@@ -614,7 +667,13 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
     }
 
     [Test]
@@ -713,7 +772,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
@@ -725,7 +789,13 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
     }
 
     [Test]
@@ -743,6 +813,29 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             .As<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
             .NamespaceFailure.FailureKind.Should()
             .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_delete_with_an_unknown_strategy_without_opening_a_session()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            CreateDeleteRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: UnsupportedStrategy(unknownStrategyName)
+            )
+        );
+
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
@@ -880,7 +973,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         var sut = CreateSut(sessionFactory);
@@ -892,7 +990,13 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
     }
 
     [Test]

@@ -796,7 +796,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
                     new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                        RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+                        RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
+                        [
+                            new SecurityConfigurationFailureDiagnostic(
+                                ProviderOrPlannerFailureKind: "RelationshipAuthorization.Auth1.PayloadParseFailed"
+                            ),
+                        ]
                     )
                 )
             );
@@ -809,6 +814,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Equal(
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadParseFailed");
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -3964,6 +3974,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
                 ),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
             ]
         );
 
@@ -3972,6 +3983,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
         var failure = result.As<QueryResult.QueryFailureNotImplemented>();
         failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        failure.FailureMessage.Should().Contain("SchoolWithCustomAuthorization");
         failure
             .FailureMessage.Should()
             .Contain($"{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' as a no-op");
@@ -4346,7 +4358,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors[0]
             .Should()
-            .Contain(invalidStrategyName);
+            .Be(SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([invalidStrategyName]));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -4517,19 +4529,37 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>();
-        result.As<QueryResult.QueryFailureSecurityConfiguration>().Errors.Should().HaveCount(2);
-        result
-            .As<QueryResult.QueryFailureSecurityConfiguration>()
-            .Errors.Should()
-            .Contain(error => error.Contains("CustomAuthorizationStrategy", StringComparison.Ordinal))
-            .And.Contain(error =>
-                error.Contains(AuthorizationStrategyNameConstants.OwnershipBased, StringComparison.Ordinal)
-                && error.Contains("GET-many relationship query execution boundary", StringComparison.Ordinal)
-                && !error.Contains(
-                    "GET-many EdOrg-only relationship query execution boundary",
-                    StringComparison.Ordinal
-                )
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().HaveCount(2);
+        failure
+            .Errors[0]
+            .Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
+            .And.Contain("GET-many relationship query execution boundary")
+            .And.NotContain("GET-many EdOrg-only relationship query execution boundary");
+        failure
+            .Errors[1]
+            .Should()
+            .Be(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+                    "CustomAuthorizationStrategy",
+                ])
+            );
+        failure.Diagnostics.Should().NotBeNull().And.HaveCount(2);
+        failure
+            .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyNames ?? [])
+            .Should()
+            .Equal(AuthorizationStrategyNameConstants.OwnershipBased, "CustomAuthorizationStrategy");
+        failure
+            .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyIndexes ?? [])
+            .Should()
+            .Equal(0, 1);
+        failure
+            .Diagnostics!.Select(static diagnostic => diagnostic.ProviderOrPlannerFailureKind)
+            .Should()
+            .Equal(
+                $"RelationshipAuthorization.{RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy}",
+                $"RelationshipAuthorization.{RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy}"
             );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
@@ -4998,12 +5028,52 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors[0]
             .Should()
-            .Contain("CustomAuthorizationStrategy");
+            .Be(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
+                    "CustomAuthorizationStrategy",
+                ])
+            );
         result
             .As<QueryResult.QueryFailureSecurityConfiguration>()
             .Errors[0]
             .Should()
-            .Contain("{BasisResource}With...");
+            .NotContain("{BasisResource}With...");
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_aggregates_unknown_query_authorization_strategy_names_in_the_canonical_security_configuration_message()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("ZCustomAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator("ACustomAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator("ZCustomAuthorizationStrategy"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                "Could not find authorization strategy implementations for the following strategy names: 'ZCustomAuthorizationStrategy', 'ACustomAuthorizationStrategy'."
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -7794,7 +7864,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ConfigureResolvedDocument(documentId: 345L, documentUuid);
         ConfigureDeleteNamespaceAuthorization(
             new NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped."
+                "Namespace authorization failed, but the AUTH1 failure metadata could not be mapped.",
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed
+                    ),
+                ]
             )
         );
         ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on malformed AUTH1."));
@@ -7809,7 +7884,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>();
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -8007,7 +8088,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ConfigureDeleteThrows(new InvalidOperationException("DELETE should not execute on auth failure."));
         ConfigureDeleteRelationshipAuthorization(
             new SingleRecordRelationshipAuthorizationExecutionResult.InvalidAuthorizationFailure(
-                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
+                RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError,
+                [
+                    new SecurityConfigurationFailureDiagnostic(
+                        ProviderOrPlannerFailureKind: "RelationshipAuthorization.Auth1.PayloadMappingFailed"
+                    ),
+                ]
             )
         );
         _currentEtagPreconditionChecker.ResultToReturn = CreateDeletePreconditionCheckResult(
@@ -8034,6 +8120,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Equal(
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadMappingFailed");
         _currentEtagPreconditionChecker.CallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);

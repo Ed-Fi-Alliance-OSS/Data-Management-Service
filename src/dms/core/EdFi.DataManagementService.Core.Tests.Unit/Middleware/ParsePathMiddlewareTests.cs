@@ -241,6 +241,34 @@ public class ParsePathMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Path_With_Unsupported_Extra_Segments : ParsePathMiddlewareTests
+    {
+        [TestCase("/ed-fi/endpointName/11111111-1111-1111-1111-111111111111/extra")]
+        [TestCase("/changeQueries/v1/ed-fi/studentEducationOrganizationAssociations/deletes")]
+        [TestCase("/changeQueries/v1/ed-fi/studentEducationOrganizationAssociations/keyChanges")]
+        public async Task It_rejects_the_path_before_authorization_action_mapping(string path)
+        {
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Form: null,
+                Headers: [],
+                Path: path,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+
+            await Middleware().Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(404);
+            requestInfo.PathComponents.Should().Be(No.PathComponents);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Valid_Path_Without_ResourceId : ParsePathMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();

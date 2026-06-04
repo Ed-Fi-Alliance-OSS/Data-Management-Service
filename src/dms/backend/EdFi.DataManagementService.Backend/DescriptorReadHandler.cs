@@ -77,7 +77,10 @@ internal sealed class DescriptorReadHandler(
                 case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
                     return new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage);
                 case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                    return new GetResult.GetFailureSecurityConfiguration(configError.Errors);
+                    return new GetResult.GetFailureSecurityConfiguration(
+                        configError.Errors,
+                        configError.Diagnostics
+                    );
                 case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
                     return new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
             }
@@ -204,7 +207,10 @@ internal sealed class DescriptorReadHandler(
             case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
                 return new QueryResult.QueryFailureNotImplemented(notImplemented.FailureMessage);
             case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                return new QueryResult.QueryFailureSecurityConfiguration(configError.Errors);
+                return new QueryResult.QueryFailureSecurityConfiguration(
+                    configError.Errors,
+                    configError.Diagnostics
+                );
             case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
                 return new QueryResult.QueryFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
         }
@@ -251,6 +257,7 @@ internal sealed class DescriptorReadHandler(
         if (
             BuildDescriptorQueryParameterBudgetFailure(
                 request.MappingSet.Key.Dialect,
+                request.Resource,
                 proceed.NamespacePrefixParameterization,
                 preprocessingResult.QueryElementsInOrder.Count
             ) is
@@ -313,6 +320,7 @@ internal sealed class DescriptorReadHandler(
     /// </summary>
     private static QueryResult? BuildDescriptorQueryParameterBudgetFailure(
         SqlDialect dialect,
+        QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
         int queryFilterParameterCount
     )
@@ -334,13 +342,16 @@ internal sealed class DescriptorReadHandler(
             return null;
         }
 
-        return new QueryResult.QueryFailureSecurityConfiguration([
-            NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
-                namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
-                0,
-                nonAuthorizationParameterCount
-            ),
-        ]);
+        return new QueryResult.QueryFailureSecurityConfiguration(
+            [
+                NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
+                    namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
+                    0,
+                    nonAuthorizationParameterCount
+                ),
+            ],
+            AuthorizationSecurityConfigurationDiagnostics.ForCommandParameterCapExceeded(resource)
+        );
     }
 
     internal Task<DescriptorQueryRowsPage> ReadQueryRowsAsync(
@@ -690,27 +701,6 @@ internal sealed class DescriptorReadHandler(
         string actionLabel
     )
     {
-        if (
-            !RelationalReadGuardrails.HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired(
-                authorizationStrategyEvaluators
-            )
-        )
-        {
-            return new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    resource,
-                    authorizationStrategyEvaluators,
-                    operationLabel,
-                    actionLabel
-                )
-            );
-        }
-
-        if (!RelationalReadGuardrails.ContainsNamespaceBased(authorizationStrategyEvaluators))
-        {
-            return DescriptorReadAuthorizationPreflightOutcome.Proceed.NoAuthorization;
-        }
-
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
             authorizationStrategyEvaluators
         );
@@ -725,25 +715,35 @@ internal sealed class DescriptorReadHandler(
         return orchestratorOutcome switch
         {
             RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
-                new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError([
-                    NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
-                        RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
-                    ),
-                ]),
+                new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    [
+                        NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
+                            RelationalWriteSupport.FormatResource(noUsableRoot.Resource)
+                        ),
+                    ],
+                    RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
+                ),
             RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
                 new DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized(
                     NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
                 ),
+            RelationalAuthorizationPlanOutcome.Plan plan
+                when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
+                    plan.NonNamespaceConfiguredStrategies
+                ) => new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
+                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
+                    resource,
+                    authorizationStrategyEvaluators,
+                    operationLabel,
+                    actionLabel
+                )
+            ),
             RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorReadPlanPreflight(
                 mappingSet,
                 authorizationContext,
                 plan
             ),
-            // Restricting strategies to NamespaceBased / NoFurtherAuthorizationRequired above means the
-            // relationship classifier cannot report still-unsupported or security-configuration
-            // outcomes here, but fail closed if a future strategy reaches this point.
-            RelationalAuthorizationPlanOutcome.StillUnsupported
-            or RelationalAuthorizationPlanOutcome.SecurityConfigurationError =>
+            RelationalAuthorizationPlanOutcome.StillUnsupported =>
                 new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
                     RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
                         resource,
@@ -752,10 +752,29 @@ internal sealed class DescriptorReadHandler(
                         actionLabel
                     )
                 ),
+            RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
+                BuildDescriptorReadSecurityConfigurationError(resource, securityConfigurationError),
             _ => throw new InvalidOperationException(
                 $"Unsupported relational authorization plan outcome '{orchestratorOutcome.GetType().Name}'."
             ),
         };
+    }
+
+    private static DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError BuildDescriptorReadSecurityConfigurationError(
+        QualifiedResourceName resource,
+        RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError
+    )
+    {
+        var failure = RelationalReadGuardrails.BuildSecurityConfigurationFailure(
+            resource,
+            securityConfigurationError.NonNamespaceConfiguredStrategies,
+            securityConfigurationError.RelationshipClassification
+        );
+
+        return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+            failure.Errors,
+            failure.Diagnostics
+        );
     }
 
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadPlanPreflight(
@@ -774,13 +793,15 @@ internal sealed class DescriptorReadHandler(
                 mappingSet.Key.Dialect,
                 authorizationContext.NamespacePrefixes,
                 out var namespacePrefixParameterization,
-                out var securityConfigurationMessage
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
             )
         )
         {
-            return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError([
-                securityConfigurationMessage,
-            ]);
+            return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+                [securityConfigurationMessage],
+                securityConfigurationDiagnostics
+            );
         }
 
         return new DescriptorReadAuthorizationPreflightOutcome.Proceed(
@@ -848,8 +869,10 @@ internal sealed class DescriptorReadHandler(
         public sealed record NotImplemented(string FailureMessage)
             : DescriptorReadAuthorizationPreflightOutcome;
 
-        public sealed record SecurityConfigurationError(string[] Errors)
-            : DescriptorReadAuthorizationPreflightOutcome;
+        public sealed record SecurityConfigurationError(
+            string[] Errors,
+            SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+        ) : DescriptorReadAuthorizationPreflightOutcome;
 
         public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
             : DescriptorReadAuthorizationPreflightOutcome;

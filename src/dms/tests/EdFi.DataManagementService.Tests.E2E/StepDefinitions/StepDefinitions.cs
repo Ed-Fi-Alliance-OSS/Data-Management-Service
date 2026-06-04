@@ -866,7 +866,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string authorizationStrategyName
         )
         {
-            await UploadClaimSetToCms(endpointName, claimSetName, authorizationStrategyName);
+            await UploadClaimSetToCms(endpointName, claimSetName, [authorizationStrategyName]);
+        }
+
+        [Given(
+            "a claim set is uploaded to CMS that grants {string} access to {string} with no authorization strategies"
+        )]
+        public async Task GivenAClaimSetIsUploadedToCMSThatGrantsEndpointAccessWithNoAuthorizationStrategies(
+            string endpointName,
+            string claimSetName
+        )
+        {
+            await UploadClaimSetToCms(endpointName, claimSetName, []);
         }
 
         private async Task UploadClaimSetToCms(
@@ -875,13 +886,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string authorizationStrategyName
         )
         {
+            await UploadClaimSetToCms(endpointName, claimSetName, [authorizationStrategyName]);
+        }
+
+        private async Task UploadClaimSetToCms(
+            string endpointName,
+            string claimSetName,
+            IReadOnlyCollection<string> authorizationStrategyNames
+        )
+        {
             JsonObject BuildAction(string actionName) =>
                 new()
                 {
                     ["name"] = actionName,
-                    ["authorizationStrategyOverrides"] = new JsonArray(
-                        new JsonObject { ["name"] = authorizationStrategyName }
-                    ),
+                    ["authorizationStrategyOverrides"] = new JsonArray([
+                        .. authorizationStrategyNames.Select(name => new JsonObject { ["name"] = name }),
+                    ]),
                 };
 
             string claimName = endpointName.StartsWith("domains/", StringComparison.Ordinal)

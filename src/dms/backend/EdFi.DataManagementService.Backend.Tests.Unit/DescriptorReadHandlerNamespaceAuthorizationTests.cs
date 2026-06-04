@@ -136,6 +136,33 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     }
 
     [Test]
+    public async Task It_returns_security_configuration_for_descriptor_get_by_id_with_an_unknown_strategy_without_executing_sql()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: new AuthorizationStrategyEvaluator(
+                    unknownStrategyName,
+                    [],
+                    FilterOperator.And
+                )
+            )
+        );
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_returns_namespace_403_for_descriptor_get_by_id_without_executing_sql_when_the_client_has_no_prefixes()
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
@@ -166,13 +193,17 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             CreateGetByIdRequest(namespacePrefixes: [""], authorizationStrategy: NamespaceStrategy())
         );
 
-        result
-            .Should()
-            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
-            .Which.Errors.Should()
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
             .ContainSingle()
             .Which.Should()
             .Be(NamespaceAuthorizationSecurityConfigurationMessages.InvalidNamespacePrefix);
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidNamespacePrefix);
         commandExecutor.Commands.Should().BeEmpty();
     }
 
@@ -401,6 +432,33 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             .As<QueryResult.QueryFailureNotImplemented>()
             .FailureMessage.Should()
             .Contain(authorizationStrategyName);
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_query_with_an_unknown_strategy_without_executing_sql()
+    {
+        const string unknownStrategyName = "UnknownDescriptorStrategy";
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: new AuthorizationStrategyEvaluator(
+                    unknownStrategyName,
+                    [],
+                    FilterOperator.And
+                )
+            )
+        );
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
+            );
         commandExecutor.Commands.Should().BeEmpty();
     }
 

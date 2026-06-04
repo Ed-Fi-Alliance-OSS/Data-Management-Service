@@ -6,6 +6,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -20,8 +21,11 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Authorizes requests resource and action based on the client's authorization information.
 /// </summary>
-internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSetProvider, ILogger _logger)
-    : IPipelineStep
+internal class ResourceActionAuthorizationMiddleware(
+    IClaimSetProvider _claimSetProvider,
+    ILogger _logger,
+    bool _useRelationalBackend = false
+) : IPipelineStep
 {
     private static readonly Dictionary<RequestMethod, string> _methodToActionNameMapping = new()
     {
@@ -51,6 +55,12 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             ClaimSet? claimSet = await GetClaimSetForClient(requestInfo);
             if (claimSet is null)
             {
+                if (IsRelationalBackendAuthorizationRequest(requestInfo))
+                {
+                    CreateMissingSecurityMetadataResponse(requestInfo);
+                    return;
+                }
+
                 CreateForbiddenResponse(requestInfo);
                 return;
             }
@@ -76,15 +86,23 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             }
 
             var actionName = GetActionName(requestInfo);
-            ResourceClaim? authorizedAction = FindAuthorizedAction(matchingClaims, actionName);
+            ResourceClaim[] authorizedActions = FindAuthorizedActions(matchingClaims, actionName);
 
-            if (!ValidateAuthorizedAction(requestInfo, authorizedAction, actionName, claimSet.Name))
+            if (!ValidateAuthorizedAction(requestInfo, authorizedActions, actionName, claimSet.Name))
             {
                 return;
             }
 
-            IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedAction!);
-            if (!ValidateAuthorizationStrategies(requestInfo, strategies, actionName, claimSet.Name))
+            IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedActions);
+            if (
+                !ValidateAuthorizationStrategies(
+                    requestInfo,
+                    strategies,
+                    actionName,
+                    authorizedActions,
+                    claimSet.Name
+                )
+            )
             {
                 return;
             }
@@ -219,11 +237,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Finds the authorized action from the matching claims.
     /// </summary>
-    private static ResourceClaim? FindAuthorizedAction(ResourceClaim[] matchingClaims, string actionName)
+    private static ResourceClaim[] FindAuthorizedActions(ResourceClaim[] matchingClaims, string actionName)
     {
-        return matchingClaims.SingleOrDefault(x =>
-            string.Equals(x.Action, actionName, StringComparison.InvariantCultureIgnoreCase)
-        );
+        return matchingClaims
+            .Where(x => string.Equals(x.Action, actionName, StringComparison.InvariantCultureIgnoreCase))
+            .ToArray();
     }
 
     /// <summary>
@@ -231,12 +249,12 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// </summary>
     private bool ValidateAuthorizedAction(
         RequestInfo requestInfo,
-        ResourceClaim? authorizedAction,
+        ResourceClaim[] authorizedActions,
         string actionName,
         string claimSetName
     )
     {
-        if (authorizedAction is null)
+        if (authorizedActions.Length == 0)
         {
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
             _logger.LogDebug(
@@ -254,10 +272,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Extracts authorization strategies from the authorized action.
     /// </summary>
-    private IReadOnlyList<string> ExtractAuthorizationStrategies(ResourceClaim authorizedAction)
+    private IReadOnlyList<string> ExtractAuthorizationStrategies(ResourceClaim[] authorizedActions)
     {
-        IReadOnlyList<string> strategies = authorizedAction
-            .AuthorizationStrategies.Select(auth => auth.Name)
+        IReadOnlyList<string> strategies = authorizedActions
+            .SelectMany(static authorizedAction => authorizedAction.AuthorizationStrategies)
+            .Select(static auth => auth.Name)
             .ToList();
 
         _logger.LogDebug(
@@ -271,10 +290,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Validates that authorization strategies exist for the action.
     /// </summary>
-    private static bool ValidateAuthorizationStrategies(
+    private bool ValidateAuthorizationStrategies(
         RequestInfo requestInfo,
         IReadOnlyList<string> strategies,
         string actionName,
+        ResourceClaim[] authorizedActions,
         string claimSetName
     )
     {
@@ -283,11 +303,14 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
             if (IsRelationalBackendAuthorizationRequest(requestInfo))
             {
+                string[] matchedResourceClaimUris = GetMatchedResourceClaimUris(authorizedActions);
+                string matchedResourceClaimName = matchedResourceClaimUris[0];
+
                 CreateNoStrategiesSecurityConfigurationResponse(
                     requestInfo,
                     actionName,
-                    resourceClaimName,
-                    claimSetName
+                    matchedResourceClaimUris,
+                    matchedResourceClaimName
                 );
                 return false;
             }
@@ -298,7 +321,25 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         return true;
     }
 
-    private static bool TryCreateStagedNotImplementedResponse(
+    private static string[] GetMatchedResourceClaimUris(ResourceClaim[] authorizedActions)
+    {
+        string[] resourceClaimUris = authorizedActions
+            .Select(static authorizedAction => authorizedAction.Name)
+            .Where(static resourceClaimUri => resourceClaimUri is not null)
+            .Select(static resourceClaimUri => resourceClaimUri!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static resourceClaimUri => resourceClaimUri, StringComparer.Ordinal)
+            .ToArray();
+
+        if (resourceClaimUris.Length == 0)
+        {
+            throw new UnreachableException("Matched resource action claims must have a name.");
+        }
+
+        return resourceClaimUris;
+    }
+
+    private bool TryCreateStagedNotImplementedResponse(
         RequestInfo requestInfo,
         IReadOnlyList<string> strategies
     )
@@ -340,8 +381,8 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         requestInfo.Method == RequestMethod.GET && !requestInfo.PathComponents.HasDocumentUuidSegment;
 
     // Broad relational backend-planned surface used for missing-strategy classification; GET-many is included.
-    private static bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
-        requestInfo.MappingSet is not null
+    private bool IsRelationalBackendAuthorizationRequest(RequestInfo requestInfo) =>
+        (_useRelationalBackend || requestInfo.MappingSet is not null)
         && (
             requestInfo.Method == RequestMethod.GET
             || requestInfo.Method == RequestMethod.DELETE
@@ -379,6 +420,25 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 403,
             Body: FailureResponse.ForForbidden(traceId: requestInfo.FrontendRequest.TraceId, errors: []),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
+    }
+
+    private void CreateMissingSecurityMetadataResponse(RequestInfo requestInfo)
+    {
+        string[] errors = [SecurityConfigurationFailureMessages.MissingSecurityMetadata];
+        SecurityConfigurationFailureLogger.Log(
+            _logger,
+            requestInfo,
+            errors,
+            assignedClaimSetName: requestInfo.ClientAuthorizations.ClaimSetName,
+            cmsAction: GetActionName(requestInfo)
+        );
+
+        requestInfo.FrontendResponse = new FrontendResponse(
+            StatusCode: (int)HttpStatusCode.InternalServerError,
+            Body: FailureResponse.ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, errors),
             Headers: [],
             ContentType: "application/problem+json"
         );
@@ -433,21 +493,34 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         );
     }
 
-    private static void CreateNoStrategiesSecurityConfigurationResponse(
+    private void CreateNoStrategiesSecurityConfigurationResponse(
         RequestInfo requestInfo,
         string actionName,
-        string resourceClaimName,
-        string claimSetName
+        IReadOnlyList<string> matchedResourceClaimUris,
+        string matchedResourceClaimName
     )
     {
+        string[] errors =
+        [
+            SecurityConfigurationFailureMessages.NoAuthorizationStrategies(
+                actionName,
+                matchedResourceClaimUris,
+                matchedResourceClaimName
+            ),
+        ];
+        SecurityConfigurationFailureLogger.Log(
+            _logger,
+            requestInfo,
+            errors,
+            matchedResourceClaimUris,
+            matchedResourceClaimName,
+            requestInfo.ClientAuthorizations.ClaimSetName,
+            actionName
+        );
+
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: (int)HttpStatusCode.InternalServerError,
-            Body: FailureResponse.ForSecurityConfiguration(
-                requestInfo.FrontendRequest.TraceId,
-                [
-                    $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
-                ]
-            ),
+            Body: FailureResponse.ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, errors),
             Headers: [],
             ContentType: "application/problem+json"
         );

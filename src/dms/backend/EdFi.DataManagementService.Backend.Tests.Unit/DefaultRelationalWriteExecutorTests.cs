@@ -492,6 +492,11 @@ public class Given_Default_Relational_Write_Executor
             )
             .And.NotContain(error => error.Contains("2|0|1|0:0:n", StringComparison.Ordinal))
             .And.NotContain(error => error.Contains("AUTH1 failed", StringComparison.Ordinal));
+        securityConfigurationFailure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("RelationshipAuthorization.Auth1.PayloadParseFailed");
         var logRecord = logger.Records.Should().ContainSingle().Subject;
         logRecord.Level.Should().Be(LogLevel.Error);
         logRecord.Message.Should().Contain("Dialect: Pgsql");

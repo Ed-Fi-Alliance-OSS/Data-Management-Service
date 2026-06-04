@@ -37,8 +37,6 @@ public static class FailureResponse
     private static readonly string _mappingSetUnavailableType = $"{_typePrefix}:mapping-set-unavailable";
     private static readonly string _resourceKeySeedValidationErrorType =
         $"{_typePrefix}:resource-key-seed-validation-error";
-    private static readonly string _securityConfigurationType =
-        $"{_typePrefix}:system:configuration:security";
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
     private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
     private static readonly string _parameterValidationFailedType =
@@ -386,10 +384,10 @@ public static class FailureResponse
 
     public static JsonNode ForSecurityConfiguration(TraceId traceId, string[] errors) =>
         CreateBaseJsonObject(
-            detail: "A security configuration problem was detected. The request cannot be authorized.",
-            type: _securityConfigurationType,
-            title: "Security Configuration Error",
-            status: 500,
+            detail: SecurityConfigurationProblemDetails.Detail,
+            type: SecurityConfigurationProblemDetails.Type,
+            title: SecurityConfigurationProblemDetails.Title,
+            status: SecurityConfigurationProblemDetails.Status,
             correlationId: traceId.Value,
             validationErrors: [],
             errors: errors

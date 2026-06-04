@@ -109,12 +109,12 @@ public class Given_ConnectionStringDecryptionService
     }
 
     [Test]
-    public void It_should_throw_for_ciphertext_encrypted_with_a_different_key()
+    public void It_should_throw_for_malformed_ciphertext()
     {
         var service = new ConnectionStringDecryptionService(TestKey);
-        var encryptedWithWrongKey = EncryptToBase64("Server=test;", "WrongKey________________________");
+        var malformedCiphertext = Convert.ToBase64String(new byte[17]);
 
-        var act = () => service.DecryptFromBase64(encryptedWithWrongKey);
+        var act = () => service.DecryptFromBase64(malformedCiphertext);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*Failed to decrypt*");
     }

@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -30,7 +31,8 @@ internal static class NamespacePrefixParameterizationPreflight
         SqlDialect dialect,
         IReadOnlyList<string> namespacePrefixes,
         out NamespacePrefixParameterization parameterization,
-        out string securityConfigurationMessage
+        out string securityConfigurationMessage,
+        out SecurityConfigurationFailureDiagnostic[] securityConfigurationDiagnostics
     )
     {
         // A null/empty prefix cannot be parameterized into a LIKE predicate; the factory throws a generic
@@ -41,6 +43,10 @@ internal static class NamespacePrefixParameterizationPreflight
             parameterization = null!;
             securityConfigurationMessage =
                 NamespaceAuthorizationSecurityConfigurationMessages.InvalidNamespacePrefix;
+            securityConfigurationDiagnostics =
+                AuthorizationSecurityConfigurationDiagnostics.ForNamespacePrefixParameterization(
+                    AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidNamespacePrefix
+                );
             return false;
         }
 
@@ -52,6 +58,7 @@ internal static class NamespacePrefixParameterizationPreflight
                 NamespaceAuthorizationSqlSpecDefaults.NamespacePrefixesParameterName
             );
             securityConfigurationMessage = string.Empty;
+            securityConfigurationDiagnostics = [];
             return true;
         }
         catch (NamespacePrefixLimitExceededException ex)
@@ -59,6 +66,10 @@ internal static class NamespacePrefixParameterizationPreflight
             parameterization = null!;
             securityConfigurationMessage =
                 NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(ex.PrefixCount);
+            securityConfigurationDiagnostics =
+                AuthorizationSecurityConfigurationDiagnostics.ForNamespacePrefixParameterization(
+                    AuthorizationSecurityConfigurationDiagnostics.NamespacePrefixCapExceeded
+                );
             return false;
         }
     }

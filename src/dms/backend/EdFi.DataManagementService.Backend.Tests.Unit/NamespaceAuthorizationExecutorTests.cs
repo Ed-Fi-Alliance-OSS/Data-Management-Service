@@ -300,7 +300,21 @@ public class Given_NamespaceAuthorizationExecutor
             )
         );
 
-        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>();
+        var invalidFailure = result
+            .Should()
+            .BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>()
+            .Subject;
+        invalidFailure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new SecurityConfigurationFailureDiagnostic(
+                    ProviderOrPlannerFailureKind: AuthorizationSecurityConfigurationDiagnostics.NamespaceAuth1PayloadMappingFailed,
+                    ConfiguredStrategyNames: [AuthorizationStrategyNameConstants.NamespaceBased],
+                    PhysicalPath: "edfi.GradebookEntry.Namespace"
+                )
+            );
     }
 
     [Test]
@@ -374,7 +388,13 @@ public class Given_NamespaceAuthorizationExecutor
             )
         );
 
-        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>();
+        result
+            .Should()
+            .BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidStaleTargetPayload);
     }
 
     [Test]
@@ -409,7 +429,13 @@ public class Given_NamespaceAuthorizationExecutor
             )
         );
 
-        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>();
+        result
+            .Should()
+            .BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidStaleTargetPayload);
     }
 
     [TestCase("ns1|bad|m")] // malformed index
@@ -443,7 +469,13 @@ public class Given_NamespaceAuthorizationExecutor
             )
         );
 
-        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>();
+        result
+            .Should()
+            .BeOfType<NamespaceAuthorizationExecutionResult.InvalidAuthorizationFailure>()
+            .Which.Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload);
     }
 
     [Test]
