@@ -115,6 +115,44 @@ public class ChangeVersionParameterValidatorTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Both_Bounds_Are_Zero : ChangeVersionParameterValidatorTests
+    {
+        private ChangeVersionValidationResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = ChangeVersionParameterValidator.Validate(
+                new Dictionary<string, string> { { "minChangeVersion", "0" }, { "maxChangeVersion", "0" } }
+            );
+
+        [Test]
+        public void It_returns_no_errors() => _result.Errors.Should().BeEmpty();
+
+        [Test]
+        public void It_sets_both_bounds_to_zero() => _result.Range.Should().Be(new ChangeVersionRange(0, 0));
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Both_Values_Are_Empty : ChangeVersionParameterValidatorTests
+    {
+        private ChangeVersionValidationResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = ChangeVersionParameterValidator.Validate(
+                new Dictionary<string, string> { { "minChangeVersion", "" }, { "maxChangeVersion", "" } }
+            );
+
+        [Test]
+        public void It_returns_no_errors() => _result.Errors.Should().BeEmpty();
+
+        [Test]
+        public void It_treats_both_bounds_as_absent() => _result.Range.Should().Be(ChangeVersionRange.None);
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Min_Is_Not_Numeric : ChangeVersionParameterValidatorTests
     {
         private ChangeVersionValidationResult _result = null!;
@@ -123,6 +161,26 @@ public class ChangeVersionParameterValidatorTests
         public void Setup() =>
             _result = ChangeVersionParameterValidator.Validate(
                 new Dictionary<string, string> { { "minChangeVersion", "abc" } }
+            );
+
+        [Test]
+        public void It_reports_the_min_error() =>
+            _result.Errors.Should().ContainSingle().Which.Should().Be(MinError);
+
+        [Test]
+        public void It_leaves_min_unset() => _result.Range.MinChangeVersion.Should().BeNull();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Min_Is_A_Decimal : ChangeVersionParameterValidatorTests
+    {
+        private ChangeVersionValidationResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = ChangeVersionParameterValidator.Validate(
+                new Dictionary<string, string> { { "minChangeVersion", "1.5" } }
             );
 
         [Test]

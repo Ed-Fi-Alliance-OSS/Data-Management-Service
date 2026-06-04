@@ -12,7 +12,8 @@ namespace EdFi.DataManagementService.Core.ChangeQueries;
 /// Shared validation for the minChangeVersion / maxChangeVersion query parameters
 /// used by live resource and descriptor GET-many requests and, in later stories,
 /// the /deletes and /keyChanges endpoints. Parses each bound as a long greater than
-/// or equal to 0 and enforces min &lt;= max when both are supplied. Parameter lookup
+/// or equal to 0 and enforces min &lt;= max when both are supplied. Present-but-empty
+/// values are treated as absent. Parameter lookup
 /// is case-insensitive so all callers behave the same regardless of client casing.
 /// </summary>
 internal static class ChangeVersionParameterValidator
@@ -64,6 +65,13 @@ internal static class ChangeVersionParameterValidator
             return null;
         }
 
+        // A present-but-empty value is treated as absent, matching ODS model binding,
+        // which converts an empty query value to null without a validation error.
+        if (string.IsNullOrEmpty(rawValue))
+        {
+            return null;
+        }
+
         if (
             long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out long value)
             && value >= 0
@@ -76,6 +84,11 @@ internal static class ChangeVersionParameterValidator
         return null;
     }
 
+    /// <summary>
+    /// Case-insensitive dictionary lookup. When multiple case-variant keys are present,
+    /// the first match in enumeration order wins, consistent with how the frontend
+    /// already resolves duplicate query keys to a single value.
+    /// </summary>
     private static bool TryGetValueIgnoreCase(
         IReadOnlyDictionary<string, string> source,
         string key,
