@@ -4,3 +4,10 @@ Key decisions: Put stable ProblemDetails constants and the four story messages i
 Files changed: Core.External Backend/SecurityConfigurationResponse.cs; Core Response/FailureResponse.cs; Core Middleware/ResourceActionAuthorizationMiddleware.cs; Core unit tests for FailureResponse and ResourceActionAuthorizationMiddleware; tasks.json.
 Verification: dotnet csharpier format src/dms/core. dotnet test Core.Tests.Unit with FullyQualifiedName~Given_FailureResponse passed 8 tests. dotnet test Core.Tests.Unit with FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 33 tests. Documented FullyQualifiedName~FailureResponseTests filter selected no tests in current naming.
 Blockers/notes: progress.txt was missing at start; created this iteration. Next iteration should continue with middleware 500-vs-403 claim-set metadata classification.
+
+Task completed: Update ResourceActionAuthorizationMiddleware claim-set metadata 500-vs-403 classification.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: Relational request surface with empty claim-set catalog or missing assigned claim set now returns canonical missing-security-metadata ProblemDetails. Assigned claim set with zero resource claims, no matching resource claim, or no matching action remains 403. Duplicate matching resource/action claims are flattened deterministically instead of SingleOrDefault throwing generic 500. Provider exceptions remain existing generic authorization 500.
+Files changed: Core Middleware/ResourceActionAuthorizationMiddleware.cs; Core unit tests ResourceActionAuthorizationMiddlewareTests.cs; tasks.json.
+Verification: dotnet csharpier format src/dms/core. dotnet test Core.Tests.Unit with FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 37 tests.
+Blockers/notes: Next iteration should handle action metadata/ReadChanges mapping.

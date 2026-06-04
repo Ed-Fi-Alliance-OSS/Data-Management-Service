@@ -52,6 +52,12 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             ClaimSet? claimSet = await GetClaimSetForClient(requestInfo);
             if (claimSet is null)
             {
+                if (IsRelationalBackendAuthorizationRequest(requestInfo))
+                {
+                    CreateMissingSecurityMetadataResponse(requestInfo);
+                    return;
+                }
+
                 CreateForbiddenResponse(requestInfo);
                 return;
             }
@@ -77,20 +83,20 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             }
 
             var actionName = GetActionName(requestInfo);
-            ResourceClaim? authorizedAction = FindAuthorizedAction(matchingClaims, actionName);
+            ResourceClaim[] authorizedActions = FindAuthorizedActions(matchingClaims, actionName);
 
-            if (!ValidateAuthorizedAction(requestInfo, authorizedAction, actionName, claimSet.Name))
+            if (!ValidateAuthorizedAction(requestInfo, authorizedActions, actionName, claimSet.Name))
             {
                 return;
             }
 
-            IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedAction!);
+            IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedActions);
             if (
                 !ValidateAuthorizationStrategies(
                     requestInfo,
                     strategies,
                     actionName,
-                    authorizedAction!,
+                    authorizedActions,
                     claimSet.Name
                 )
             )
@@ -228,11 +234,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Finds the authorized action from the matching claims.
     /// </summary>
-    private static ResourceClaim? FindAuthorizedAction(ResourceClaim[] matchingClaims, string actionName)
+    private static ResourceClaim[] FindAuthorizedActions(ResourceClaim[] matchingClaims, string actionName)
     {
-        return matchingClaims.SingleOrDefault(x =>
-            string.Equals(x.Action, actionName, StringComparison.InvariantCultureIgnoreCase)
-        );
+        return matchingClaims
+            .Where(x => string.Equals(x.Action, actionName, StringComparison.InvariantCultureIgnoreCase))
+            .ToArray();
     }
 
     /// <summary>
@@ -240,12 +246,12 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// </summary>
     private bool ValidateAuthorizedAction(
         RequestInfo requestInfo,
-        ResourceClaim? authorizedAction,
+        ResourceClaim[] authorizedActions,
         string actionName,
         string claimSetName
     )
     {
-        if (authorizedAction is null)
+        if (authorizedActions.Length == 0)
         {
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
             _logger.LogDebug(
@@ -263,10 +269,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// <summary>
     /// Extracts authorization strategies from the authorized action.
     /// </summary>
-    private IReadOnlyList<string> ExtractAuthorizationStrategies(ResourceClaim authorizedAction)
+    private IReadOnlyList<string> ExtractAuthorizationStrategies(ResourceClaim[] authorizedActions)
     {
-        IReadOnlyList<string> strategies = authorizedAction
-            .AuthorizationStrategies.Select(auth => auth.Name)
+        IReadOnlyList<string> strategies = authorizedActions
+            .SelectMany(static authorizedAction => authorizedAction.AuthorizationStrategies)
+            .Select(static auth => auth.Name)
             .ToList();
 
         _logger.LogDebug(
@@ -284,7 +291,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         RequestInfo requestInfo,
         IReadOnlyList<string> strategies,
         string actionName,
-        ResourceClaim authorizedAction,
+        ResourceClaim[] authorizedActions,
         string claimSetName
     )
     {
@@ -293,13 +300,13 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
             if (IsRelationalBackendAuthorizationRequest(requestInfo))
             {
-                string matchedResourceClaimName =
-                    authorizedAction.Name
-                    ?? throw new UnreachableException("Matched resource action claims must have a name.");
+                string[] matchedResourceClaimUris = GetMatchedResourceClaimUris(authorizedActions);
+                string matchedResourceClaimName = matchedResourceClaimUris[0];
+
                 CreateNoStrategiesSecurityConfigurationResponse(
                     requestInfo,
                     actionName,
-                    [matchedResourceClaimName],
+                    matchedResourceClaimUris,
                     matchedResourceClaimName
                 );
                 return false;
@@ -309,6 +316,24 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             return false;
         }
         return true;
+    }
+
+    private static string[] GetMatchedResourceClaimUris(ResourceClaim[] authorizedActions)
+    {
+        string[] resourceClaimUris = authorizedActions
+            .Select(static authorizedAction => authorizedAction.Name)
+            .Where(static resourceClaimUri => resourceClaimUri is not null)
+            .Select(static resourceClaimUri => resourceClaimUri!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static resourceClaimUri => resourceClaimUri, StringComparer.Ordinal)
+            .ToArray();
+
+        if (resourceClaimUris.Length == 0)
+        {
+            throw new UnreachableException("Matched resource action claims must have a name.");
+        }
+
+        return resourceClaimUris;
     }
 
     private static bool TryCreateStagedNotImplementedResponse(
@@ -392,6 +417,19 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 403,
             Body: FailureResponse.ForForbidden(traceId: requestInfo.FrontendRequest.TraceId, errors: []),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
+    }
+
+    private static void CreateMissingSecurityMetadataResponse(RequestInfo requestInfo)
+    {
+        requestInfo.FrontendResponse = new FrontendResponse(
+            StatusCode: (int)HttpStatusCode.InternalServerError,
+            Body: FailureResponse.ForSecurityConfiguration(
+                requestInfo.FrontendRequest.TraceId,
+                [SecurityConfigurationFailureMessages.MissingSecurityMetadata]
+            ),
             Headers: [],
             ContentType: "application/problem+json"
         );
