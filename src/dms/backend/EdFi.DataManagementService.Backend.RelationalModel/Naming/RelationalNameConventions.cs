@@ -252,6 +252,33 @@ public static class RelationalNameConventions
     }
 
     /// <summary>
+    /// Builds the (un-shortened) primary-key constraint name for a <c>tracked_changes_*</c> table
+    /// (<c>PK_&lt;schema&gt;_&lt;table&gt;</c>). The name is schema-qualified to stay unique across the
+    /// per-project tracked-change schemas. Callers apply the dialect identifier limit via
+    /// <c>ISqlDialectRules.ShortenIdentifier</c>; this is the single source of truth shared by the DDL
+    /// emitter (which renders the constraint) and the identifier-shortening collision detector (which
+    /// validates it).
+    /// </summary>
+    /// <param name="table">The tracked-change table.</param>
+    public static string TrackedChangePrimaryKeyName(DbTableName table)
+    {
+        return $"PK_{table.Schema.Value}_{table.Name}";
+    }
+
+    /// <summary>
+    /// Builds the (un-shortened) named default-constraint name for a <c>tracked_changes_*</c> table system
+    /// column (<c>DF_&lt;schema&gt;_&lt;table&gt;_&lt;column&gt;</c>), schema-qualified for the same reason as
+    /// <see cref="TrackedChangePrimaryKeyName"/>. Callers apply the dialect identifier limit via
+    /// <c>ISqlDialectRules.ShortenIdentifier</c>; shared by the DDL emitter and the collision detector.
+    /// </summary>
+    /// <param name="table">The tracked-change table.</param>
+    /// <param name="column">The system column carrying the named default.</param>
+    public static string TrackedChangeDefaultName(DbTableName table, DbColumnName column)
+    {
+        return $"DF_{table.Schema.Value}_{table.Name}_{column.Value}";
+    }
+
+    /// <summary>
     /// Checks whether a character is an ASCII letter or digit.
     /// </summary>
     private static bool IsAsciiLetterOrDigit(char value)

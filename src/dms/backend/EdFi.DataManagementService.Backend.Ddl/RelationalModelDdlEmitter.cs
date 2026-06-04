@@ -341,7 +341,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private string ResolveTrackedChangePrimaryKeyName(DbTableName table)
     {
-        return _dialect.Rules.ShortenIdentifier($"PK_{table.Schema.Value}_{table.Name}");
+        return _dialect.Rules.ShortenIdentifier(RelationalNameConventions.TrackedChangePrimaryKeyName(table));
     }
 
     /// <summary>
@@ -352,7 +352,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private string ResolveTrackedChangeDefaultName(DbTableName table, DbColumnName column)
     {
-        return _dialect.Rules.ShortenIdentifier($"DF_{table.Schema.Value}_{table.Name}_{column.Value}");
+        return _dialect.Rules.ShortenIdentifier(
+            RelationalNameConventions.TrackedChangeDefaultName(table, column)
+        );
     }
 
     /// <summary>

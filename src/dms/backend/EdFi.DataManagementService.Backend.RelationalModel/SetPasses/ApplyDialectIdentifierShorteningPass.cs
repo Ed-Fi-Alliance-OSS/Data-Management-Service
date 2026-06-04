@@ -2023,6 +2023,52 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     )
                 );
             }
+
+            // Register the constraint names the DDL emitter generates for tracked-change tables so a
+            // shortening collision fails here (deterministic derivation diagnostic) rather than at DDL
+            // execution. Names come from RelationalNameConventions — the single source of truth shared with
+            // RelationalModelDdlEmitter — and must mirror the emitter's render guards: the primary key is
+            // only emitted when the table has key columns, and the named CreatedAt default only for the
+            // CreatedAt system column.
+            if (trackedTable.PrimaryKeyColumns.Count > 0)
+            {
+                var primaryKeyName = RelationalNameConventions.TrackedChangePrimaryKeyName(
+                    trackedTable.Table
+                );
+
+                detector.RegisterConstraint(
+                    trackedTable.Table,
+                    primaryKeyName,
+                    BuildOrigin(
+                        $"tracked-change primary key constraint {primaryKeyName} on {FormatTable(trackedTable.Table)}",
+                        null,
+                        null
+                    )
+                );
+            }
+
+            foreach (var systemColumn in trackedTable.SystemColumns)
+            {
+                if (systemColumn.Role != TrackedChangeSystemColumnRole.CreatedAt)
+                {
+                    continue;
+                }
+
+                var defaultName = RelationalNameConventions.TrackedChangeDefaultName(
+                    trackedTable.Table,
+                    systemColumn.ColumnName
+                );
+
+                detector.RegisterConstraint(
+                    trackedTable.Table,
+                    defaultName,
+                    BuildOrigin(
+                        $"tracked-change default constraint {defaultName} on {FormatTable(trackedTable.Table)}",
+                        null,
+                        null
+                    )
+                );
+            }
         }
 
         detector.ThrowIfCollisions();
