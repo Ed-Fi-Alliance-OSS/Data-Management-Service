@@ -516,6 +516,386 @@ public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
 }
 
 /// <summary>
+/// Test fixture for tracked-change schema (<c>tracked_changes_*</c>) collisions after shortening. Two
+/// distinct project schemas can yield tracked-change schemas that shorten to the same identifier even when
+/// the source project schemas do not collide; the tracked-change schemas must be registered for detection.
+/// </summary>
+[TestFixture]
+public class Given_Tracked_Change_Schema_Shortening_Collision
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new TrackedChangeSchemaCollisionPass(),
+                new ApplyDialectIdentifierShorteningPass(),
+            }
+        );
+
+        var dialectRules = new TrackedChangeSchemaCollisionDialectRules(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["tracked_changes_LongProjectAlpha"] = "tc_collision",
+                ["tracked_changes_LongProjectBeta"] = "tc_collision",
+            }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with a tracked-change schema collision.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_tracked_change_schema_collision()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().StartWith("Identifier shortening collisions detected: ");
+        _exception!.Message.Should().Contain("schema name collision");
+        _exception!.Message.Should().Contain("tracked_changes_LongProjectAlpha -> tc_collision");
+        _exception!.Message.Should().Contain("tracked_changes_LongProjectBeta -> tc_collision");
+    }
+
+    /// <summary>
+    /// Fixture pass that seeds two tracked-change tables whose schemas shorten to the same identifier.
+    /// </summary>
+    private sealed class TrackedChangeSchemaCollisionPass : IRelationalModelSetPass
+    {
+        /// <summary>
+        /// Adds two tracked-change tables in distinct tracked-change schemas designed to collide after
+        /// shortening, with distinct table names so only the schema collision fires.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            context.TrackedChangeInventory.Add(
+                CreateTrackedChangeTable("tracked_changes_LongProjectAlpha", "TrackedAlpha")
+            );
+            context.TrackedChangeInventory.Add(
+                CreateTrackedChangeTable("tracked_changes_LongProjectBeta", "TrackedBeta")
+            );
+        }
+
+        /// <summary>
+        /// Builds a minimal tracked-change table in the given schema.
+        /// </summary>
+        private static TrackedChangeTableInfo CreateTrackedChangeTable(string schema, string tableName)
+        {
+            return new TrackedChangeTableInfo(
+                new DbTableName(new DbSchemaName(schema), tableName),
+                TrackedChangeTableKind.Resource,
+                new DbTableName(new DbSchemaName("edfi"), tableName),
+                Array.Empty<TrackedChangeColumnInfo>(),
+                Array.Empty<TrackedChangeSystemColumnInfo>(),
+                Array.Empty<DbColumnName>(),
+                Array.Empty<TrackedChangeDescriptorJoinInfo>(),
+                Array.Empty<TrackedChangePersonJoinInfo>()
+            );
+        }
+    }
+
+    /// <summary>
+    /// Dialect rules that map specific tracked-change schema identifiers to a shared collision value.
+    /// </summary>
+    private sealed class TrackedChangeSchemaCollisionDialectRules : ISqlDialectRules
+    {
+        private readonly IReadOnlyDictionary<string, string> _mapping;
+        private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
+
+        /// <summary>
+        /// Initializes a new instance with a deterministic identifier mapping.
+        /// </summary>
+        public TrackedChangeSchemaCollisionDialectRules(IReadOnlyDictionary<string, string> mapping)
+        {
+            _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
+        }
+
+        /// <summary>
+        /// Gets the dialect for this fixture rules implementation.
+        /// </summary>
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        /// <summary>
+        /// Gets the maximum identifier length for this fixture rules implementation.
+        /// </summary>
+        public int MaxIdentifierLength => 63;
+
+        /// <summary>
+        /// Gets the scalar type defaults reused by this fixture rules implementation.
+        /// </summary>
+        public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        /// <summary>
+        /// Shortens identifiers by applying the configured mapping.
+        /// </summary>
+        public string ShortenIdentifier(string identifier)
+        {
+            return _mapping.TryGetValue(identifier, out var updated) ? updated : identifier;
+        }
+    }
+}
+
+/// <summary>
+/// Test fixture for tracked-change primary-key constraint collisions after shortening. Two tracked-change
+/// tables in the same schema with distinct names generate distinct <c>PK_&lt;schema&gt;_&lt;table&gt;</c>
+/// constraint names that can still shorten to the same identifier; those generated names must be registered
+/// for collision detection so the failure surfaces during model derivation rather than at DDL execution.
+/// </summary>
+[TestFixture]
+public class Given_Tracked_Change_Primary_Key_Shortening_Collision
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new TrackedChangePrimaryKeyCollisionPass(),
+                new ApplyDialectIdentifierShorteningPass(),
+            }
+        );
+
+        var dialectRules = new TrackedChangeConstraintCollisionDialectRules(
+            SqlDialect.Pgsql,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["PK_tracked_changes_edfi_TrackedAlpha"] = "PK_collision",
+                ["PK_tracked_changes_edfi_TrackedBeta"] = "PK_collision",
+            }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with a tracked-change primary-key constraint collision.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_tracked_change_primary_key_collision()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().StartWith("Identifier shortening collisions detected: ");
+        _exception!.Message.Should().Contain("constraint name collision");
+        _exception!.Message.Should().Contain("PK_tracked_changes_edfi_TrackedAlpha -> PK_collision");
+        _exception!.Message.Should().Contain("PK_tracked_changes_edfi_TrackedBeta -> PK_collision");
+    }
+
+    /// <summary>
+    /// Fixture pass that seeds two same-schema tracked-change tables whose generated primary-key constraint
+    /// names shorten to the same identifier, with distinct table names so only the constraint collision fires.
+    /// </summary>
+    private sealed class TrackedChangePrimaryKeyCollisionPass : IRelationalModelSetPass
+    {
+        /// <summary>
+        /// Adds the two colliding tracked-change tables to the inventory.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            context.TrackedChangeInventory.Add(CreateTrackedChangeTable("TrackedAlpha"));
+            context.TrackedChangeInventory.Add(CreateTrackedChangeTable("TrackedBeta"));
+        }
+
+        /// <summary>
+        /// Builds a minimal tracked-change table in <c>tracked_changes_edfi</c> with a single primary-key
+        /// column so the primary-key constraint name is generated and registered.
+        /// </summary>
+        private static TrackedChangeTableInfo CreateTrackedChangeTable(string tableName)
+        {
+            return new TrackedChangeTableInfo(
+                new DbTableName(new DbSchemaName("tracked_changes_edfi"), tableName),
+                TrackedChangeTableKind.Resource,
+                new DbTableName(new DbSchemaName("edfi"), tableName),
+                Array.Empty<TrackedChangeColumnInfo>(),
+                Array.Empty<TrackedChangeSystemColumnInfo>(),
+                new DbColumnName[] { new("Id") },
+                Array.Empty<TrackedChangeDescriptorJoinInfo>(),
+                Array.Empty<TrackedChangePersonJoinInfo>()
+            );
+        }
+    }
+}
+
+/// <summary>
+/// Test fixture for tracked-change <c>CreatedAt</c> default-constraint collisions after shortening on SQL
+/// Server. Two tracked-change tables generate distinct <c>DF_&lt;schema&gt;_&lt;table&gt;_CreatedAt</c>
+/// default-constraint names that can shorten to the same identifier; those generated names must be registered
+/// for collision detection.
+/// </summary>
+[TestFixture]
+public class Given_Tracked_Change_Default_Constraint_Shortening_Collision
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new TrackedChangeDefaultConstraintCollisionPass(),
+                new ApplyDialectIdentifierShorteningPass(),
+            }
+        );
+
+        var dialectRules = new TrackedChangeConstraintCollisionDialectRules(
+            SqlDialect.Mssql,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["DF_tracked_changes_edfi_TrackedAlpha_CreatedAt"] = "DF_collision",
+                ["DF_tracked_changes_edfi_TrackedBeta_CreatedAt"] = "DF_collision",
+            }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Mssql, dialectRules);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with a tracked-change default-constraint collision.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_tracked_change_default_constraint_collision()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().StartWith("Identifier shortening collisions detected: ");
+        _exception!.Message.Should().Contain("constraint name collision");
+        _exception!
+            .Message.Should()
+            .Contain("DF_tracked_changes_edfi_TrackedAlpha_CreatedAt -> DF_collision");
+        _exception!.Message.Should().Contain("DF_tracked_changes_edfi_TrackedBeta_CreatedAt -> DF_collision");
+    }
+
+    /// <summary>
+    /// Fixture pass that seeds two same-schema tracked-change tables whose generated <c>CreatedAt</c>
+    /// default-constraint names shorten to the same identifier, with distinct table names so only the
+    /// constraint collision fires.
+    /// </summary>
+    private sealed class TrackedChangeDefaultConstraintCollisionPass : IRelationalModelSetPass
+    {
+        /// <summary>
+        /// Adds the two colliding tracked-change tables to the inventory.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            context.TrackedChangeInventory.Add(CreateTrackedChangeTable("TrackedAlpha"));
+            context.TrackedChangeInventory.Add(CreateTrackedChangeTable("TrackedBeta"));
+        }
+
+        /// <summary>
+        /// Builds a minimal tracked-change table in <c>tracked_changes_edfi</c> with a <c>CreatedAt</c>
+        /// system column so the named default constraint is generated and registered.
+        /// </summary>
+        private static TrackedChangeTableInfo CreateTrackedChangeTable(string tableName)
+        {
+            return new TrackedChangeTableInfo(
+                new DbTableName(new DbSchemaName("tracked_changes_edfi"), tableName),
+                TrackedChangeTableKind.Resource,
+                new DbTableName(new DbSchemaName("edfi"), tableName),
+                Array.Empty<TrackedChangeColumnInfo>(),
+                new TrackedChangeSystemColumnInfo[]
+                {
+                    new(
+                        TrackedChangeSystemColumnRole.CreatedAt,
+                        new DbColumnName("CreatedAt"),
+                        null,
+                        false,
+                        false
+                    ),
+                },
+                Array.Empty<DbColumnName>(),
+                Array.Empty<TrackedChangeDescriptorJoinInfo>(),
+                Array.Empty<TrackedChangePersonJoinInfo>()
+            );
+        }
+    }
+}
+
+/// <summary>
+/// Dialect rules that map specific tracked-change constraint identifiers to a shared collision value while
+/// leaving all other identifiers unchanged. Shared by the tracked-change primary-key and default-constraint
+/// collision fixtures.
+/// </summary>
+internal sealed class TrackedChangeConstraintCollisionDialectRules : ISqlDialectRules
+{
+    private readonly IReadOnlyDictionary<string, string> _mapping;
+    private static readonly SqlScalarTypeDefaults PgsqlDefaults = new PgsqlDialectRules().ScalarTypeDefaults;
+    private static readonly SqlScalarTypeDefaults MssqlDefaults = new MssqlDialectRules().ScalarTypeDefaults;
+
+    /// <summary>
+    /// Initializes a new instance for the given dialect with a deterministic identifier mapping.
+    /// </summary>
+    public TrackedChangeConstraintCollisionDialectRules(
+        SqlDialect dialect,
+        IReadOnlyDictionary<string, string> mapping
+    )
+    {
+        Dialect = dialect;
+        _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
+    }
+
+    /// <summary>
+    /// Gets the dialect for this fixture rules implementation.
+    /// </summary>
+    public SqlDialect Dialect { get; }
+
+    /// <summary>
+    /// Gets the maximum identifier length for the configured dialect.
+    /// </summary>
+    public int MaxIdentifierLength => Dialect == SqlDialect.Mssql ? 128 : 63;
+
+    /// <summary>
+    /// Gets the scalar type defaults for the configured dialect.
+    /// </summary>
+    public SqlScalarTypeDefaults ScalarTypeDefaults =>
+        Dialect == SqlDialect.Mssql ? MssqlDefaults : PgsqlDefaults;
+
+    /// <summary>
+    /// Shortens identifiers by applying the configured mapping.
+    /// </summary>
+    public string ShortenIdentifier(string identifier)
+    {
+        return _mapping.TryGetValue(identifier, out var updated) ? updated : identifier;
+    }
+}
+
+/// <summary>
 /// Test fixture for abstract union-arm source-column collisions after shortening.
 /// </summary>
 [TestFixture]

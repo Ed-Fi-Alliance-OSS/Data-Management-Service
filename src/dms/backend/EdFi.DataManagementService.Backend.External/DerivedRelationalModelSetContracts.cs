@@ -262,7 +262,17 @@ public abstract record TriggerKindParameters
     /// <summary>
     /// Parameters for triggers that stamp document representation/identity versions.
     /// </summary>
-    public sealed record DocumentStamping() : TriggerKindParameters;
+    /// <param name="ChangeTracking">
+    /// The change-tracking attachment when this stamping trigger also populates a tracked-change table
+    /// (tombstones and key-change rows). Non-null on root-table stamping triggers whose resource has a
+    /// derived tracked-change table, and on the shared <c>dms.Descriptor</c> stamping trigger when a
+    /// shared descriptor tracked-change table is derived. Null for child / collection / <c>_ext</c>
+    /// stamping triggers and on models with no corresponding tracked-change table. The key-change
+    /// workset is not duplicated here; it is the owning trigger's
+    /// <see cref="DbTriggerInfo.IdentityProjectionColumns"/>.
+    /// </param>
+    public sealed record DocumentStamping(TrackedChangeAttachment? ChangeTracking = null)
+        : TriggerKindParameters;
 
     /// <summary>
     /// Parameters for triggers that maintain referential identity for concrete resources.
@@ -402,6 +412,140 @@ public sealed record DbTriggerInfo(
 );
 
 /// <summary>
+/// Change-tracking attachment for a <see cref="TriggerKindParameters.DocumentStamping"/> trigger that
+/// also writes tombstones and key-change rows. References the tracked-change table by name (mirroring
+/// <see cref="DbTriggerInfo.MirrorStampTargetTable"/>) rather than embedding the
+/// <see cref="TrackedChangeTableInfo"/>, keeping the manifest acyclic.
+/// </summary>
+/// <param name="TrackedChangeTable">The <c>tracked_changes_*</c> table this trigger populates.</param>
+public sealed record TrackedChangeAttachment(DbTableName TrackedChangeTable);
+
+/// <summary>
+/// Fixed-by-role system column on a tracked-change table (<c>Id</c>, <c>ChangeVersion</c>,
+/// <c>CreatedAt</c>, and—on the shared descriptor table—<c>Discriminator</c>). These are determined by
+/// role rather than by ApiSchema value metadata; dialect emitters render the appropriate type/default.
+/// </summary>
+/// <param name="Role">The system column role.</param>
+/// <param name="ColumnName">The physical column name.</param>
+/// <param name="ScalarType">
+/// The scalar type metadata, or <c>null</c> when the type is determined entirely by
+/// <paramref name="Role"/> and has no <see cref="ScalarKind"/> representation. This is the case for
+/// <see cref="TrackedChangeSystemColumnRole.Id"/>, whose type is PostgreSQL <c>uuid</c> / SQL Server
+/// <c>uniqueidentifier</c>; dialect emitters render it by role.
+/// </param>
+/// <param name="IsNullable">Whether the column is nullable.</param>
+/// <param name="IsPrimaryKey">Whether the column participates in the table's primary key.</param>
+public sealed record TrackedChangeSystemColumnInfo(
+    TrackedChangeSystemColumnRole Role,
+    DbColumnName ColumnName,
+    RelationalScalarType? ScalarType,
+    bool IsNullable,
+    bool IsPrimaryKey
+);
+
+/// <summary>
+/// A tracked old/new value column pair on a tracked-change table. Each tracked value contributes one
+/// entry that materializes as an <c>Old_*</c> column and a <c>New_*</c> column; tombstones populate only
+/// the old values while key-change rows populate the new values when present.
+/// </summary>
+/// <param name="OldColumnName">The <c>Old_*</c> column name.</param>
+/// <param name="NewColumnName">The <c>New_*</c> column name.</param>
+/// <param name="SourceJsonPath">The canonical JSONPath of the tracked source value.</param>
+/// <param name="CanonicalStorageColumn">
+/// The canonical storage column when the source participates in key unification; null otherwise.
+/// </param>
+/// <param name="IsOldColumnNullable">
+/// Nullability of the <c>Old_*</c> column, following the tracked source value's nullability.
+/// </param>
+/// <param name="IsNewColumnNullable">
+/// Nullability of the <c>New_*</c> column. Normally <c>true</c> because delete tombstones leave
+/// <c>New_*</c> columns null; key-change rows populate them when present.
+/// </param>
+/// <param name="ScalarType">The scalar type metadata shared by the old and new columns.</param>
+/// <param name="Role">The materialization shape of the column (scalar, descriptor part, or person id).</param>
+/// <param name="Origin">The authorization purpose(s) this column serves (identity and/or securable element).</param>
+/// <param name="DescriptorJoinName">
+/// The <see cref="TrackedChangeDescriptorJoinInfo.DescriptorJoinName"/> this column resolves through,
+/// when <paramref name="Role"/> is a descriptor part; null otherwise.
+/// </param>
+/// <param name="PersonJoinName">
+/// The <see cref="TrackedChangePersonJoinInfo.PersonJoinName"/> this column resolves through, when
+/// <paramref name="Role"/> is <see cref="TrackedChangeColumnRole.PersonDocumentId"/>; null otherwise.
+/// </param>
+public sealed record TrackedChangeColumnInfo(
+    DbColumnName OldColumnName,
+    DbColumnName NewColumnName,
+    string SourceJsonPath,
+    DbColumnName? CanonicalStorageColumn,
+    bool IsOldColumnNullable,
+    bool IsNewColumnNullable,
+    RelationalScalarType ScalarType,
+    TrackedChangeColumnRole Role,
+    TrackedChangeColumnOrigin Origin,
+    string? DescriptorJoinName = null,
+    string? PersonJoinName = null
+);
+
+/// <summary>
+/// A table-level join from a tracked-change table to <c>dms.Descriptor</c> used by trigger emitters to
+/// materialize a descriptor reference's <c>Namespace</c> and <c>CodeValue</c> for the old and new row
+/// images. Tracked-change value columns reference this join by <paramref name="DescriptorJoinName"/>
+/// rather than duplicating the join definition.
+/// </summary>
+/// <param name="DescriptorJoinName">The stable join name referenced by descriptor value columns.</param>
+/// <param name="SourceColumn">The descriptor FK column on the live source table (e.g. <c>*_DescriptorId</c>).</param>
+/// <param name="DescriptorResource">The descriptor resource type expected at this join.</param>
+public sealed record TrackedChangeDescriptorJoinInfo(
+    string DescriptorJoinName,
+    DbColumnName SourceColumn,
+    QualifiedResourceName DescriptorResource
+);
+
+/// <summary>
+/// A table-level join path from a tracked-change table to a person (Student/Contact/Staff) resource
+/// root, used by trigger emitters to materialize the person <c>DocumentId</c> for the old and new row
+/// images. The person <c>DocumentId</c> value column references this join by
+/// <paramref name="PersonJoinName"/> rather than duplicating the join definition.
+/// </summary>
+/// <param name="PersonJoinName">The stable join name referenced by the person <c>DocumentId</c> column.</param>
+/// <param name="PersonKind">The kind of person resource this join reaches.</param>
+/// <param name="JoinPath">The resource-table join chain reaching the person resource root.</param>
+public sealed record TrackedChangePersonJoinInfo(
+    string PersonJoinName,
+    SecurableElementKind PersonKind,
+    IReadOnlyList<ColumnPathStep> JoinPath
+);
+
+/// <summary>
+/// Derived tracked-change table inventory entry (<c>tracked_changes_*</c>). Carries the SQL-free
+/// semantics dialect emitters and runtime Change Query planners consume mechanically.
+/// </summary>
+/// <param name="Table">The tracked-change table (<c>tracked_changes_&lt;project&gt;.&lt;resource&gt;</c>).</param>
+/// <param name="Kind">Whether this is a resource, concrete-abstract, or shared descriptor table.</param>
+/// <param name="SourceTable">The live source table whose changes this table tracks.</param>
+/// <param name="ValueColumnsInTableOrder">The tracked old/new value columns in table order.</param>
+/// <param name="SystemColumns">
+/// The fixed-by-role system columns (<c>Id</c>, <c>ChangeVersion</c>, <c>CreatedAt</c>, and
+/// <c>Discriminator</c> for the shared descriptor table).
+/// </param>
+/// <param name="PrimaryKeyColumns">
+/// The primary-key columns. <c>[ChangeVersion]</c> in the current design; carried here so renderers do
+/// not hardcode it.
+/// </param>
+/// <param name="DescriptorJoins">Table-level descriptor joins referenced by descriptor value columns.</param>
+/// <param name="PersonJoins">Table-level person joins referenced by person <c>DocumentId</c> columns.</param>
+public sealed record TrackedChangeTableInfo(
+    DbTableName Table,
+    TrackedChangeTableKind Kind,
+    DbTableName SourceTable,
+    IReadOnlyList<TrackedChangeColumnInfo> ValueColumnsInTableOrder,
+    IReadOnlyList<TrackedChangeSystemColumnInfo> SystemColumns,
+    IReadOnlyList<DbColumnName> PrimaryKeyColumns,
+    IReadOnlyList<TrackedChangeDescriptorJoinInfo> DescriptorJoins,
+    IReadOnlyList<TrackedChangePersonJoinInfo> PersonJoins
+);
+
+/// <summary>
 /// Dialect-aware derived relational model inventory for an effective schema set.
 /// </summary>
 /// <param name="EffectiveSchema">The effective schema metadata and resource key seed.</param>
@@ -422,6 +566,12 @@ public sealed record DbTriggerInfo(
 /// Optional EducationOrganization hierarchy for auth DDL emission. <c>null</c> when no abstract
 /// EducationOrganization resource exists in the schema.
 /// </param>
+/// <param name="TrackedChangeTablesInNameOrder">
+/// Tracked-change table inventory (<c>tracked_changes_*</c>) in canonical deterministic order by
+/// table schema and name. The constructor argument is optional; the exposed property is never null —
+/// it normalizes to an empty list when omitted, so consumers (DMS-1177 rendering, runtime planners)
+/// can iterate it without a null check.
+/// </param>
 public sealed record DerivedRelationalModelSet(
     EffectiveSchemaInfo EffectiveSchema,
     SqlDialect Dialect,
@@ -431,5 +581,14 @@ public sealed record DerivedRelationalModelSet(
     IReadOnlyList<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder,
     IReadOnlyList<DbIndexInfo> IndexesInCreateOrder,
     IReadOnlyList<DbTriggerInfo> TriggersInCreateOrder,
-    AuthEdOrgHierarchy? AuthEdOrgHierarchy = null
-);
+    AuthEdOrgHierarchy? AuthEdOrgHierarchy = null,
+    IReadOnlyList<TrackedChangeTableInfo>? TrackedChangeTablesInNameOrder = null
+)
+{
+    /// <summary>
+    /// Tracked-change table inventory in canonical deterministic order by table schema and name.
+    /// Never null — empty when no resources or descriptors require tracked-change tables.
+    /// </summary>
+    public IReadOnlyList<TrackedChangeTableInfo> TrackedChangeTablesInNameOrder { get; init; } =
+        TrackedChangeTablesInNameOrder ?? [];
+}

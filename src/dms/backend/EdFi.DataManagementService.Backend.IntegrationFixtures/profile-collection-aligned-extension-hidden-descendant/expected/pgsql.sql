@@ -425,6 +425,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
 
 CREATE SCHEMA IF NOT EXISTS "aligned";
 CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."ParentResource"
 (
@@ -458,6 +459,16 @@ CREATE TABLE IF NOT EXISTS "aligned"."ParentResourceExtensionParent"
     "DetailDetailHiddenField" varchar(100) NULL,
     "DetailDetailVisibleField" varchar(100) NULL,
     CONSTRAINT "PK_ParentResourceExtensionParent" PRIMARY KEY ("BaseCollectionItemId")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ParentResource"
+(
+    "Old_ParentResourceId" integer NOT NULL,
+    "New_ParentResourceId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ParentResource" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

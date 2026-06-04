@@ -410,6 +410,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'sample')
     EXEC('CREATE SCHEMA [sample]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.School', N'U') IS NULL
 CREATE TABLE [edfi].[School]
@@ -449,6 +451,17 @@ CREATE TABLE [edfi].[SchoolAddress]
     CONSTRAINT [PK_SchoolAddress] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SchoolAddress_CollectionItemId_School_DocumentId] UNIQUE ([CollectionItemId], [School_DocumentId]),
     CONSTRAINT [UX_SchoolAddress_Ordinal_School_DocumentId] UNIQUE ([School_DocumentId], [Ordinal])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.School', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[School]
+(
+    [Old_SchoolId] int NOT NULL,
+    [New_SchoolId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF NOT EXISTS (

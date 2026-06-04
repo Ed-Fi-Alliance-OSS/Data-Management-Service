@@ -425,6 +425,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "auth";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
 (
@@ -8145,6 +8146,2361 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
     "SourceEducationOrganizationId" bigint NOT NULL,
     "TargetEducationOrganizationId" bigint NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdToEducationOrganizationId" PRIMARY KEY ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AcademicWeek"
+(
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Old_WeekIdentifier" varchar(80) NOT NULL,
+    "New_WeekIdentifier" varchar(80) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_AcademicWeek" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AccountabilityRating"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_RatingTitle" varchar(60) NOT NULL,
+    "New_RatingTitle" varchar(60) NULL,
+    "Old_SchoolYear_SchoolYear" integer NOT NULL,
+    "New_SchoolYear_SchoolYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_AccountabilityRating" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Assessment"
+(
+    "Old_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_AssessmentIdentifier" varchar(60) NULL,
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Assessment" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministration"
+(
+    "Old_AdministrationIdentifier" varchar(255) NOT NULL,
+    "New_AdministrationIdentifier" varchar(255) NULL,
+    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
+    "Old_Assessment_Namespace" varchar(255) NOT NULL,
+    "New_Assessment_Namespace" varchar(255) NULL,
+    "Old_AssigningEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_AssigningEducationOrganization_EducationOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_AssessmentAdministration" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentAdministrationParticipation"
+(
+    "Old_AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
+    "New_AssessmentAdministration_AdministrationIdentifier" varchar(255) NULL,
+    "Old_AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_AssessmentAdministration_AssessmentIdentifier" varchar(60) NULL,
+    "Old_AssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
+    "New_AssessmentAdministration_AssigningEducationOrganizationId" bigint NULL,
+    "Old_AssessmentAdministration_Namespace" varchar(255) NOT NULL,
+    "New_AssessmentAdministration_Namespace" varchar(255) NULL,
+    "Old_ParticipatingEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_ParticipatingEducationOrganization_EducationOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_AssessmentAdministrationParticipation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentBatteryPart"
+(
+    "Old_AssessmentBatteryPartName" varchar(65) NOT NULL,
+    "New_AssessmentBatteryPartName" varchar(65) NULL,
+    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
+    "Old_Assessment_Namespace" varchar(255) NOT NULL,
+    "New_Assessment_Namespace" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_AssessmentBatteryPart" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentItem"
+(
+    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
+    "Old_Assessment_Namespace" varchar(255) NOT NULL,
+    "New_Assessment_Namespace" varchar(255) NULL,
+    "Old_IdentificationCode" varchar(60) NOT NULL,
+    "New_IdentificationCode" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_AssessmentItem" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."AssessmentScoreRangeLearningStandard"
+(
+    "Old_AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "New_AssessmentIdentifier_Unified" varchar(60) NULL,
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_ScoreRangeId" varchar(60) NOT NULL,
+    "New_ScoreRangeId" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_AssessmentScoreRangeLearningStandard" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BalanceSheetDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_BalanceSheetDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."BellSchedule"
+(
+    "Old_BellScheduleName" varchar(60) NOT NULL,
+    "New_BellScheduleName" varchar(60) NULL,
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_BellSchedule" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Calendar"
+(
+    "Old_CalendarCode" varchar(60) NOT NULL,
+    "New_CalendarCode" varchar(60) NULL,
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Old_SchoolYear_SchoolYear" integer NOT NULL,
+    "New_SchoolYear_SchoolYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Calendar" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CalendarDate"
+(
+    "Old_Calendar_CalendarCode" varchar(60) NOT NULL,
+    "New_Calendar_CalendarCode" varchar(60) NULL,
+    "Old_Calendar_SchoolId" bigint NOT NULL,
+    "New_Calendar_SchoolId" bigint NULL,
+    "Old_Calendar_SchoolYear" integer NOT NULL,
+    "New_Calendar_SchoolYear" integer NULL,
+    "Old_Date" date NOT NULL,
+    "New_Date" date NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CalendarDate" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ChartOfAccount"
+(
+    "Old_AccountIdentifier" varchar(50) NOT NULL,
+    "New_AccountIdentifier" varchar(50) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_FiscalYear_Unified" integer NOT NULL,
+    "New_FiscalYear_Unified" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ChartOfAccount" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ClassPeriod"
+(
+    "Old_ClassPeriodName" varchar(60) NOT NULL,
+    "New_ClassPeriodName" varchar(60) NULL,
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ClassPeriod" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Cohort"
+(
+    "Old_CohortIdentifier" varchar(36) NOT NULL,
+    "New_CohortIdentifier" varchar(36) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Cohort" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityOrganization"
+(
+    "Old_CommunityOrganizationId" bigint NOT NULL,
+    "New_CommunityOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CommunityOrganization" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProvider"
+(
+    "Old_CommunityProviderId" bigint NOT NULL,
+    "New_CommunityProviderId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CommunityProvider" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CommunityProviderLicense"
+(
+    "Old_CommunityProvider_CommunityProviderId" bigint NOT NULL,
+    "New_CommunityProvider_CommunityProviderId" bigint NULL,
+    "Old_LicenseIdentifier" varchar(36) NOT NULL,
+    "New_LicenseIdentifier" varchar(36) NULL,
+    "Old_LicensingOrganization" varchar(75) NOT NULL,
+    "New_LicensingOrganization" varchar(75) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CommunityProviderLicense" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CompetencyObjective"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_Objective" varchar(60) NOT NULL,
+    "New_Objective" varchar(60) NULL,
+    "Old_ObjectiveGradeLevelDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ObjectiveGradeLevelDescriptor_Namespace" varchar(255) NULL,
+    "Old_ObjectiveGradeLevelDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ObjectiveGradeLevelDescriptor_CodeValue" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CompetencyObjective" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Contact"
+(
+    "Old_ContactUniqueId" varchar(32) NOT NULL,
+    "New_ContactUniqueId" varchar(32) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Contact" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Course"
+(
+    "Old_CourseCode" varchar(60) NOT NULL,
+    "New_CourseCode" varchar(60) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Course" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseOffering"
+(
+    "Old_LocalCourseCode" varchar(60) NOT NULL,
+    "New_LocalCourseCode" varchar(60) NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_Session_SchoolYear" integer NOT NULL,
+    "New_Session_SchoolYear" integer NULL,
+    "Old_Session_SessionName" varchar(60) NOT NULL,
+    "New_Session_SessionName" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CourseOffering" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CourseTranscript"
+(
+    "Old_CourseAttemptResultDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_CourseAttemptResultDescriptor_Namespace" varchar(255) NULL,
+    "Old_CourseAttemptResultDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_CourseAttemptResultDescriptor_CodeValue" varchar(50) NULL,
+    "Old_CourseCourse_CourseCode" varchar(60) NOT NULL,
+    "New_CourseCourse_CourseCode" varchar(60) NULL,
+    "Old_CourseCourse_EducationOrganizationId" bigint NOT NULL,
+    "New_CourseCourse_EducationOrganizationId" bigint NULL,
+    "Old_StudentAcademicRecord_EducationOrganizationId" bigint NOT NULL,
+    "New_StudentAcademicRecord_EducationOrganizationId" bigint NULL,
+    "Old_StudentAcademicRecord_SchoolYear" integer NOT NULL,
+    "New_StudentAcademicRecord_SchoolYear" integer NULL,
+    "Old_StudentAcademicRecord_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentAcademicRecord_StudentUniqueId" varchar(32) NULL,
+    "Old_StudentAcademicRecord_TermDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_StudentAcademicRecord_TermDescriptor_Namespace" varchar(255) NULL,
+    "Old_StudentAcademicRecord_TermDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_StudentAcademicRecord_TermDescriptor_CodeValue" varchar(50) NULL,
+    "Old_StudentAcademicRecord_Student_DocumentId" bigint NOT NULL,
+    "New_StudentAcademicRecord_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CourseTranscript" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Credential"
+(
+    "Old_CredentialIdentifier" varchar(60) NOT NULL,
+    "New_CredentialIdentifier" varchar(60) NULL,
+    "Old_StateOfIssueStateAbbreviationDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_StateOfIssueStateAbbreviationDescriptor_Namespace" varchar(255) NULL,
+    "Old_StateOfIssueStateAbbreviationDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_StateOfIssueStateAbbreviationDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Credential" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."CrisisEvent"
+(
+    "Old_CrisisEventName" varchar(100) NOT NULL,
+    "New_CrisisEventName" varchar(100) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_CrisisEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
+(
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Old_CodeValue" varchar(50) NOT NULL,
+    "New_CodeValue" varchar(50) NULL,
+    "Discriminator" varchar(128) NOT NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Descriptor" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DescriptorMapping"
+(
+    "Old_MappedNamespace" varchar(255) NOT NULL,
+    "New_MappedNamespace" varchar(255) NULL,
+    "Old_MappedValue" varchar(50) NOT NULL,
+    "New_MappedValue" varchar(50) NULL,
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Old_Value" varchar(50) NOT NULL,
+    "New_Value" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_DescriptorMapping" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineAction"
+(
+    "Old_DisciplineActionIdentifier" varchar(36) NOT NULL,
+    "New_DisciplineActionIdentifier" varchar(36) NULL,
+    "Old_DisciplineDate" date NOT NULL,
+    "New_DisciplineDate" date NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_ResponsibilitySchool_SchoolId" bigint NOT NULL,
+    "New_ResponsibilitySchool_SchoolId" bigint NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_DisciplineAction" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DisciplineIncident"
+(
+    "Old_IncidentIdentifier" varchar(36) NOT NULL,
+    "New_IncidentIdentifier" varchar(36) NULL,
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_DisciplineIncident" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationContent"
+(
+    "Old_ContentIdentifier" varchar(225) NOT NULL,
+    "New_ContentIdentifier" varchar(225) NULL,
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EducationContent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationInterventionPrescriptionAssociation"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_InterventionPrescriptionInterventionPrescription_fcdc1d0ce4" bigint NOT NULL,
+    "New_InterventionPrescriptionInterventionPrescription_3b83ee0f39" bigint NULL,
+    "Old_InterventionPrescriptionInterventionPrescription_80fde4ffdf" varchar(60) NOT NULL,
+    "New_InterventionPrescriptionInterventionPrescription_4bd8fc257a" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationInterve_b35c95b48c" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetwork"
+(
+    "Old_EducationOrganizationNetworkId" bigint NOT NULL,
+    "New_EducationOrganizationNetworkId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationNetwork" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationNetworkAssociation"
+(
+    "Old_EducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NOT NULL,
+    "New_EducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NULL,
+    "Old_MemberEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_MemberEducationOrganization_EducationOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationNetworkAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationOrganizationPeerAssociation"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_PeerEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_PeerEducationOrganization_EducationOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EducationOrganizationPeerAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EducationServiceCenter"
+(
+    "Old_EducationServiceCenterId" bigint NOT NULL,
+    "New_EducationServiceCenterId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EducationServiceCenter" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EvaluationRubricDimension"
+(
+    "Old_EvaluationRubricRating" integer NOT NULL,
+    "New_EvaluationRubricRating" integer NULL,
+    "Old_ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NOT NULL,
+    "New_ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NULL,
+    "Old_ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NULL,
+    "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_9beb2fd68a" varchar(255) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramEvaluationPeriod_2c9ac21869" varchar(255) NULL,
+    "Old_ProgramEvaluationElement_ProgramEvaluationPeriod_ca462f72c4" varchar(50) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramEvaluationPeriod_55088c080b" varchar(50) NULL,
+    "Old_ProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NULL,
+    "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_f738e95469" varchar(255) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramEvaluationTypeDe_262301020d" varchar(255) NULL,
+    "Old_ProgramEvaluationElement_ProgramEvaluationTypeDe_0949af4b92" varchar(50) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramEvaluationTypeDe_b2661cda2d" varchar(50) NULL,
+    "Old_ProgramEvaluationElement_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramName" varchar(60) NULL,
+    "Old_ProgramEvaluationElement_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluationElement_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluationElement_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EvaluationRubricDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FeederSchoolAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_FeederSchool_SchoolId" bigint NOT NULL,
+    "New_FeederSchool_SchoolId" bigint NULL,
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_FeederSchoolAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FunctionDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_FunctionDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."FundDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_FundDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Grade"
+(
+    "Old_GradeTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_GradeTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_GradeTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_GradeTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395" varchar(255) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522" varchar(255) NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8" varchar(50) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7" varchar(50) NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_SchoolYear_Unified" integer NOT NULL,
+    "New_SchoolYear_Unified" integer NULL,
+    "Old_StudentSectionAssociation_BeginDate" date NOT NULL,
+    "New_StudentSectionAssociation_BeginDate" date NULL,
+    "Old_StudentSectionAssociation_LocalCourseCode" varchar(60) NOT NULL,
+    "New_StudentSectionAssociation_LocalCourseCode" varchar(60) NULL,
+    "Old_StudentSectionAssociation_SectionIdentifier" varchar(255) NOT NULL,
+    "New_StudentSectionAssociation_SectionIdentifier" varchar(255) NULL,
+    "Old_StudentSectionAssociation_SessionName" varchar(60) NOT NULL,
+    "New_StudentSectionAssociation_SessionName" varchar(60) NULL,
+    "Old_StudentSectionAssociation_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentSectionAssociation_StudentUniqueId" varchar(32) NULL,
+    "Old_StudentSectionAssociation_Student_DocumentId" bigint NOT NULL,
+    "New_StudentSectionAssociation_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Grade" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradebookEntry"
+(
+    "Old_GradebookEntryIdentifier" varchar(60) NOT NULL,
+    "New_GradebookEntryIdentifier" varchar(60) NULL,
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_GradebookEntry" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GradingPeriod"
+(
+    "Old_GradingPeriodDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_GradingPeriodDescriptor_Namespace" varchar(255) NULL,
+    "Old_GradingPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_GradingPeriodDescriptor_CodeValue" varchar(50) NULL,
+    "Old_GradingPeriodName" varchar(60) NOT NULL,
+    "New_GradingPeriodName" varchar(60) NULL,
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Old_SchoolYear_SchoolYear" integer NOT NULL,
+    "New_SchoolYear_SchoolYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_GradingPeriod" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."GraduationPlan"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_GraduationPlanTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_GraduationPlanTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_GraduationPlanTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_GraduationSchoolYear_GraduationSchoolYear" integer NOT NULL,
+    "New_GraduationSchoolYear_GraduationSchoolYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_GraduationPlan" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Intervention"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_InterventionIdentificationCode" varchar(60) NOT NULL,
+    "New_InterventionIdentificationCode" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Intervention" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionPrescription"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_InterventionPrescriptionIdentificationCode" varchar(60) NOT NULL,
+    "New_InterventionPrescriptionIdentificationCode" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_InterventionPrescription" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."InterventionStudy"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_InterventionStudyIdentificationCode" varchar(60) NOT NULL,
+    "New_InterventionStudyIdentificationCode" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_InterventionStudy" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandard"
+(
+    "Old_LearningStandardId" varchar(60) NOT NULL,
+    "New_LearningStandardId" varchar(60) NULL,
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LearningStandard" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LearningStandardEquivalenceAssociation"
+(
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Old_SourceLearningStandard_LearningStandardId" varchar(60) NOT NULL,
+    "New_SourceLearningStandard_LearningStandardId" varchar(60) NULL,
+    "Old_TargetLearningStandard_LearningStandardId" varchar(60) NOT NULL,
+    "New_TargetLearningStandard_LearningStandardId" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LearningStandardEquivalenceAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalAccount"
+(
+    "Old_AccountIdentifier" varchar(50) NOT NULL,
+    "New_AccountIdentifier" varchar(50) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_FiscalYear_Unified" integer NOT NULL,
+    "New_FiscalYear_Unified" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalAccount" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalActual"
+(
+    "Old_AsOfDate" date NOT NULL,
+    "New_AsOfDate" date NULL,
+    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
+    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "New_LocalAccount_EducationOrganizationId" bigint NULL,
+    "Old_LocalAccount_FiscalYear" integer NOT NULL,
+    "New_LocalAccount_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalActual" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalBudget"
+(
+    "Old_AsOfDate" date NOT NULL,
+    "New_AsOfDate" date NULL,
+    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
+    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "New_LocalAccount_EducationOrganizationId" bigint NULL,
+    "Old_LocalAccount_FiscalYear" integer NOT NULL,
+    "New_LocalAccount_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalBudget" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalContractedStaff"
+(
+    "Old_AsOfDate" date NOT NULL,
+    "New_AsOfDate" date NULL,
+    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
+    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "New_LocalAccount_EducationOrganizationId" bigint NULL,
+    "Old_LocalAccount_FiscalYear" integer NOT NULL,
+    "New_LocalAccount_FiscalYear" integer NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalContractedStaff" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEducationAgency"
+(
+    "Old_LocalEducationAgencyId" bigint NOT NULL,
+    "New_LocalEducationAgencyId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalEducationAgency" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalEncumbrance"
+(
+    "Old_AsOfDate" date NOT NULL,
+    "New_AsOfDate" date NULL,
+    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
+    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "New_LocalAccount_EducationOrganizationId" bigint NULL,
+    "Old_LocalAccount_FiscalYear" integer NOT NULL,
+    "New_LocalAccount_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalEncumbrance" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."LocalPayroll"
+(
+    "Old_AsOfDate" date NOT NULL,
+    "New_AsOfDate" date NULL,
+    "Old_LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
+    "New_LocalAccount_AccountIdentifier" varchar(50) NULL,
+    "Old_LocalAccount_EducationOrganizationId" bigint NOT NULL,
+    "New_LocalAccount_EducationOrganizationId" bigint NULL,
+    "Old_LocalAccount_FiscalYear" integer NOT NULL,
+    "New_LocalAccount_FiscalYear" integer NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_LocalPayroll" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Location"
+(
+    "Old_ClassroomIdentificationCode" varchar(60) NOT NULL,
+    "New_ClassroomIdentificationCode" varchar(60) NULL,
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Location" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ObjectDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ObjectiveAssessment"
+(
+    "Old_AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "New_AssessmentIdentifier_Unified" varchar(60) NULL,
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_IdentificationCode" varchar(60) NOT NULL,
+    "New_IdentificationCode" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ObjectiveAssessment" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OpenStaffPosition"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_RequisitionNumber" varchar(20) NOT NULL,
+    "New_RequisitionNumber" varchar(20) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_OpenStaffPosition" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OperationalUnitDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_OperationalUnitDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."OrganizationDepartment"
+(
+    "Old_OrganizationDepartmentId" bigint NOT NULL,
+    "New_OrganizationDepartmentId" bigint NULL,
+    "Old_ParentEducationOrganization_EducationOrganizationId" bigint NULL,
+    "New_ParentEducationOrganization_EducationOrganizationId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_OrganizationDepartment" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Person"
+(
+    "Old_PersonId" varchar(32) NOT NULL,
+    "New_PersonId" varchar(32) NULL,
+    "Old_SourceSystemDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_SourceSystemDescriptor_Namespace" varchar(255) NULL,
+    "Old_SourceSystemDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_SourceSystemDescriptor_CodeValue" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Person" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryEvent"
+(
+    "Old_EventDate" date NOT NULL,
+    "New_EventDate" date NULL,
+    "Old_PostSecondaryEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_PostSecondaryEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "Old_PostSecondaryEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_PostSecondaryEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_PostSecondaryEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."PostSecondaryInstitution"
+(
+    "Old_PostSecondaryInstitutionId" bigint NOT NULL,
+    "New_PostSecondaryInstitutionId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_PostSecondaryInstitution" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramName" varchar(60) NULL,
+    "Old_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Program" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ProgramDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluation"
+(
+    "Old_ProgramEvaluationPeriodDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluationPeriodDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluationPeriodDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluationPeriodDescriptor_CodeValue" varchar(50) NULL,
+    "Old_ProgramEvaluationTitle" varchar(50) NOT NULL,
+    "New_ProgramEvaluationTitle" varchar(50) NULL,
+    "Old_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ProgramEvaluation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationElement"
+(
+    "Old_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
+    "New_ProgramEvaluationElementTitle" varchar(50) NULL,
+    "Old_ProgramEducationOrganizationId_Unified" bigint NOT NULL,
+    "New_ProgramEducationOrganizationId_Unified" bigint NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58" varchar(50) NULL,
+    "Old_ProgramEvaluationTitle_Unified" varchar(50) NOT NULL,
+    "New_ProgramEvaluationTitle_Unified" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_ProgramName_Unified" varchar(60) NOT NULL,
+    "New_ProgramName_Unified" varchar(60) NULL,
+    "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ProgramEvaluationElement" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProgramEvaluationObjective"
+(
+    "Old_ProgramEvaluationObjectiveTitle" varchar(50) NOT NULL,
+    "New_ProgramEvaluationObjectiveTitle" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
+    "New_ProgramEvaluation_ProgramEducationOrganizationId" bigint NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramEvaluation_ProgramName" varchar(60) NULL,
+    "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ProgramEvaluationObjective" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProjectDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ProjectDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ReportCard"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395" varchar(255) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522" varchar(255) NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8" varchar(50) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7" varchar(50) NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
+    "Old_GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
+    "New_GradingPeriodGradingPeriod_SchoolId" bigint NULL,
+    "Old_GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
+    "New_GradingPeriodGradingPeriod_SchoolYear" integer NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ReportCard" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."RestraintEvent"
+(
+    "Old_RestraintEventIdentifier" varchar(36) NOT NULL,
+    "New_RestraintEventIdentifier" varchar(36) NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_RestraintEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
+(
+    "Old_SchoolId" bigint NOT NULL,
+    "New_SchoolId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SchoolYearType"
+(
+    "Old_SchoolYear" integer NOT NULL,
+    "New_SchoolYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SchoolYearType" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Section"
+(
+    "Old_CourseOffering_LocalCourseCode" varchar(60) NOT NULL,
+    "New_CourseOffering_LocalCourseCode" varchar(60) NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_CourseOffering_SchoolYear" integer NOT NULL,
+    "New_CourseOffering_SchoolYear" integer NULL,
+    "Old_CourseOffering_SessionName" varchar(60) NOT NULL,
+    "New_CourseOffering_SessionName" varchar(60) NULL,
+    "Old_SectionIdentifier" varchar(255) NOT NULL,
+    "New_SectionIdentifier" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Section" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SectionAttendanceTakenEvent"
+(
+    "Old_CalendarDate_CalendarCode" varchar(60) NOT NULL,
+    "New_CalendarDate_CalendarCode" varchar(60) NULL,
+    "Old_CalendarDate_Date" date NOT NULL,
+    "New_CalendarDate_Date" date NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_SchoolYear_Unified" integer NOT NULL,
+    "New_SchoolYear_Unified" integer NULL,
+    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
+    "New_Section_LocalCourseCode" varchar(60) NULL,
+    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
+    "New_Section_SectionIdentifier" varchar(255) NULL,
+    "Old_Section_SessionName" varchar(60) NOT NULL,
+    "New_Section_SessionName" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SectionAttendanceTakenEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Session"
+(
+    "Old_School_SchoolId" bigint NOT NULL,
+    "New_School_SchoolId" bigint NULL,
+    "Old_SchoolYear_SchoolYear" integer NOT NULL,
+    "New_SchoolYear_SchoolYear" integer NULL,
+    "Old_SessionName" varchar(60) NOT NULL,
+    "New_SessionName" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Session" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SourceDimension"
+(
+    "Old_Code" varchar(16) NOT NULL,
+    "New_Code" varchar(16) NULL,
+    "Old_FiscalYear" integer NOT NULL,
+    "New_FiscalYear" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SourceDimension" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Staff"
+(
+    "Old_StaffUniqueId" varchar(32) NOT NULL,
+    "New_StaffUniqueId" varchar(32) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Staff" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffAbsenceEvent"
+(
+    "Old_AbsenceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_AbsenceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "Old_AbsenceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_AbsenceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "Old_EventDate" date NOT NULL,
+    "New_EventDate" date NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffAbsenceEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffCohortAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_Cohort_CohortIdentifier" varchar(36) NOT NULL,
+    "New_Cohort_CohortIdentifier" varchar(36) NULL,
+    "Old_Cohort_EducationOrganizationId" bigint NOT NULL,
+    "New_Cohort_EducationOrganizationId" bigint NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffCohortAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffDisciplineIncidentAssociation"
+(
+    "Old_DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
+    "New_DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
+    "Old_DisciplineIncident_SchoolId" bigint NOT NULL,
+    "New_DisciplineIncident_SchoolId" bigint NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffDisciplineIncidentAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_StaffClassificationDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_StaffClassificationDescriptor_Namespace" varchar(255) NULL,
+    "Old_StaffClassificationDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_StaffClassificationDescriptor_CodeValue" varchar(50) NULL,
+    "Old_StaffUniqueId_Unified" varchar(32) NOT NULL,
+    "New_StaffUniqueId_Unified" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationAs_21269a4e1f" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationContactAssociation"
+(
+    "Old_ContactTitle" varchar(75) NOT NULL,
+    "New_ContactTitle" varchar(75) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationCo_e13fddbebe" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_EmploymentStatusDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_EmploymentStatusDescriptor_Namespace" varchar(255) NULL,
+    "Old_EmploymentStatusDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_EmploymentStatusDescriptor_CodeValue" varchar(50) NULL,
+    "Old_HireDate" date NOT NULL,
+    "New_HireDate" date NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffEducationOrganizationEm_6b655adbbd" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffLeave"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_StaffLeaveEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_StaffLeaveEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "Old_StaffLeaveEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_StaffLeaveEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffLeave" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffProgramAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSchoolAssociation"
+(
+    "Old_ProgramAssignmentDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramAssignmentDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramAssignmentDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramAssignmentDescriptor_CodeValue" varchar(50) NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffSchoolAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StaffSectionAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
+    "New_Section_LocalCourseCode" varchar(60) NULL,
+    "Old_Section_SchoolId" bigint NOT NULL,
+    "New_Section_SchoolId" bigint NULL,
+    "Old_Section_SchoolYear" integer NOT NULL,
+    "New_Section_SchoolYear" integer NULL,
+    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
+    "New_Section_SectionIdentifier" varchar(255) NULL,
+    "Old_Section_SessionName" varchar(60) NOT NULL,
+    "New_Section_SessionName" varchar(60) NULL,
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StaffSectionAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StateEducationAgency"
+(
+    "Old_StateEducationAgencyId" bigint NOT NULL,
+    "New_StateEducationAgencyId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StateEducationAgency" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
+(
+    "Old_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentUniqueId" varchar(32) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Student" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAcademicRecord"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_SchoolYear_SchoolYear" integer NOT NULL,
+    "New_SchoolYear_SchoolYear" integer NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_TermDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_TermDescriptor_Namespace" varchar(255) NULL,
+    "Old_TermDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_TermDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentAcademicRecord" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessment"
+(
+    "Old_Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_Assessment_AssessmentIdentifier" varchar(60) NULL,
+    "Old_Assessment_Namespace" varchar(255) NOT NULL,
+    "New_Assessment_Namespace" varchar(255) NULL,
+    "Old_StudentAssessmentIdentifier" varchar(60) NOT NULL,
+    "New_StudentAssessmentIdentifier" varchar(60) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_ReportedSchool_SchoolId" bigint NULL,
+    "New_ReportedSchool_SchoolId" bigint NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentAssessment" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentEducationOrganizationAssociation"
+(
+    "Old_EducationOrganizationAssociationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_EducationOrganizationAssociationTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_EducationOrganizationAssociationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_EducationOrganizationAssociationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_StudentAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_StudentAssessment_AssessmentIdentifier" varchar(60) NULL,
+    "Old_StudentAssessment_Namespace" varchar(255) NOT NULL,
+    "New_StudentAssessment_Namespace" varchar(255) NULL,
+    "Old_StudentAssessment_StudentAssessmentIdentifier" varchar(60) NOT NULL,
+    "New_StudentAssessment_StudentAssessmentIdentifier" varchar(60) NULL,
+    "Old_StudentAssessment_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentAssessment_StudentUniqueId" varchar(32) NULL,
+    "Old_StudentAssessment_Student_DocumentId" bigint NOT NULL,
+    "New_StudentAssessment_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentAssessmentEducationOr_117a915d68" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistration"
+(
+    "Old_AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
+    "New_AssessmentAdministration_AdministrationIdentifier" varchar(255) NULL,
+    "Old_AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
+    "New_AssessmentAdministration_AssessmentIdentifier" varchar(60) NULL,
+    "Old_AssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
+    "New_AssessmentAdministration_AssigningEducationOrganizationId" bigint NULL,
+    "Old_AssessmentAdministration_Namespace" varchar(255) NOT NULL,
+    "New_AssessmentAdministration_Namespace" varchar(255) NULL,
+    "Old_StudentEducationOrganizationAssociation_Educatio_5bb485678a" bigint NOT NULL,
+    "New_StudentEducationOrganizationAssociation_Educatio_9fe27e4988" bigint NULL,
+    "Old_StudentUniqueId_Unified" varchar(32) NOT NULL,
+    "New_StudentUniqueId_Unified" varchar(32) NULL,
+    "Old_StudentEducationOrganizationAssociation_Student_DocumentId" bigint NOT NULL,
+    "New_StudentEducationOrganizationAssociation_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentAssessmentRegistration" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
+(
+    "Old_AssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NOT NULL,
+    "New_AssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NULL,
+    "Old_AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "New_AssessmentIdentifier_Unified" varchar(60) NULL,
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_StudentAssessmentRegistration_AdministrationIdentifier" varchar(255) NOT NULL,
+    "New_StudentAssessmentRegistration_AdministrationIdentifier" varchar(255) NULL,
+    "Old_StudentAssessmentRegistration_AssigningEducation_32eafba146" bigint NOT NULL,
+    "New_StudentAssessmentRegistration_AssigningEducation_3e528e87d8" bigint NULL,
+    "Old_StudentAssessmentRegistration_EducationOrganizationId" bigint NOT NULL,
+    "New_StudentAssessmentRegistration_EducationOrganizationId" bigint NULL,
+    "Old_StudentAssessmentRegistration_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentAssessmentRegistration_StudentUniqueId" varchar(32) NULL,
+    "Old_StudentAssessmentRegistration_StudentEducationOr_d1d49658ae" bigint NOT NULL,
+    "New_StudentAssessmentRegistration_StudentEducationOr_d26eebe360" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentAssessmentRegistratio_8d02af3ca4" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCTEProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentCTEProgramAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCohortAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_Cohort_CohortIdentifier" varchar(36) NOT NULL,
+    "New_Cohort_CohortIdentifier" varchar(36) NULL,
+    "Old_Cohort_EducationOrganizationId" bigint NOT NULL,
+    "New_Cohort_EducationOrganizationId" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentCohortAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentCompetencyObjective"
+(
+    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_852e8ce395" varchar(255) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_93e5188522" varchar(255) NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodDescript_49abbde7c8" varchar(50) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodDescript_96f44e4fe7" varchar(50) NULL,
+    "Old_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
+    "New_GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NULL,
+    "Old_GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
+    "New_GradingPeriodGradingPeriod_SchoolId" bigint NULL,
+    "Old_GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
+    "New_GradingPeriodGradingPeriod_SchoolYear" integer NULL,
+    "Old_ObjectiveCompetencyObjective_EducationOrganizationId" bigint NOT NULL,
+    "New_ObjectiveCompetencyObjective_EducationOrganizationId" bigint NULL,
+    "Old_ObjectiveCompetencyObjective_Objective" varchar(60) NOT NULL,
+    "New_ObjectiveCompetencyObjective_Objective" varchar(60) NULL,
+    "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_4b5e91cff3" varchar(255) NOT NULL,
+    "New_ObjectiveCompetencyObjective_ObjectiveGradeLevel_ae5f765c69" varchar(255) NULL,
+    "Old_ObjectiveCompetencyObjective_ObjectiveGradeLevel_7f79a12138" varchar(50) NOT NULL,
+    "New_ObjectiveCompetencyObjective_ObjectiveGradeLevel_65dd7db251" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentCompetencyObjective" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentContactAssociation"
+(
+    "Old_Contact_ContactUniqueId" varchar(32) NOT NULL,
+    "New_Contact_ContactUniqueId" varchar(32) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Old_Contact_DocumentId" bigint NOT NULL,
+    "New_Contact_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentContactAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentBehaviorAssociation"
+(
+    "Old_BehaviorDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_BehaviorDescriptor_Namespace" varchar(255) NULL,
+    "Old_BehaviorDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_BehaviorDescriptor_CodeValue" varchar(50) NULL,
+    "Old_DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
+    "New_DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
+    "Old_DisciplineIncident_SchoolId" bigint NOT NULL,
+    "New_DisciplineIncident_SchoolId" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentDisciplineIncidentBeh_ca7986a163" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentDisciplineIncidentNonOffenderAssociation"
+(
+    "Old_DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
+    "New_DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
+    "Old_DisciplineIncident_SchoolId" bigint NOT NULL,
+    "New_DisciplineIncident_SchoolId" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentDisciplineIncidentNon_3ea812687c" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationAssessmentAccommodation"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentEducationOrganization_333a5c25d4" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationAssociation"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentEducationOrganizationAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ResponsibilityDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ResponsibilityDescriptor_Namespace" varchar(255) NULL,
+    "Old_ResponsibilityDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ResponsibilityDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentEducationOrganization_1f44fed0a1" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentGradebookEntry"
+(
+    "Old_GradebookEntry_GradebookEntryIdentifier" varchar(60) NOT NULL,
+    "New_GradebookEntry_GradebookEntryIdentifier" varchar(60) NULL,
+    "Old_GradebookEntry_Namespace" varchar(255) NOT NULL,
+    "New_GradebookEntry_Namespace" varchar(255) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentGradebookEntry" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHealth"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentHealth" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentHomelessProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentHomelessProgramAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAssociation"
+(
+    "Old_Intervention_EducationOrganizationId" bigint NOT NULL,
+    "New_Intervention_EducationOrganizationId" bigint NULL,
+    "Old_Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
+    "New_Intervention_InterventionIdentificationCode" varchar(60) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentInterventionAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentInterventionAttendanceEvent"
+(
+    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "Old_EventDate" date NOT NULL,
+    "New_EventDate" date NULL,
+    "Old_Intervention_EducationOrganizationId" bigint NOT NULL,
+    "New_Intervention_EducationOrganizationId" bigint NULL,
+    "Old_Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
+    "New_Intervention_InterventionIdentificationCode" varchar(60) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentInterventionAttendanceEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentLanguageInstructionProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentLanguageInstructionPr_96ed70d2c0" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentMigrantEducationProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentMigrantEducationProgr_796d1fdb71" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentNeglectedOrDelinquentProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentNeglectedOrDelinquent_08a1d91197" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentProgramAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramAttendanceEvent"
+(
+    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_EventDate" date NOT NULL,
+    "New_EventDate" date NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentProgramAttendanceEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentProgramEvaluation"
+(
+    "Old_EvaluationDate" date NOT NULL,
+    "New_EvaluationDate" date NULL,
+    "Old_ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
+    "New_ProgramEvaluation_ProgramEducationOrganizationId" bigint NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_8f9f0bfd96" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_1283ee1378" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationPeriodDescrip_2abd74fc98" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationPeriodDescrip_0efa46cb58" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramEvaluationTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramEvaluation_ProgramName" varchar(60) NULL,
+    "Old_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramEvaluation_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramEvaluation_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentProgramEvaluation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
+(
+    "Old_EntryDate" date NOT NULL,
+    "New_EntryDate" date NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAttendanceEvent"
+(
+    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "Old_EventDate" date NOT NULL,
+    "New_EventDate" date NULL,
+    "Old_SchoolId_Unified" bigint NOT NULL,
+    "New_SchoolId_Unified" bigint NULL,
+    "Old_Session_SchoolYear" integer NOT NULL,
+    "New_Session_SchoolYear" integer NULL,
+    "Old_Session_SessionName" varchar(60) NOT NULL,
+    "New_Session_SessionName" varchar(60) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolAttendanceEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolFoodServiceProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolFoodServiceProg_7e29d88dd5" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSection504ProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSection504ProgramAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
+    "New_Section_LocalCourseCode" varchar(60) NULL,
+    "Old_Section_SchoolId" bigint NOT NULL,
+    "New_Section_SchoolId" bigint NULL,
+    "Old_Section_SchoolYear" integer NOT NULL,
+    "New_Section_SchoolYear" integer NULL,
+    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
+    "New_Section_SectionIdentifier" varchar(255) NULL,
+    "Old_Section_SessionName" varchar(60) NOT NULL,
+    "New_Section_SessionName" varchar(60) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSectionAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSectionAttendanceEvent"
+(
+    "Old_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_Namespace" varchar(255) NULL,
+    "Old_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_AttendanceEventCategoryDescriptor_CodeValue" varchar(50) NULL,
+    "Old_EventDate" date NOT NULL,
+    "New_EventDate" date NULL,
+    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
+    "New_Section_LocalCourseCode" varchar(60) NULL,
+    "Old_Section_SchoolId" bigint NOT NULL,
+    "New_Section_SchoolId" bigint NULL,
+    "Old_Section_SchoolYear" integer NOT NULL,
+    "New_Section_SchoolYear" integer NULL,
+    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
+    "New_Section_SectionIdentifier" varchar(255) NULL,
+    "Old_Section_SessionName" varchar(60) NOT NULL,
+    "New_Section_SessionName" varchar(60) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSectionAttendanceEvent" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSpecialEducationProgr_56bafd7b8f" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+(
+    "Old_ConsentToEvaluationReceivedDate" date NOT NULL,
+    "New_ConsentToEvaluationReceivedDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSpecialEducationProgr_5672b6d178" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTitleIPartAProgramAssociation"
+(
+    "Old_BeginDate" date NOT NULL,
+    "New_BeginDate" date NULL,
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_EducationOrganizationId" bigint NOT NULL,
+    "New_ProgramProgram_EducationOrganizationId" bigint NULL,
+    "Old_ProgramProgram_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramProgram_ProgramName" varchar(60) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_ProgramProgram_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentTitleIPartAProgramAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentTransportation"
+(
+    "Old_Student_StudentUniqueId" varchar(32) NOT NULL,
+    "New_Student_StudentUniqueId" varchar(32) NULL,
+    "Old_TransportationEducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_TransportationEducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_Student_DocumentId" bigint NOT NULL,
+    "New_Student_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentTransportation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Survey"
+(
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Old_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_SurveyIdentifier" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Survey" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyCourseAssociation"
+(
+    "Old_Course_CourseCode" varchar(60) NOT NULL,
+    "New_Course_CourseCode" varchar(60) NULL,
+    "Old_Course_EducationOrganizationId" bigint NOT NULL,
+    "New_Course_EducationOrganizationId" bigint NULL,
+    "Old_Survey_Namespace" varchar(255) NOT NULL,
+    "New_Survey_Namespace" varchar(255) NULL,
+    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveyCourseAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyProgramAssociation"
+(
+    "Old_Program_EducationOrganizationId" bigint NOT NULL,
+    "New_Program_EducationOrganizationId" bigint NULL,
+    "Old_Program_ProgramName" varchar(60) NOT NULL,
+    "New_Program_ProgramName" varchar(60) NULL,
+    "Old_Program_ProgramTypeDescriptor_Namespace" varchar(255) NOT NULL,
+    "New_Program_ProgramTypeDescriptor_Namespace" varchar(255) NULL,
+    "Old_Program_ProgramTypeDescriptor_CodeValue" varchar(50) NOT NULL,
+    "New_Program_ProgramTypeDescriptor_CodeValue" varchar(50) NULL,
+    "Old_Survey_Namespace" varchar(255) NOT NULL,
+    "New_Survey_Namespace" varchar(255) NULL,
+    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveyProgramAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestion"
+(
+    "Old_QuestionCode" varchar(60) NOT NULL,
+    "New_QuestionCode" varchar(60) NULL,
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "New_SurveyIdentifier_Unified" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveyQuestion" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyQuestionResponse"
+(
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_SurveyQuestion_QuestionCode" varchar(60) NOT NULL,
+    "New_SurveyQuestion_QuestionCode" varchar(60) NULL,
+    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "New_SurveyIdentifier_Unified" varchar(60) NULL,
+    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveyQuestionResponse" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponse"
+(
+    "Old_Survey_Namespace" varchar(255) NOT NULL,
+    "New_Survey_Namespace" varchar(255) NULL,
+    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "Old_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "New_SurveyResponseIdentifier" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveyResponse" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseEducationOrganizationTargetAssociation"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_SurveyResponse_Namespace" varchar(255) NOT NULL,
+    "New_SurveyResponse_Namespace" varchar(255) NULL,
+    "Old_SurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_SurveyResponse_SurveyIdentifier" varchar(60) NULL,
+    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveyResponseEducationOrgan_64e955bb5b" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveyResponseStaffTargetAssociation"
+(
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_SurveyResponse_Namespace" varchar(255) NOT NULL,
+    "New_SurveyResponse_Namespace" varchar(255) NULL,
+    "Old_SurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_SurveyResponse_SurveyIdentifier" varchar(60) NULL,
+    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveyResponseStaffTargetAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySection"
+(
+    "Old_Survey_Namespace" varchar(255) NOT NULL,
+    "New_Survey_Namespace" varchar(255) NULL,
+    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "Old_SurveySectionTitle" varchar(255) NOT NULL,
+    "New_SurveySectionTitle" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveySection" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionAssociation"
+(
+    "Old_Section_LocalCourseCode" varchar(60) NOT NULL,
+    "New_Section_LocalCourseCode" varchar(60) NULL,
+    "Old_Section_SchoolId" bigint NOT NULL,
+    "New_Section_SchoolId" bigint NULL,
+    "Old_Section_SchoolYear" integer NOT NULL,
+    "New_Section_SchoolYear" integer NULL,
+    "Old_Section_SectionIdentifier" varchar(255) NOT NULL,
+    "New_Section_SectionIdentifier" varchar(255) NULL,
+    "Old_Section_SessionName" varchar(60) NOT NULL,
+    "New_Section_SessionName" varchar(60) NULL,
+    "Old_Survey_Namespace" varchar(255) NOT NULL,
+    "New_Survey_Namespace" varchar(255) NULL,
+    "Old_Survey_SurveyIdentifier" varchar(60) NOT NULL,
+    "New_Survey_SurveyIdentifier" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveySectionAssociation" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponse"
+(
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "New_SurveyIdentifier_Unified" varchar(60) NULL,
+    "Old_SurveyResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "New_SurveyResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "Old_SurveySection_SurveySectionTitle" varchar(255) NOT NULL,
+    "New_SurveySection_SurveySectionTitle" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveySectionResponse" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
+(
+    "Old_EducationOrganization_EducationOrganizationId" bigint NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" bigint NULL,
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "New_SurveyIdentifier_Unified" varchar(60) NULL,
+    "Old_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "New_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "Old_SurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
+    "New_SurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveySectionResponseEducati_a10d4e9a5f" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."SurveySectionResponseStaffTargetAssociation"
+(
+    "Old_Staff_StaffUniqueId" varchar(32) NOT NULL,
+    "New_Staff_StaffUniqueId" varchar(32) NULL,
+    "Old_Namespace_Unified" varchar(255) NOT NULL,
+    "New_Namespace_Unified" varchar(255) NULL,
+    "Old_SurveyIdentifier_Unified" varchar(60) NOT NULL,
+    "New_SurveyIdentifier_Unified" varchar(60) NULL,
+    "Old_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NOT NULL,
+    "New_SurveySectionResponse_SurveyResponseIdentifier" varchar(60) NULL,
+    "Old_SurveySectionResponse_SurveySectionTitle" varchar(255) NOT NULL,
+    "New_SurveySectionResponse_SurveySectionTitle" varchar(255) NULL,
+    "Old_Staff_DocumentId" bigint NOT NULL,
+    "New_Staff_DocumentId" bigint NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_SurveySectionResponseStaffTa_51a2f849f1" PRIMARY KEY ("ChangeVersion")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"

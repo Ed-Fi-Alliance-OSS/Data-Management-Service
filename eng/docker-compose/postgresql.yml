@@ -7,6 +7,10 @@ services:
   db:
     image: postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0
     container_name: dms-postgresql
+    # Raise the shared lock pool: schema provisioning and TRUNCATE-all run as single
+    # large transactions, and parallel test fixtures exhaust the default budget
+    # (max_locks_per_transaction=64), surfacing PG error 53200 (out of shared memory).
+    command: ["postgres", "-c", "max_locks_per_transaction=256"]
     volumes:
       - dms-postgresql:/var/lib/postgresql/data
       - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh

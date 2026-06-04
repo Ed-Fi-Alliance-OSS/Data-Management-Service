@@ -408,6 +408,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Increase PostgreSQL lock budget
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
+
       - name: Restore Backend PostgreSQL Integration Tests
         run: |
           dotnet restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --verbosity:normal
@@ -473,6 +478,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Increase PostgreSQL lock budget
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
+
       - name: Restore DMS API PostgreSQL Integration Tests
         run: |
           dotnet restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --verbosity:normal
@@ -536,6 +546,11 @@ jobs:
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
+
+      - name: Increase PostgreSQL lock budget
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
 
       - name: Restore Old PostgreSQL Integration Tests
         run: |
@@ -650,6 +665,11 @@ jobs:
 
           docker logs dms-ci-mssql
           throw "SQL Server did not become ready within the timeout period."
+
+      - name: Increase PostgreSQL lock budget
+        uses: ./.github/actions/increase-pg-lock-budget
+        with:
+          container-id: ${{ job.services.postgres.id }}
 
       - name: Restore CLI Integration Tests
         run: |

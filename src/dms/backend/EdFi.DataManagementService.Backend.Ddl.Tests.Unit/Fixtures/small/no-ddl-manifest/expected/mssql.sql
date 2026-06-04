@@ -408,6 +408,8 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.Person', N'U') IS NULL
 CREATE TABLE [edfi].[Person]
@@ -418,6 +420,17 @@ CREATE TABLE [edfi].[Person]
     [PersonId] int NOT NULL,
     CONSTRAINT [PK_Person] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Person_NK] UNIQUE ([PersonId])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.Person', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[Person]
+(
+    [Old_PersonId] int NOT NULL,
+    [New_PersonId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Person_CreatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_Person] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF NOT EXISTS (

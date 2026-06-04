@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Increase PostgreSQL lock budget
+description: >-
+  Raises max_locks_per_transaction on a PostgreSQL service container and restarts it so the new
+  postmaster setting takes effect. Service containers cannot override their command, so the setting
+  is appended to postgresql.conf in the running container instead.
+
+inputs:
+  container-id:
+    description: The PostgreSQL service container id (job.services.postgres.id)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Increase PostgreSQL lock budget
+      shell: pwsh
+      run: |
+        # Schema provisioning and TRUNCATE-all run as single large transactions; with
+        # parallel test fixtures the default lock pool (max_locks_per_transaction=64)
+        # is exhausted (PG error 53200: out of shared memory). Raise it, then restart
+        # the service container so the new postmaster setting takes effect.
+        docker exec ${{ inputs.container-id }} sh -c 'echo "max_locks_per_transaction = 256" >> /var/lib/postgresql/data/postgresql.conf'
+        docker restart ${{ inputs.container-id }}
+
+        for ($attempt = 1; $attempt -le 30; $attempt++) {
+          docker exec ${{ inputs.container-id }} pg_isready -U postgres
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          Start-Sleep -Seconds 2
+        }
+        throw "PostgreSQL did not become ready after restart."

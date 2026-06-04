@@ -43,6 +43,35 @@ internal static class CommonInventoryTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build a descriptor resource schema with the supplied resource name.
+    /// </summary>
+    internal static JsonObject BuildDescriptorSchemaNamed(string resourceName)
+    {
+        var descriptor = BuildDescriptorSchema();
+        descriptor["resourceName"] = resourceName;
+        return descriptor;
+    }
+
+    /// <summary>
+    /// Build an extension project whose endpoint name sorts ahead of <c>ed-fi</c> and that contributes a
+    /// descriptor. Used to prove the shared descriptor tracked-change table still targets the core schema
+    /// (<c>tracked_changes_edfi</c>) rather than the first descriptor's owning project schema.
+    /// </summary>
+    internal static JsonObject BuildExtensionDescriptorProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Abc",
+            ["projectEndpointName"] = "abc-extension",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["programTypeDescriptors"] = BuildDescriptorSchemaNamed("ProgramTypeDescriptor"),
+            },
+        };
+    }
+
+    /// <summary>
     /// Build a Contact resource schema.
     /// </summary>
     internal static JsonObject BuildContactSchema()

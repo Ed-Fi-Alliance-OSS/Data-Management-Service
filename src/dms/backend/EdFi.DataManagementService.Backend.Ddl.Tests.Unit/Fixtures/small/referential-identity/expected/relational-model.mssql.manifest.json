@@ -881,6 +881,22 @@
   ],
   "triggers": [
     {
+      "name": "TR_Descriptor_Stamp_Document",
+      "table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [],
+      "mirror_stamp_target_table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      }
+    },
+    {
       "name": "TR_DateTimeKeyResource_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -919,6 +935,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "DateTimeKeyResource"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "DateTimeKeyResource"
+        }
       }
     },
     {
@@ -960,6 +982,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "DecimalKeyResource"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "DecimalKeyResource"
+        }
       }
     },
     {
@@ -1007,6 +1035,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "DecimalRefResource"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "DecimalRefResource"
+        }
       }
     },
     {
@@ -1060,6 +1094,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "EdOrgDependentChildResource"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "EdOrgDependentChildResource"
+        }
       }
     },
     {
@@ -1142,6 +1182,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "EdOrgDependentResource"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "EdOrgDependentResource"
+        }
       }
     },
     {
@@ -1234,6 +1280,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "KeyUnifiedResource"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "KeyUnifiedResource"
+        }
       }
     },
     {
@@ -1316,6 +1368,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "ResourceA"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "ResourceA"
+        }
       }
     },
     {
@@ -1398,6 +1456,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "ResourceB"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "ResourceB"
+        }
       }
     },
     {
@@ -1534,6 +1598,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "School"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "School"
+        }
       }
     },
     {
@@ -1618,6 +1688,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "Student"
+        }
       }
     },
     {
@@ -1665,7 +1741,781 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "StudentSchoolAssociation"
+        }
       }
+    }
+  ],
+  "tracked_change_tables": [
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "DateTimeKeyResource"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_EventTimestamp",
+          "new_column": "New_EventTimestamp",
+          "source_json_path": "$.eventTimestamp",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "DecimalKeyResource"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "DecimalKeyResource"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_DecimalKey",
+          "new_column": "New_DecimalKey",
+          "source_json_path": "$.decimalKey",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Decimal",
+            "precision": 9,
+            "scale": 2
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "DecimalRefResource"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "DecimalRefResource"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_RefResourceId",
+          "new_column": "New_RefResourceId",
+          "source_json_path": "$.refResourceId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_DecimalKeyReference_DecimalKey",
+          "new_column": "New_DecimalKeyReference_DecimalKey",
+          "source_json_path": "$.decimalKeyReference.decimalKey",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Decimal",
+            "precision": 9,
+            "scale": 2
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_EdOrgDependentChildResourceId",
+          "new_column": "New_EdOrgDependentChildResourceId",
+          "source_json_path": "$.edOrgDependentChildResourceId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId",
+          "new_column": "New_EdOrgDependentResourceReference_EdOrgDependentResourceId",
+          "source_json_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_EdOrgDependentResourceReference_EducationOrganizationId",
+          "new_column": "New_EdOrgDependentResourceReference_EducationOrganizationId",
+          "source_json_path": "$.edOrgDependentResourceReference.educationOrganizationId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int32"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_EdOrgDependentResourceId",
+          "new_column": "New_EdOrgDependentResourceId",
+          "source_json_path": "$.edOrgDependentResourceId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_EducationOrganization_EducationOrganizationId",
+          "new_column": "New_EducationOrganization_EducationOrganizationId",
+          "source_json_path": "$.educationOrganizationReference.educationOrganizationId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int32"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_KeyUnifiedResourceId",
+          "new_column": "New_KeyUnifiedResourceId",
+          "source_json_path": "$.keyUnifiedResourceId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_ResourceAReference_ResourceAId",
+          "new_column": "New_ResourceAReference_ResourceAId",
+          "source_json_path": "$.resourceAReference.resourceAId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_StudentUniqueId_Unified",
+          "new_column": "New_StudentUniqueId_Unified",
+          "source_json_path": "$.resourceAReference.studentUniqueId",
+          "canonical_storage_column": "StudentUniqueId_Unified",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 32
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_ResourceBReference_ResourceBId",
+          "new_column": "New_ResourceBReference_ResourceBId",
+          "source_json_path": "$.resourceBReference.resourceBId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "ResourceA"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_ResourceAId",
+          "new_column": "New_ResourceAId",
+          "source_json_path": "$.resourceAId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_StudentReference_StudentUniqueId",
+          "new_column": "New_StudentReference_StudentUniqueId",
+          "source_json_path": "$.studentReference.studentUniqueId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 32
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "ResourceB"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_ResourceBId",
+          "new_column": "New_ResourceBId",
+          "source_json_path": "$.resourceBId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 64
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_StudentReference_StudentUniqueId",
+          "new_column": "New_StudentReference_StudentUniqueId",
+          "source_json_path": "$.studentReference.studentUniqueId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 32
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "School"
+      },
+      "kind": "ConcreteAbstract",
+      "source_table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_SchoolId",
+          "new_column": "New_SchoolId",
+          "source_json_path": "$.schoolId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int32"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "Student"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_StudentUniqueId",
+          "new_column": "New_StudentUniqueId",
+          "source_json_path": "$.studentUniqueId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 32
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "StudentSchoolAssociation"
+      },
+      "kind": "Resource",
+      "source_table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAssociation"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_StudentUniqueId",
+          "new_column": "New_StudentUniqueId",
+          "source_json_path": "$.studentUniqueId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "String",
+            "max_length": 32
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        },
+        {
+          "old_column": "Old_SchoolReference_SchoolId",
+          "new_column": "New_SchoolReference_SchoolId",
+          "source_json_path": "$.schoolReference.schoolId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int32"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
     }
   ],
   "auth_objects": {

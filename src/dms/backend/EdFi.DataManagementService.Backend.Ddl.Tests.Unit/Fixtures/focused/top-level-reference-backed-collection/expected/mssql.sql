@@ -408,6 +408,8 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.Program', N'U') IS NULL
 CREATE TABLE [edfi].[Program]
@@ -448,6 +450,30 @@ CREATE TABLE [edfi].[SchoolProgram]
     CONSTRAINT [UX_SchoolProgram_Ordinal_School_DocumentId] UNIQUE ([School_DocumentId], [Ordinal]),
     CONSTRAINT [UX_SchoolProgram_ProgramReference_DocumentId_School_DocumentId] UNIQUE ([School_DocumentId], [ProgramReference_DocumentId]),
     CONSTRAINT [CK_SchoolProgram_ProgramReference_AllNone] CHECK (([ProgramReference_DocumentId] IS NULL AND [ProgramReference_ProgramId] IS NULL AND [ProgramReference_ProgramName] IS NULL) OR ([ProgramReference_DocumentId] IS NOT NULL AND [ProgramReference_ProgramId] IS NOT NULL AND [ProgramReference_ProgramName] IS NOT NULL))
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.Program', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[Program]
+(
+    [Old_ProgramId] int NOT NULL,
+    [New_ProgramId] int NULL,
+    [Old_ProgramName] nvarchar(60) NOT NULL,
+    [New_ProgramName] nvarchar(60) NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_Program_CreatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_Program] PRIMARY KEY CLUSTERED ([ChangeVersion])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.School', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[School]
+(
+    [Old_SchoolId] int NOT NULL,
+    [New_SchoolId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_School_CreatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_School] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF NOT EXISTS (

@@ -424,6 +424,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."Person"
 (
@@ -433,6 +434,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
     "PersonId" integer NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Person_NK" UNIQUE ("PersonId")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Person"
+(
+    "Old_PersonId" integer NOT NULL,
+    "New_PersonId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Person" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

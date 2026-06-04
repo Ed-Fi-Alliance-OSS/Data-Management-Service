@@ -341,6 +341,22 @@
   ],
   "triggers": [
     {
+      "name": "TR_Descriptor_Stamp_Document",
+      "table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [],
+      "mirror_stamp_target_table": {
+        "schema": "dms",
+        "name": "Descriptor"
+      }
+    },
+    {
       "name": "TR_LocalEducationAgency_AbstractIdentity",
       "table": {
         "schema": "edfi",
@@ -443,6 +459,12 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "LocalEducationAgency"
+        }
       }
     },
     {
@@ -548,7 +570,129 @@
       "mirror_stamp_target_table": {
         "schema": "edfi",
         "name": "School"
+      },
+      "change_tracking": {
+        "tracked_change_table": {
+          "schema": "tracked_changes_edfi",
+          "name": "School"
+        }
       }
+    }
+  ],
+  "tracked_change_tables": [
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "ConcreteAbstract",
+      "source_table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_LocalEducationAgencyId",
+          "new_column": "New_LocalEducationAgencyId",
+          "source_json_path": "$.localEducationAgencyId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int32"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
+    },
+    {
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "School"
+      },
+      "kind": "ConcreteAbstract",
+      "source_table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "primary_key_columns": [
+        "ChangeVersion"
+      ],
+      "value_columns": [
+        {
+          "old_column": "Old_SchoolId",
+          "new_column": "New_SchoolId",
+          "source_json_path": "$.schoolId",
+          "is_old_column_nullable": false,
+          "is_new_column_nullable": true,
+          "scalar_type": {
+            "kind": "Int32"
+          },
+          "role": "Scalar",
+          "origin": "Identity"
+        }
+      ],
+      "system_columns": [
+        {
+          "role": "Id",
+          "column": "Id",
+          "scalar_type": null,
+          "is_nullable": false,
+          "is_primary_key": false
+        },
+        {
+          "role": "ChangeVersion",
+          "column": "ChangeVersion",
+          "scalar_type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "is_primary_key": true
+        },
+        {
+          "role": "CreatedAt",
+          "column": "CreatedAt",
+          "scalar_type": {
+            "kind": "DateTime"
+          },
+          "is_nullable": false,
+          "is_primary_key": false
+        }
+      ],
+      "descriptor_joins": [],
+      "person_joins": []
     }
   ],
   "auth_objects": {

@@ -83,6 +83,16 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             dialectRules
         );
 
+        ApplyInPlace(
+            context.TrackedChangeInventory,
+            (entry, rules) =>
+            {
+                var updated = ApplyToTrackedChangeTable(entry, rules, out var changed);
+                return changed ? updated : null;
+            },
+            dialectRules
+        );
+
         ShortenAuthEdOrgHierarchy(context, dialectRules);
     }
 
@@ -1298,6 +1308,168 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     }
 
     /// <summary>
+    /// Applies dialect shortening to a tracked-change table and reports whether it changed. Logical join
+    /// names (DescriptorJoinName / PersonJoinName) and resource/role references are not physical identifiers
+    /// and are left unchanged; physical table and column identifiers are shortened.
+    /// </summary>
+    private static TrackedChangeTableInfo ApplyToTrackedChangeTable(
+        TrackedChangeTableInfo trackedTable,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        var updatedTable = ShortenTable(trackedTable.Table, dialectRules);
+        var updatedSourceTable = ShortenTable(trackedTable.SourceTable, dialectRules);
+
+        var updatedValueColumns = new TrackedChangeColumnInfo[trackedTable.ValueColumnsInTableOrder.Count];
+        var valueColumnsChanged = false;
+        for (var index = 0; index < trackedTable.ValueColumnsInTableOrder.Count; index++)
+        {
+            var column = trackedTable.ValueColumnsInTableOrder[index];
+            var updatedOld = ShortenColumn(column.OldColumnName, dialectRules);
+            var updatedNew = ShortenColumn(column.NewColumnName, dialectRules);
+            var updatedCanonical = column.CanonicalStorageColumn is { } canonical
+                ? ShortenColumn(canonical, dialectRules)
+                : (DbColumnName?)null;
+
+            if (
+                !updatedOld.Equals(column.OldColumnName)
+                || !updatedNew.Equals(column.NewColumnName)
+                || !Equals(updatedCanonical, column.CanonicalStorageColumn)
+            )
+            {
+                valueColumnsChanged = true;
+            }
+
+            updatedValueColumns[index] = column with
+            {
+                OldColumnName = updatedOld,
+                NewColumnName = updatedNew,
+                CanonicalStorageColumn = updatedCanonical,
+            };
+        }
+
+        var updatedSystemColumns = new TrackedChangeSystemColumnInfo[trackedTable.SystemColumns.Count];
+        var systemColumnsChanged = false;
+        for (var index = 0; index < trackedTable.SystemColumns.Count; index++)
+        {
+            var column = trackedTable.SystemColumns[index];
+            var updatedName = ShortenColumn(column.ColumnName, dialectRules);
+            if (!updatedName.Equals(column.ColumnName))
+            {
+                systemColumnsChanged = true;
+            }
+
+            updatedSystemColumns[index] = column with { ColumnName = updatedName };
+        }
+
+        var updatedPrimaryKeyColumns = ShortenColumns(
+            trackedTable.PrimaryKeyColumns,
+            dialectRules,
+            out var primaryKeyChanged
+        );
+
+        var updatedDescriptorJoins = new TrackedChangeDescriptorJoinInfo[trackedTable.DescriptorJoins.Count];
+        var descriptorJoinsChanged = false;
+        for (var index = 0; index < trackedTable.DescriptorJoins.Count; index++)
+        {
+            var join = trackedTable.DescriptorJoins[index];
+            var updatedSource = ShortenColumn(join.SourceColumn, dialectRules);
+            if (!updatedSource.Equals(join.SourceColumn))
+            {
+                descriptorJoinsChanged = true;
+            }
+
+            updatedDescriptorJoins[index] = join with { SourceColumn = updatedSource };
+        }
+
+        var updatedPersonJoins = new TrackedChangePersonJoinInfo[trackedTable.PersonJoins.Count];
+        var personJoinsChanged = false;
+        for (var index = 0; index < trackedTable.PersonJoins.Count; index++)
+        {
+            var join = trackedTable.PersonJoins[index];
+            var updatedPath = ShortenColumnPathSteps(join.JoinPath, dialectRules, out var pathChanged);
+            if (pathChanged)
+            {
+                personJoinsChanged = true;
+            }
+
+            updatedPersonJoins[index] = pathChanged ? join with { JoinPath = updatedPath } : join;
+        }
+
+        changed =
+            !updatedTable.Equals(trackedTable.Table)
+            || !updatedSourceTable.Equals(trackedTable.SourceTable)
+            || valueColumnsChanged
+            || systemColumnsChanged
+            || primaryKeyChanged
+            || descriptorJoinsChanged
+            || personJoinsChanged;
+
+        if (!changed)
+        {
+            return trackedTable;
+        }
+
+        return trackedTable with
+        {
+            Table = updatedTable,
+            SourceTable = updatedSourceTable,
+            ValueColumnsInTableOrder = updatedValueColumns,
+            SystemColumns = updatedSystemColumns,
+            PrimaryKeyColumns = updatedPrimaryKeyColumns,
+            DescriptorJoins = updatedDescriptorJoins,
+            PersonJoins = updatedPersonJoins,
+        };
+    }
+
+    /// <summary>
+    /// Shortens the table and column identifiers in a column-path-step chain (used by person joins).
+    /// </summary>
+    private static IReadOnlyList<ColumnPathStep> ShortenColumnPathSteps(
+        IReadOnlyList<ColumnPathStep> steps,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updated = new ColumnPathStep[steps.Count];
+
+        for (var index = 0; index < steps.Count; index++)
+        {
+            var step = steps[index];
+            var updatedSourceTable = ShortenTable(step.SourceTable, dialectRules);
+            var updatedSourceColumn = ShortenColumn(step.SourceColumnName, dialectRules);
+            var updatedTargetTable = step.TargetTable is { } targetTable
+                ? ShortenTable(targetTable, dialectRules)
+                : (DbTableName?)null;
+            var updatedTargetColumn = step.TargetColumnName is { } targetColumn
+                ? ShortenColumn(targetColumn, dialectRules)
+                : (DbColumnName?)null;
+
+            if (
+                !updatedSourceTable.Equals(step.SourceTable)
+                || !updatedSourceColumn.Equals(step.SourceColumnName)
+                || !Equals(updatedTargetTable, step.TargetTable)
+                || !Equals(updatedTargetColumn, step.TargetColumnName)
+            )
+            {
+                changed = true;
+            }
+
+            updated[index] = step with
+            {
+                SourceTable = updatedSourceTable,
+                SourceColumnName = updatedSourceColumn,
+                TargetTable = updatedTargetTable,
+                TargetColumnName = updatedTargetColumn,
+            };
+        }
+
+        return changed ? updated : steps;
+    }
+
+    /// <summary>
     /// Applies dialect shortening to trigger-kind-specific parameters and reports whether they changed.
     /// </summary>
 #pragma warning disable IDE0055
@@ -1363,9 +1535,28 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 changed = entityChanged;
                 return changed ? auth with { Entity = updatedEntity } : parameters;
             }
-            case TriggerKindParameters.DocumentStamping:
-                changed = false;
-                return parameters;
+            case TriggerKindParameters.DocumentStamping stamping:
+            {
+                // Shorten the change-tracking table reference consistently with the tracked-change table
+                // it points at, mirroring the MirrorStampTargetTable handling.
+                if (stamping.ChangeTracking is null)
+                {
+                    changed = false;
+                    return parameters;
+                }
+
+                var updatedTrackedTable = ShortenTable(
+                    stamping.ChangeTracking.TrackedChangeTable,
+                    dialectRules
+                );
+                changed = !updatedTrackedTable.Equals(stamping.ChangeTracking.TrackedChangeTable);
+                return changed
+                    ? stamping with
+                    {
+                        ChangeTracking = new TrackedChangeAttachment(updatedTrackedTable),
+                    }
+                    : parameters;
+            }
             default:
                 throw new InvalidOperationException(
                     $"Unsupported trigger kind parameters type '{parameters.GetType().Name}'."
@@ -1802,6 +1993,84 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             );
         }
 
+        var canonicalTrackedChangeTables = context
+            .TrackedChangeInventory.OrderBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(table => table.Table.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var trackedTable in canonicalTrackedChangeTables)
+        {
+            detector.RegisterTable(
+                trackedTable.Table,
+                BuildOrigin($"tracked-change table {FormatTable(trackedTable.Table)}", null, null)
+            );
+
+            var trackedColumns = trackedTable
+                .ValueColumnsInTableOrder.SelectMany(column =>
+                    new[] { column.OldColumnName, column.NewColumnName }
+                )
+                .Concat(trackedTable.SystemColumns.Select(column => column.ColumnName));
+
+            foreach (var column in trackedColumns)
+            {
+                detector.RegisterColumn(
+                    trackedTable.Table,
+                    column,
+                    BuildOrigin(
+                        $"tracked-change column {FormatColumn(trackedTable.Table, column)}",
+                        null,
+                        null
+                    )
+                );
+            }
+
+            // Register the constraint names the DDL emitter generates for tracked-change tables so a
+            // shortening collision fails here (deterministic derivation diagnostic) rather than at DDL
+            // execution. Names come from RelationalNameConventions — the single source of truth shared with
+            // RelationalModelDdlEmitter — and must mirror the emitter's render guards: the primary key is
+            // only emitted when the table has key columns, and the named CreatedAt default only for the
+            // CreatedAt system column.
+            if (trackedTable.PrimaryKeyColumns.Count > 0)
+            {
+                var primaryKeyName = RelationalNameConventions.TrackedChangePrimaryKeyName(
+                    trackedTable.Table
+                );
+
+                detector.RegisterConstraint(
+                    trackedTable.Table,
+                    primaryKeyName,
+                    BuildOrigin(
+                        $"tracked-change primary key constraint {primaryKeyName} on {FormatTable(trackedTable.Table)}",
+                        null,
+                        null
+                    )
+                );
+            }
+
+            foreach (var systemColumn in trackedTable.SystemColumns)
+            {
+                if (systemColumn.Role != TrackedChangeSystemColumnRole.CreatedAt)
+                {
+                    continue;
+                }
+
+                var defaultName = RelationalNameConventions.TrackedChangeDefaultName(
+                    trackedTable.Table,
+                    systemColumn.ColumnName
+                );
+
+                detector.RegisterConstraint(
+                    trackedTable.Table,
+                    defaultName,
+                    BuildOrigin(
+                        $"tracked-change default constraint {defaultName} on {FormatTable(trackedTable.Table)}",
+                        null,
+                        null
+                    )
+                );
+            }
+        }
+
         detector.ThrowIfCollisions();
     }
 
@@ -1926,6 +2195,21 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 FormatResource(view.AbstractResourceKey.Resource),
                 null
             );
+        }
+
+        // Derived tracked-change schemas (tracked_changes_<ProjectSchema>) are shortened independently of
+        // their source project schema, so two distinct project schemas can yield colliding tracked-change
+        // schemas; register them so the collision is detected.
+        foreach (var trackedTable in context.TrackedChangeInventory)
+        {
+            var schema = trackedTable.Table.Schema.Value;
+
+            if (schemaOrigins.ContainsKey(schema))
+            {
+                continue;
+            }
+
+            schemaOrigins[schema] = BuildOrigin($"tracked-change schema '{schema}'", null, null);
         }
 
         foreach (var entry in schemaOrigins.OrderBy(item => item.Key, StringComparer.Ordinal))

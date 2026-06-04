@@ -424,6 +424,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
 (
@@ -458,6 +459,39 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId"),
     CONSTRAINT "UX_Student_RefKey" UNIQUE ("DocumentId", "StudentUniqueId")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
+(
+    "Old_Namespace" varchar(255) NOT NULL,
+    "New_Namespace" varchar(255) NULL,
+    "Old_CodeValue" varchar(50) NOT NULL,
+    "New_CodeValue" varchar(50) NULL,
+    "Discriminator" varchar(128) NOT NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Descriptor" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ProfileRootOnlyMergeItem"
+(
+    "Old_ProfileRootOnlyMergeItemId" integer NOT NULL,
+    "New_ProfileRootOnlyMergeItemId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ProfileRootOnlyMergeItem" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
+(
+    "Old_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentUniqueId" varchar(32) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Student" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

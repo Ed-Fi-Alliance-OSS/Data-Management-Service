@@ -152,6 +152,25 @@ public class Given_Trigger_Set_Composition
     }
 
     /// <summary>
+    /// It should derive the shared dms.Descriptor stamping trigger even with no descriptor resources.
+    /// </summary>
+    [Test]
+    public void It_should_derive_shared_descriptor_stamping_trigger_without_descriptor_resources()
+    {
+        var descriptorStamp = _triggers.SingleOrDefault(t =>
+            t.Table.Equals(new DbTableName(new DbSchemaName("dms"), "Descriptor"))
+            && t.Parameters is TriggerKindParameters.DocumentStamping
+        );
+
+        descriptorStamp.Should().NotBeNull();
+        descriptorStamp!.Name.Value.Should().Be("TR_Descriptor_Stamp_Document");
+        descriptorStamp.IdentityProjectionColumns.Should().BeEmpty();
+        descriptorStamp
+            .MirrorStampTargetTable.Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
+    }
+
+    /// <summary>
     /// It should create ReferentialIdentityMaintenance trigger on root table.
     /// </summary>
     [Test]
@@ -402,12 +421,41 @@ public class Given_Descriptor_Resources_For_Trigger_Derivation
     }
 
     /// <summary>
-    /// It should not derive triggers for descriptor resources.
+    /// It should derive only the shared descriptor stamping trigger for a descriptor-only project.
     /// </summary>
     [Test]
-    public void It_should_not_derive_triggers_for_descriptor_resources()
+    public void It_should_derive_only_the_shared_descriptor_stamping_trigger()
     {
-        _triggers.Should().BeEmpty();
+        _triggers.Should().ContainSingle();
+
+        var descriptorStamp = _triggers.Single();
+        descriptorStamp.Table.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
+        descriptorStamp.Name.Value.Should().Be("TR_Descriptor_Stamp_Document");
+        descriptorStamp.Parameters.Should().BeOfType<TriggerKindParameters.DocumentStamping>();
+        descriptorStamp.IdentityProjectionColumns.Should().BeEmpty();
+        descriptorStamp
+            .MirrorStampTargetTable.Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
+    }
+
+    /// <summary>
+    /// It should not derive per-resource triggers for the SharedDescriptorTable descriptor resource.
+    /// </summary>
+    [Test]
+    public void It_should_not_derive_per_resource_triggers_for_the_descriptor_resource()
+    {
+        _triggers.Should().NotContain(t => t.Table.Name == "GradeLevelDescriptor");
+    }
+
+    /// <summary>
+    /// It should not attach change-tracking in the trigger pass (attachment is the tracked-change pass).
+    /// </summary>
+    [Test]
+    public void It_should_leave_descriptor_stamping_change_tracking_unattached_in_the_trigger_pass()
+    {
+        var stamping = (TriggerKindParameters.DocumentStamping)_triggers.Single().Parameters;
+
+        stamping.ChangeTracking.Should().BeNull();
     }
 }
 
@@ -753,7 +801,10 @@ public class Given_Three_Level_Nested_Collections
     [Test]
     public void It_should_create_DocumentStamping_triggers_for_all_three_levels()
     {
-        var stampTriggers = _triggers.Where(t => t.Parameters is TriggerKindParameters.DocumentStamping);
+        // Exclude the shared dms.Descriptor stamping trigger, which is derived once per model set.
+        var stampTriggers = _triggers.Where(t =>
+            t.Parameters is TriggerKindParameters.DocumentStamping && t.Table.Name != "Descriptor"
+        );
 
         stampTriggers.Should().HaveCount(3);
     }
@@ -844,7 +895,10 @@ public class Given_Multiple_Sibling_Collections
     [Test]
     public void It_should_create_three_DocumentStamping_triggers_total()
     {
-        var stampTriggers = _triggers.Where(t => t.Parameters is TriggerKindParameters.DocumentStamping);
+        // Exclude the shared dms.Descriptor stamping trigger, which is derived once per model set.
+        var stampTriggers = _triggers.Where(t =>
+            t.Parameters is TriggerKindParameters.DocumentStamping && t.Table.Name != "Descriptor"
+        );
 
         stampTriggers.Should().HaveCount(3);
     }

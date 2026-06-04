@@ -410,6 +410,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'aligned')
     EXEC('CREATE SCHEMA [aligned]');
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'tracked_changes_edfi')
+    EXEC('CREATE SCHEMA [tracked_changes_edfi]');
 
 IF OBJECT_ID(N'edfi.ParentResource', N'U') IS NULL
 CREATE TABLE [edfi].[ParentResource]
@@ -474,6 +476,17 @@ CREATE TABLE [aligned].[ParentResourceExtensionParentChildrenExtensionChildren]
     CONSTRAINT [PK_ParentResourceExtensionParentChildrenExtensionChildren] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ParentResourceExtensionParentChildrenExtensionChildren_ExtensionChildCode_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [ExtensionChildCode]),
     CONSTRAINT [UX_ParentResourceExtensionParentChildrenExtensionChildren_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal])
+);
+
+IF OBJECT_ID(N'tracked_changes_edfi.ParentResource', N'U') IS NULL
+CREATE TABLE [tracked_changes_edfi].[ParentResource]
+(
+    [Old_ParentResourceId] int NOT NULL,
+    [New_ParentResourceId] int NULL,
+    [Id] uniqueidentifier NOT NULL,
+    [ChangeVersion] bigint NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tracked_changes_edfi_ParentResource_CreatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_tracked_changes_edfi_ParentResource] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 
 IF NOT EXISTS (

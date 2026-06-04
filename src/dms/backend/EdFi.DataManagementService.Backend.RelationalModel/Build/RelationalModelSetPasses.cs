@@ -58,6 +58,10 @@ public static class RelationalModelSetPasses
             // which rewrites all identifiers including those in the inventories.
             new DeriveIndexInventoryPass(),
             new DeriveTriggerInventoryPass(),
+            // Tracked-change inventory derivation reads the trigger inventory (to attach ChangeTracking) and
+            // creates new identifiers (tracked-change tables/columns) that must participate in dialect
+            // shortening and canonical ordering, so it runs after trigger derivation and before shortening.
+            new DeriveTrackedChangeInventoryPass(),
             // Auth hierarchy pass must follow trigger inventory so that concrete
             // resources, abstract identity tables, and union views are populated.
             new DeriveAuthHierarchyPass(),

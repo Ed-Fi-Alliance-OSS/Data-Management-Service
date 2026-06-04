@@ -424,6 +424,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."NamingStressItem"
 (
@@ -438,6 +439,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."NamingStressItem"
     "VeryLongIdentifierNameThatExceedsSixtyThreeCharacter_21402e5f2e" varchar(100) NULL,
     CONSTRAINT "PK_NamingStressItem" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_NamingStressItem_NK" UNIQUE ("NamingStressItemId")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."NamingStressItem"
+(
+    "Old_NamingStressItemId" integer NOT NULL,
+    "New_NamingStressItemId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_NamingStressItem" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

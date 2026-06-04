@@ -424,6 +424,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."Program"
 (
@@ -461,6 +462,28 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolProgram"
     CONSTRAINT "UX_SchoolProgram_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SchoolProgram_ProgramReference_DocumentId_School_DocumentId" UNIQUE ("School_DocumentId", "ProgramReference_DocumentId"),
     CONSTRAINT "CK_SchoolProgram_ProgramReference_AllNone" CHECK (("ProgramReference_DocumentId" IS NULL AND "ProgramReference_ProgramId" IS NULL AND "ProgramReference_ProgramName" IS NULL) OR ("ProgramReference_DocumentId" IS NOT NULL AND "ProgramReference_ProgramId" IS NOT NULL AND "ProgramReference_ProgramName" IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Program"
+(
+    "Old_ProgramId" integer NOT NULL,
+    "New_ProgramId" integer NULL,
+    "Old_ProgramName" varchar(60) NOT NULL,
+    "New_ProgramName" varchar(60) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Program" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
+(
+    "Old_SchoolId" integer NOT NULL,
+    "New_SchoolId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
 );
 
 DO $$

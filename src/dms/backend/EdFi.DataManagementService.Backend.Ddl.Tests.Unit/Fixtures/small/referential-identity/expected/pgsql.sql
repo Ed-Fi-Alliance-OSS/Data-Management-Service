@@ -425,6 +425,7 @@ CREATE TRIGGER "TR_Descriptor_Stamp_Document"
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "auth";
+CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 
 CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
 (
@@ -578,6 +579,136 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
     "SourceEducationOrganizationId" bigint NOT NULL,
     "TargetEducationOrganizationId" bigint NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdToEducationOrganizationId" PRIMARY KEY ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DateTimeKeyResource"
+(
+    "Old_EventTimestamp" timestamp with time zone NOT NULL,
+    "New_EventTimestamp" timestamp with time zone NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_DateTimeKeyResource" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalKeyResource"
+(
+    "Old_DecimalKey" numeric(9,2) NOT NULL,
+    "New_DecimalKey" numeric(9,2) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_DecimalKeyResource" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."DecimalRefResource"
+(
+    "Old_RefResourceId" varchar(64) NOT NULL,
+    "New_RefResourceId" varchar(64) NULL,
+    "Old_DecimalKeyReference_DecimalKey" numeric(9,2) NOT NULL,
+    "New_DecimalKeyReference_DecimalKey" numeric(9,2) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_DecimalRefResource" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentChildResource"
+(
+    "Old_EdOrgDependentChildResourceId" varchar(64) NOT NULL,
+    "New_EdOrgDependentChildResourceId" varchar(64) NULL,
+    "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NOT NULL,
+    "New_EdOrgDependentResourceReference_EdOrgDependentResourceId" varchar(64) NULL,
+    "Old_EdOrgDependentResourceReference_EducationOrganizationId" integer NOT NULL,
+    "New_EdOrgDependentResourceReference_EducationOrganizationId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EdOrgDependentChildResource" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."EdOrgDependentResource"
+(
+    "Old_EdOrgDependentResourceId" varchar(64) NOT NULL,
+    "New_EdOrgDependentResourceId" varchar(64) NULL,
+    "Old_EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "New_EducationOrganization_EducationOrganizationId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_EdOrgDependentResource" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."KeyUnifiedResource"
+(
+    "Old_KeyUnifiedResourceId" varchar(64) NOT NULL,
+    "New_KeyUnifiedResourceId" varchar(64) NULL,
+    "Old_ResourceAReference_ResourceAId" varchar(64) NOT NULL,
+    "New_ResourceAReference_ResourceAId" varchar(64) NULL,
+    "Old_StudentUniqueId_Unified" varchar(32) NOT NULL,
+    "New_StudentUniqueId_Unified" varchar(32) NULL,
+    "Old_ResourceBReference_ResourceBId" varchar(64) NOT NULL,
+    "New_ResourceBReference_ResourceBId" varchar(64) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_KeyUnifiedResource" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceA"
+(
+    "Old_ResourceAId" varchar(64) NOT NULL,
+    "New_ResourceAId" varchar(64) NULL,
+    "Old_StudentReference_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentReference_StudentUniqueId" varchar(32) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ResourceA" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ResourceB"
+(
+    "Old_ResourceBId" varchar(64) NOT NULL,
+    "New_ResourceBId" varchar(64) NULL,
+    "Old_StudentReference_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentReference_StudentUniqueId" varchar(32) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_ResourceB" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."School"
+(
+    "Old_SchoolId" integer NOT NULL,
+    "New_SchoolId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_School" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Student"
+(
+    "Old_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentUniqueId" varchar(32) NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_Student" PRIMARY KEY ("ChangeVersion")
+);
+
+CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
+(
+    "Old_StudentUniqueId" varchar(32) NOT NULL,
+    "New_StudentUniqueId" varchar(32) NULL,
+    "Old_SchoolReference_SchoolId" integer NOT NULL,
+    "New_SchoolReference_SchoolId" integer NULL,
+    "Id" uuid NOT NULL,
+    "ChangeVersion" bigint NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT "PK_tracked_changes_edfi_StudentSchoolAssociation" PRIMARY KEY ("ChangeVersion")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
