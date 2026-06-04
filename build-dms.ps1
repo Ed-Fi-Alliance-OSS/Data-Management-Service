@@ -897,7 +897,7 @@ function Wait-ForPostgreSQL {
 
 # Setup-InstanceKafkaConnectors function removed
 # This is now handled by start-local-dms.ps1 -AddDataStore
-# which creates Kafka connectors via setup-instance-kafka-connectors.ps1
+# which creates Kafka connectors via setup-data-store-kafka-connectors.ps1
 
 function RunInstanceE2E {
     # Run only the instance management E2E tests

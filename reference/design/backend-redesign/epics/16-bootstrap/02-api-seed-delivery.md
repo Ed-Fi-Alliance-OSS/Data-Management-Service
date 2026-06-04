@@ -23,8 +23,8 @@ guardrails needed to keep the seed path deterministic with the existing BulkLoad
 authorization contract for built-in seed delivery is also part of this slice: the design fixes one
 authoritative `SeedLoader` inventory for core templates and requires built-in extension seed-package loading
 to travel with extension security metadata rather than ad hoc grant derivation. CMS-only smoke-test credential
-creation is a separate workflow concern: it may run earlier against the target instances selected by
-`configure-local-dms-instance.ps1`, but it is not part of this story's dependency chain and its credentials
+creation is a separate workflow concern: it may run earlier against the target data stores selected by
+`configure-local-data-store.ps1`, but it is not part of this story's dependency chain and its credentials
 are never reused for seed delivery.
 
 Custom `-SeedDataPath` directories remain supported as compatible payload sources when the run's root
@@ -193,14 +193,14 @@ direct-SQL path as an ongoing or permanent alternative.
   filename prefixes or numeric ordering.
 - Seed loading surfaces the tool's terminal summary or terminal error diagnostics; bootstrap passes those
   diagnostics through rather than inventing a second accounting layer or a DMS-owned result taxonomy.
-- `configure-local-dms-instance.ps1` is the sole phase that creates or selects DMS data store IDs for the
+- `configure-local-data-store.ps1` is the sole phase that creates or selects DMS data store IDs for the
   run. `SeedLoader` credential bootstrap and every BulkLoadClient invocation receive those data store IDs
   via in-memory forwarding within a single wrapper invocation, or via explicit `-DataStoreId`/`-SchoolYear`
-  selectors in a manual phase flow; they must not perform their own CMS instance creation, broad
+  selectors in a manual phase flow; they must not perform their own CMS data store creation, broad
   target-selection policy, or non-selector-driven discovery pass. The only permitted no-selector case is
-  the existing phase-command rerun convenience: if CMS contains exactly one route-unqualified DMS instance
-  in the current tenant scope, seed delivery may auto-select that instance. Zero instances, multiple
-  instances, or one route-qualified instance must fail fast with selector guidance.
+  the existing phase-command rerun convenience: if CMS contains exactly one route-unqualified data store
+  in the current tenant scope, seed delivery may auto-select that data store. Zero data stores, multiple
+  data stores, or one route-qualified data store must fail fast with selector guidance.
   See [`EPIC.md`](EPIC.md) Scope Guardrails for the selector resolution rules.
 - BulkLoadClient invocation uses:
   - the DMS base URL supplied to `load-dms-seed-data.ps1 -DmsBaseUrl` for the current flow,
@@ -280,7 +280,7 @@ direct-SQL path as an ongoing or permanent alternative.
    the same provider-to-token-endpoint helper used by `start-local-dms.ps1`, shared `-EnvironmentFile`
    local-settings resolution for CMS, tenant, identity-provider defaults, and Docker-local DMS URL,
    pass-through of terminal tool diagnostics, XSD input selection (`-x` staged directory or `-z` metadata URL),
-   and use of the data store IDs resolved by `configure-local-dms-instance.ps1` without performing CMS instance
+   and use of the data store IDs resolved by `configure-local-data-store.ps1` without performing CMS data store
    creation, broad target-selection policy, or non-selector-driven discovery during seed delivery. For
    `Populated`, the invocation path sequences a descriptor pass followed by a resource pass against the
    separated workspace subdirectories using a single in-process SeedLoader credential set.
@@ -327,7 +327,7 @@ incomplete":
 | `-ClaimsDirectoryPath` | **Not in wrapper.** Developers invoke `prepare-dms-claims.ps1` directly today. | Story 03 |
 | `-InfraOnly`, `-DmsBaseUrl` | **Not in wrapper.** | DMS-1153 (IDE-hosted workflow) |
 | `-Rebuild` / `-r` | **Not in wrapper.** Developers pass to `start-(local\|published)-dms.ps1` directly. | Future hygiene |
-| `-AddSmokeTestCredentials` | **Not in wrapper.** Owned by `configure-local-dms-instance.ps1` per `command-boundaries.md`. | Story 03 |
+| `-AddSmokeTestCredentials` | **Not in wrapper.** Owned by `configure-local-data-store.ps1` per `command-boundaries.md`. | Story 03 |
 
 ## Out of Scope
 

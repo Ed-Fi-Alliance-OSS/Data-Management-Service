@@ -141,4 +141,3 @@ Content-Type: application/json
 ### - School year selector dropdown appears at the top
 ### - Default selected year is the current school year (based on current date)
 ### - You can switch between years 2022-2026 (or whatever range you specified)
-

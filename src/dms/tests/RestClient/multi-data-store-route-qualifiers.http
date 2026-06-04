@@ -407,4 +407,3 @@ Authorization: bearer {{configToken}}
 ### Delete Vendor
 DELETE http://localhost:{{configPort}}/v2/vendors/{{vendorId}}
 Authorization: bearer {{configToken}}
-

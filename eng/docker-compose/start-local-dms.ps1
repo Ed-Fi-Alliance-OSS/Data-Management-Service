@@ -520,4 +520,3 @@ else {
     Restore-BootstrapEnvSnapshot -Snapshot $bootstrapEnvSnapshot
     Pop-Location
 }
-

@@ -11,6 +11,19 @@ deployments.
 All configuration data resides in the `dmscs` (DMS Configuration Service) schema
 within the configuration database.
 
+## Prerelease Rename Note
+
+DMS-1198 renames the prerelease CMS management contract and database objects
+from DMS instance terminology to data store terminology. Deployments upgrading
+from alpha builds that already created `DmsInstance*` CMS tables should recreate
+the CMS configuration database, or run an operator-managed migration that copies
+the old `DmsInstance*` rows into the new `DataStore*` tables before using the
+new CMS API routes. The DMS-1198 branch does not provide an in-place migration
+from the old prerelease CMS table names.
+
+External CMS callers must update from the old DMS instance route and JSON field
+names to the `dataStore*` routes and `dataStore*` payload fields.
+
 ## Ed-Fi DMS Data Stores
 
 ### Data Store Storage and Security

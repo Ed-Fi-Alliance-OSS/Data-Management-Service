@@ -409,4 +409,3 @@ if ($smokeFailed) {
 Write-Host ""
 Write-Host "[smoke] Bootstrap Docker smoke completed successfully." -ForegroundColor Green
 exit 0
-
