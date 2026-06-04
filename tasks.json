@@ -264,6 +264,6 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~QueryRequestHandlerTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests\"",
       "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit"
     ],
-    "completed": false
+    "completed": true
   }
 ]

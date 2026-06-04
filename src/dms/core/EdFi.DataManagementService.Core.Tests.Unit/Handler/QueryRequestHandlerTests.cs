@@ -229,7 +229,7 @@ public class QueryRequestHandlerTests
                 EducationOrganizationHierarchyInfo: No.EducationOrganizationHierarchyInfo,
                 AuthorizationSecurableInfo: []
             );
-            _requestInfo.ResourceActionAuthStrategies = ["CustomAuthorizationStrategy"];
+            _requestInfo.ResourceActionAuthStrategies = ["OwnershipBased", "CustomAuthorizationStrategy"];
             _requestInfo.ScopedServiceProvider = serviceProvider;
             await queryHandler.Execute(_requestInfo, NullNext);
         }
@@ -278,7 +278,7 @@ public class QueryRequestHandlerTests
             logRecord.Properties["ResourceFullName"].Should().Be("Ed-Fi.School");
             ((IEnumerable<string>)logRecord.Properties["ConfiguredStrategyNames"]!)
                 .Should()
-                .Equal("CustomAuthorizationStrategy");
+                .Equal("CustomAuthorizationStrategy", "OwnershipBased");
             ((IEnumerable<int>)logRecord.Properties["ConfiguredStrategyIndexes"]!).Should().Equal(1);
             ((IEnumerable<string>)logRecord.Properties["ProviderOrPlannerFailureKinds"]!)
                 .Should()

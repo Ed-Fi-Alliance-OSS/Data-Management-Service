@@ -64,10 +64,10 @@ internal static class SecurityConfigurationFailureLogger
         string resourceFullName =
             diagnosticResourceFullNames.FirstOrDefault() ?? BuildResourceFullName(requestInfo);
         IReadOnlyList<string> resolvedMatchedResourceClaimUris = matchedResourceClaimUris ?? [];
-        string[] resolvedStrategyNames =
-            diagnosticStrategyNames.Length > 0
-                ? diagnosticStrategyNames
-                : DistinctSorted(configuredStrategyNames ?? requestInfo.ResourceActionAuthStrategies);
+        string[] requestStrategyNames = DistinctSorted(
+            configuredStrategyNames ?? requestInfo.ResourceActionAuthStrategies
+        );
+        string[] resolvedStrategyNames = DistinctSorted(diagnosticStrategyNames.Concat(requestStrategyNames));
 
         logger.LogError(
             "SecurityConfigurationFailure. Tenant: {Tenant}; CorrelationId: {CorrelationId}; HttpMethod: {HttpMethod}; RoutePath: {RoutePath}; RequestSurface: {RequestSurface}; CmsAction: {CmsAction}; AssignedClaimSet: {AssignedClaimSet}; MatchedResourceClaimUris: {MatchedResourceClaimUris}; MatchedResourceClaimName: {MatchedResourceClaimName}; ResourceFullName: {ResourceFullName}; ConfiguredStrategyNames: {ConfiguredStrategyNames}; ConfiguredStrategyIndexes: {ConfiguredStrategyIndexes}; ProviderOrPlannerFailureKinds: {ProviderOrPlannerFailureKinds}; TargetResourceFullNames: {TargetResourceFullNames}; BasisResourceFullNames: {BasisResourceFullNames}; MissingPropertyNames: {MissingPropertyNames}; PhysicalPaths: {PhysicalPaths}; SecurityConfigurationErrors: {SecurityConfigurationErrors}",

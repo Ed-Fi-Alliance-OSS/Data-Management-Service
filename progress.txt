@@ -88,3 +88,10 @@ Key decisions: Route RelationalAuthorizationPlanOutcome.SecurityConfigurationErr
 Files changed: Backend RelationalDocumentStoreRepository.cs; Backend unit tests RelationalDocumentStoreRepositoryTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit. Focused RelationalDocumentStoreRepository mixed/single-invalid filter passed 2 tests. Backend.Tests.Unit FullyQualifiedName~Authorization passed 107 tests. git diff --check clean.
 Blockers/notes: Remaining open follow-ups are cleanup of obsolete descriptor guardrail helpers and logging configured-strategy union behavior.
+
+Task completed: Log all available configured authorization strategy names for security-configuration responses even when backend diagnostics only identify a subset of failing strategies.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: SecurityConfigurationFailureLogger now logs the union of diagnostic strategy names and request/explicit configured strategy names. Diagnostic indexes and provider/planner failure kinds still come only from diagnostics so they stay tied to the failing subset. Existing QueryRequestHandler log test now covers two configured strategies with one diagnosed failure.
+Files changed: Core SecurityConfigurationFailureLogger; Core QueryRequestHandlerTests; tasks.json; progress.txt.
+Verification: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit. dotnet test Core.Tests.Unit with FullyQualifiedName~QueryRequestHandlerTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 57 tests.
+Blockers/notes: Only remaining incomplete task is low cleanup of obsolete descriptor namespace guardrail helpers.
