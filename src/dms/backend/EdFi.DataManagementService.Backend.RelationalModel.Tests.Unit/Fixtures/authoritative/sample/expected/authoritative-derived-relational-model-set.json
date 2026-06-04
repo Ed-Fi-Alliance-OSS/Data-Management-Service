@@ -47615,10 +47615,6 @@
           "identity_json_path": "$.courseOfferingReference.schoolId"
         },
         {
-          "column": "CourseOffering_SessionReferenceSchoolId",
-          "identity_json_path": "$.courseOfferingReference.schoolId"
-        },
-        {
           "column": "CourseOffering_SchoolYear",
           "identity_json_path": "$.courseOfferingReference.schoolYear"
         },
@@ -54898,15 +54894,7 @@
           "identity_json_path": "$.surveySectionResponseReference.namespace"
         },
         {
-          "column": "SurveySectionResponse_SurveySectionReferenceNamespace",
-          "identity_json_path": "$.surveySectionResponseReference.namespace"
-        },
-        {
           "column": "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
-          "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
-        },
-        {
-          "column": "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
           "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
         },
         {
@@ -54949,15 +54937,7 @@
           "identity_json_path": "$.surveySectionResponseReference.namespace"
         },
         {
-          "column": "SurveySectionResponse_SurveySectionReferenceNamespace",
-          "identity_json_path": "$.surveySectionResponseReference.namespace"
-        },
-        {
           "column": "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
-          "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
-        },
-        {
-          "column": "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
           "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
         },
         {
