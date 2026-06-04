@@ -231,7 +231,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs and src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs for planner-based descriptor authorization preflight.",
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadGuardrails.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "bugfix",

@@ -95,3 +95,10 @@ Key decisions: SecurityConfigurationFailureLogger now logs the union of diagnost
 Files changed: Core SecurityConfigurationFailureLogger; Core QueryRequestHandlerTests; tasks.json; progress.txt.
 Verification: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit. dotnet test Core.Tests.Unit with FullyQualifiedName~QueryRequestHandlerTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests passed 57 tests.
 Blockers/notes: Only remaining incomplete task is low cleanup of obsolete descriptor namespace guardrail helpers.
+
+Task completed: Remove obsolete descriptor namespace guardrail helpers left behind after descriptor authorization preflight moved to the unified relational planner.
+Story: reference/design/backend-redesign/epics/14-authorization/20-configuration-problem-details.md
+Key decisions: Deleted unused HasOnlyNamespaceBasedOrNoFurtherAuthorizationRequired and ContainsNamespaceBased from RelationalReadGuardrails after confirming no production/test references. Descriptor read/write preflight already routes through ResolveDescriptor*Authorization and RelationalAuthorizationPlanner paths.
+Files changed: Backend RelationalReadGuardrails.cs; tasks.json; progress.txt.
+Verification: rg helper names now has no matches. dotnet csharpier format RelationalReadGuardrails.cs. Backend project build passed. DescriptorReadHandler|DescriptorWriteHandler backend unit filter passed 18 tests.
+Blockers/notes: All tasks now complete; next iteration should output COMPLETE if no new tasks added.
