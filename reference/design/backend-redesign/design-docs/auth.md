@@ -332,11 +332,24 @@ When updating a resource, we first authorize against the values that are current
 
 ### Securable elements must be initialized
 
-As of today, all fields that are securable elements must be part of the resource's identity (except for the custom view-based strategy; more info below), meaning that if a resource is POSTed with an uninitialized securable element, it will fail validation because it is a required field.
+Securable elements must be initialized at the time of the authorization check. Single-record checks fail with, for example, *"the 'Namespace' value has not been assigned but is required for authorization purposes"*, and GET-many requests filter out rows whose securable elements are uninitialized.
 
-However, there is also a validation in the authorization layer that ensures these fields are initialized when creating and retrieving a resource. This validation may seem redundant, but it serves as an additional check in case a securable element is configured based on an optional field, such as by setting an override (e.g., the `StudentAssessment` override). The view-based strategy allows using nullable fields as securable elements, so the validation is not redundant in that scenario.
+For Namespace-based authorization, the `NamespaceAuthorizationConvention` selects the namespace column by name from all of the resource's root properties: either a property named `Namespace`, or a single property with a `*Namespace` suffix. It does this regardless of whether that property is identifying/required. For example:
 
-As of today, authorization checks can only be applied on the resource/descriptor root table, meaning that authorization checks do not apply to collection items or fields that have been added through extensions (an extension top-level resource can have authorization on its own root resource/table).
+* `Assessment` — the securable `Namespace` field is part of the identity.
+* `LearningStandard` — the `Namespace` field is required but is not part of the identity.
+* `Intervention` — the `Namespace` field is optional.
+
+Other scenarios where securable elements might be uninitialized include:
+
+* When an override has been set up using an optional field, such as the `StudentAssessment` override.
+* The custom view-based strategy, which allows nullable fields to be configured as securable elements.
+
+In those cases, the field is not required, so request validation will not catch a null value, and the authorization-layer check is the real guard.
+
+On the other hand, securable elements that participate in relationship-based strategies, such as EdOrg, Student, Staff, or Contact, must be part of the identity.
+
+As of today, authorization checks can only be applied to the resource or descriptor root table. This means authorization checks do not apply to collection items or to fields added through extensions. However, an extension top-level resource can have authorization on its own root resource/table.
 
 ## What needs to be done in DMS
 
