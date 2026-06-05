@@ -174,12 +174,12 @@ public class Given_MssqlDescriptorWriteHandler
     private IServiceScope CreateConfiguredScope()
     {
         var scope = _serviceProvider.CreateScope();
-        var instanceSelection = scope.ServiceProvider.GetRequiredService<IDmsInstanceSelection>();
-        instanceSelection.SetSelectedDmsInstance(
-            new DmsInstance(
+        var instanceSelection = scope.ServiceProvider.GetRequiredService<IDataStoreSelection>();
+        instanceSelection.SetSelectedDataStore(
+            new DataStore(
                 Id: 1,
-                InstanceType: "test",
-                InstanceName: "MssqlDescriptorWriteIntegration",
+                DataStoreType: "test",
+                Name: "MssqlDescriptorWriteIntegration",
                 ConnectionString: _database.ConnectionString,
                 RouteContext: []
             )
@@ -239,7 +239,7 @@ public class Given_MssqlDescriptorWriteHandler
 
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddTestReadableProfileProjector();
         services.AddMssqlReferenceResolver();
 

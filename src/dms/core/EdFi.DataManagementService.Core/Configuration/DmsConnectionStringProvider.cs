@@ -9,26 +9,26 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Provides database connection strings using DMS instance configurations
+/// Provides database connection strings using data store configurations
 /// </summary>
 public class DmsConnectionStringProvider(
-    IDmsInstanceProvider dmsInstanceProvider,
+    IDataStoreProvider dataStoreProvider,
     ILogger<DmsConnectionStringProvider> logger
 ) : IConnectionStringProvider
 {
     /// <inheritdoc />
-    public string? GetConnectionString(long dmsInstanceId, string? tenant = null)
+    public string? GetConnectionString(long dataStoreId, string? tenant = null)
     {
-        logger.LogDebug("Retrieving connection string for DMS instance ID {InstanceId}", dmsInstanceId);
+        logger.LogDebug("Retrieving connection string for data store ID {DataStoreId}", dataStoreId);
 
-        DmsInstance? instance = dmsInstanceProvider.GetById(dmsInstanceId, tenant);
+        DataStore? instance = dataStoreProvider.GetById(dataStoreId, tenant);
 
         if (instance == null)
         {
             logger.LogWarning(
-                "DMS instance with ID {InstanceId} not found. Available instances: {InstanceIds}",
-                dmsInstanceId,
-                string.Join(", ", dmsInstanceProvider.GetAll(tenant).Select(i => i.Id))
+                "Data store with ID {DataStoreId} not found. Available data stores: {DataStoreIds}",
+                dataStoreId,
+                string.Join(", ", dataStoreProvider.GetAll(tenant).Select(i => i.Id))
             );
 
             return null;
@@ -37,18 +37,18 @@ public class DmsConnectionStringProvider(
         if (string.IsNullOrWhiteSpace(instance.ConnectionString))
         {
             logger.LogWarning(
-                "DMS instance '{InstanceName}' (ID: {InstanceId}) exists but has no connection string configured",
-                instance.InstanceName,
-                dmsInstanceId
+                "Data store '{Name}' (ID: {DataStoreId}) exists but has no connection string configured",
+                instance.Name,
+                dataStoreId
             );
 
             return null;
         }
 
         logger.LogDebug(
-            "Successfully retrieved connection string for DMS instance '{InstanceName}' (ID: {InstanceId})",
-            instance.InstanceName,
-            dmsInstanceId
+            "Successfully retrieved connection string for data store '{Name}' (ID: {DataStoreId})",
+            instance.Name,
+            dataStoreId
         );
 
         return instance.ConnectionString;
@@ -60,12 +60,12 @@ public class DmsConnectionStringProvider(
         logger.LogDebug("Retrieving connection string for health check purposes");
 
         // Search across all loaded tenant caches to find the first available instance
-        var loadedTenants = dmsInstanceProvider.GetLoadedTenantKeys();
+        var loadedTenants = dataStoreProvider.GetLoadedTenantKeys();
 
         if (loadedTenants.Count == 0)
         {
             logger.LogWarning(
-                "No tenant caches are loaded. The DMS instance provider has no instances. "
+                "No tenant caches are loaded. The data store provider has no instances. "
                     + "Check that instances were successfully loaded from the Configuration Service."
             );
 
@@ -75,7 +75,7 @@ public class DmsConnectionStringProvider(
         // Find the first instance with a valid connection string across all tenants
         foreach (var tenantKey in loadedTenants)
         {
-            var instances = dmsInstanceProvider.GetAll(string.IsNullOrEmpty(tenantKey) ? null : tenantKey);
+            var instances = dataStoreProvider.GetAll(string.IsNullOrEmpty(tenantKey) ? null : tenantKey);
 
             if (instances.Count == 0)
             {
@@ -87,8 +87,8 @@ public class DmsConnectionStringProvider(
             if (!string.IsNullOrWhiteSpace(firstInstance.ConnectionString))
             {
                 logger.LogInformation(
-                    "Selected DMS instance for health check: '{InstanceName}' (ID: {InstanceId}) from tenant '{Tenant}' ({TotalCount} instances in tenant)",
-                    firstInstance.InstanceName,
+                    "Selected data store for health check: '{Name}' (ID: {DataStoreId}) from tenant '{Tenant}' ({TotalCount} instances in tenant)",
+                    firstInstance.Name,
                     firstInstance.Id,
                     string.IsNullOrEmpty(tenantKey) ? "(default)" : tenantKey,
                     instances.Count
@@ -98,14 +98,14 @@ public class DmsConnectionStringProvider(
             }
 
             logger.LogDebug(
-                "Health check: Skipping DMS instance '{InstanceName}' (ID: {InstanceId}) - no connection string configured",
-                firstInstance.InstanceName,
+                "Health check: Skipping data store '{Name}' (ID: {DataStoreId}) - no connection string configured",
+                firstInstance.Name,
                 firstInstance.Id
             );
         }
 
         logger.LogWarning(
-            "No DMS instances with valid connection strings found across {TenantCount} loaded tenant caches",
+            "No data stores with valid connection strings found across {TenantCount} loaded tenant caches",
             loadedTenants.Count
         );
 

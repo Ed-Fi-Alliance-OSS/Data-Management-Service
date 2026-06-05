@@ -177,11 +177,11 @@ public static class WebApplicationBuilderExtensions
             serviceProvider.GetRequiredService<CachedClaimSetProvider>()
         );
 
-        // Register DMS Instance services
+        // Register data store services
         webAppBuilder.Services.AddSingleton<IConnectionStringDecryptionService>(
             new ConnectionStringDecryptionService(configServiceSettings.EncryptionKey)
         );
-        webAppBuilder.Services.AddSingleton<IDmsInstanceProvider, ConfigurationServiceDmsInstanceProvider>();
+        webAppBuilder.Services.AddSingleton<IDataStoreProvider, ConfigurationServiceDataStoreProvider>();
         webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
 
         // Add JWT authentication services from Core

@@ -141,7 +141,7 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
     {
         ServiceCollection services = [];
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -215,12 +215,12 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootTableOnlyMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -341,12 +341,12 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_Column_Preservation
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootTableOnlyMerge",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -478,12 +478,12 @@ public class Given_A_Mssql_Profiled_Post_Create_New_For_Root_Only_Resource
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootTableOnlyMerge",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -629,12 +629,12 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMerge",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootTableOnlyMerge",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -784,12 +784,12 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -815,12 +815,12 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

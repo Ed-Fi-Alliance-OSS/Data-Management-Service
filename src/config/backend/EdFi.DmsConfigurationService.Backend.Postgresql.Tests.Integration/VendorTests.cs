@@ -458,7 +458,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
                         ApplicationId = _applicationId,
                         Name = "Disabled Vendor Client",
                         IsApproved = false,
-                        DmsInstanceIds = [],
+                        DataStoreIds = [],
                     },
                     new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
                 );

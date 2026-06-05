@@ -22,7 +22,8 @@
 [CmdletBinding()]
 param(
     [string]$EnvironmentFile,
-    [long[]]$InstanceId = @(),
+    [Alias("InstanceId")]
+    [long[]]$DataStoreId = @(),
     [int[]]$SchoolYear = @()
 )
 
@@ -127,7 +128,7 @@ function Get-ProvisionRouteContexts {
         $Instance
     )
 
-    $routeContexts = Get-ProvisionProperty -Object $Instance -Names @("dmsInstanceRouteContexts", "DmsInstanceRouteContexts", "routeContexts", "RouteContexts")
+    $routeContexts = Get-ProvisionProperty -Object $Instance -Names @("dataStoreContexts", "DataStoreContexts", "routeContexts", "RouteContexts")
     if ($null -eq $routeContexts -or $routeContexts -is [string]) {
         return @()
     }
@@ -194,7 +195,7 @@ function ConvertTo-ConnectionStringBuilder {
             return $null
         }
 
-        throw "CMS DMS instance connection string is not a valid connection string."
+        throw "CMS data store connection string is not a valid connection string."
     }
 
     return $builder
@@ -274,7 +275,7 @@ function Get-DatabaseNameFromConnectionString {
         return $null
     }
 
-    throw "CMS DMS instance connection string did not contain a database name."
+    throw "CMS data store connection string did not contain a database name."
 }
 
 function Resolve-TargetDialect {
@@ -289,12 +290,12 @@ function Resolve-TargetDialect {
     $mssqlMarkers = @("server", "initial catalog", "user id", "trusted_connection")
     foreach ($marker in $mssqlMarkers) {
         if ($Builder.ContainsKey($marker)) {
-            throw "CMS DMS instance connection string uses MSSQL-style key '$(Format-LogSafeText $marker)'. Only PostgreSQL provisioning is supported."
+            throw "CMS data store connection string uses MSSQL-style key '$(Format-LogSafeText $marker)'. Only PostgreSQL provisioning is supported."
         }
     }
 
     if (-not $Builder.ContainsKey("host") -and -not $Builder.ContainsKey("server")) {
-        throw "CMS DMS instance connection string is missing a host key. Cannot determine the provisioning dialect."
+        throw "CMS data store connection string is missing a host key. Cannot determine the provisioning dialect."
     }
 
     return "pgsql"
@@ -303,7 +304,7 @@ function Resolve-TargetDialect {
 function Convert-CmsConnectionStringToHostSideTarget {
     <#
     .SYNOPSIS
-    Builds an effective host-side provisioning target from a single CMS-stored DMS instance
+    Builds an effective host-side provisioning target from a single CMS-stored data store
     connection string. Translates the Docker-internal PostgreSQL hostname/port to the host-side
     mapped port while preserving the instance-specific username, password, and database name.
     Non-Docker hosts (e.g. external PostgreSQL servers configured per instance) are preserved
@@ -326,17 +327,17 @@ function Convert-CmsConnectionStringToHostSideTarget {
     # surviving PostgreSQL keys are database / host / username.
     $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database")
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
-        throw "CMS DMS instance connection string did not contain a database name."
+        throw "CMS data store connection string did not contain a database name."
     }
 
     $instanceHost = Get-ConnectionStringValue -Builder $builder -Keys @("host")
     if ([string]::IsNullOrWhiteSpace($instanceHost)) {
-        throw "CMS DMS instance connection string is missing the host key."
+        throw "CMS data store connection string is missing the host key."
     }
 
     $instanceUser = Get-ConnectionStringValue -Builder $builder -Keys @("username")
     if ([string]::IsNullOrWhiteSpace($instanceUser)) {
-        throw "CMS DMS instance connection string is missing the username key."
+        throw "CMS data store connection string is missing the username key."
     }
 
     # PostgreSQL canonically defaults to 5432 when port is omitted. Docker-internal targets
@@ -400,18 +401,18 @@ function ConvertFrom-CmsEncryptedConnectionString {
 
     $encryptionKey = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
-        throw "CMS DMS instance connection string is encrypted, but DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set in the environment file."
+        throw "CMS data store connection string is encrypted, but DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set in the environment file."
     }
 
     try {
         $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
     }
     catch {
-        throw "CMS DMS instance connection string did not contain a database name and was not valid CMS encrypted base64."
+        throw "CMS data store connection string did not contain a database name and was not valid CMS encrypted base64."
     }
 
     if ($encryptedBytes.Length -le 16) {
-        throw "CMS DMS instance encrypted connection string payload is invalid."
+        throw "CMS data store encrypted connection string payload is invalid."
     }
 
     $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
@@ -439,7 +440,7 @@ function ConvertFrom-CmsEncryptedConnectionString {
         }
     }
     catch {
-        throw "CMS DMS instance encrypted connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY."
+        throw "CMS data store encrypted connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY."
     }
     finally {
         $aes.Dispose()
@@ -474,8 +475,9 @@ function Resolve-ProvisionTargetInstances {
         [object[]]
         $Instances,
 
+        [Alias("InstanceId")]
         [long[]]
-        $InstanceId = @(),
+        $DataStoreId = @(),
 
         [int[]]
         $SchoolYear = @(),
@@ -484,16 +486,16 @@ function Resolve-ProvisionTargetInstances {
         $Tenant = ""
     )
 
-    if ($InstanceId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
-        throw "-InstanceId and -SchoolYear are mutually exclusive. Pass only one selector."
+    if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
+        throw "-DataStoreId and -SchoolYear are mutually exclusive. Pass only one selector."
     }
 
-    if ($InstanceId.Count -gt 0) {
+    if ($DataStoreId.Count -gt 0) {
         $selected = [System.Collections.ArrayList]::new()
-        foreach ($id in $InstanceId) {
+        foreach ($id in $DataStoreId) {
             $matchedInstances = @($Instances | Where-Object { [long](Get-ProvisionProperty -Object $_ -Names @("id", "Id")) -eq [long]$id })
             if ($matchedInstances.Count -eq 0) {
-                throw "DMS instance $(Format-LogSafeText $id) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'."
+                throw "Data store $(Format-LogSafeText $id) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'."
             }
 
             $null = $selected.Add($matchedInstances[0])
@@ -519,12 +521,12 @@ function Resolve-ProvisionTargetInstances {
             })
 
             if ($matchedInstances.Count -eq 0) {
-                throw "No DMS instance found with route context schoolYear=$(Format-LogSafeText $year) for tenant '$(Format-LogSafeText $Tenant)'."
+                throw "No data store found with route context schoolYear=$(Format-LogSafeText $year) for tenant '$(Format-LogSafeText $Tenant)'."
             }
 
             if ($matchedInstances.Count -gt 1) {
                 $ids = ($matchedInstances | ForEach-Object { Get-ProvisionProperty -Object $_ -Names @("id", "Id") }) -join ", "
-                throw "Multiple DMS instances found with route context schoolYear=$(Format-LogSafeText $year) (instance ids: $(Format-LogSafeText $ids)). Clean up duplicate CMS state before provisioning."
+                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Clean up duplicate CMS state before provisioning."
             }
 
             $null = $selected.Add($matchedInstances[0])
@@ -534,14 +536,14 @@ function Resolve-ProvisionTargetInstances {
     }
 
     if ($Instances.Count -eq 0) {
-        throw "No DMS instances found in CMS. Run configure-local-dms-instance.ps1 before provisioning schemas."
+        throw "No data stores found in CMS. Run configure-local-data-store.ps1 before provisioning schemas."
     }
 
     if ($Instances.Count -gt 1) {
         $listing = ($Instances | ForEach-Object {
-            "id=$(Format-LogSafeText (Get-ProvisionProperty -Object $_ -Names @('id', 'Id'))) name=$(Format-LogSafeText (Get-ProvisionProperty -Object $_ -Names @('instanceName', 'InstanceName')))"
+            "id=$(Format-LogSafeText (Get-ProvisionProperty -Object $_ -Names @('id', 'Id'))) name=$(Format-LogSafeText (Get-ProvisionProperty -Object $_ -Names @('name', 'Name')))"
         }) -join "`n"
-        throw "Multiple DMS instances exist; cannot auto-select. Pass -InstanceId or -SchoolYear to target specific instances:`n$listing"
+        throw "Multiple data stores exist; cannot auto-select. Pass -DataStoreId or -SchoolYear to target specific data stores:`n$listing"
     }
 
     return @($Instances[0])
@@ -556,14 +558,14 @@ function New-ProvisionTarget {
         $EnvValues
     )
 
-    $rawInstanceId = Get-ProvisionProperty -Object $Instance -Names @("id", "Id")
-    if ($null -eq $rawInstanceId) {
-        throw "CMS DMS instance is missing an id."
+    $rawDataStoreId = Get-ProvisionProperty -Object $Instance -Names @("id", "Id")
+    if ($null -eq $rawDataStoreId) {
+        throw "CMS data store is missing an id."
     }
-    $instanceId = [long]$rawInstanceId
+    $dataStoreId = [long]$rawDataStoreId
     $connectionString = [string](Get-ProvisionProperty -Object $Instance -Names @("connectionString", "ConnectionString"))
     if ([string]::IsNullOrWhiteSpace($connectionString)) {
-        throw "CMS DMS instance $(Format-LogSafeText $instanceId) does not include a connection string."
+        throw "CMS data store $(Format-LogSafeText $dataStoreId) does not include a connection string."
     }
 
     $resolvedConnectionString = Resolve-CmsInstanceConnectionString `
@@ -582,7 +584,7 @@ function New-ProvisionTarget {
     )
 
     return [pscustomobject]@{
-        InstanceId = $instanceId
+        DataStoreId = $dataStoreId
         RouteContexts = $routeContexts
         Dialect = $target.Dialect
         Host = $target.Host
@@ -654,13 +656,13 @@ function Get-ProvisionIdeGuidance {
     $lines.Add("--- Schema Provisioning Summary ---")
 
     if ($ProvisionedTargets.Count -eq 0) {
-        $lines.Add("No DMS instance targets were provisioned (selectors matched zero instances).")
+        $lines.Add("No data store targets were provisioned (selectors matched zero data stores).")
     }
     else {
         $lines.Add("Provisioned $($ProvisionedTargets.Count) database target(s):")
         foreach ($target in $ProvisionedTargets) {
-            $instanceList = ($target.InstanceIds | ForEach-Object { [string]$_ }) -join ", "
-            $lines.Add("  - database=$(Format-LogSafeText $target.DatabaseName) host=$(Format-LogSafeText $target.Host) port=$(Format-LogSafeText $target.Port) user=$(Format-LogSafeText $target.Username) instance-ids=[$instanceList] status=$($target.Status)")
+            $dataStoreList = ($target.DataStoreIds | ForEach-Object { [string]$_ }) -join ", "
+            $lines.Add("  - database=$(Format-LogSafeText $target.DatabaseName) host=$(Format-LogSafeText $target.Host) port=$(Format-LogSafeText $target.Port) user=$(Format-LogSafeText $target.Username) data-store-ids=[$dataStoreList] status=$($target.Status)")
         }
     }
 
@@ -777,15 +779,16 @@ function Invoke-ProvisionDmsSchema {
         [string]
         $EnvironmentFile,
 
+        [Alias("InstanceId")]
         [long[]]
-        $InstanceId = @(),
+        $DataStoreId = @(),
 
         [int[]]
         $SchoolYear = @()
     )
 
-    if ($InstanceId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
-        throw "-InstanceId and -SchoolYear are mutually exclusive. Pass only one selector."
+    if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
+        throw "-DataStoreId and -SchoolYear are mutually exclusive. Pass only one selector."
     }
 
     $resolvedEnvironmentFile = Resolve-ProvisionEnvironmentFile -Path $EnvironmentFile
@@ -798,7 +801,7 @@ function Invoke-ProvisionDmsSchema {
     Write-Information "Schema workspace ready. Core schema: $(Format-LogSafeText $schemaWorkspace.CoreSchemaPath). Extensions: $($schemaWorkspace.ExtensionSchemaPaths.Count)." -InformationAction Continue
 
     # DMS-1151: bootstrap admin token acquisition. Per command-boundaries.md Section 3.4/Section 3.5,
-    # configure-local-dms-instance.ps1 owns the /connect/register side effect for the bootstrap
+    # configure-local-data-store.ps1 owns the /connect/register side effect for the bootstrap
     # admin client; this phase is auth-consumer only. Client id/secret are resolved through the
     # shared -EnvironmentFile helper so configure and provision always agree on the admin client
     # (DMS_BOOTSTRAP_ADMIN_CLIENT_ID / DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET). If authentication
@@ -814,16 +817,16 @@ function Invoke-ProvisionDmsSchema {
     }
     catch
     {
-        throw "Bootstrap admin client '$(Format-LogSafeText $bootstrapAdmin.ClientId)' could not be authenticated against $(Format-LogSafeText $cmsUrl). Run configure-local-dms-instance.ps1 first to register the bootstrap admin client, or refresh its credentials. Underlying error: $(Format-LogSafeText ($_.Exception.Message))"
+        throw "Bootstrap admin client '$(Format-LogSafeText $bootstrapAdmin.ClientId)' could not be authenticated against $(Format-LogSafeText $cmsUrl). Run configure-local-data-store.ps1 first to register the bootstrap admin client, or refresh its credentials. Underlying error: $(Format-LogSafeText ($_.Exception.Message))"
     }
 
-    $instances = @(Get-DmsInstances -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant -Limit 500)
+    $instances = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant -Limit 500)
     if ($instances.Count -ge 500) {
-        throw "DMS instance count reached the CMS query page size (500); pagination is not implemented in this bootstrap provisioning path. Reduce CMS instances or implement paging before provisioning."
+        throw "Data store count reached the CMS query page size (500); pagination is not implemented in this bootstrap provisioning path. Reduce data stores or implement paging before provisioning."
     }
     $selectedInstances = Resolve-ProvisionTargetInstances `
         -Instances $instances `
-        -InstanceId $InstanceId `
+        -DataStoreId $DataStoreId `
         -SchoolYear $SchoolYear `
         -Tenant $tenant
 
@@ -839,9 +842,9 @@ function Invoke-ProvisionDmsSchema {
 
     foreach ($group in $groups) {
         $target = @($group.Group)[0]
-        $instanceIds = @($group.Group | ForEach-Object { [long]$_.InstanceId })
-        $ids = ($instanceIds | ForEach-Object { [string]$_ }) -join ", "
-        Write-Information "Provisioning target database $(Format-LogSafeText $target.DatabaseName) on $(Format-LogSafeText $target.Host):$(Format-LogSafeText $target.Port) for instance id(s): $(Format-LogSafeText $ids)." -InformationAction Continue
+        $dataStoreIds = @($group.Group | ForEach-Object { [long]$_.DataStoreId })
+        $ids = ($dataStoreIds | ForEach-Object { [string]$_ }) -join ", "
+        Write-Information "Provisioning target database $(Format-LogSafeText $target.DatabaseName) on $(Format-LogSafeText $target.Host):$(Format-LogSafeText $target.Port) for data store id(s): $(Format-LogSafeText $ids)." -InformationAction Continue
         Invoke-DmsSchemaProvision `
             -ToolPath $schemaTool `
             -SchemaPaths $schemaPaths `
@@ -854,7 +857,7 @@ function Invoke-ProvisionDmsSchema {
             Port = $target.Port
             Dialect = $target.Dialect
             Username = $target.Username
-            InstanceIds = [long[]]$instanceIds
+            DataStoreIds = [long[]]$dataStoreIds
             Status = "Provisioned"
         })
     }
@@ -869,5 +872,5 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 
 Invoke-ProvisionDmsSchema `
     -EnvironmentFile $EnvironmentFile `
-    -InstanceId $InstanceId `
+    -DataStoreId $DataStoreId `
     -SchoolYear $SchoolYear

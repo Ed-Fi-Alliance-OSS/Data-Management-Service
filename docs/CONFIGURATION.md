@@ -24,7 +24,7 @@ file.
 | ApiSchemaPath                    | Specifies the directory where core and extension ApiSchema.json files are located. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages. |
 | DomainsExcludedFromOpenApi       | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
-| RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dmsInstanceRouteContexts` in Configuration Service. Example: "districtId,schoolYear" |
+| RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear" |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v2/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
 
@@ -50,7 +50,7 @@ The following parameters apply to the DMS Configuration Service (`appsettings.js
 
 ## ConfigurationServiceSettings
 
-These settings configure how the DMS API connects to the Configuration Service to retrieve claim sets, DMS instances, and other metadata. `EncryptionKey` must match CMS `DatabaseSettings:EncryptionKey`.
+These settings configure how the DMS API connects to the Configuration Service to retrieve claim sets, data stores, and other metadata. `EncryptionKey` must match CMS `DatabaseSettings:EncryptionKey`.
 
 | Parameter              | Description                                                                                                                                                              |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

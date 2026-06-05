@@ -22,12 +22,12 @@ public class CacheClaimSetsTaskTests
 
     private static CacheClaimSetsTask CreateTask(
         IClaimSetProvider claimSetProvider,
-        IDmsInstanceProvider dmsInstanceProvider,
+        IDataStoreProvider dataStoreProvider,
         bool multiTenancy
     ) =>
         new(
             claimSetProvider,
-            dmsInstanceProvider,
+            dataStoreProvider,
             Options.Create(AppSettingsWith(multiTenancy)),
             NullLogger<CacheClaimSetsTask>.Instance
         );
@@ -42,7 +42,7 @@ public class CacheClaimSetsTaskTests
         {
             _task = CreateTask(
                 A.Fake<IClaimSetProvider>(),
-                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IDataStoreProvider>(),
                 multiTenancy: false
             );
         }
@@ -64,15 +64,15 @@ public class CacheClaimSetsTaskTests
     public class Given_Single_Tenant_Mode : CacheClaimSetsTaskTests
     {
         private IClaimSetProvider _claimSetProvider = null!;
-        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+        private IDataStoreProvider _dataStoreProvider = null!;
 
         [SetUp]
         public async Task Setup()
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
-            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            _dataStoreProvider = A.Fake<IDataStoreProvider>();
 
-            var task = CreateTask(_claimSetProvider, _dmsInstanceProvider, multiTenancy: false);
+            var task = CreateTask(_claimSetProvider, _dataStoreProvider, multiTenancy: false);
             await task.ExecuteAsync(CancellationToken.None);
         }
 
@@ -85,7 +85,7 @@ public class CacheClaimSetsTaskTests
         [Test]
         public void It_does_not_load_tenants()
         {
-            A.CallTo(() => _dmsInstanceProvider.LoadTenants()).MustNotHaveHappened();
+            A.CallTo(() => _dataStoreProvider.LoadTenants()).MustNotHaveHappened();
         }
     }
 
@@ -93,24 +93,23 @@ public class CacheClaimSetsTaskTests
     public class Given_Multi_Tenant_Mode_With_Multiple_Tenants : CacheClaimSetsTaskTests
     {
         private IClaimSetProvider _claimSetProvider = null!;
-        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+        private IDataStoreProvider _dataStoreProvider = null!;
 
         [SetUp]
         public async Task Setup()
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
-            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            A.CallTo(() => _dmsInstanceProvider.LoadTenants())
-                .Returns<IList<string>>(["tenant-a", "tenant-b"]);
+            _dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => _dataStoreProvider.LoadTenants()).Returns<IList<string>>(["tenant-a", "tenant-b"]);
 
-            var task = CreateTask(_claimSetProvider, _dmsInstanceProvider, multiTenancy: true);
+            var task = CreateTask(_claimSetProvider, _dataStoreProvider, multiTenancy: true);
             await task.ExecuteAsync(CancellationToken.None);
         }
 
         [Test]
         public void It_loads_tenants_once()
         {
-            A.CallTo(() => _dmsInstanceProvider.LoadTenants()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _dataStoreProvider.LoadTenants()).MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -141,11 +140,11 @@ public class CacheClaimSetsTaskTests
         public void Setup()
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
-            var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            A.CallTo(() => dmsInstanceProvider.LoadTenants())
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.LoadTenants())
                 .ThrowsAsync(new InvalidOperationException("tenant load failed"));
 
-            _task = CreateTask(_claimSetProvider, dmsInstanceProvider, multiTenancy: true);
+            _task = CreateTask(_claimSetProvider, dataStoreProvider, multiTenancy: true);
         }
 
         [Test]
@@ -177,7 +176,7 @@ public class CacheClaimSetsTaskTests
             A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
                 .ThrowsAsync(new InvalidOperationException("claim set fetch failed"));
 
-            _task = CreateTask(claimSetProvider, A.Fake<IDmsInstanceProvider>(), multiTenancy: false);
+            _task = CreateTask(claimSetProvider, A.Fake<IDataStoreProvider>(), multiTenancy: false);
         }
 
         [Test]
@@ -199,7 +198,7 @@ public class CacheClaimSetsTaskTests
         public void Setup()
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
-            _task = CreateTask(_claimSetProvider, A.Fake<IDmsInstanceProvider>(), multiTenancy: false);
+            _task = CreateTask(_claimSetProvider, A.Fake<IDataStoreProvider>(), multiTenancy: false);
         }
 
         [Test]
@@ -245,7 +244,7 @@ public class CacheClaimSetsTaskTests
             A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
                 .ThrowsAsync(new TaskCanceledException("dependency canceled (e.g. HttpClient timeout)"));
 
-            _task = CreateTask(claimSetProvider, A.Fake<IDmsInstanceProvider>(), multiTenancy: false);
+            _task = CreateTask(claimSetProvider, A.Fake<IDataStoreProvider>(), multiTenancy: false);
         }
 
         [Test]
@@ -268,11 +267,11 @@ public class CacheClaimSetsTaskTests
         public void Setup()
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
-            var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            A.CallTo(() => dmsInstanceProvider.LoadTenants())
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.LoadTenants())
                 .ThrowsAsync(new TaskCanceledException("dependency canceled (e.g. HttpClient timeout)"));
 
-            _task = CreateTask(_claimSetProvider, dmsInstanceProvider, multiTenancy: true);
+            _task = CreateTask(_claimSetProvider, dataStoreProvider, multiTenancy: true);
         }
 
         [Test]

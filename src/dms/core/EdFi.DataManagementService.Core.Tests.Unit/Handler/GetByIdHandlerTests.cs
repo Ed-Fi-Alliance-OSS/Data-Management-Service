@@ -651,7 +651,7 @@ actual: {requestInfo.FrontendResponse.Body}
                     new NamespacePrefix("uri://sample-a.org"),
                     new NamespacePrefix("uri://sample-b.org"),
                 ],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
             _requestInfo.ProfileContext = new ProfileContext(
                 ProfileName: "ReadableProfile",
@@ -811,7 +811,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 ClaimSetName: "claim-set",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (getByIdHandler, serviceProvider) = Handler(_repository);

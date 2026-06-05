@@ -15,7 +15,7 @@ public interface IIdentityProviderRepository
         string scope,
         string namespacePrefixes,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null,
+        long[]? dataStoreIds = null,
         bool isApproved = true
     );
 
@@ -24,7 +24,7 @@ public interface IIdentityProviderRepository
         string displayName,
         string scope,
         string educationOrganizationIds,
-        long[]? dmsInstanceIds = null,
+        long[]? dataStoreIds = null,
         bool isApproved = true,
         string role = ""
     );

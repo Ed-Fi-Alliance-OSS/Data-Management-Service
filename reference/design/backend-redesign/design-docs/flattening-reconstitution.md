@@ -154,7 +154,7 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 - Abstract identity tables for polymorphic reference targets (from `abstractResources`)
 - Key unification metadata: per-column `DbColumnModel.Storage` and per-table `DbTableModel.KeyUnificationClasses` (see `key-unification.md`)
 
-This is not code generation; it is compiled (or deserialized) metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
+This is not code generation; it is compiled (or deserialized) metadata cached by `(DataStoreId, EffectiveSchemaHash, ProjectName, ResourceName)`.
 
 The same derived model is also built by the DDL generation utility to generate dialect-specific DDL and provision database schemas (see [ddl-generation.md](ddl-generation.md)).
 
@@ -947,7 +947,7 @@ These per-resource shapes are intended to be assembled into a single, shared map
 
 See: `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`.
 
-All three layers are cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)` so the per-request cost is only: reference resolution + row materialization + SQL execution + JSON writing.
+All three layers are cached by `(DataStoreId, EffectiveSchemaHash, ProjectName, ResourceName)` so the per-request cost is only: reference resolution + row materialization + SQL execution + JSON writing.
 
 Note: when runtime work starts from `ResourceKeyId` (e.g., Change Query filters or background projection rebuild batches), DMS uses the cached `ResourceKeyId -> (QualifiedResourceName, ResourceVersion)` map (validated above) to locate the correct cached plans (via `QualifiedResourceName`) and to materialize denormalized metadata (via `ResourceVersion`).
 

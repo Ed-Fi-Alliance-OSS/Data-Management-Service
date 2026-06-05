@@ -33,7 +33,7 @@ internal static class FakeJwtValidationService
                 ? []
                 : [.. educationOrganizationIds.Select(static id => new EducationOrganizationId(id))],
             [],
-            [new DmsInstanceId(ExternalDoublesConstants.StableDmsInstanceId)]
+            [new DataStoreId(ExternalDoublesConstants.StableDataStoreId)]
         );
 
         A.CallTo(() => fake.ValidateAndExtractClientAuthorizationsAsync(A<string>._, A<CancellationToken>._))

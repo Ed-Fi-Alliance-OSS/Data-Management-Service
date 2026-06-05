@@ -36,7 +36,7 @@ public class ProvideAuthorizationFiltersMiddlewareTests
             ClaimSetName: "TestClaimSet",
             EducationOrganizationIds: educationOrganizationIds ?? [],
             NamespacePrefixes: namespacePrefixes ?? [],
-            DmsInstanceIds: []
+            DataStoreIds: []
         );
 
     private static PathComponents CreateGetManyPathComponents() =>

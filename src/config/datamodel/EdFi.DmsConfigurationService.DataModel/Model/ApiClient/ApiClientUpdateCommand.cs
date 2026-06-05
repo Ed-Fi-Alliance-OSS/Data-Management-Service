@@ -14,7 +14,7 @@ public class ApiClientUpdateCommand
     public required long ApplicationId { get; set; }
     public required string Name { get; set; } = "";
     public required bool IsApproved { get; set; }
-    public long[] DmsInstanceIds { get; set; } = [];
+    public long[] DataStoreIds { get; set; } = [];
 
     /// <summary>
     /// Set server-side after the identity provider issues a new UUID on update.
@@ -30,9 +30,9 @@ public class ApiClientUpdateCommand
             RuleFor(a => a.Id).NotEmpty().GreaterThan(0);
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
             RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
-            RuleFor(a => a.DmsInstanceIds)
+            RuleFor(a => a.DataStoreIds)
                 .NotEmpty()
-                .WithMessage("DmsInstanceIds cannot be empty. At least one DMS Instance is required.");
+                .WithMessage("DataStoreIds cannot be empty. At least one Data Store is required.");
         }
     }
 }

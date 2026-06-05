@@ -111,18 +111,18 @@ public class ApiClientPagingQueryValidator : PagingQueryValidator<FrontendApiCli
         : base(AllowedFields) { }
 }
 
-public class DmsInstancePagingQueryValidator : PagingQueryValidator<FrontendDmsInstanceQuery>
+public class DataStorePagingQueryValidator : PagingQueryValidator<FrontendDataStoreQuery>
 {
     private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
         StringComparer.OrdinalIgnoreCase
     )
     {
         "id",
-        "instanceType",
-        "instanceName",
+        "dataStoreType",
+        "name",
     };
 
-    public DmsInstancePagingQueryValidator()
+    public DataStorePagingQueryValidator()
         : base(AllowedFields) { }
 }
 
@@ -154,34 +154,34 @@ public class TenantPagingQueryValidator : PagingQueryValidator<FrontendPagingQue
         : base(AllowedFields) { }
 }
 
-public class DmsInstanceDerivativePagingQueryValidator : PagingQueryValidator<FrontendPagingQuery>
+public class DataStoreDerivativePagingQueryValidator : PagingQueryValidator<FrontendPagingQuery>
 {
     private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
         StringComparer.OrdinalIgnoreCase
     )
     {
         "id",
-        "instanceId",
+        "dataStoreId",
         "derivativeType",
     };
 
-    public DmsInstanceDerivativePagingQueryValidator()
+    public DataStoreDerivativePagingQueryValidator()
         : base(AllowedFields) { }
 }
 
-public class DmsInstanceRouteContextPagingQueryValidator : PagingQueryValidator<FrontendPagingQuery>
+public class DataStoreContextPagingQueryValidator : PagingQueryValidator<FrontendPagingQuery>
 {
     private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
         StringComparer.OrdinalIgnoreCase
     )
     {
         "id",
-        "instanceId",
+        "dataStoreId",
         "contextKey",
         "contextValue",
     };
 
-    public DmsInstanceRouteContextPagingQueryValidator()
+    public DataStoreContextPagingQueryValidator()
         : base(AllowedFields) { }
 }
 

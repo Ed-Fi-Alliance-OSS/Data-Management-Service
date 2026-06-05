@@ -12,7 +12,7 @@ public class ApplicationResponse
     public long VendorId { get; set; }
     public required string ClaimSetName { get; set; }
     public List<long> EducationOrganizationIds { get; set; } = [];
-    public List<long> DmsInstanceIds { get; set; } = [];
+    public List<long> DataStoreIds { get; set; } = [];
     public List<long> ProfileIds { get; set; } = [];
     public bool Enabled { get; set; }
 }

@@ -95,7 +95,7 @@ function Get-SmokeTestCredentials {
         $EducationOrganizationIds = @(255901, 19255901, 100000, 200000, 300000),
 
         [long[]]
-        $DmsInstanceIds = @(),
+        $DataStoreIds = @(),
 
         [string]
         $Tenant = ""
@@ -112,22 +112,22 @@ function Get-SmokeTestCredentials {
         Write-Host "Obtaining configuration service token..."
         $configToken = Get-CmsToken -CmsUrl $ConfigServiceUrl -ClientId $SysAdminId -ClientSecret $SysAdminSecret
 
-        # Step 3: Get available DMS instances
-        if ($DmsInstanceIds.Count -gt 0) {
-            $dmsInstanceIds = [long[]]@($DmsInstanceIds)
-            Write-Host "Using supplied DMS instance IDs: $($dmsInstanceIds -join ', ')"
+        # Step 3: Get available data stores
+        if ($DataStoreIds.Count -gt 0) {
+            $dataStoreIds = [long[]]@($DataStoreIds)
+            Write-Host "Using supplied data store IDs: $($dataStoreIds -join ', ')"
         }
         else {
-            Write-Host "Retrieving available DMS instances..."
-            $dmsInstances = Get-DmsInstances -CmsUrl $ConfigServiceUrl -AccessToken $configToken -Tenant $Tenant
+            Write-Host "Retrieving available data stores..."
+            $dataStores = Get-DataStore -CmsUrl $ConfigServiceUrl -AccessToken $configToken -Tenant $Tenant
 
-            if ($dmsInstances -and $dmsInstances.Count -gt 0) {
-                $dmsInstanceIds = @($dmsInstances[0].id)
-                Write-Host "Found DMS instance with ID: $($dmsInstanceIds[0])"
+            if ($dataStores -and $dataStores.Count -gt 0) {
+                $dataStoreIds = @($dataStores[0].id)
+                Write-Host "Found data store with ID: $($dataStoreIds[0])"
             }
             else {
-                Write-Warning "No DMS instances found. Application will be created without DMS instance association."
-                $dmsInstanceIds = @()
+                Write-Warning "No data stores found. Application will be created without data store association."
+                $dataStoreIds = @()
             }
         }
 
@@ -139,7 +139,7 @@ function Get-SmokeTestCredentials {
 
         # Step 5: Create application using Dms-Management module
         Write-Host "Creating application..."
-        $credentials = Add-Application -CmsUrl $ConfigServiceUrl -ApplicationName $ApplicationName -ClaimSetName $ClaimSetName -VendorId $vendorId -AccessToken $configToken -EducationOrganizationIds $EducationOrganizationIds -DmsInstanceIds $dmsInstanceIds -Tenant $Tenant
+        $credentials = Add-Application -CmsUrl $ConfigServiceUrl -ApplicationName $ApplicationName -ClaimSetName $ClaimSetName -VendorId $vendorId -AccessToken $configToken -EducationOrganizationIds $EducationOrganizationIds -DataStoreIds $dataStoreIds -Tenant $Tenant
 
         $key = $credentials.Key
         $secret = $credentials.Secret

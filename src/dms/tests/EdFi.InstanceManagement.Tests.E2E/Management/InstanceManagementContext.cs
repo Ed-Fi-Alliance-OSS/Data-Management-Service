@@ -38,24 +38,24 @@ public class InstanceManagementContext
     public Dictionary<string, ConfigServiceClient> ConfigClientsByTenant { get; } = new();
 
     /// <summary>
-    /// List of instance IDs created during tests
+    /// List of data store IDs created during tests
     /// </summary>
-    public List<int> InstanceIds { get; } = [];
+    public List<int> DataStoreIds { get; } = [];
 
     /// <summary>
-    /// Maps instance ID to the tenant it belongs to
+    /// Maps data store ID to the tenant it belongs to
     /// </summary>
-    public Dictionary<int, string> InstanceIdToTenant { get; } = new();
+    public Dictionary<int, string> DataStoreIdToTenant { get; } = new();
 
     /// <summary>
-    /// Mapping from route qualifier (e.g., "255901/2024") to instance ID
+    /// Mapping from route qualifier (e.g., "255901/2024") to data store ID
     /// </summary>
-    public Dictionary<string, int> RouteQualifierToInstanceId { get; } = new();
+    public Dictionary<string, int> RouteQualifierToDataStoreId { get; } = new();
 
     /// <summary>
-    /// Tracks instance ID to database name mapping for infrastructure cleanup
+    /// Tracks data store ID to database name mapping for infrastructure cleanup
     /// </summary>
-    public Dictionary<int, string> InstanceIdToDatabaseName { get; } = new();
+    public Dictionary<int, string> DataStoreIdToDatabaseName { get; } = new();
 
     /// <summary>
     /// Infrastructure manager for Kafka/Debezium lifecycle
@@ -118,7 +118,7 @@ public class InstanceManagementContext
     public InstanceKafkaMessageCollector? KafkaCollector { get; set; }
 
     /// <summary>
-    /// Messages collected from Kafka, grouped by instance ID
+    /// Messages collected from Kafka, grouped by data store ID
     /// </summary>
     public Dictionary<long, List<KafkaTestMessage>> MessagesByInstance { get; } = new();
 
@@ -132,10 +132,10 @@ public class InstanceManagementContext
         TenantNames.Clear();
         CurrentTenant = null;
         ConfigClientsByTenant.Clear();
-        InstanceIds.Clear();
-        InstanceIdToTenant.Clear();
-        RouteQualifierToInstanceId.Clear();
-        InstanceIdToDatabaseName.Clear();
+        DataStoreIds.Clear();
+        DataStoreIdToTenant.Clear();
+        RouteQualifierToDataStoreId.Clear();
+        DataStoreIdToDatabaseName.Clear();
         ApplicationIdsByTenant.Clear();
         CredentialsByTenant.Clear();
         ApplicationId = null;

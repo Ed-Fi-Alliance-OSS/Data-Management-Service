@@ -30,31 +30,31 @@ Feature: Instance Setup for Multi-Instance Testing
              Then the vendor should be created successfully
               And the vendor ID should be stored
 
-        Scenario: Create DMS instances for District 255901
+        Scenario: Create data stores for District 255901
             Given I am working with tenant "Tenant_255901"
               And a vendor exists
              When I create an instance with the following details:
-                  | InstanceType     | District                                                                                                                |
-                  | InstanceName     | District 255901 - School Year 2024                                                                                      |
+                  | DataStoreType    | District                                                                                                                |
+                  | Name             | District 255901 - School Year 2024                                                                                      |
                   | ConnectionString | host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024; |
               And I add route context "districtId" with value "255901" to the instance
               And I add route context "schoolYear" with value "2024" to the instance
              Then the instance should be created successfully
              When I create an instance with the following details:
-                  | InstanceType     | District                                                                                                                |
-                  | InstanceName     | District 255901 - School Year 2025                                                                                      |
+                  | DataStoreType    | District                                                                                                                |
+                  | Name             | District 255901 - School Year 2025                                                                                      |
                   | ConnectionString | host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025; |
               And I add route context "districtId" with value "255901" to the instance
               And I add route context "schoolYear" with value "2025" to the instance
              Then the instance should be created successfully
               And 2 instances should be created
 
-        Scenario: Create DMS instance for District 255902
+        Scenario: Create data store for District 255902
             Given I am working with tenant "Tenant_255902"
               And a vendor exists
              When I create an instance with the following details:
-                  | InstanceType     | District                                                                                                                |
-                  | InstanceName     | District 255902 - School Year 2024                                                                                      |
+                  | DataStoreType    | District                                                                                                                |
+                  | Name             | District 255902 - School Year 2024                                                                                      |
                   | ConnectionString | host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024; |
               And I add route context "districtId" with value "255902" to the instance
               And I add route context "schoolYear" with value "2024" to the instance

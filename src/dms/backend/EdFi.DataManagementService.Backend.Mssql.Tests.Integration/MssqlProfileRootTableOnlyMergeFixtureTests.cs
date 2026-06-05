@@ -174,7 +174,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     {
         ServiceCollection services = [];
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -289,12 +289,12 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootOnlyFixture",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -716,12 +716,12 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Roo
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootOnlyFixture",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -857,12 +857,12 @@ public class Given_A_Mssql_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootOnlyFixture",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1019,12 +1019,12 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootOnlyFixtureSubRefHidden",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootOnlyFixtureSubRefHidden",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1192,12 +1192,12 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileRootOnlyFixture",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileRootOnlyFixture",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

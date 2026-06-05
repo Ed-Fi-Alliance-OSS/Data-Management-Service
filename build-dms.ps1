@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -423,7 +423,7 @@ function Get-E2ETestEnvironmentContext {
         -UseRelationalBackend:$useRelationalBackend `
         -TestFilter $TestFilter
 
-    $dmsInstanceDatabaseName =
+    $dataStoreDatabaseName =
         if ($useRelationalBackend) {
             $relationalDatabaseName = [string]$environmentValues["RELATIONAL_E2E_DATABASE_NAME"]
 
@@ -440,7 +440,7 @@ function Get-E2ETestEnvironmentContext {
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
         UseRelationalBackend = $useRelationalBackend
-        DmsInstanceDatabaseName = $dmsInstanceDatabaseName
+        DataStoreDatabaseName = $dataStoreDatabaseName
         TestResultSuffix = Get-E2ETestResultSuffix -UseRelationalBackend:$useRelationalBackend -TestFilter $TestFilter
     }
 }
@@ -455,17 +455,17 @@ function Invoke-WithE2ETestProcessContext {
     )
 
     $previousUseRelationalBackend = $env:AppSettings__UseRelationalBackend
-    $previousDmsInstanceDatabaseName = $env:AppSettings__DmsInstanceDatabaseName
+    $previousDataStoreDatabaseName = $env:AppSettings__DataStoreDatabaseName
     $previousNodeOptions = $env:NODE_OPTIONS
 
     try {
         if ($E2ETestSettings.UseRelationalBackend) {
             $env:AppSettings__UseRelationalBackend = $E2ETestSettings.UseRelationalBackend.ToString().ToLowerInvariant()
-            $env:AppSettings__DmsInstanceDatabaseName = $E2ETestSettings.DmsInstanceDatabaseName
+            $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
         }
         else {
             Remove-Item Env:AppSettings__UseRelationalBackend -ErrorAction SilentlyContinue
-            Remove-Item Env:AppSettings__DmsInstanceDatabaseName -ErrorAction SilentlyContinue
+            Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
         }
 
         Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
@@ -479,11 +479,11 @@ function Invoke-WithE2ETestProcessContext {
             $env:AppSettings__UseRelationalBackend = $previousUseRelationalBackend
         }
 
-        if ([string]::IsNullOrWhiteSpace($previousDmsInstanceDatabaseName)) {
-            Remove-Item Env:AppSettings__DmsInstanceDatabaseName -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace($previousDataStoreDatabaseName)) {
+            Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
         }
         else {
-            $env:AppSettings__DmsInstanceDatabaseName = $previousDmsInstanceDatabaseName
+            $env:AppSettings__DataStoreDatabaseName = $previousDataStoreDatabaseName
         }
 
         if ([string]::IsNullOrWhiteSpace($previousNodeOptions)) {
@@ -892,12 +892,12 @@ function Wait-ForPostgreSQL {
 }
 
 # Setup-InstanceManagementDatabases function removed
-# This is now handled by start-local-dms.ps1 -AddDmsInstance
+# This is now handled by start-local-dms.ps1 -AddDataStore
 # which creates databases, runs migrations, and sets up Kafka connectors
 
 # Setup-InstanceKafkaConnectors function removed
-# This is now handled by start-local-dms.ps1 -AddDmsInstance
-# which creates Kafka connectors via setup-instance-kafka-connectors.ps1
+# This is now handled by start-local-dms.ps1 -AddDataStore
+# which creates Kafka connectors via setup-data-store-kafka-connectors.ps1
 
 function RunInstanceE2E {
     # Run only the instance management E2E tests

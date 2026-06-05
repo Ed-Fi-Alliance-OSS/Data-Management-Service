@@ -27,7 +27,7 @@ public class Given_App_Settings
         );
 
         settings.UseRelationalBackend.Should().BeFalse();
-        settings.DmsInstanceDatabaseName.Should().Be(AppSettings.LegacyDmsInstanceDatabaseName);
+        settings.DataStoreDatabaseName.Should().Be(AppSettings.LegacyDataStoreDatabaseName);
     }
 
     [Test]
@@ -38,7 +38,7 @@ public class Given_App_Settings
                 .AddInMemoryCollection([
                     KeyValuePair.Create<string, string?>("AppSettings:UseRelationalBackend", "true"),
                     KeyValuePair.Create<string, string?>(
-                        nameof(AppSettings.DmsInstanceDatabaseName),
+                        nameof(AppSettings.DataStoreDatabaseName),
                         "edfi_datamanagementservice_relational"
                     ),
                 ])
@@ -46,7 +46,7 @@ public class Given_App_Settings
         );
 
         settings.UseRelationalBackend.Should().BeTrue();
-        settings.DmsInstanceDatabaseName.Should().Be("edfi_datamanagementservice_relational");
+        settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_relational");
     }
 
     [Test]
@@ -57,7 +57,7 @@ public class Given_App_Settings
                 .AddInMemoryCollection([
                     KeyValuePair.Create<string, string?>(nameof(AppSettings.UseRelationalBackend), "true"),
                     KeyValuePair.Create<string, string?>(
-                        nameof(AppSettings.DmsInstanceDatabaseName),
+                        nameof(AppSettings.DataStoreDatabaseName),
                         "edfi_datamanagementservice_relational_top_level"
                     ),
                 ])
@@ -65,6 +65,6 @@ public class Given_App_Settings
         );
 
         settings.UseRelationalBackend.Should().BeTrue();
-        settings.DmsInstanceDatabaseName.Should().Be("edfi_datamanagementservice_relational_top_level");
+        settings.DataStoreDatabaseName.Should().Be("edfi_datamanagementservice_relational_top_level");
     }
 }

@@ -147,13 +147,13 @@ var invalidConfigurationException = ReportInvalidConfiguration(app);
 
 if (invalidConfigurationException is null)
 {
-    // Initialize DMS instances first to ensure connection strings are available
+    // Initialize data stores first to ensure connection strings are available
     await startupPhaseExecutor.RunFatalAsync(
-        DmsStartupPhases.LoadDmsInstances,
-        "Loading DMS instances from Configuration Service.",
-        "Loaded DMS instances from Configuration Service.",
-        "Unable to load DMS instances from Configuration Service. DMS cannot start without proper instance configuration.",
-        () => InitializeDmsInstances(app)
+        DmsStartupPhases.LoadDataStores,
+        "Loading data stores from Configuration Service.",
+        "Loaded data stores from Configuration Service.",
+        "Unable to load data stores from Configuration Service. DMS cannot start without proper data store configuration.",
+        () => InitializeDataStores(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeDatabase,
@@ -272,20 +272,20 @@ void InitializeDatabase(WebApplication app)
 
     if (appSettings.DeployDatabaseOnStartup)
     {
-        app.Logger.LogInformation("Running initial database deploy on all DMS instances");
-        var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+        app.Logger.LogInformation("Running initial database deploy on all data stores");
+        var dataStoreProvider = app.Services.GetRequiredService<IDataStoreProvider>();
         var connectionStringProvider = app.Services.GetRequiredService<IConnectionStringProvider>();
         var databaseDeploy = app.Services.GetRequiredService<IDatabaseDeploy>();
 
         // Get all loaded tenant keys and deploy to instances for each tenant
-        var loadedTenantKeys = dmsInstanceProvider.GetLoadedTenantKeys();
+        var loadedTenantKeys = dataStoreProvider.GetLoadedTenantKeys();
         int totalInstancesDeployed = 0;
 
         foreach (var tenantKey in loadedTenantKeys)
         {
             // Convert empty string back to null for API calls
             string? tenant = string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
-            var instances = dmsInstanceProvider.GetAll(tenant);
+            var instances = dataStoreProvider.GetAll(tenant);
 
             if (instances.Count == 0)
             {
@@ -305,8 +305,8 @@ void InitializeDatabase(WebApplication app)
             foreach (var instance in instances)
             {
                 app.Logger.LogInformation(
-                    "Deploying database schema to DMS instance '{InstanceName}' (ID: {InstanceId}) for tenant '{Tenant}'",
-                    instance.InstanceName,
+                    "Deploying database schema to data store '{Name}' (ID: {DataStoreId}) for tenant '{Tenant}'",
+                    instance.Name,
                     instance.Id,
                     tenant ?? "(default)"
                 );
@@ -319,14 +319,14 @@ void InitializeDatabase(WebApplication app)
                 if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
                 {
                     throw new InvalidOperationException(
-                        $"Database deploy failed for instance '{instance.InstanceName}' (ID: {instance.Id}) tenant '{tenant ?? "(default)"}'.",
+                        $"Database deploy failed for data store '{instance.Name}' (ID: {instance.Id}) tenant '{tenant ?? "(default)"}'.",
                         failure.Error
                     );
                 }
 
                 app.Logger.LogInformation(
-                    "Successfully deployed database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
-                    instance.InstanceName,
+                    "Successfully deployed database schema to data store '{Name}' (ID: {DataStoreId})",
+                    instance.Name,
                     instance.Id
                 );
 
@@ -335,7 +335,7 @@ void InitializeDatabase(WebApplication app)
         }
 
         app.Logger.LogInformation(
-            "Database deploy completed for {TotalInstanceCount} DMS instances across {TenantCount} tenants",
+            "Database deploy completed for {TotalInstanceCount} data stores across {TenantCount} tenants",
             totalInstancesDeployed,
             loadedTenantKeys.Count
         );
@@ -380,40 +380,40 @@ async Task InitializeAuthMetadata(WebApplication app)
     app.Logger.LogInformation("Authentication metadata initialization completed successfully");
 }
 
-async Task InitializeDmsInstances(WebApplication app)
+async Task InitializeDataStores(WebApplication app)
 {
-    app.Logger.LogInformation("Loading DMS instances from Configuration Service");
-    var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+    app.Logger.LogInformation("Loading data stores from Configuration Service");
+    var dataStoreProvider = app.Services.GetRequiredService<IDataStoreProvider>();
     var multiTenancyEnabled = app.Configuration.GetValue<bool>("AppSettings:MultiTenancy");
 
     if (multiTenancyEnabled)
     {
-        await InitializeDmsInstancesForMultiTenancy(app, dmsInstanceProvider);
+        await InitializeDataStoresForMultiTenancy(app, dataStoreProvider);
     }
     else
     {
-        await InitializeDmsInstancesForSingleTenancy(app, dmsInstanceProvider);
+        await InitializeDataStoresForSingleTenancy(app, dataStoreProvider);
     }
 }
 
-async Task InitializeDmsInstancesForMultiTenancy(WebApplication app, IDmsInstanceProvider dmsInstanceProvider)
+async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStoreProvider dataStoreProvider)
 {
     app.Logger.LogInformation("Multi-tenancy is enabled. Fetching tenants from Configuration Service.");
 
-    IList<string> tenants = await dmsInstanceProvider.LoadTenants();
+    IList<string> tenants = await dataStoreProvider.LoadTenants();
 
     if (tenants.Count == 0)
     {
         // When multi-tenancy is enabled, having 0 tenants at startup is not fatal.
         // Tenants may be created after DMS starts, and the cache-miss fallback will load instances on demand.
         app.Logger.LogWarning(
-            "No tenants found in Configuration Service. DMS instances will be loaded on-demand when tenants are created and requests arrive."
+            "No tenants found in Configuration Service. Data stores will be loaded on-demand when tenants are created and requests arrive."
         );
         return;
     }
 
     app.Logger.LogInformation(
-        "Found {TenantCount} tenants. Loading DMS instances for each tenant.",
+        "Found {TenantCount} tenants. Loading data stores for each tenant.",
         tenants.Count
     );
 
@@ -421,15 +421,15 @@ async Task InitializeDmsInstancesForMultiTenancy(WebApplication app, IDmsInstanc
     foreach (string tenant in tenants)
     {
         app.Logger.LogInformation(
-            "Loading DMS instances for tenant: {TenantName}",
+            "Loading data stores for tenant: {TenantName}",
             LoggingSanitizer.SanitizeForLogging(tenant)
         );
 
-        IList<DmsInstance> instances = await dmsInstanceProvider.LoadDmsInstances(tenant);
+        IList<DataStore> instances = await dataStoreProvider.LoadDataStores(tenant);
         totalInstances += instances.Count;
 
         app.Logger.LogInformation(
-            "Loaded {InstanceCount} DMS instances for tenant {TenantName}",
+            "Loaded {InstanceCount} data stores for tenant {TenantName}",
             instances.Count,
             LoggingSanitizer.SanitizeForLogging(tenant)
         );
@@ -438,40 +438,37 @@ async Task InitializeDmsInstancesForMultiTenancy(WebApplication app, IDmsInstanc
     }
 
     app.Logger.LogInformation(
-        "Successfully loaded {TotalInstanceCount} total DMS instances across {TenantCount} tenants",
+        "Successfully loaded {TotalInstanceCount} total data stores across {TenantCount} tenants",
         totalInstances,
         tenants.Count
     );
 }
 
-async Task InitializeDmsInstancesForSingleTenancy(
-    WebApplication app,
-    IDmsInstanceProvider dmsInstanceProvider
-)
+async Task InitializeDataStoresForSingleTenancy(WebApplication app, IDataStoreProvider dataStoreProvider)
 {
-    IList<DmsInstance> instances = await dmsInstanceProvider.LoadDmsInstances();
+    IList<DataStore> instances = await dataStoreProvider.LoadDataStores();
 
     if (instances.Count == 0)
     {
         throw new InvalidOperationException(
-            "No DMS instances were loaded from Configuration Service. DMS cannot start without instance configuration."
+            "No data stores were loaded from Configuration Service. DMS cannot start without data store configuration."
         );
     }
 
-    app.Logger.LogInformation("Successfully loaded {InstanceCount} DMS instances", instances.Count);
+    app.Logger.LogInformation("Successfully loaded {InstanceCount} data stores", instances.Count);
     LogInstanceDetails(app, instances);
 }
 
-void LogInstanceDetails(WebApplication app, IList<DmsInstance> instances)
+void LogInstanceDetails(WebApplication app, IList<DataStore> instances)
 {
     foreach (var instance in instances)
     {
         var hasConnectionString = !string.IsNullOrWhiteSpace(instance.ConnectionString);
         app.Logger.LogInformation(
-            "DMS Instance: ID={InstanceId}, Name='{InstanceName}', Type='{InstanceType}', HasConnectionString={HasConnectionString}",
+            "Data Store: ID={DataStoreId}, Name='{Name}', Type='{DataStoreType}', HasConnectionString={HasConnectionString}",
             instance.Id,
-            instance.InstanceName,
-            instance.InstanceType,
+            instance.Name,
+            instance.DataStoreType,
             hasConnectionString
         );
     }

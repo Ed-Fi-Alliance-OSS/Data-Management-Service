@@ -38,9 +38,9 @@ public record ApplicationInsertResult
     public record FailureVendorNotFound() : ApplicationInsertResult();
 
     /// <summary>
-    /// Referenced DMS instance not found exception thrown and caught
+    /// Referenced Data store not found exception thrown and caught
     /// </summary>
-    public record FailureDmsInstanceNotFound() : ApplicationInsertResult();
+    public record FailureDataStoreNotFound() : ApplicationInsertResult();
 
     /// <summary>
     /// Referenced profile not found exception thrown and caught
@@ -108,9 +108,9 @@ public record ApplicationUpdateResult
     public record FailureVendorNotFound() : ApplicationUpdateResult();
 
     /// <summary>
-    /// Referenced DMS instance not found exception thrown and caught
+    /// Referenced Data store not found exception thrown and caught
     /// </summary>
-    public record FailureDmsInstanceNotFound() : ApplicationUpdateResult();
+    public record FailureDataStoreNotFound() : ApplicationUpdateResult();
 
     /// <summary>
     /// Referenced profile not found exception thrown and caught

@@ -57,52 +57,52 @@ Authorization: bearer {{configToken}}
 #############################################
 
 ### Step 6: Create DMS Instance for Tenant1
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: Tenant1
 
 {
-    "instanceType": "Production",
-    "instanceName": "Tenant1 Production",
+    "dataStoreType": "Production",
+    "name": "Tenant1 Production",
     "connectionString": "Server=localhost;Database=Tenant1Prod;"
 }
 
 ### Step 7: Create another DMS Instance for Tenant1
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: Tenant1
 
 {
-    "instanceType": "Development",
-    "instanceName": "Tenant1 Dev",
+    "dataStoreType": "Development",
+    "name": "Tenant1 Dev",
     "connectionString": "Server=localhost;Database=Tenant1Dev;"
 }
 
 ### Step 8: Create DMS Instance for Tenant2
-POST http://localhost:{{configPort}}/v2/dmsInstances
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: Tenant2
 
 {
-    "instanceType": "Production",
-    "instanceName": "Tenant2 Production",
+    "dataStoreType": "Production",
+    "name": "Tenant2 Production",
     "connectionString": "Server=localhost;Database=Tenant2Prod;"
 }
 
 ### Step 9: Query DMS Instances for Tenant1 (should return 2 instances)
-GET http://localhost:{{configPort}}/v2/dmsInstances
+GET http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Tenant: Tenant1
 
 ### Step 10: Query DMS Instances for Tenant2 (should return 1 instance)
-GET http://localhost:{{configPort}}/v2/dmsInstances
+GET http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}
 Tenant: Tenant2
 
 
 ### Step 11: Query DMS Instances with missing Tenant header
-GET http://localhost:{{configPort}}/v2/dmsInstances
+GET http://localhost:{{configPort}}/v2/dataStores
 Authorization: bearer {{configToken}}

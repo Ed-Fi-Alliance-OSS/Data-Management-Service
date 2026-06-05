@@ -43,7 +43,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             SecurityKey signingKey,
             string keyId,
             IConfiguration? configuration = null,
-            long[]? dmsInstanceIds = null
+            long[]? dataStoreIds = null
         )
         {
             var claims = new List<Claim>
@@ -77,8 +77,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 {
                     foreach (var mapper in protocolMappers)
                     {
-                        // Skip dmsInstanceIds as it will be added separately if provided
-                        if (mapper.ClaimName == "dmsInstanceIds" && dmsInstanceIds != null)
+                        // Skip dataStoreIds as it will be added separately if provided
+                        if (mapper.ClaimName == "dataStoreIds" && dataStoreIds != null)
                         {
                             continue;
                         }
@@ -144,14 +144,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 payload.Add(rolesClaim, roles);
             }
 
-            // Add dmsInstanceIds as a sorted comma-separated string (empty string if no instances)
-            if (dmsInstanceIds != null)
+            // Add dataStoreIds as a sorted comma-separated string (empty string if no data stores)
+            if (dataStoreIds != null)
             {
-                var sortedInstanceIds =
-                    dmsInstanceIds.Length > 0
-                        ? string.Join(",", dmsInstanceIds.OrderBy(id => id))
-                        : string.Empty;
-                payload.Add("dmsInstanceIds", sortedInstanceIds);
+                var sortedDataStoreIds =
+                    dataStoreIds.Length > 0 ? string.Join(",", dataStoreIds.OrderBy(id => id)) : string.Empty;
+                payload.Add("dataStoreIds", sortedDataStoreIds);
             }
 
             // Create the JWT with header and payload, including kid

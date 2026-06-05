@@ -251,7 +251,7 @@ internal abstract class ProfileGuardedNoOpGeneratedDdlFixtureTestBase
         services.AddSingleton<IHostApplicationLifetime, ProfileGuardedNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -347,12 +347,12 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileGuardedNoOp",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileGuardedNoOp",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -407,12 +407,12 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileGuardedNoOp",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileGuardedNoOp",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

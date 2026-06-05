@@ -24,7 +24,7 @@ internal static class FakeApplicationContextProvider
             ExternalDoublesConstants.StableApplicationId,
             ExternalDoublesConstants.SmokeClientId,
             ExternalDoublesConstants.StableClientUuid,
-            [ExternalDoublesConstants.StableDmsInstanceId]
+            [ExternalDoublesConstants.StableDataStoreId]
         );
 
         A.CallTo(() => fake.GetApplicationByClientIdAsync(A<string>._))

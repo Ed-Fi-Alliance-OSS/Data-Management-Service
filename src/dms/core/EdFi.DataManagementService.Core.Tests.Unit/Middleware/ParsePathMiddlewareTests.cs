@@ -80,7 +80,7 @@ public class ParsePathMiddlewareTests
                             ClaimSetName: "test-claimset",
                             EducationOrganizationIds: [],
                             NamespacePrefixes: [],
-                            DmsInstanceIds: [new DmsInstanceId(1)]
+                            DataStoreIds: [new DataStoreId(1)]
                         )
                     )
                 )
@@ -92,26 +92,26 @@ public class ParsePathMiddlewareTests
             NullLogger<JwtAuthenticationMiddleware>.Instance
         );
 
-        services.AddTransient<ResolveDmsInstanceMiddleware>();
+        services.AddTransient<ResolveDataStoreMiddleware>();
 
-        var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-        A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>._))
+        var dataStoreProvider = A.Fake<IDataStoreProvider>();
+        A.CallTo(() => dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>._))
             .Returns(Task.CompletedTask);
-        A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
+        A.CallTo(() => dataStoreProvider.GetById(1, A<string?>.Ignored))
             .Returns(
-                new DmsInstance(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "Test",
-                    InstanceName: "Test Instance",
+                    DataStoreType: "Test",
+                    Name: "Test Instance",
                     ConnectionString: "Server=test;Database=testdb",
                     RouteContext: []
                 )
             );
 
-        services.AddSingleton<IDmsInstanceProvider>(dmsInstanceProvider);
-        services.AddScoped<IDmsInstanceSelection>(_ => A.Fake<IDmsInstanceSelection>());
-        services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
-            NullLogger<ResolveDmsInstanceMiddleware>.Instance
+        services.AddSingleton<IDataStoreProvider>(dataStoreProvider);
+        services.AddScoped<IDataStoreSelection>(_ => A.Fake<IDataStoreSelection>());
+        services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+            NullLogger<ResolveDataStoreMiddleware>.Instance
         );
 
         var appSettingsOptions = Options.Create(

@@ -93,7 +93,7 @@ function Get-KeySecret() {
 
         [string]$ApplicationName = "Demo application",
 
-        [long[]]$DmsInstanceIds = @()
+        [long[]]$DataStoreIds = @()
     )
 
     $params = @{
@@ -107,7 +107,7 @@ function Get-KeySecret() {
     # Add an Application and get Id, Key and Secret
     $params.ClaimSetName = $ClaimSetName
     $params.ApplicationName = $ApplicationName
-    $params.DmsInstanceIds = $DmsInstanceIds
+    $params.DataStoreIds = $DataStoreIds
     $keySecret = Add-Application @params
 
     return $keySecret
@@ -505,15 +505,15 @@ function Build-Template {
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
     # Get or create DMS instance
-    $dmsInstances = Get-DmsInstances -CmsUrl $CmsUrl -AccessToken $cmsToken
-    if ($dmsInstances.Count -eq 0) {
-        $dmsInstanceId = Add-DmsInstance -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword
+    $dataStores = Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken
+    if ($dataStores.Count -eq 0) {
+        $dataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword
     } else {
-        $dmsInstanceId = $dmsInstances[0].id
+        $dataStoreId = $dataStores[0].id
     }
 
     # Create Bootstrap application and assign to DMS instance
-    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DmsInstanceIds @($dmsInstanceId)
+    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($dataStoreId)
 
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $bootstrapApp.Key -Secret $bootstrapApp.Secret
 
@@ -537,7 +537,7 @@ function Build-Template {
         }
 
         # Create Sandbox application and assign to DMS instance
-        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DmsInstanceIds @($dmsInstanceId)
+        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($dataStoreId)
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 

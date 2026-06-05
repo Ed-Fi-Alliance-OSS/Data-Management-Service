@@ -1,12 +1,12 @@
 # School Year Instance Setup
 
-This guide explains how to set up multiple DMS instances with school year routing.
+This guide explains how to set up multiple data stores with school year routing.
 
 ## Choose a Workflow
 
 There are two ways to end up with multiple school year instances:
 
-1. **Scripted convenience (this guide)**: use `-SchoolYearRange` on `start-local-dms.ps1` to automatically create multiple `dmsInstances` and their `schoolYear` route contexts in the Configuration Service.
+1. **Scripted convenience (this guide)**: use `-SchoolYearRange` on `start-local-dms.ps1` to automatically create multiple `dataStores` and their `schoolYear` route contexts in the Configuration Service.
 2. **Manual/field-like (Configuration API)**: create instances and route contexts yourself (for example, using the REST client `.http` workflow described in the multi-tenancy guide).
 
 These approaches use the same underlying Configuration Service APIs and should result in the same DMS routing behavior and Swagger UI dropdowns.
@@ -15,20 +15,20 @@ These approaches use the same underlying Configuration Service APIs and should r
 > `-SchoolYearRange` is currently a convenience helper and is not idempotent.
 > If you also create instances manually (or re-run the script), you can end up with duplicate instances/route contexts (similar names, different IDs).
 > Prefer **one** workflow per environment: either scripted *or* manual.
-> `-SchoolYearRange` and `-NoDmsInstance` are mutually exclusive.
+> `-SchoolYearRange` and `-NoDataStore` are mutually exclusive.
 > If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` requires
 > `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
 > required `Tenant` header.
 
 ## Overview
 
-The `start-local-dms.ps1` script now supports automatic creation of multiple DMS instances, each configured with a specific school year route context. This is useful for multi-tenant scenarios where you need to separate data by school year.
+The `start-local-dms.ps1` script now supports automatic creation of multiple data stores, each configured with a specific school year route context. This is useful for multi-tenant scenarios where you need to separate data by school year.
 
 ## Quick Start
 
 ### Create School Year Instances
 
-To create DMS instances for a range of school years, use the `-SchoolYearRange` parameter:
+To create data stores for a range of school years, use the `-SchoolYearRange` parameter:
 
 ```powershell
 ./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env -EnableSwaggerUI -LoadSeedData -SchoolYearRange "2022-2026"
@@ -37,7 +37,7 @@ To create DMS instances for a range of school years, use the `-SchoolYearRange` 
 This will:
 
 1. Start all required services (PostgreSQL, DMS, Configuration Service)
-2. Create 5 DMS instances: one for each year from 2022 to 2026
+2. Create 5 data stores: one for each year from 2022 to 2026
 3. Configure route contexts for each instance with `schoolYear` as the key
 4. Make the instances available at URLs like:
    - `http://localhost:8080/2022/data`
@@ -60,7 +60,7 @@ Examples:
 
 For each school year in the range, the script creates:
 
-1. **DMS Instance**: A database instance with:
+1. **data store**: A database instance with:
    - **Instance Type**: "SchoolYear"
    - **Instance Name**: "School Year {YEAR}"
    - **Connection String**: Configured from your environment file
@@ -131,14 +131,14 @@ If you don't specify `-SchoolYearRange`, the script will create a single default
 
 This creates:
 
-- **1 DMS Instance**: "Local Development Instance"
+- **1 data store**: "Local Development Instance"
 - **No route contexts**: Accessible at `http://localhost:8080/data`
 
 ## Manual Route Context Creation
 
 If you need more complex routing or want to add route contexts manually, you can still use the Configuration Service API. See `test-schoolyear-route.http` in `src/dms/tests/RestClient/` for examples.
 
-If you are using the manual approach, consider skipping `-SchoolYearRange` (and `-NoDmsInstance` may be appropriate) to avoid creating duplicate configuration data.
+If you are using the manual approach, consider skipping `-SchoolYearRange` (and `-NoDataStore` may be appropriate) to avoid creating duplicate configuration data.
 
 ## Troubleshooting
 
@@ -162,7 +162,7 @@ Ensure your range uses the correct format: `"YYYY-YYYY"` with a hyphen separator
 
 ## See Also
 
-- `Dms-Management.psm1` - PowerShell module with functions for managing DMS instances
+- `Dms-Management.psm1` - PowerShell module with functions for managing data stores
 - `test-schoolyear-route.http` - REST Client examples for manual route creation
 - `edfi-route-contexts-from-spec.js` - Swagger UI plugin for tenant and route
    qualifier selection (choosing which school year or tenant route context is used

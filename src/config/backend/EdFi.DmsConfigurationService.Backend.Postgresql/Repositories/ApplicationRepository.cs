@@ -81,21 +81,21 @@ public class ApplicationRepository(
                 }
             );
 
-            if (command.DmsInstanceIds.Length > 0)
+            if (command.DataStoreIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
-                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
+                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
-                var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
+                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
                 {
                     ApiClientId = apiClientId,
-                    DmsInstanceId = dmsInstanceId,
+                    DataStoreId = dataStoreId,
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(sql, dmsInstanceMappings);
+                await connection.ExecuteAsync(sql, dataStoreMappings);
             }
 
             if (command.ProfileIds.Length > 0)
@@ -126,11 +126,11 @@ public class ApplicationRepository(
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstance"))
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
         {
-            logger.LogWarning(ex, "DMS instance not found");
+            logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
-            return new ApplicationInsertResult.FailureDmsInstanceNotFound();
+            return new ApplicationInsertResult.FailureDataStoreNotFound();
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
@@ -225,11 +225,11 @@ public class ApplicationRepository(
                        (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
                         FROM dmscs.ApiClient ac2
                         WHERE ac2.ApplicationId = a.Id) AS Enabled,
-                       e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
+                       e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId
                 FROM (SELECT * FROM dmscs.Application {filterClause} {orderByClause} {query.BuildPagingClause()}) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
-                LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
+                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
                 LEFT OUTER JOIN dmscs.ApplicationProfile ap ON a.Id = ap.ApplicationId
                 ORDER BY a.{outerCol} {direction};
                 """;
@@ -241,15 +241,15 @@ public class ApplicationRepository(
                 ApplicationResponse
             >(
                 sql,
-                (application, educationOrganizationId, dmsInstanceId, profileId) =>
+                (application, educationOrganizationId, dataStoreId, profileId) =>
                 {
                     if (educationOrganizationId != null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
-                    if (dmsInstanceId != null)
+                    if (dataStoreId != null)
                     {
-                        application.DmsInstanceIds.Add(dmsInstanceId.Value);
+                        application.DataStoreIds.Add(dataStoreId.Value);
                     }
                     if (profileId != null)
                     {
@@ -266,7 +266,7 @@ public class ApplicationRepository(
                     query.ClaimSetName,
                     ParsedIds = parsedIds,
                 },
-                splitOn: "EducationOrganizationId,DmsInstanceId,ProfileId"
+                splitOn: "EducationOrganizationId,DataStoreId,ProfileId"
             );
 
             var returnApplications = applications
@@ -277,7 +277,7 @@ public class ApplicationRepository(
                     grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds)
                         .Distinct()
                         .ToList();
-                    grouped.DmsInstanceIds = g.SelectMany(a => a.DmsInstanceIds).Distinct().ToList();
+                    grouped.DataStoreIds = g.SelectMany(a => a.DataStoreIds).Distinct().ToList();
                     grouped.ProfileIds = g.SelectMany(a => a.ProfileIds).Distinct().ToList();
                     return grouped;
                 })
@@ -303,11 +303,11 @@ public class ApplicationRepository(
                        (SELECT COALESCE(BOOL_AND(ac2.IsApproved), true)
                         FROM dmscs.ApiClient ac2
                         WHERE ac2.ApplicationId = a.Id) AS Enabled,
-                       e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
+                       e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
-                LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
+                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
                 LEFT OUTER JOIN dmscs.ApplicationProfile ap ON a.Id = ap.ApplicationId
                 WHERE a.Id = @Id;
                 """;
@@ -319,15 +319,15 @@ public class ApplicationRepository(
                 ApplicationResponse
             >(
                 sql,
-                (application, educationOrganizationId, dmsInstanceId, profileId) =>
+                (application, educationOrganizationId, dataStoreId, profileId) =>
                 {
                     if (educationOrganizationId != null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
-                    if (dmsInstanceId != null)
+                    if (dataStoreId != null)
                     {
-                        application.DmsInstanceIds.Add(dmsInstanceId.Value);
+                        application.DataStoreIds.Add(dataStoreId.Value);
                     }
                     if (profileId != null)
                     {
@@ -336,7 +336,7 @@ public class ApplicationRepository(
                     return application;
                 },
                 param: new { Id = id },
-                splitOn: "EducationOrganizationId,DmsInstanceId,ProfileId"
+                splitOn: "EducationOrganizationId,DataStoreId,ProfileId"
             );
 
             ApplicationResponse? returnApplication = applications
@@ -347,7 +347,7 @@ public class ApplicationRepository(
                     grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds)
                         .Distinct()
                         .ToList();
-                    grouped.DmsInstanceIds = g.SelectMany(a => a.DmsInstanceIds).Distinct().ToList();
+                    grouped.DataStoreIds = g.SelectMany(a => a.DataStoreIds).Distinct().ToList();
                     grouped.ProfileIds = g.SelectMany(a => a.ProfileIds).Distinct().ToList();
                     return grouped;
                 })
@@ -433,30 +433,30 @@ public class ApplicationRepository(
                 }
             );
 
-            // Get ApiClient Id for DmsInstance relationship update
+            // Get ApiClient Id for DataStore relationship update
             sql = "SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId;";
             long apiClientId = await connection.ExecuteScalarAsync<long>(sql, new { clientCommand.ClientId });
 
-            // Delete existing DmsInstance relationship
-            sql = "DELETE FROM dmscs.ApiClientDmsInstance WHERE ApiClientId = @ApiClientId";
+            // Delete existing DataStore relationship
+            sql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @ApiClientId";
             await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId });
 
-            // Insert new DmsInstance relationships if provided
-            if (command.DmsInstanceIds.Length > 0)
+            // Insert new DataStore relationships if provided
+            if (command.DataStoreIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
-                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
+                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
-                var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
+                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
                 {
                     ApiClientId = apiClientId,
-                    DmsInstanceId = dmsInstanceId,
+                    DataStoreId = dataStoreId,
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(sql, dmsInstanceMappings);
+                await connection.ExecuteAsync(sql, dataStoreMappings);
             }
 
             // Delete existing Profile relationships
@@ -493,11 +493,11 @@ public class ApplicationRepository(
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstance"))
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
         {
-            logger.LogWarning(ex, "Update application failure: DMS instance not found");
+            logger.LogWarning(ex, "Update application failure: Data store not found");
             await transaction.RollbackAsync();
-            return new ApplicationUpdateResult.FailureDmsInstanceNotFound();
+            return new ApplicationUpdateResult.FailureDataStoreNotFound();
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))

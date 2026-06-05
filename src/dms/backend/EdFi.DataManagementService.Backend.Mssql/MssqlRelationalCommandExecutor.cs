@@ -20,30 +20,30 @@ internal sealed class MssqlRelationalCommandExecutor : IRelationalCommandExecuto
     private readonly ILogger<MssqlRelationalCommandExecutor> _logger;
 
     public MssqlRelationalCommandExecutor(
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         ILogger<MssqlRelationalCommandExecutor> logger
     )
-        : this(dmsInstanceSelection, connectionString => new SqlConnection(connectionString), logger) { }
+        : this(dataStoreSelection, connectionString => new SqlConnection(connectionString), logger) { }
 
     internal MssqlRelationalCommandExecutor(
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         Func<string, DbConnection> createConnection,
         ILogger<MssqlRelationalCommandExecutor> logger
     )
     {
-        ArgumentNullException.ThrowIfNull(dmsInstanceSelection);
+        ArgumentNullException.ThrowIfNull(dataStoreSelection);
         ArgumentNullException.ThrowIfNull(createConnection);
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _openConnectionAsync = async cancellationToken =>
         {
-            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            var selectedInstance = dataStoreSelection.GetSelectedDataStore();
             var connectionString = selectedInstance.ConnectionString;
 
             if (string.IsNullOrWhiteSpace(connectionString))
             {
                 throw new InvalidOperationException(
-                    $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
+                    $"Selected data store '{selectedInstance.Id}' does not have a valid connection string."
                 );
             }
 

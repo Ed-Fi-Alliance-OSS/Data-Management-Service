@@ -19,13 +19,13 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// </summary>
 internal class CacheClaimSetsTask(
     IClaimSetProvider claimSetProvider,
-    IDmsInstanceProvider dmsInstanceProvider,
+    IDataStoreProvider dataStoreProvider,
     IOptions<AppSettings> appSettings,
     ILogger<CacheClaimSetsTask> logger
 ) : IDmsStartupTask
 {
     private readonly IClaimSetProvider _claimSetProvider = claimSetProvider;
-    private readonly IDmsInstanceProvider _dmsInstanceProvider = dmsInstanceProvider;
+    private readonly IDataStoreProvider _dataStoreProvider = dataStoreProvider;
     private readonly AppSettings _appSettings = appSettings.Value;
     private readonly ILogger _logger = logger;
 
@@ -46,7 +46,7 @@ internal class CacheClaimSetsTask(
         {
             if (_appSettings.MultiTenancy)
             {
-                IList<string> tenants = await _dmsInstanceProvider.LoadTenants();
+                IList<string> tenants = await _dataStoreProvider.LoadTenants();
 
                 foreach (string tenant in tenants)
                 {

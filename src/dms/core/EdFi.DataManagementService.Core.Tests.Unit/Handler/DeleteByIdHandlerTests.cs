@@ -657,7 +657,7 @@ actual: {_requestInfo.FrontendResponse.Body}
                     new NamespacePrefix("uri://sample-a.org"),
                     new NamespacePrefix("uri://sample-b.org"),
                 ],
-                DmsInstanceIds: []
+                DataStoreIds: []
             );
 
             var (deleteByIdHandler, serviceProvider) = Handler(_repository);

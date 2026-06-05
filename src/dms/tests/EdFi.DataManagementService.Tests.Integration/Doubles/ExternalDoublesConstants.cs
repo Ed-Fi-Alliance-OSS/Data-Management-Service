@@ -18,5 +18,5 @@ internal static class ExternalDoublesConstants
     public static readonly Guid StableClientUuid = Guid.Parse("11111111-1111-4111-8111-111111111111");
     public const long StableApplicationId = 1;
     public const long StableApplicationContextId = 1;
-    public const long StableDmsInstanceId = 1;
+    public const long StableDataStoreId = 1;
 }

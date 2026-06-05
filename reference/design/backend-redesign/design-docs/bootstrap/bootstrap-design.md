@@ -104,7 +104,7 @@ to verify the design without re-reading every section.
 - **Thin wrapper**: `bootstrap-local-dms.ps1` as optional sequencing convenience only.
 - **Same-invocation continuation**: `-InfraOnly -DmsBaseUrl` carrying the current wrapper run through
   instance configuration and schema provisioning, then continuing against an IDE-hosted DMS process.
-- **Explicit selectors**: `-InstanceId <long[]>` and `-SchoolYear <int[]>` flags passed to downstream
+- **Explicit selectors**: `-DataStoreId <long[]>` and `-SchoolYear <int[]>` flags passed to downstream
   phase commands (`provision-dms-schema.ps1`, `load-dms-seed-data.ps1`) to identify target DMS instances
   when the thin wrapper is not orchestrating the run.
 - **Single-match auto-selection**: when no explicit selector is supplied and exactly one DMS instance
@@ -151,7 +151,7 @@ The six phase commands are:
 | `start-local-dms.ps1` | Docker stack management, local identity setup, and service health waiting |
 | `prepare-dms-schema.ps1` | Schema resolution and staging |
 | `prepare-dms-claims.ps1` | Security (claims) staging |
-| `configure-local-dms-instance.ps1` | DMS instance setup and optional smoke-test credentials |
+| `configure-local-data-store.ps1` | DMS instance setup and optional smoke-test credentials |
 | `provision-dms-schema.ps1` | Authoritative schema provisioning and hash validation |
 | `load-dms-seed-data.ps1` | API-based seed data delivery |
 
@@ -178,7 +178,7 @@ The ODS initdev is organized into eight abstract phases. The table below maps ea
 | Phase 3: Code Generation | Generate NHibernate mappings and API metadata from data model | **Obsolete** — DMS derives API shape from the ApiSchema at runtime; no compile-time code generation |
 | Phase 4: Build | Compile the .NET solution | **Obsolete for Docker path** — Docker images are built from `Dockerfile`s via `docker compose build`; local `dotnet build` is used only for IDE/unit-test workflows |
 | Phase 5: Tool Installation | Install `EdFi.Db.Deploy`, `EdFi.BulkLoadClient` as .NET global tools | Partially covered - no explicit tool-install step; tools are baked into Docker images. DMS should reuse the existing repo-pinned NuGet resolution path for BulkLoadClient rather than introducing a new global-tool requirement |
-| Phase 6: Database Provisioning | Drop/create/migrate Admin, Security, ODS databases per engine and install type | Covered by the DMS-916 design for Docker-managed PostgreSQL: `postgresql.yml` starts the engine, `Add-DmsInstance` / `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` identify the target instances, and the explicit `provision-dms-schema.ps1` SchemaTools/runtime-owned provisioning and validation path performs the authoritative pre-start schema work for those targets. See [Backend Redesign Impact and DDL Provisioning](#11-backend-redesign-impact-and-ddl-provisioning). |
+| Phase 6: Database Provisioning | Drop/create/migrate Admin, Security, ODS databases per engine and install type | Covered by the DMS-916 design for Docker-managed PostgreSQL: `postgresql.yml` starts the engine, `Add-DataStore` / `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` identify the target instances, and the explicit `provision-dms-schema.ps1` SchemaTools/runtime-owned provisioning and validation path performs the authoritative pre-start schema work for those targets. See [Backend Redesign Impact and DDL Provisioning](#11-backend-redesign-impact-and-ddl-provisioning). |
 | Phase 7: Data Seeding | Load bootstrap/sample data through an API host | Partially covered - the legacy `-LoadSeedData` path currently lives on `start-local-dms.ps1` and calls `setup-database-template.psm1`, which executes SQL directly. DMS-916 replaces that with the phase-owned `load-dms-seed-data.ps1` API-based path (XML interchange in Phase 1; see §6 "Phased delivery" for the Phase 2 JSONL target) |
 | Phase 8: Verification | Run unit, integration, smoke tests | Partially covered — `Invoke-NonDestructiveApiTests.ps1` exists as a separate smoke test script; no integrated `-RunSmokeTest` flag on `start-local-dms.ps1` |
 
@@ -201,7 +201,7 @@ The ODS initdev pipeline (`Initialize-DevelopmentEnvironment`) defines 17 steps,
 | 9 | Reset test Admin database | `Reset-TestAdminDatabase` | always | **Obsolete (as standalone step)** | DMS has no separate Admin database. The Config Service database (`edfi_config`) is created and migrated automatically when the `local-config.yml` container starts |
 | 10 | Reset test Security database | `Reset-TestSecurityDatabase` | always | **Obsolete (as standalone step)** | DMS has no separate Security database. Authorization metadata (claimsets) is seeded into the Config Service database via `AddExtensionSecurityMetadata` environment-variable path |
 | 11 | Reset populated template database | `Reset-TestPopulatedTemplateDatabase` | `!NoDeploy` | **Gap** | DMS has no populated template database concept. Seed data loading replaces this. The `-LoadSeedData` flag currently runs `setup-database-template.psm1` (direct SQL). See [API-Based Seed Data Loading](#6-api-based-seed-data-loading) for proposed API-based replacement |
-| 12 | Full database deployment | `Initialize-DeploymentEnvironment` | `!NoDeploy` | **Covered by DMS-916 design, pending implementation** | `Add-DmsInstance` and `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` identify the target instances, and the DMS-916 design then requires the explicit `provision-dms-schema.ps1` SchemaTools/runtime-owned provisioning and validation path before DMS startup. The remaining work here is implementation delivery of that designed path, not a missing design contract. See [Backend Redesign Impact and DDL Provisioning](#11-backend-redesign-impact-and-ddl-provisioning) and Story 01. |
+| 12 | Full database deployment | `Initialize-DeploymentEnvironment` | `!NoDeploy` | **Covered by DMS-916 design, pending implementation** | `Add-DataStore` and `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` identify the target instances, and the DMS-916 design then requires the explicit `provision-dms-schema.ps1` SchemaTools/runtime-owned provisioning and validation path before DMS startup. The remaining work here is implementation delivery of that designed path, not a missing design contract. See [Backend Redesign Impact and DDL Provisioning](#11-backend-redesign-impact-and-ddl-provisioning) and Story 01. |
 | 13 | Run Pester tests | `Invoke-PesterTests` | `-RunPester` | **Not applicable** | DMS test suite uses NUnit, not Pester. `dotnet test` is the equivalent; not integrated into `start-local-dms.ps1` |
 | 14 | Run .NET integration tests | `Invoke-DotnetTest` | `-RunDotnetTest` | **Out of scope for DMS-916** | DMS integration tests already run separately via `build-dms.ps1 IntegrationTest` / `dotnet test`. Wiring them into bootstrap is optional orchestration work, not required to satisfy this story |
 | 15 | Run Postman tests | `Invoke-PostmanIntegrationTests` | `-RunPostman` | **Out of scope for DMS-916** | DMS replaced Postman with NUnit-based E2E suites (`EdFi.DataManagementService.Tests.E2E` and `EdFi.InstanceManagement.Tests.E2E`). Keeping test-runner orchestration separate avoids inflating bootstrap scope |
@@ -1131,7 +1131,7 @@ The manifest deliberately stays small. It records only stable prepared inputs an
 validate `.bootstrap` compatibility, reject built-in templates in expert `-ApiSchemaPath` mode, compose the
 `SeedLoader` vendor namespace-prefix list, and let the seed phase decide whether selected extensions have
 built-in seed packages. It does not contain built-in seed-package entries, resource definitions, claim grants,
-instance IDs, credentials, URLs, Docker or container state, environment settings, seed file paths, phase
+data store IDs, credentials, URLs, Docker or container state, environment settings, seed file paths, phase
 progress, or resume checkpoints. It is not a second schema authority; the staged ApiSchema files and CMS
 claims composition remain authoritative.
 
@@ -1280,7 +1280,7 @@ follow-up work.
 
 DMS-916 intentionally defines two credential flows with different dependency gates and purposes. Optional
 smoke-test credentials are CMS-only pre-DMS work anchored to the target set selected by
-`configure-local-dms-instance.ps1`. `SeedLoader` credentials are a separate DMS-dependent flow used only for
+`configure-local-data-store.ps1`. `SeedLoader` credentials are a separate DMS-dependent flow used only for
 seed delivery after a healthy DMS endpoint is available. Bootstrap does not expose one blended post-start
 credential-bootstrap phase.
 
@@ -1298,7 +1298,7 @@ The current five-step sequence is the baseline smoke-test credential flow:
 2. **`Get-CmsToken`** — authenticates as that client and retrieves an OAuth bearer token (`POST /connect/token`, scope `edfi_admin_api/full_access`).
 3. **`Add-Vendor`** — creates a vendor record with the core namespace prefixes
    (`uri://ed-fi.org,uri://gbisd.edu`) plus any selected extension namespace prefixes; returns a vendor ID.
-4. **`Add-Application`** — creates an application bound to the vendor, a claim set (`EdFiSandbox`), a set of education organization IDs, and the DMS instance ID; returns `Key` and `Secret`.
+4. **`Add-Application`** — creates an application bound to the vendor, a claim set (`EdFiSandbox`), a set of education organization IDs, and the DMS data store ID; returns `Key` and `Secret`.
 5. **Use credentials** — `Key` and `Secret` are passed directly to `Invoke-SmokeTestUtility` as `-k`/`-s` CLI arguments for the `EdFi.SmokeTest.Console` tool.
 
 The claim set used today (`EdFiSandbox`) grants broad read/write access and is sufficient for smoke testing,
@@ -1319,7 +1319,7 @@ dependency boundary explicit:
 
 - **Trigger**: runs only when `-AddSmokeTestCredentials` is set.
 - **Claim set**: `EdFiSandbox`.
-- **Target binding**: uses the DMS instance IDs already selected by `configure-local-dms-instance.ps1` and never performs
+- **Target binding**: uses the DMS data store IDs already selected by `configure-local-data-store.ps1` and never performs
   instance creation, broad target-selection policy, or non-selector-driven discovery.
 - **Dependency gate**: depends only on CMS readiness and the selected target set. It does not require a live
   DMS endpoint, DMS health wait, or `-DmsBaseUrl`, so it is valid in `-InfraOnly` mode.
@@ -1334,7 +1334,7 @@ dependency boundary explicit:
 - **Claim set**: a dedicated `SeedLoader` claim set that grants the bootstrap writer permissions required
   by the built-in seed manifests plus any staged `SeedLoader` permissions that the run brings in through
   selected extensions or additive claims fragments.
-- **Target binding**: uses the DMS instance IDs already selected by `configure-local-dms-instance.ps1` and never performs
+- **Target binding**: uses the DMS data store IDs already selected by `configure-local-data-store.ps1` and never performs
   instance creation, broad target-selection policy, or non-selector-driven discovery.
 - **Namespace prefixes**: must cover the namespaces present in the selected seed source. For Ed-Fi-provided
   seed packages, the baseline set is `uri://ed-fi.org` and `uri://gbisd.edu`, plus the namespace prefix for
@@ -1404,7 +1404,7 @@ startup and seed delivery rather than duplicating switch logic in each phase com
 
 `$seedKey`, `$seedSecret`, `$smokeKey`, and `$smokeSecret` exist only as PowerShell variables within the
 owning phase command's process lifetime. They are not persisted to disk. `load-dms-seed-data.ps1` owns the
-SeedLoader credentials, `configure-local-dms-instance.ps1` owns smoke-test credentials, and the local
+SeedLoader credentials, `configure-local-data-store.ps1` owns smoke-test credentials, and the local
 identity setup path owns the fixed `CMSReadOnlyAccess` identity client. On subsequent bootstrap runs,
 bootstrap-managed identity clients and CMS application records are handled deterministically by name and
 scope:
@@ -1493,7 +1493,7 @@ SeedLoader grant; an explicit override on `schoolYearType`).
 
 The authoritative credential placement is in [`command-boundaries.md`](command-boundaries.md):
 
-- `configure-local-dms-instance.ps1` owns optional `EdFiSandbox` smoke-test credentials.
+- `configure-local-data-store.ps1` owns optional `EdFiSandbox` smoke-test credentials.
 - `load-dms-seed-data.ps1` owns `SeedLoader` credential creation and BulkLoadClient invocation.
 - `start-local-dms.ps1` owns the local `CMSReadOnlyAccess` identity client needed by IDE-hosted DMS.
 
@@ -1738,7 +1738,7 @@ ODS initdev exposes skip flags so developers can bypass expensive steps when ite
 
 DMS equivalents should follow the same pattern, but only where they are justified by real developer
 workflow cost and can be made safe from live state. DMS-916 does not add a schema-deployment skip flag.
-After `configure-local-dms-instance.ps1` selects the target instances, `provision-dms-schema.ps1` always
+After `configure-local-data-store.ps1` selects the target instances, `provision-dms-schema.ps1` always
 invokes the authoritative SchemaTools/runtime-owned provisioning and validation path over the staged schema
 set before any DMS process is expected to serve requests.
 
@@ -1783,7 +1783,7 @@ and backward-compatible continuation flags. Its authoritative parameter surface 
 `-EnvironmentFile` is also accepted by every phase command that contacts the local services. Those phases
 use one shared local-settings helper to resolve CMS URL, identity provider, tenant, Docker-local DMS URL,
 and database connection defaults from the same env file. The wrapper forwards the same `-EnvironmentFile`
-value to `start-local-dms.ps1`, `configure-local-dms-instance.ps1`, `provision-dms-schema.ps1`, and
+value to `start-local-dms.ps1`, `configure-local-data-store.ps1`, `provision-dms-schema.ps1`, and
 `load-dms-seed-data.ps1` when those phases run. Infrastructure-only UI flags such as `-EnableKafkaUI` and
 `-EnableSwaggerUI` remain on `start-local-dms.ps1`.
 
@@ -1792,7 +1792,7 @@ DMS-916 bootstrap invocation starts the Config Service unconditionally, includin
 the default no-argument core-only Mode 1 flow and keycloak-backed runs. `-EnableConfig` therefore remains
 only as a backward-compatibility switch, not as a meaningful opt-out on the canonical bootstrap contract.
 
-**Breaking-change note:** The DMS-916 definition of `-NoDmsInstance` (owned by `configure-local-dms-instance.ps1`) deliberately narrows the current behavior. Existing scripts that used it on a fresh stack as a generic "skip creation" switch must now either drop the flag or pre-create exactly one intended target instance before rerunning. See also [Section 15](#15-breaking-changes-and-migration-notes) for the consolidated migration reference.
+**Breaking-change note:** The DMS-916 definition of `-NoDataStore` (owned by `configure-local-data-store.ps1`) deliberately narrows the current behavior. Existing scripts that used it on a fresh stack as a generic "skip creation" switch must now either drop the flag or pre-create exactly one intended target instance before rerunning. See also [Section 15](#15-breaking-changes-and-migration-notes) for the consolidated migration reference.
 
 #### Parameter Validation Rules
 
@@ -1810,14 +1810,14 @@ Each validation rule below is owned by the phase command responsible for the aff
 | `-AdditionalNamespacePrefix` contains a blank or malformed value | "Error: -AdditionalNamespacePrefix values must be non-empty namespace URI prefixes, for example uri://state.example.org." |
 | `load-dms-seed-data.ps1` cannot read a valid bootstrap manifest with schema, claims, and seed sections | "Error: Seed delivery requires prepared schema/security inputs. Run prepare-dms-schema.ps1 and prepare-dms-claims.ps1 first, or pass -BootstrapManifestPath to the bootstrap manifest." |
 | `-InfraOnly` without `-DmsBaseUrl` | Permitted. `start-local-dms.ps1` performs infrastructure startup and readiness checks only, then stops. This is not a checkpoint for a later bootstrap resume; instance creation, schema provisioning, and seed work remain in later explicit phase commands or wrapper orchestration. |
-| `-InfraOnly` without `-DmsBaseUrl`, with smoke-credential opt-in | Permitted only through wrapper orchestration or manual later invocation of `configure-local-dms-instance.ps1`; `start-local-dms.ps1` itself still stops after infrastructure readiness and does not create smoke-test credentials. |
+| `-InfraOnly` without `-DmsBaseUrl`, with smoke-credential opt-in | Permitted only through wrapper orchestration or manual later invocation of `configure-local-data-store.ps1`; `start-local-dms.ps1` itself still stops after infrastructure readiness and does not create smoke-test credentials. |
 | `start-local-dms.ps1 -DmsBaseUrl` without `-InfraOnly` | "Error: -DmsBaseUrl is only valid on start-local-dms.ps1 when -InfraOnly is used to continue bootstrap against an IDE-hosted DMS endpoint." |
-| `-InfraOnly -DmsBaseUrl` before `configure-local-dms-instance.ps1` and `provision-dms-schema.ps1` complete | Invalid workflow. The wrapper must not forward `-DmsBaseUrl` until the post-provision DMS-start/health-wait point. Manual phase flows must run instance configuration and schema provisioning before invoking the external endpoint health wait. |
-| `bootstrap-local-dms.ps1 -InstanceId` | "Error: -InstanceId is a phase-command-only selector. Use provision-dms-schema.ps1 or load-dms-seed-data.ps1 directly when explicit instance-ID targeting is required." |
-| `-NoDmsInstance`, no `-SchoolYearRange`, exactly one existing instance found in the current tenant scope | Permitted. Bootstrap reuses that single existing instance as the canonical target set for the run. |
-| `-NoDmsInstance`, no `-SchoolYearRange`, zero existing instances found in the current tenant scope | "Error: -NoDmsInstance requires exactly one existing DMS instance in the current tenant scope, but none were found. Re-run without -NoDmsInstance to create the instance, or prepare the environment manually before retrying." |
-| `-NoDmsInstance`, no `-SchoolYearRange`, multiple existing instances found in the current tenant scope | "Error: -NoDmsInstance requires exactly one existing DMS instance in the current tenant scope, but multiple instances were found. Tear down the extra instances or manually prepare the environment so one intended target remains before rerunning." |
-| `-NoDmsInstance` with `-SchoolYearRange` | "Error: -NoDmsInstance with -SchoolYearRange is not supported in DMS-916. Tear down and recreate the environment for multi-year runs." |
+| `-InfraOnly -DmsBaseUrl` before `configure-local-data-store.ps1` and `provision-dms-schema.ps1` complete | Invalid workflow. The wrapper must not forward `-DmsBaseUrl` until the post-provision DMS-start/health-wait point. Manual phase flows must run instance configuration and schema provisioning before invoking the external endpoint health wait. |
+| `bootstrap-local-dms.ps1 -DataStoreId` | "Error: -DataStoreId is a phase-command-only selector. Use provision-dms-schema.ps1 or load-dms-seed-data.ps1 directly when explicit data-store-ID targeting is required." |
+| `-NoDataStore`, no `-SchoolYearRange`, exactly one existing instance found in the current tenant scope | Permitted. Bootstrap reuses that single existing instance as the canonical target set for the run. |
+| `-NoDataStore`, no `-SchoolYearRange`, zero existing instances found in the current tenant scope | "Error: -NoDataStore requires exactly one existing DMS instance in the current tenant scope, but none were found. Re-run without -NoDataStore to create the instance, or prepare the environment manually before retrying." |
+| `-NoDataStore`, no `-SchoolYearRange`, multiple existing instances found in the current tenant scope | "Error: -NoDataStore requires exactly one existing DMS instance in the current tenant scope, but multiple instances were found. Tear down the extra instances or manually prepare the environment so one intended target remains before rerunning." |
+| `-NoDataStore` with `-SchoolYearRange` | "Error: -NoDataStore with -SchoolYearRange is not supported in DMS-916. Tear down and recreate the environment for multi-year runs." |
 | `-SchoolYearRange` is not in `YYYY-YYYY` format with four-digit integers and `endYear >= startYear` | "Error: -SchoolYearRange must use YYYY-YYYY format with four-digit years, and the ending year must be greater than or equal to the starting year." |
 | `-ClaimsDirectoryPath` path does not exist or contains no `*-claimset.json` files | "Error: -ClaimsDirectoryPath must point to a directory containing one or more *-claimset.json files." |
 | `-ClaimsDirectoryPath` fragments collide with staged extension fragments by filename | "Error: Claimset fragment filename collision detected for '<file>'. Each staged *-claimset.json filename must be unique before bootstrapping." |
@@ -1871,16 +1871,16 @@ wrapper and manual flows, but manual callers must run the dependency chain expli
 #### 9.4.2 Wrapper Direct-Flag Interface
 
 The wrapper exposes direct developer-facing flags and forwards each flag unchanged to the phase command
-that owns it. It does not expose `-InstanceId`; explicit ID targeting is phase-command-only. `-EnvironmentFile`
+that owns it. It does not expose `-DataStoreId`; explicit ID targeting is phase-command-only. `-EnvironmentFile`
 is the one shared local-settings input and is forwarded to each local-service phase; no other shared
 defaults layer or run-context file exists. For the school-year
 workflow, that means the wrapper exposes the same `-SchoolYearRange` flag owned by
-`configure-local-dms-instance.ps1`; downstream manual selector flags remain `-SchoolYear <int[]>` on
+`configure-local-data-store.ps1`; downstream manual selector flags remain `-SchoolYear <int[]>` on
 `provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. The complete flag-to-phase mapping is in
 [Section 9.3.1](#931-illustrative-v1-wrapper-surface) and [`command-boundaries.md` Section 6](command-boundaries.md#6-parameter-surface-by-owner).
 
-Within a single wrapper invocation, the wrapper reads selected instance IDs from the structured
-`configure-local-dms-instance.ps1` result and forwards them as internal `-InstanceId` arguments to
+Within a single wrapper invocation, the wrapper reads selected data store IDs from the structured
+`configure-local-data-store.ps1` result and forwards them as internal `-DataStoreId` arguments to
 `provision-dms-schema.ps1` and `load-dms-seed-data.ps1`. It never parses human-readable console text to
 recover IDs or credentials. In an IDE continuation run, the wrapper also forwards the same external
 `-DmsBaseUrl` value to `load-dms-seed-data.ps1` when `-LoadSeedData` is selected. When the wrapper exposes
@@ -1910,7 +1910,7 @@ Bootstrap-DMS: Starting...
   Hybrid mode: 1 security fragment(s) staged
 [start-local-dms -InfraOnly]                              (13.7s)
   Infrastructure and Config Service are health-ready
-[configure-local-dms-instance]                             (1.4s)
+[configure-local-data-store]                             (1.4s)
 [smoke-test credentials]                                   (0.7s)
   Smoke credentials created for selected target instance(s)
 [provision-dms-schema]                                     (1.1s)
@@ -1966,7 +1966,7 @@ pwsh eng/docker-compose/prepare-dms-claims.ps1
 pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
 
 # Create DMS instance; emits structured selected-instance output
-pwsh eng/docker-compose/configure-local-dms-instance.ps1
+pwsh eng/docker-compose/configure-local-data-store.ps1
 
 # Provision schema (auto-selects the one existing instance)
 pwsh eng/docker-compose/provision-dms-schema.ps1
@@ -1986,7 +1986,7 @@ contacts local services:
 
 ```powershell
 pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -EnvironmentFile "./.env.local"
-pwsh eng/docker-compose/configure-local-dms-instance.ps1 -EnvironmentFile "./.env.local"
+pwsh eng/docker-compose/configure-local-data-store.ps1 -EnvironmentFile "./.env.local"
 pwsh eng/docker-compose/provision-dms-schema.ps1 -EnvironmentFile "./.env.local"
 pwsh eng/docker-compose/start-local-dms.ps1 -EnvironmentFile "./.env.local"
 pwsh eng/docker-compose/load-dms-seed-data.ps1 -EnvironmentFile "./.env.local" -SeedTemplate Minimal
@@ -1997,9 +1997,9 @@ one instance exists:
 
 ```powershell
 # Re-run seed delivery against a specific instance (two instances present)
-$instanceId = 1
+$dataStoreId = 1
 pwsh eng/docker-compose/load-dms-seed-data.ps1 `
-    -InstanceId $instanceId `
+    -DataStoreId $dataStoreId `
     -SeedTemplate Minimal
 ```
 
@@ -2016,20 +2016,20 @@ pwsh eng/docker-compose/provision-dms-schema.ps1
 # Bootstrap finds one DMS instance and proceeds.
 
 # Explicit selector: multiple instances — target a specific one by ID
-pwsh eng/docker-compose/provision-dms-schema.ps1 -InstanceId 1
+pwsh eng/docker-compose/provision-dms-schema.ps1 -DataStoreId 1
 
 # Multi-year selector: target instances by school year
 pwsh eng/docker-compose/provision-dms-schema.ps1 -SchoolYear 2025,2026
 
 # Fail-fast: two instances exist, no selector supplied
 # ERROR: 2 DMS instance(s) found in CMS without an explicit selector.
-#        Supply -InstanceId <long> or -SchoolYear <int> to target a specific instance.
+#        Supply -DataStoreId <long> or -SchoolYear <int> to target a specific instance.
 #        Exit code: non-zero.
 ```
 
 The same rule and examples apply to `load-dms-seed-data.ps1`. When the thin wrapper orchestrates a full
-run, instance IDs from the structured `configure-local-dms-instance.ps1` result are forwarded in memory -
-the developer never needs to copy-paste numeric instance IDs between phases in the wrapper path.
+run, data store IDs from the structured `configure-local-data-store.ps1` result are forwarded in memory -
+the developer never needs to copy-paste numeric data store IDs between phases in the wrapper path.
 
 ### 9.5 Bootstrap Working Directory
 
@@ -2083,20 +2083,20 @@ confirms its health.
 ## 10. School-Year Range Handling
 
 The only multi-instance concern kept in the normative DMS-916 design is the existing
-`-SchoolYearRange` developer workflow. That flag is owned by `configure-local-dms-instance.ps1`; when the
+`-SchoolYearRange` developer workflow. That flag is owned by `configure-local-data-store.ps1`; when the
 thin wrapper is used, it exposes the same `-SchoolYearRange` input and forwards it unchanged to that phase.
 Broader multi-tenant orchestration concerns are intentionally left outside this story.
 
 ### 10.1 School-Year Instance Creation
 
-`-SchoolYearRange` on `configure-local-dms-instance.ps1` (or on `bootstrap-local-dms.ps1`, which forwards
+`-SchoolYearRange` on `configure-local-data-store.ps1` (or on `bootstrap-local-dms.ps1`, which forwards
 it to that phase) creates one DMS instance per school year. The range is a closed interval inclusive on both
 ends: `"2022-2026"` enumerates school years 2022, 2023, 2024, 2025, and 2026. The format is
 `"<startYear>-<endYear>"` where both values are four-digit integers and `endYear >= startYear`; any other
 format causes a pre-flight validation error.
 
 `Add-DmsSchoolYearInstances` in `Dms-Management.psm1` is the primary helper for this path. It loops from
-`$StartYear` to `$EndYear`, calls `Add-DmsInstance` for each year, then calls `Add-DmsInstanceRouteContext`
+`$StartYear` to `$EndYear`, calls `Add-DataStore` for each year, then calls `Add-DataStoreContext`
 to bind the `schoolYear` context key to the new instance.
 
 ### 10.2 Per-Instance Seed Data Loading
@@ -2239,7 +2239,7 @@ responsibilities are:
 1. Resolve the staged schema inputs for the run and read the expected `EffectiveSchemaHash` metadata
    produced earlier by `prepare-dms-schema.ps1` for logging or comparison.
 2. Collect the target connection strings and dialect details from the DMS instances selected or created by
-   `configure-local-dms-instance.ps1`.
+   `configure-local-data-store.ps1`.
 3. Invoke `dms-schema ddl provision` (or a thin helper over the same provisioning/runtime contract) for the
    selected targets before DMS starts, using the staged schema files from `prepare-dms-schema.ps1`.
 4. Let the shared provisioning/runtime contract perform the authoritative live-state inspection, any
@@ -2413,9 +2413,9 @@ The local DMS process must resolve all service addresses using `localhost` and t
 
 The current `start-local-dms.ps1` always starts the DMS container. To support the IDE debugging workflow, the script needs a mechanism to bring up only the infrastructure services.
 
-**Current state**: A `-NoDmsInstance` flag exists on the script, but it does not suppress DMS container
+**Current state**: A `-NoDataStore` flag exists on the script, but it does not suppress DMS container
 startup. The current script still includes `local-dms.yml` in the compose file list and starts the normal
-DMS service in non-teardown flows; `-NoDmsInstance` only changes whether bootstrap creates instance records
+DMS service in non-teardown flows; `-NoDataStore` only changes whether bootstrap creates instance records
 in the Config Service.
 
 **Proposed mechanism**: Add an `-InfraOnly` switch to `start-local-dms.ps1` that excludes the DMS service
@@ -2447,7 +2447,7 @@ carries an external DMS endpoint into the post-provision DMS-start/health-wait s
   explicit phase command, such as `load-dms-seed-data.ps1 -DmsBaseUrl <url>`, when wrapper `-LoadSeedData`
   is selected.
 
-**Relationship with `-NoDmsInstance`**: `-NoDmsInstance` skips creating DMS instance records in the Config Service but still starts the DMS container in the normal flow. `-InfraOnly` skips the DMS container entirely. When `-InfraOnly` is used, `-NoDmsInstance` is typically omitted because the IDE-hosted DMS process still reads instance records from the Config Service just as the containerized DMS would. If `-NoDmsInstance` is used in this workflow, the same narrow reuse rule applies: exactly one existing instance must already be present, `-SchoolYearRange` is not supported, and later phases consume that selected target rather than rediscovering it.
+**Relationship with `-NoDataStore`**: `-NoDataStore` skips creating DMS instance records in the Config Service but still starts the DMS container in the normal flow. `-InfraOnly` skips the DMS container entirely. When `-InfraOnly` is used, `-NoDataStore` is typically omitted because the IDE-hosted DMS process still reads instance records from the Config Service just as the containerized DMS would. If `-NoDataStore` is used in this workflow, the same narrow reuse rule applies: exactly one existing instance must already be present, `-SchoolYearRange` is not supported, and later phases consume that selected target rather than rediscovering it.
 
 ### 12.3 Key Environment Variables
 
@@ -2460,7 +2460,7 @@ The values below assume the default port mapping from `.env.example`.
 `start-local-dms.ps1` owns establishing the dev-only `CMSReadOnlyAccess` local contract through the
 identity-provider setup path. Keycloak uses `setup-keycloak.ps1` with the read-only Config Service scope;
 self-contained identity uses `setup-openiddict.ps1 -InsertData` with the same read-only scope after CMS is
-healthy. `configure-local-dms-instance.ps1` may validate and emit the local credential details needed by
+healthy. `configure-local-data-store.ps1` may validate and emit the local credential details needed by
 IDE guidance, but it does not create or scope that client. Do not implement this client through
 `/connect/register` unless that endpoint supports read-only scope selection; the current registration path
 creates admin-scoped clients.
@@ -2557,7 +2557,7 @@ schema provisioning still run before any DMS health wait.
 
 **Continuation rule**: Instance creation and schema provisioning are Config Service / database concerns and
 do not require DMS to be running. When a wrapper run chooses `-DmsBaseUrl`, the wrapper must hold that value
-until after `configure-local-dms-instance.ps1` and `provision-dms-schema.ps1` have completed. Only then does
+until after `configure-local-data-store.ps1` and `provision-dms-schema.ps1` have completed. Only then does
 the post-provision DMS-start/health-wait phase poll the IDE-hosted DMS process. The bootstrap script cannot
 start the IDE process - the developer must start DMS in the IDE before or during that post-provision health
 wait window. DMS-916 intentionally does **not** define a stopped-then-resume second bootstrap invocation.
@@ -2577,7 +2577,7 @@ invocation:
 pwsh eng/docker-compose/prepare-dms-schema.ps1
 pwsh eng/docker-compose/prepare-dms-claims.ps1
 pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
-pwsh eng/docker-compose/configure-local-dms-instance.ps1 -AddSmokeTestCredentials
+pwsh eng/docker-compose/configure-local-data-store.ps1 -AddSmokeTestCredentials
 pwsh eng/docker-compose/provision-dms-schema.ps1
 
 # Start DMS in the IDE now, using the printed settings and staged schema path.
@@ -2600,7 +2600,7 @@ When `-InfraOnly` is used **without** `-DmsBaseUrl`, `start-local-dms.ps1` itsel
 
 The broader IDE preparation flow then continues through separate phase commands or the thin wrapper:
 
-1. `configure-local-dms-instance.ps1` creates or confirms the target DMS instance records, may validate or
+1. `configure-local-data-store.ps1` creates or confirms the target DMS instance records, may validate or
    report the fixed dev-only `CMSReadOnlyAccess` client created by local identity setup, and may optionally
    create smoke-test credentials.
 2. `provision-dms-schema.ps1` provisions or validates the target databases directly through SchemaTools.
@@ -2616,7 +2616,7 @@ When `-DmsBaseUrl` is provided alongside wrapper `-InfraOnly`, the same pre-DMS 
 1. Start Docker infrastructure (PostgreSQL, Kafka, Config Service) but not the DMS container.
 2. Wait for Config Service readiness. Story 00 requires `/health` to be green; staged claims readiness moves
    with the Story 04 staged-schema runtime activation defined in `command-boundaries.md`.
-3. Run `configure-local-dms-instance.ps1` to create or confirm the target DMS instances, validate or report
+3. Run `configure-local-data-store.ps1` to create or confirm the target DMS instances, validate or report
    the fixed dev-only `CMSReadOnlyAccess` client created by local identity setup, and optionally create
    smoke-test credentials.
 4. Run `provision-dms-schema.ps1` to provision or validate the target databases directly through SchemaTools.
@@ -2629,7 +2629,7 @@ When `-DmsBaseUrl` is provided alongside wrapper `-InfraOnly`, the same pre-DMS 
    SeedLoader credential bootstrap and seed loading targeting the same healthy endpoint, token endpoint,
    and target instance set selected by the surrounding phase flow.
 
-`start-local-dms.ps1` does not call `Get-DmsInstances` again and does not own the post-health handoff
+`start-local-dms.ps1` does not call `Get-DataStores` again and does not own the post-health handoff
 policy. Its external endpoint health wait is only valid after the selected instances and target databases
 already exist.
 
@@ -2681,7 +2681,7 @@ Companion implementation-ready story definitions live in
   permissions.
 - Story 00 owns the `.gitignore` entry for `eng/docker-compose/.bootstrap/` before generated staging
   artifacts are written. Story 03 owns the remaining repo-local `.bootstrap/` workspace lifecycle hygiene and
-  the user-facing migration note for the narrowed `-NoDmsInstance` contract.
+  the user-facing migration note for the narrowed `-NoDataStore` contract.
 - Story 04 depends on Story 00's normalized ApiSchema workspace and ApiSchema asset manifest contract.
   Docker-hosted and IDE-hosted DMS are not fully on the DMS-916 staged-asset path until Story 04 removes the bootstrap-path
   `ContentProvider` dependency on `*.ApiSchema.dll` assemblies.
@@ -2824,7 +2824,7 @@ or contributors.
 | # | Area | Old behavior | New DMS-916 behavior | Migration action |
 |---|------|--------------|----------------------|------------------|
 | 1 | Default schema profile when `-Extensions` is omitted | `SCHEMA_PACKAGES` staged Data Standard 5.2 plus extensions by default in the existing `eng/docker-compose` flow | Bootstrap resolves and stages **core only** (`EdFi.DataStandard52.ApiSchema`) when `-Extensions` is omitted | Omit `-Extensions` for core-only runs; pass the needed extension identifiers through `-Extensions` for scripts that rely on extension schemas |
-| 2 | `-NoDmsInstance` semantics | Generic "skip instance creation" switch used on fresh stacks as a convenient no-op | **Narrow rerun escape hatch only:** valid only when exactly one existing instance is present in the current tenant scope, and invalid with `-SchoolYearRange`; zero or multiple instances fail fast requiring teardown or manual preparation | Drop the flag on fresh-stack runs, or pre-create exactly one target instance before rerunning with `-NoDmsInstance` |
+| 2 | `-NoDataStore` semantics | Generic "skip instance creation" switch used on fresh stacks as a convenient no-op | **Narrow rerun escape hatch only:** valid only when exactly one existing instance is present in the current tenant scope, and invalid with `-SchoolYearRange`; zero or multiple instances fail fast requiring teardown or manual preparation | Drop the flag on fresh-stack runs, or pre-create exactly one target instance before rerunning with `-NoDataStore` |
 | 3 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | `-LoadSeedData` is a wrapper-level opt-in only; direct `load-dms-seed-data.ps1` invocation always loads seed data and owns `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix`, `-BootstrapManifestPath`, the seed-phase BulkLoadClient target `-DmsBaseUrl`, and the seed-phase token endpoint selector `-IdentityProvider`; `start-local-dms.ps1` no longer accepts seed-source or seed-authorization parameters | Call `load-dms-seed-data.ps1` directly for seed loading after `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1`, passing `-DmsBaseUrl` for an IDE-hosted endpoint, `-IdentityProvider` when the running environment uses a non-default provider, and `-AdditionalNamespacePrefix` when custom seed data needs additional vendor namespace authorization, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
-| 4 | Persisted instance-ID hand-off via `.bootstrap/run-context.json` | `configure-local-dms-instance.ps1` wrote selected instance IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | Instance IDs are emitted in a structured `configure-local-dms-instance.ps1` result and **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-InstanceId <long[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-InstanceId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |
-| 5 | Wrapper explicit instance targeting | `bootstrap-local-dms.ps1 -InstanceId` could target downstream provision/seed phases while the configure phase still created or selected a different target set | The wrapper no longer exposes `-InstanceId`; it always provisions and optionally seeds the instance set from the structured `configure-local-dms-instance.ps1` result in the same invocation. Explicit `-InstanceId` targeting is **phase-command-only**. | Use `provision-dms-schema.ps1 -InstanceId ...` or `load-dms-seed-data.ps1 -InstanceId ...` directly for explicit ID targeting; use the wrapper only when its configure phase owns target selection for the run |
+| 4 | Persisted data-store-ID hand-off via `.bootstrap/run-context.json` | `configure-local-data-store.ps1` wrote selected data store IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | data store IDs are emitted in a structured `configure-local-data-store.ps1` result and **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-DataStoreId <long[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-DataStoreId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |
+| 5 | Wrapper explicit instance targeting | `bootstrap-local-dms.ps1 -DataStoreId` could target downstream provision/seed phases while the configure phase still created or selected a different target set | The wrapper no longer exposes `-DataStoreId`; it always provisions and optionally seeds the instance set from the structured `configure-local-data-store.ps1` result in the same invocation. Explicit `-DataStoreId` targeting is **phase-command-only**. | Use `provision-dms-schema.ps1 -DataStoreId ...` or `load-dms-seed-data.ps1 -DataStoreId ...` directly for explicit ID targeting; use the wrapper only when its configure phase owns target selection for the run |

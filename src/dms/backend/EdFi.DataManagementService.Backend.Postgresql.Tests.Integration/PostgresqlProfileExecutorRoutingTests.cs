@@ -110,7 +110,7 @@ file static class ProfileRoutingTestSupport
         services.AddSingleton<IHostApplicationLifetime, ProfileRoutingNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -266,12 +266,12 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ProfileRoutingNonCreatablePost",
+                    DataStoreType: "test",
+                    Name: "ProfileRoutingNonCreatablePost",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -429,12 +429,12 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ProfileRoutingPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "ProfileRoutingPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -463,12 +463,12 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ProfileRoutingPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "ProfileRoutingPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -611,12 +611,12 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ProfileRoutingPut",
+                    DataStoreType: "test",
+                    Name: "ProfileRoutingPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -645,12 +645,12 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "ProfileRoutingPut",
+                    DataStoreType: "test",
+                    Name: "ProfileRoutingPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

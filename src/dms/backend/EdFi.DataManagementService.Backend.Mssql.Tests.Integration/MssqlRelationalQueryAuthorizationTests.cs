@@ -117,13 +117,13 @@ internal sealed class MssqlRelationalQueryAuthorizationWriteSessionRecorder
 }
 
 internal sealed class MssqlRelationalQueryAuthorizationRecordingWriteSessionFactory(
-    IDmsInstanceSelection dmsInstanceSelection,
+    IDataStoreSelection dataStoreSelection,
     IOptions<DatabaseOptions> databaseOptions,
     MssqlRelationalQueryAuthorizationWriteSessionRecorder recorder
 ) : IRelationalWriteSessionFactory
 {
-    private readonly IDmsInstanceSelection _dmsInstanceSelection =
-        dmsInstanceSelection ?? throw new ArgumentNullException(nameof(dmsInstanceSelection));
+    private readonly IDataStoreSelection _dataStoreSelection =
+        dataStoreSelection ?? throw new ArgumentNullException(nameof(dataStoreSelection));
     private readonly IOptions<DatabaseOptions> _databaseOptions =
         databaseOptions ?? throw new ArgumentNullException(nameof(databaseOptions));
     private readonly MssqlRelationalQueryAuthorizationWriteSessionRecorder _recorder =
@@ -131,7 +131,7 @@ internal sealed class MssqlRelationalQueryAuthorizationRecordingWriteSessionFact
 
     public async Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
     {
-        var selectedInstance = _dmsInstanceSelection.GetSelectedDmsInstance();
+        var selectedInstance = _dataStoreSelection.GetSelectedDataStore();
         var connectionString = selectedInstance.ConnectionString;
 
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -1869,7 +1869,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -1916,12 +1916,12 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlRelationalQueryAuthorization",
+                    DataStoreType: "test",
+                    Name: "MssqlRelationalQueryAuthorization",
                     ConnectionString: Database.ConnectionString,
                     RouteContext: []
                 )

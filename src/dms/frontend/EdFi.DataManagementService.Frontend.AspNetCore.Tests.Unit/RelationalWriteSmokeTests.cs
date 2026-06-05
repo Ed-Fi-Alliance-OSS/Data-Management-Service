@@ -373,7 +373,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                                         ClaimSetName: "SIS-Vendor",
                                         EducationOrganizationIds: [],
                                         NamespacePrefixes: [],
-                                        DmsInstanceIds: [new DmsInstanceId(1)]
+                                        DataStoreIds: [new DataStoreId(1)]
                                     )
                             )
                         )

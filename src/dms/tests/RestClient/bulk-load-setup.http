@@ -65,19 +65,19 @@ Authorization: bearer {{configToken}}
 @vendorId={{getVendor.response.body.id}}
 
 ### Create a DMS instance
-# @name createDmsInstance
-POST http://localhost:{{configPort}}/v2/dmsInstances
+# @name createDataStore
+POST http://localhost:{{configPort}}/v2/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "instanceType": "Test",
-    "instanceName": "Test DMS Instance",
+    "dataStoreType": "Test",
+    "name": "Test DMS Instance",
     "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
-@dmsInstanceId={{createDmsInstance.response.body.id}}
+@dataStoreId={{createDataStore.response.body.id}}
 
 ### Create an application for loading School Year.
 # @name createApplication
@@ -90,7 +90,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Bootstrapper",
     "claimSetName": "BootstrapDescriptorsandEdOrgs",
     "educationOrganizationIds": [],
-    "dmsInstanceIds": [{{dmsInstanceId}}]
+    "dataStoreIds": [{{dataStoreId}}]
 }
 
 ###
@@ -171,7 +171,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Grand Bend Loader",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [255901,19255901,2559011,200000,100000,300000,255901044,255901001,255901107,51,54],
-    "dmsInstanceIds": [{{dmsInstanceId}}]
+    "dataStoreIds": [{{dataStoreId}}]
 }
 
 ###

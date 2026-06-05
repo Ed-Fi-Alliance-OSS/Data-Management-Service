@@ -113,7 +113,7 @@ param(
 
     [Switch]$AddExtensionSecurityMetadata,
 
-    [Switch]$NoDmsInstance,
+    [Switch]$NoDataStore,
 
     [Switch]$AddSmokeTestCredentials,
 

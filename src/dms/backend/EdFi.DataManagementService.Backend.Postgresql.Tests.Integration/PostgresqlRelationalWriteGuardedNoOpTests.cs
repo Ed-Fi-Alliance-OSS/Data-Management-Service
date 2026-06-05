@@ -491,7 +491,7 @@ file static class GuardedNoOpIntegrationTestSupport
         services.AddSingleton<IHostApplicationLifetime, GuardedNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -944,12 +944,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_St
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -972,12 +972,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_St
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1070,12 +1070,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1098,12 +1098,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1190,12 +1190,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_Stat
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1218,12 +1218,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_Stat
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1333,12 +1333,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_C
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1361,12 +1361,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_C
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCurrentStateRefreshPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1440,12 +1440,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surf
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1468,12 +1468,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surf
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1497,12 +1497,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surf
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1598,12 +1598,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1626,12 +1626,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1655,12 +1655,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1742,12 +1742,12 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focu
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteStaleGuardedNoOpPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteStaleGuardedNoOpPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1770,12 +1770,12 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focu
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteStaleGuardedNoOpPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteStaleGuardedNoOpPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1879,12 +1879,12 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteStaleGuardedNoOpPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteStaleGuardedNoOpPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1907,12 +1907,12 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_
         using var scope = _serviceProvider.CreateScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteStaleGuardedNoOpPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteStaleGuardedNoOpPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -1998,12 +1998,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Win
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -2026,12 +2026,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Win
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPut",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -2153,12 +2153,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -2181,12 +2181,12 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
         await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPostAsUpdate",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

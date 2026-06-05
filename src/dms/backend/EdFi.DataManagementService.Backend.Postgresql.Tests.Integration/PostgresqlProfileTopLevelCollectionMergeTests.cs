@@ -151,7 +151,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
         >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
@@ -275,12 +275,12 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileTopLevelCollectionMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileTopLevelCollectionMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -317,12 +317,12 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileTopLevelCollectionMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileTopLevelCollectionMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )
@@ -360,12 +360,12 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
     {
         using var scope = serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlProfileTopLevelCollectionMerge",
+                    DataStoreType: "test",
+                    Name: "PostgresqlProfileTopLevelCollectionMerge",
                     ConnectionString: database.ConnectionString,
                     RouteContext: []
                 )

@@ -72,7 +72,7 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -505,12 +505,12 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociation",
+                    DataStoreType: "test",
+                    Name: "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociation",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

@@ -436,34 +436,34 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     splitOn: "EducationOrganizationId"
                 );
 
-                // Now get DMS instance IDs for each application through ApiClient
+                // Now get data store IDs for each application through ApiClient
                 if (response.Any())
                 {
-                    string sqlDmsInstances = """
+                    string sqlDataStores = """
                             SELECT
                                 a.Id as ApplicationId,
-                                acdi.DmsInstanceId
+                                acdi.DataStoreId
                             FROM dmscs.Application a
                             INNER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
-                            INNER JOIN dmscs.ApiClientDmsInstance acdi ON ac.Id = acdi.ApiClientId
+                            INNER JOIN dmscs.ApiClientDataStore acdi ON ac.Id = acdi.ApiClientId
                             WHERE a.VendorId = @VendorId;
                         """;
 
                     await connection.QueryAsync<long, long, long>(
-                        sqlDmsInstances,
-                        (applicationId, dmsInstanceId) =>
+                        sqlDataStores,
+                        (applicationId, dataStoreId) =>
                         {
                             if (
                                 response.TryGetValue(applicationId, out ApplicationResponse? application)
-                                && !application.DmsInstanceIds.Contains(dmsInstanceId)
+                                && !application.DataStoreIds.Contains(dataStoreId)
                             )
                             {
-                                application.DmsInstanceIds.Add(dmsInstanceId);
+                                application.DataStoreIds.Add(dataStoreId);
                             }
                             return applicationId;
                         },
                         param: new { VendorId = vendorId },
-                        splitOn: "DmsInstanceId"
+                        splitOn: "DataStoreId"
                     );
 
                     // Get Profile IDs for each application

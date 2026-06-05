@@ -74,7 +74,7 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddTestReadableProfileProjector();
@@ -938,12 +938,12 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociation",
+                    DataStoreType: "test",
+                    Name: "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociation",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

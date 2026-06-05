@@ -51,22 +51,22 @@ public class ApiClientRepository(
                 transaction
             );
 
-            if (command.DmsInstanceIds.Length > 0)
+            if (command.DataStoreIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
-                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
+                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
                 var currentUser = auditContext.GetCurrentUser();
-                var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
+                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
                 {
                     ApiClientId = apiClientId,
-                    DmsInstanceId = dmsInstanceId,
+                    DataStoreId = dataStoreId,
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(sql, dmsInstanceMappings, transaction);
+                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
             }
 
             await transaction.CommitAsync();
@@ -78,11 +78,11 @@ public class ApiClientRepository(
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureApplicationNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstance"))
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
         {
-            logger.LogWarning(ex, "DMS instance not found");
+            logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
-            return new ApiClientInsertResult.FailureDmsInstanceNotFound();
+            return new ApiClientInsertResult.FailureDataStoreNotFound();
         }
         catch (Exception ex)
         {
@@ -133,19 +133,19 @@ public class ApiClientRepository(
             string direction = query.IsDescending ? "DESC" : "ASC";
             string sql = $"""
                 SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       acd.DmsInstanceId
+                       acd.DataStoreId
                 FROM (SELECT * FROM dmscs.ApiClient {filterClause} {orderByClause} {query.BuildPagingClause()}) AS ac
-                LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
+                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
                 ORDER BY ac.{outerCol} {direction};
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
                 sql,
-                (apiClient, dmsInstanceId) =>
+                (apiClient, dataStoreId) =>
                 {
-                    if (dmsInstanceId != null)
+                    if (dataStoreId != null)
                     {
-                        apiClient.DmsInstanceIds.Add(dmsInstanceId.Value);
+                        apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
                     return apiClient;
                 },
@@ -155,7 +155,7 @@ public class ApiClientRepository(
                     query.Offset,
                     query.ApplicationId,
                 },
-                splitOn: "DmsInstanceId"
+                splitOn: "DataStoreId"
             );
 
             var returnApiClients = apiClients
@@ -163,7 +163,7 @@ public class ApiClientRepository(
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.DmsInstanceIds = g.SelectMany(ac => ac.DmsInstanceIds).Distinct().ToList();
+                    grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
                     return grouped;
                 })
                 .ToList();
@@ -185,24 +185,24 @@ public class ApiClientRepository(
         {
             string sql = """
                 SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       acd.DmsInstanceId
+                       acd.DataStoreId
                 FROM dmscs.ApiClient ac
-                LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
+                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
                 WHERE ac.ClientId = @ClientId;
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
                 sql,
-                (apiClient, dmsInstanceId) =>
+                (apiClient, dataStoreId) =>
                 {
-                    if (dmsInstanceId != null)
+                    if (dataStoreId != null)
                     {
-                        apiClient.DmsInstanceIds.Add(dmsInstanceId.Value);
+                        apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
                     return apiClient;
                 },
                 param: new { ClientId = clientId },
-                splitOn: "DmsInstanceId"
+                splitOn: "DataStoreId"
             );
 
             ApiClientResponse? returnApiClient = apiClients
@@ -210,7 +210,7 @@ public class ApiClientRepository(
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.DmsInstanceIds = g.SelectMany(ac => ac.DmsInstanceIds).Distinct().ToList();
+                    grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
                     return grouped;
                 })
                 .SingleOrDefault();
@@ -234,24 +234,24 @@ public class ApiClientRepository(
         {
             string sql = """
                 SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       acd.DmsInstanceId
+                       acd.DataStoreId
                 FROM dmscs.ApiClient ac
-                LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
+                LEFT OUTER JOIN dmscs.ApiClientDataStore acd ON ac.Id = acd.ApiClientId
                 WHERE ac.Id = @Id;
                 """;
 
             var apiClients = await connection.QueryAsync<ApiClientResponse, long?, ApiClientResponse>(
                 sql,
-                (apiClient, dmsInstanceId) =>
+                (apiClient, dataStoreId) =>
                 {
-                    if (dmsInstanceId != null)
+                    if (dataStoreId != null)
                     {
-                        apiClient.DmsInstanceIds.Add(dmsInstanceId.Value);
+                        apiClient.DataStoreIds.Add(dataStoreId.Value);
                     }
                     return apiClient;
                 },
                 param: new { Id = id },
-                splitOn: "DmsInstanceId"
+                splitOn: "DataStoreId"
             );
 
             ApiClientResponse? returnApiClient = apiClients
@@ -259,7 +259,7 @@ public class ApiClientRepository(
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.DmsInstanceIds = g.SelectMany(ac => ac.DmsInstanceIds).Distinct().ToList();
+                    grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
                     return grouped;
                 })
                 .SingleOrDefault();
@@ -315,27 +315,27 @@ public class ApiClientRepository(
                 transaction
             );
 
-            // Delete existing DMS instance mappings
-            string deleteSql = "DELETE FROM dmscs.ApiClientDmsInstance WHERE ApiClientId = @Id;";
+            // Delete existing data store mappings
+            string deleteSql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @Id;";
             await connection.ExecuteAsync(deleteSql, new { command.Id }, transaction);
 
-            // Insert new DMS instance mappings
-            if (command.DmsInstanceIds.Length > 0)
+            // Insert new data store mappings
+            if (command.DataStoreIds.Length > 0)
             {
                 string insertSql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
-                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
+                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
                     """;
 
                 var currentUser = auditContext.GetCurrentUser();
-                var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
+                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
                 {
                     ApiClientId = command.Id,
-                    DmsInstanceId = dmsInstanceId,
+                    DataStoreId = dataStoreId,
                     CreatedBy = currentUser,
                 });
 
-                await connection.ExecuteAsync(insertSql, dmsInstanceMappings, transaction);
+                await connection.ExecuteAsync(insertSql, dataStoreMappings, transaction);
             }
 
             await transaction.CommitAsync();
@@ -347,11 +347,11 @@ public class ApiClientRepository(
             await transaction.RollbackAsync();
             return new ApiClientUpdateResult.FailureApplicationNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstance"))
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_datastore"))
         {
-            logger.LogWarning(ex, "DMS instance not found");
+            logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
-            return new ApiClientUpdateResult.FailureDmsInstanceNotFound();
+            return new ApiClientUpdateResult.FailureDataStoreNotFound();
         }
         catch (Exception ex)
         {
@@ -377,8 +377,8 @@ public class ApiClientRepository(
                 return new ApiClientDeleteResult.FailureNotFound();
             }
 
-            // Delete DMS instance mappings first (due to foreign key constraint)
-            string deleteMappingsSql = "DELETE FROM dmscs.ApiClientDmsInstance WHERE ApiClientId = @Id;";
+            // Delete data store mappings first (due to foreign key constraint)
+            string deleteMappingsSql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @Id;";
             await connection.ExecuteAsync(deleteMappingsSql, new { Id = id }, transaction);
 
             // Delete ApiClient record

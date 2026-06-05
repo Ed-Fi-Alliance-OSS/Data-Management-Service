@@ -67,33 +67,33 @@ public static class AuthorizationDataProvider
             systemAdministratorToken
         );
 
-        // Create DmsInstance first
-        using StringContent dmsInstanceContent = new(
+        // Create DataStore first
+        using StringContent dataStoreContent = new(
             JsonSerializer.Serialize(
                 new
                 {
-                    instanceType = "Test",
-                    instanceName = "E2E Test DMS Instance",
-                    connectionString = DmsInstanceConnectionStringProvider.Create(),
+                    dataStoreType = "Test",
+                    name = "E2E Test DMS Instance",
+                    connectionString = DataStoreConnectionStringProvider.Create(),
                 }
             ),
             Encoding.UTF8,
             "application/json"
         );
 
-        using HttpResponseMessage dmsInstancePostResponse = await _configurationServiceClient.PostAsync(
-            "v2/dmsInstances",
-            dmsInstanceContent
+        using HttpResponseMessage dataStorePostResponse = await _configurationServiceClient.PostAsync(
+            "v2/dataStores",
+            dataStoreContent
         );
 
-        var dmsInstanceLocation = dmsInstancePostResponse.Headers.Location?.AbsoluteUri ?? "";
+        var dataStoreLocation = dataStorePostResponse.Headers.Location?.AbsoluteUri ?? "";
 
-        using HttpResponseMessage dmsInstanceGetResponse = await _configurationServiceClient.GetAsync(
-            dmsInstanceLocation
+        using HttpResponseMessage dataStoreGetResponse = await _configurationServiceClient.GetAsync(
+            dataStoreLocation
         );
-        string dmsInstanceBody = await dmsInstanceGetResponse.Content.ReadAsStringAsync();
+        string dataStoreBody = await dataStoreGetResponse.Content.ReadAsStringAsync();
 
-        int dmsInstanceId = JsonDocument.Parse(dmsInstanceBody).RootElement.GetProperty("id").GetInt32();
+        int dataStoreId = JsonDocument.Parse(dataStoreBody).RootElement.GetProperty("id").GetInt32();
 
         // Create vendor
         using StringContent vendorContent = new(
@@ -133,12 +133,12 @@ public static class AuthorizationDataProvider
                 .ToArray();
         }
 
-        // Create application with DmsInstance
+        // Create application with DataStore
         string requestJson = CreateApplicationRequestJson(
             vendorId,
             claimSetName,
             educationOrganizationIds,
-            dmsInstanceId
+            dataStoreId
         );
 
         using StringContent applicationContent = new(requestJson, Encoding.UTF8, "application/json");
@@ -179,7 +179,7 @@ public static class AuthorizationDataProvider
         int vendorId,
         string claimSetName,
         long[] educationOrganizationIds,
-        int dmsInstanceId
+        int dataStoreId
     )
     {
         return JsonSerializer.Serialize(
@@ -189,7 +189,7 @@ public static class AuthorizationDataProvider
                 applicationName = "E2E",
                 claimSetName,
                 educationOrganizationIds,
-                dmsInstanceIds = new[] { dmsInstanceId },
+                dataStoreIds = new[] { dataStoreId },
             }
         );
     }

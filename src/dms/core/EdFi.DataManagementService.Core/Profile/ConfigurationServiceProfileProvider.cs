@@ -22,7 +22,7 @@ internal record CmsApplicationResponse(
     long VendorId,
     string ClaimSetName,
     List<long> EducationOrganizationIds,
-    List<long> DmsInstanceIds,
+    List<long> DataStoreIds,
     List<long> ProfileIds
 );
 

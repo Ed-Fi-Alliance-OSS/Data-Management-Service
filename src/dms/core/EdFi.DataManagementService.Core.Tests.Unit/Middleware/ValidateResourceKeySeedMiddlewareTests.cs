@@ -30,14 +30,14 @@ public class ValidateResourceKeySeedMiddlewareTests
         IResourceKeyValidator validator,
         ResourceKeyValidationCacheProvider cacheProvider,
         IEffectiveSchemaSetProvider schemaSetProvider,
-        IDmsInstanceSelection dmsInstanceSelection,
+        IDataStoreSelection dataStoreSelection,
         IServiceProvider serviceProvider
     ) CreateMiddleware(bool useRelationalBackend)
     {
         var validator = A.Fake<IResourceKeyValidator>();
         var cacheProvider = new ResourceKeyValidationCacheProvider();
         var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
-        var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+        var dataStoreSelection = A.Fake<IDataStoreSelection>();
         var logger = A.Fake<ILogger<ValidateResourceKeySeedMiddleware>>();
 
         var appSettings = Options.Create(
@@ -45,8 +45,7 @@ public class ValidateResourceKeySeedMiddlewareTests
         );
 
         var serviceProvider = A.Fake<IServiceProvider>();
-        A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
-            .Returns(dmsInstanceSelection);
+        A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
         var middleware = new ValidateResourceKeySeedMiddleware(
             appSettings,
@@ -56,14 +55,7 @@ public class ValidateResourceKeySeedMiddlewareTests
             logger
         );
 
-        return (
-            middleware,
-            validator,
-            cacheProvider,
-            schemaSetProvider,
-            dmsInstanceSelection,
-            serviceProvider
-        );
+        return (middleware, validator, cacheProvider, schemaSetProvider, dataStoreSelection, serviceProvider);
     }
 
     private static RequestInfo CreateRequestInfoWithFingerprint(
@@ -89,7 +81,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
-                DmsInstanceIds: [new DmsInstanceId(1)]
+                DataStoreIds: [new DataStoreId(1)]
             ),
             DatabaseFingerprint = fingerprint,
         };
@@ -113,15 +105,15 @@ public class ValidateResourceKeySeedMiddlewareTests
         return new EffectiveSchemaSet(CreateMinimalEffectiveSchemaInfo(), []);
     }
 
-    private static void SetupDmsInstanceSelection(IDmsInstanceSelection dmsInstanceSelection)
+    private static void SetupDataStoreSelection(IDataStoreSelection dataStoreSelection)
     {
-        A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
-        A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+        A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+        A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
             .Returns(
-                new DmsInstance(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "Test",
-                    InstanceName: "Test Instance",
+                    DataStoreType: "Test",
+                    Name: "Test Instance",
                     ConnectionString: "Server=test;Database=testdb",
                     RouteContext: []
                 )
@@ -231,10 +223,10 @@ public class ValidateResourceKeySeedMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, validator, _, schemaSetProvider, dmsInstanceSelection, serviceProvider) =
+            var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
                 CreateMiddleware(useRelationalBackend: true);
 
-            SetupDmsInstanceSelection(dmsInstanceSelection);
+            SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
 
             A.CallTo(() =>
@@ -287,10 +279,10 @@ public class ValidateResourceKeySeedMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, validator, _, schemaSetProvider, dmsInstanceSelection, serviceProvider) =
+            var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
                 CreateMiddleware(useRelationalBackend: true);
 
-            SetupDmsInstanceSelection(dmsInstanceSelection);
+            SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
 
             A.CallTo(() =>
@@ -384,11 +376,11 @@ public class ValidateResourceKeySeedMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, validator, _, schemaSetProvider, dmsInstanceSelection, serviceProvider) =
+            var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
                 CreateMiddleware(useRelationalBackend: true);
             _validator = validator;
 
-            SetupDmsInstanceSelection(dmsInstanceSelection);
+            SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
 
             A.CallTo(() =>
@@ -471,11 +463,11 @@ public class ValidateResourceKeySeedMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, validator, _, schemaSetProvider, dmsInstanceSelection, serviceProvider) =
+            var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
                 CreateMiddleware(useRelationalBackend: true);
             _validator = validator;
 
-            SetupDmsInstanceSelection(dmsInstanceSelection);
+            SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
 
             A.CallTo(() =>
@@ -555,10 +547,10 @@ public class ValidateResourceKeySeedMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, validator, _, schemaSetProvider, dmsInstanceSelection, serviceProvider) =
+            var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
                 CreateMiddleware(useRelationalBackend: true);
 
-            SetupDmsInstanceSelection(dmsInstanceSelection);
+            SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
 
             A.CallTo(() =>

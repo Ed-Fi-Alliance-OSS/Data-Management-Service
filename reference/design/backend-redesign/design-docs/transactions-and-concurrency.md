@@ -433,7 +433,7 @@ Indexing:
    - Invalidation:
      - token expiry (upper bound for cache TTL),
      - security configuration changes (best-effort evict on change; otherwise rely on short TTL),
-     - avoid caching across tenants/instances (include `DmsInstanceId` in the cache key).
+     - avoid caching across tenants/instances (include `DataStoreId` in the cache key).
 
 3. **`dms.ReferentialIdentity` lookups**
    - Cache `ReferentialId → DocumentId` for identity/reference resolution (all identities, including reference-bearing and abstract/superclass aliases).
@@ -451,8 +451,8 @@ Indexing:
 
 ### Cache keying strategy
 
-- Always include `(DmsInstanceId)` and `EffectiveSchemaHash` in cache keys.
-- For Redis, prefix keys with `dms:{DmsInstanceId}:{EffectiveSchemaHash}:...`.
+- Always include `(DataStoreId)` and `EffectiveSchemaHash` in cache keys.
+- For Redis, prefix keys with `dms:{DataStoreId}:{EffectiveSchemaHash}:...`.
 
 ### Local-only (per-node) option
 
@@ -524,7 +524,7 @@ This redesign treats schema changes as an **operational concern outside DMS**. D
 - Schema provisioning is performed by a separate DDL generation utility that builds the same derived relational model as runtime and emits/provisions dialect-specific DDL (see [ddl-generation.md](ddl-generation.md)).
 - Each provisioned database records its schema fingerprint in `dms.EffectiveSchema` + `dms.SchemaComponent`.
 - `dms.EffectiveSchema` is a singleton current-state row; DMS reads `EffectiveSchemaHash` (and seed fingerprint columns) from that row.
-- When a request is routed to a `DmsInstance`/connection string, DMS reads that database’s recorded fingerprint **once** (cached per connection string), and uses `EffectiveSchemaHash` to select the matching compiled mapping set.
+- When a request is routed to a `DataStore`/connection string, DMS reads that database’s recorded fingerprint **once** (cached per connection string), and uses `EffectiveSchemaHash` to select the matching compiled mapping set.
 - If no mapping set is available for that `EffectiveSchemaHash`, DMS rejects requests for that database (other databases can still be served).
 
 This keeps schema mismatch a **fail-fast** condition while avoiding “one mis-provisioned instance prevents the server from starting” in multi-instance deployments.

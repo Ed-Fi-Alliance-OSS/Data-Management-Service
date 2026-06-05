@@ -39,7 +39,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 // mssql DI graph does not depend on it (unlike pgsql's NpgsqlDataSourceCache).
 // The mssql connection lifecycle is owned by MssqlGeneratedDdlTestDatabase via
 // raw SqlConnection; the test fixtures hand the connection string to the
-// reference resolver through IDmsInstanceSelection.
+// reference resolver through IDataStoreSelection.
 
 /// <summary>
 /// Stale-compare freshness checker for the mssql profiled guarded no-op suite. The
@@ -239,7 +239,7 @@ internal abstract class MssqlProfileGuardedNoOpGeneratedDdlFixtureTestBase
     {
         ServiceCollection services = [];
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
@@ -333,12 +333,12 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileGuardedNoOp",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileGuardedNoOp",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -393,12 +393,12 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
     {
         using var scope = _serviceProvider.CreateScope();
         scope
-            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "MssqlProfileGuardedNoOp",
+                    DataStoreType: "test",
+                    Name: "MssqlProfileGuardedNoOp",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

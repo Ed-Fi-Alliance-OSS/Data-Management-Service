@@ -10,7 +10,7 @@ Multi-tenancy in DMS provides two layers of data isolation:
 1. **Tenant Isolation** - Configuration data (vendors, applications, instances)
    is isolated between tenants via the `Tenant` HTTP header in Configuration
    Service requests
-2. **Instance Routing** - Each tenant can have multiple DMS instances (databases),
+2. **Instance Routing** - Each tenant can have multiple data stores (databases),
    accessible via URL-based routing or credential-based routing
 
 ## Prerequisites
@@ -91,9 +91,9 @@ is included in the repository.
 > This guide uses a manual, API-driven workflow (via the `.http` file) because
 > it matches how environments are commonly configured in the field.
 > For local demos and quick setup, `start-local-dms.ps1` supports
-> `-SchoolYearRange` to automatically create `dmsInstances` and their
+> `-SchoolYearRange` to automatically create `dataStores` and their
 > `schoolYear` route contexts.
-> `-SchoolYearRange` and `-NoDmsInstance` are mutually exclusive.
+> `-SchoolYearRange` and `-NoDataStore` are mutually exclusive.
 > If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` also requires
 > `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
 > required `Tenant` header.
@@ -110,11 +110,11 @@ pwsh ./start-local-dms.ps1 `
     -EnableConfig `
     -EnableSwaggerUI `
     -IdentityProvider self-contained `
-    -NoDmsInstance `
+    -NoDataStore `
     -r
 ```
 
-The `-NoDmsInstance` flag prevents automatic instance creation since
+The `-NoDataStore` flag prevents automatic instance creation since
 you'll create tenant-specific instances manually.
 
 Wait for all services to start (approximately 2-3 minutes):
@@ -176,7 +176,7 @@ Execute the requests in order:
 1. **Register Admin** - Creates system administrator credentials
 2. **Get Token** - Authenticates with Configuration Service
 3. **Create Tenants** - Creates tenant organizations (e.g., DistrictA, DistrictB)
-4. **Create Instances** - Creates DMS instances with connection strings (include
+4. **Create Instances** - Creates data stores with connection strings (include
    the `Tenant` header)
 5. **Create Route Contexts** - Associates route qualifier values with instances
 6. **Create Vendors/Applications** - Creates API credentials for each tenant
@@ -186,9 +186,9 @@ Execute the requests in order:
 > to authenticate in Swagger UI (Step 7). If you lose them, use the
 > `reset-credential` request in the HTTP file to generate new ones.
 
-### Manual `schoolYear` instance setup (with `-NoDmsInstance`)
+### Manual `schoolYear` instance setup (with `-NoDataStore`)
 
-If you started the stack with `-NoDmsInstance` and want explicit school year
+If you started the stack with `-NoDataStore` and want explicit school year
 routing (for example, `/{tenant}/2024/data/...`), create the instances and
 route contexts manually.
 
@@ -202,8 +202,8 @@ Prerequisites:
 Steps (repeat per school year):
 
 1. Create a tenant (only once per tenant, if needed).
-2. Create a `dmsInstance` for the year.
-3. Create a `dmsInstanceRouteContext` with `contextKey=schoolYear` and
+2. Create a `dataStore` for the year.
+3. Create a `dataStoreContext` with `contextKey=schoolYear` and
    `contextValue={year}`.
 
 Example for tenant `DistrictA` and school year `2024`:
@@ -219,36 +219,36 @@ Content-Type: application/json
 ```
 
 ```http
-POST http://localhost:8081/v2/dmsInstances
+POST http://localhost:8081/v2/dataStores
 Authorization: bearer {token}
 Tenant: DistrictA
 Content-Type: application/json
 
 {
-  "instanceType": "SchoolYear",
-  "instanceName": "District A - School Year 2024",
+  "dataStoreType": "SchoolYear",
+  "name": "District A - School Year 2024",
   "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2024;"
 }
 ```
 
 ```http
-POST http://localhost:8081/v2/dmsInstanceRouteContexts
+POST http://localhost:8081/v2/dataStoreContexts
 Authorization: bearer {token}
 Tenant: DistrictA
 Content-Type: application/json
 
 {
-  "instanceId": {instanceIdFromPreviousResponse},
+  "dataStoreId": {idFromPreviousResponse},
   "contextKey": "schoolYear",
   "contextValue": "2024"
 }
 ```
 
-Create another instance for `2025` by repeating the last two requests with a
+Create another data store for `2025` by repeating the last two requests with a
 different database and `contextValue`.
 
-After creating instances and route contexts, restart the DMS container so it
-reloads instance configuration:
+After creating data stores and route contexts, restart the DMS container so it
+reloads data store configuration:
 
 ```powershell
 docker restart dms-local-dms-1
@@ -285,8 +285,8 @@ docker logs dms-local-dms-1 | Select-String "Deploying database schema"
 
 You should see:
 
-- `Successfully fetched X DMS instances`
-- `Deploying database schema to DMS instance 'District A - School Year 2024'...`
+- `Successfully fetched X data stores`
+- `Deploying database schema to data store 'District A - School Year 2024'...`
 - etc.
 
 ## Step 6: Test the Setup
@@ -353,8 +353,8 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v2/tenants/` | GET, POST | List/create tenants |
-| `/v2/dmsInstances` | GET, POST, PUT, DELETE | Manage DMS instances |
-| `/v2/dmsInstanceRouteContexts` | GET, POST, PUT, DELETE | Manage route contexts |
+| `/v2/dataStores` | GET, POST, PUT, DELETE | Manage data stores |
+| `/v2/dataStoreContexts` | GET, POST, PUT, DELETE | Manage data store contexts |
 | `/v2/vendors` | GET, POST, PUT, DELETE | Manage vendors |
 | `/v2/applications` | GET, POST, PUT, DELETE | Manage applications |
 
@@ -413,7 +413,7 @@ will only work when the DistrictA tenant is selected.
 
 - Verify the DMS container was restarted after creating instances
 - Check that route contexts match the URL qualifiers exactly
-- Verify the application has access to the requested instance (`dmsInstanceIds`)
+- Verify the application has access to the requested instance (`dataStoreIds`)
 
 ### Tenant header required
 

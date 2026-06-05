@@ -44,12 +44,12 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             NullLogger<JwtAuthenticationMiddleware>.Instance
         );
 
-        services.AddTransient<ResolveDmsInstanceMiddleware>();
+        services.AddTransient<ResolveDataStoreMiddleware>();
         services.AddScoped<IApplicationContextProvider>(_ => A.Fake<IApplicationContextProvider>());
-        services.AddSingleton<IDmsInstanceProvider>(A.Fake<IDmsInstanceProvider>());
-        services.AddSingleton<IDmsInstanceSelection>(A.Fake<IDmsInstanceSelection>());
-        services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
-            NullLogger<ResolveDmsInstanceMiddleware>.Instance
+        services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
+        services.AddSingleton<IDataStoreSelection>(A.Fake<IDataStoreSelection>());
+        services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+            NullLogger<ResolveDataStoreMiddleware>.Instance
         );
 
         services.AddSingleton(CreateAppSettings());

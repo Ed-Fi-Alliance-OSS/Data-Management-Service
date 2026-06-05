@@ -89,7 +89,7 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         >();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
@@ -1439,12 +1439,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociation",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociation",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -2764,12 +2764,12 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWritePropagatedReferenceIdentityRuntime",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWritePropagatedReferenceIdentityRuntime",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -3828,12 +3828,12 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     private void SetSelectedInstance(IServiceProvider serviceProvider)
     {
         serviceProvider
-            .GetRequiredService<IDmsInstanceSelection>()
-            .SetSelectedDmsInstance(
-                new DmsInstance(
+            .GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
                     Id: 1,
-                    InstanceType: "test",
-                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationConflict",
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationConflict",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

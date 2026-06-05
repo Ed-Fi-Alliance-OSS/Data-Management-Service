@@ -12,11 +12,11 @@ Feature: Applications endpoints
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
                     }
                   """
-              And a POST request is made to "/v2/dmsInstances" with
+              And a POST request is made to "/v2/dataStores" with
                   """
                     {
-                        "instanceType": "Test",
-                        "instanceName": "Test DMS Instance",
+                        "dataStoreType": "Test",
+                        "name": "Test Data Store",
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
@@ -36,7 +36,7 @@ Feature: Applications endpoints
                    "applicationName": "application01",
                    "claimSetName": "claim01",
                    "educationOrganizationIds": [],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/applications" with
@@ -46,7 +46,7 @@ Feature: Applications endpoints
                    "applicationName": "application02",
                    "claimSetName": "claim01",
                    "educationOrganizationIds": [],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/applications" with
@@ -56,7 +56,7 @@ Feature: Applications endpoints
                    "applicationName": "application03",
                    "claimSetName": "claim01",
                    "educationOrganizationIds": [],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/applications" with
@@ -66,7 +66,7 @@ Feature: Applications endpoints
                    "applicationName": "application04",
                    "claimSetName": "claim01",
                    "educationOrganizationIds": [],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
               And a POST request is made to "/v2/applications" with
@@ -76,7 +76,7 @@ Feature: Applications endpoints
                    "applicationName": "application05",
                    "claimSetName": "claim01",
                    "educationOrganizationIds": [],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a GET request is made to "/v2/applications?offset=0&limit=2"
@@ -90,7 +90,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "enabled": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "dataStoreIds": [{dataStoreId}],
                           "profileIds": []
                       },
                       {
@@ -100,7 +100,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "enabled": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "dataStoreIds": [{dataStoreId}],
                           "profileIds": []
                       }]
                   """
@@ -115,7 +115,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "enabled": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "dataStoreIds": [{dataStoreId}],
                           "profileIds": []
                       },
                       {
@@ -125,7 +125,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "enabled": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "dataStoreIds": [{dataStoreId}],
                           "profileIds": []
                       },
                       {
@@ -135,7 +135,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "enabled": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "dataStoreIds": [{dataStoreId}],
                           "profileIds": []
                       },
                       {
@@ -145,7 +145,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "enabled": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "dataStoreIds": [{dataStoreId}],
                           "profileIds": []
                       },
                       {
@@ -155,7 +155,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "enabled": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "dataStoreIds": [{dataStoreId}],
                           "profileIds": []
                       }]
                   """
@@ -168,7 +168,7 @@ Feature: Applications endpoints
                    "applicationName": "Demo application 02",
                    "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -187,7 +187,7 @@ Feature: Applications endpoints
                     "vendorId": {vendorId},
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
-                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "dataStoreIds": [{dataStoreId}],
                     "profileIds": [],
                     "enabled": true
                   }
@@ -200,7 +200,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Test Scenario 02",
                    "claimSetName": "TestScenario02",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -225,7 +225,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Scenario 04 Demo application",
                    "claimSetName": "ClaimScenario03",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -236,7 +236,7 @@ Feature: Applications endpoints
                       "vendorId": {vendorId},
                       "applicationName": "Demo application Update",
                       "claimSetName": "ClaimScenario03Update",
-                      "dmsInstanceIds": [{dmsInstanceId}]
+                      "dataStoreIds": [{dataStoreId}]
                       }
                   """
              Then it should respond with 204
@@ -248,7 +248,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
                    "claimSetName": "ClaimScenario05",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -262,7 +262,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
                    "claimSetName": "ClaimScenario06",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -278,7 +278,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
                    "claimSetName": "ClaimScenario07",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -291,7 +291,7 @@ Feature: Applications endpoints
                       "vendorId": {vendorId},
                       "applicationName": "Delete application update",
                       "claimSetName": "ClaimScenario07",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 404
@@ -303,7 +303,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
                    "claimSetName": "ClaimScenario08",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -327,7 +327,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
                    "claimSetName": "ClaimScenario04",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -340,7 +340,7 @@ Feature: Applications endpoints
                    "applicationName": "Demo application",
                    "claimSetName": "Claim999",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -369,7 +369,7 @@ Feature: Applications endpoints
                    "applicationName": "",
                    "claimSetName": "Claim999",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -398,7 +398,7 @@ Feature: Applications endpoints
                    "applicationName": "Test 1234",
                    "claimSetName": "",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -427,7 +427,7 @@ Feature: Applications endpoints
                    "applicationName": "Test 1234",
                    "claimSetName": "Claim set name with white space",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -456,7 +456,7 @@ Feature: Applications endpoints
                    "applicationName": "Demo application",
                    "claimSetName": "Claim999",
                    "educationOrganizationIds": [0],
-                   "dmsInstanceIds": []
+                   "dataStoreIds": []
                   }
                   """
              Then it should respond with 400
@@ -484,7 +484,7 @@ Feature: Applications endpoints
                    "applicationName": "Demo-application",
                    "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -504,7 +504,7 @@ Feature: Applications endpoints
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
                     "enabled": true,
-                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "dataStoreIds": [{dataStoreId}],
                     "profileIds": []
                   }
                   """
@@ -516,7 +516,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 17",
                    "claimSetName": "ClaimScenario03",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -528,7 +528,7 @@ Feature: Applications endpoints
                       "vendorId": {vendorId},
                       "applicationName": "Demo application 17 Update",
                       "claimSetName": "ClaimScenario03Update",
-                      "dmsInstanceIds": [{dmsInstanceId}]
+                      "dataStoreIds": [{dataStoreId}]
                       }
                   """
              Then it should respond with 204
@@ -541,7 +541,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 18",
                    "claimSetName": "ClaimScenario03",
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -567,7 +567,7 @@ Feature: Applications endpoints
                    "applicationName": "Demo application 19",
                    "claimSetName": "ClaimScenario2559",
                    "educationOrganizationIds": [2559, 255901],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -580,7 +580,7 @@ Feature: Applications endpoints
                       "applicationName": "Demo application 19 Update",
                       "claimSetName": "ClaimScenario2559Update",
                       "educationOrganizationIds": [2559, 255902],
-                      "dmsInstanceIds": [{dmsInstanceId}]
+                      "dataStoreIds": [{dataStoreId}]
                       }
                   """
              Then it should respond with 204
@@ -594,7 +594,7 @@ Feature: Applications endpoints
                    "applicationName": "Demo application 20",
                    "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              When a POST request is made to "/v2/applications" with
@@ -604,7 +604,7 @@ Feature: Applications endpoints
                    "applicationName": "Demo application 20",
                    "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3, 4],
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 400
@@ -633,7 +633,7 @@ Feature: Applications endpoints
                    "applicationName": "Application with Profile 21",
                    "claimSetName": "Claim21",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "dataStoreIds": [{dataStoreId}],
                    "profileIds": [{profileId}]
                   }
                   """
@@ -653,7 +653,7 @@ Feature: Applications endpoints
                     "vendorId": {vendorId},
                     "claimSetName": "Claim21",
                     "educationOrganizationIds": [1, 2, 3],
-                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "dataStoreIds": [{dataStoreId}],
                     "profileIds": [{profileId}],
                     "enabled": true
                   }
@@ -666,7 +666,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Application Update Profile 22",
                    "claimSetName": "Claim22",
-                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "dataStoreIds": [{dataStoreId}],
                    "profileIds": []
                   }
                   """
@@ -678,7 +678,7 @@ Feature: Applications endpoints
                       "vendorId": {vendorId},
                       "applicationName": "Application Update Profile 22",
                       "claimSetName": "Claim22Update",
-                      "dmsInstanceIds": [{dmsInstanceId}],
+                      "dataStoreIds": [{dataStoreId}],
                       "profileIds": [{profileId}]
                       }
                   """
@@ -691,7 +691,7 @@ Feature: Applications endpoints
                     "vendorId": {vendorId},
                     "claimSetName": "Claim22Update",
                     "educationOrganizationIds": [],
-                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "dataStoreIds": [{dataStoreId}],
                     "profileIds": [{profileId}],
                     "enabled": true
                   }
@@ -705,7 +705,7 @@ Feature: Applications endpoints
                    "applicationName": "Application Invalid Profile 23",
                    "claimSetName": "Claim23",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "dataStoreIds": [{dataStoreId}],
                    "profileIds": [9999]
                   }
                   """
@@ -735,7 +735,7 @@ Feature: Applications endpoints
                    "applicationName": "Application Invalid ProfileId Value 24",
                    "claimSetName": "Claim24",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "dataStoreIds": [{dataStoreId}],
                    "profileIds": [0]
                   }
                   """
@@ -764,7 +764,7 @@ Feature: Applications endpoints
                    "applicationName": "Application Duplicate Profile 25",
                    "claimSetName": "Claim25",
                    "educationOrganizationIds": [1, 2, 3],
-                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "dataStoreIds": [{dataStoreId}],
                    "profileIds": [{profileId}, {profileId}]
                   }
                   """
@@ -784,7 +784,7 @@ Feature: Applications endpoints
                     "vendorId": {vendorId},
                     "claimSetName": "Claim25",
                     "educationOrganizationIds": [1, 2, 3],
-                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "dataStoreIds": [{dataStoreId}],
                     "profileIds": [{profileId}],
                     "enabled": true
                   }
@@ -797,7 +797,7 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Application Update Duplicate Profile 26",
                    "claimSetName": "Claim26",
-                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "dataStoreIds": [{dataStoreId}],
                    "profileIds": []
                   }
                   """
@@ -809,7 +809,7 @@ Feature: Applications endpoints
                       "vendorId": {vendorId},
                       "applicationName": "Application Update Duplicate Profile 26",
                       "claimSetName": "Claim26Update",
-                      "dmsInstanceIds": [{dmsInstanceId}],
+                      "dataStoreIds": [{dataStoreId}],
                       "profileIds": [{profileId}, {profileId}]
                       }
                   """
@@ -822,7 +822,7 @@ Feature: Applications endpoints
                     "vendorId": {vendorId},
                     "claimSetName": "Claim26Update",
                     "educationOrganizationIds": [],
-                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "dataStoreIds": [{dataStoreId}],
                     "profileIds": [{profileId}],
                     "enabled": true
                   }
@@ -836,7 +836,7 @@ Feature: Applications endpoints
                   "applicationName": "Disabled Client App",
                   "claimSetName": "Claim21",
                   "educationOrganizationIds": [],
-                  "dmsInstanceIds": [{dmsInstanceId}]
+                  "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -853,7 +853,7 @@ Feature: Applications endpoints
                    "applicationId": {applicationId},
                    "name": "Disabled Client",
                    "isApproved": false,
-                   "dmsInstanceIds": [{dmsInstanceId}]
+                   "dataStoreIds": [{dataStoreId}]
                   }
                   """
              Then it should respond with 201
@@ -869,7 +869,7 @@ Feature: Applications endpoints
                    "claimSetName": "Claim21",
                    "educationOrganizationIds": [],
                    "enabled": false,
-                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "dataStoreIds": [{dataStoreId}],
                    "profileIds": []
                   }
                   """
