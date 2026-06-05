@@ -213,6 +213,27 @@ public class Given_Key_Unified_Identity_Element_Column_Selection
     }
 
     /// <summary>
+    /// It should throw for an empty member column list, because an identity hash element must be
+    /// represented by at least one column.
+    /// </summary>
+    [Test]
+    public void It_should_throw_for_an_empty_member_column_list()
+    {
+        var act = () =>
+            IdentityProjectionResolver.SelectIdentityElementColumn(
+                [],
+                BuildTable(),
+                "$.offeringReference.schoolId",
+                _resource
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*$.offeringReference.schoolId*")
+            .WithMessage("*empty logical reference field group*");
+    }
+
+    /// <summary>
     /// It should return a single member column unchanged.
     /// </summary>
     [Test]

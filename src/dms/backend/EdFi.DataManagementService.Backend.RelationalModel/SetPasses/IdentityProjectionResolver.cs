@@ -107,6 +107,15 @@ internal static class IdentityProjectionResolver
         QualifiedResourceName resource
     )
     {
+        if (memberColumns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{identityPath}' on resource '{FormatResource(resource)}' "
+                    + "resolved to an empty logical reference field group; at least one member "
+                    + "column is required to select an identity hash element."
+            );
+        }
+
         var first = memberColumns[0];
 
         if (memberColumns.Count == 1)

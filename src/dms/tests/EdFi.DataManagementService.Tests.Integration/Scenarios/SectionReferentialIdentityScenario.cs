@@ -51,8 +51,11 @@ internal static class SectionReferentialIdentityScenario
     {
         // Per-test unique values keep the scenario isolated even if the leased
         // database baseline is shared with other scenarios bound to this fixture.
+        // The schoolId derives deterministically from the suffix's own hex value
+        // (not string.GetHashCode(), which is process-randomized) and spans a
+        // ~1B range that stays int32-safe, keeping collision odds negligible.
         string suffix = Guid.NewGuid().ToString("N")[..8];
-        long schoolId = 7_001_205L + Math.Abs(suffix.GetHashCode() % 100_000);
+        long schoolId = 1_000_000_000L + (Convert.ToInt64(suffix, 16) % 1_000_000_000L);
         string namespaceUri = $"uri://ed-fi.org/SectionRefId/{suffix}";
         string eocDescriptorUri = $"{namespaceUri}/EducationOrganizationCategoryDescriptor#School";
         string gradeLevelDescriptorUri = $"{namespaceUri}/GradeLevelDescriptor#Tenth grade";
