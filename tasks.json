@@ -175,5 +175,21 @@
       "If dedicated DS52+TPDM smoke or compatibility classes are added, also run the same SQL Server project with --filter \"FullyQualifiedName~Tpdm\"."
     ],
     "completed": true
+  },
+  {
+    "category": "branch-hygiene",
+    "description": "Medium: Remove unrelated authorization demo and DMS-1207 design artifacts from the DMS-1206 branch.",
+    "acceptance-criteria": [
+      "The DMS-1206 branch diff no longer includes authorization-relational-demo.http.",
+      "The DMS-1206 branch diff no longer includes DMS-1207 authorization epic and JIRA-index documentation changes unless they are intentionally moved to a separate DMS-1207 branch or PR.",
+      "No checked-in DMS-1206 artifact contains local absolute paths, fixed demo credentials, or database passwords unrelated to the SurveyResponse nullability fix.",
+      "The remaining branch diff is limited to DMS-1206 implementation, tests, fixtures, and development tracking artifacts."
+    ],
+    "steps-to-verify": [
+      "Run git diff --name-only origin/main...HEAD and confirm authorization-relational-demo.http, reference/design/backend-redesign/epics/14-authorization/21-token-info-relational-auth-schema.md, reference/design/backend-redesign/epics/14-authorization/EPIC.md, and reference/design/backend-redesign/epics/JIRA-INDEX.md are absent from the DMS-1206 diff or have been moved to a separate DMS-1207 change.",
+      "Run git diff origin/main...HEAD -- authorization-relational-demo.http reference/design/backend-redesign/epics/14-authorization reference/design/backend-redesign/epics/JIRA-INDEX.md and confirm the DMS-1206 branch has no unrelated demo credential, database password, local-path, or DMS-1207 documentation artifact.",
+      "Review git diff origin/main...HEAD to confirm remaining changes map to DMS-1206 SurveyResponse relational reference nullability coverage."
+    ],
+    "completed": true
   }
 ]

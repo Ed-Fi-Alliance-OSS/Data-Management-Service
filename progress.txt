@@ -57,3 +57,9 @@ Key decisions: added dedicated pgsql/mssql DS52+TPDM compatibility subclasses pl
 Files changed: PostgresqlCompatibilityGateAuthoritativeDs52TpdmTests.cs, MssqlCompatibilityGateAuthoritativeDs52TpdmTests.cs, PostgresqlGeneratedDdlAuthoritativeDs52TpdmSmokeTests.cs, MssqlGeneratedDdlAuthoritativeDs52TpdmSmokeTests.cs, PostgresqlGeneratedDdlAuthoritativeSmokeTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format touched integration files; pgsql Tpdm filter passed 10 tests; mssql Tpdm filter passed 10 tests with temporary dms-codex-mssql; pgsql Authoritative filter passed 89 tests; mssql Authoritative filter passed 61 tests with temporary dms-codex-mssql.
 Notes: temporary SQL Server container stopped. No blockers.
+
+DMS-1206 task completed: remove unrelated authorization demo and DMS-1207 branch artifacts.
+Key decisions: deleted authorization-relational-demo.http and DMS-1207 token_info story from the branch; removed DMS-1207 references from authorization EPIC and JIRA index instead of carrying unrelated design changes in DMS-1206. No DMS-1206 implementation files changed.
+Files changed: authorization-relational-demo.http, reference/design/backend-redesign/epics/14-authorization/21-token-info-relational-auth-schema.md, EPIC.md, JIRA-INDEX.md, tasks.json, progress.txt.
+Verification: targeted authorization paths diff empty against origin/main; remaining DMS-1206 diff scanned clean for local absolute path and credential markers.
+Notes: no blockers.

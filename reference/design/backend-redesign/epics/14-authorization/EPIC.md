@@ -43,4 +43,3 @@ All authorization stories (design, DDL/provisioning, runtime integration, and te
 - `DMS-1091` — `18-formalize-auth-startup-task.md` — Formalize Auth Startup as IDmsStartupTask
 - `DMS-1096` — `19-auth-verification-harness.md` — Verification harness for emitted auth DB objects
 - `DMS-1099` — `20-configuration-problem-details` — Implement Security Configuration ProblemDetails
-- `DMS-1207` — `21-token-info-relational-auth-schema.md` — Convert token_info Education Organization Lookup to Relational Auth Schema
