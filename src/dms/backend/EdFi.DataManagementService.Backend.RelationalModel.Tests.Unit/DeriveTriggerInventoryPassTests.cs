@@ -1117,6 +1117,118 @@ public class Given_Descriptor_Valued_Identity_For_ReferentialIdentity_Trigger
 }
 
 /// <summary>
+/// Test fixture proving ReferentialIdentityMaintenance identity elements stay aligned with the
+/// resource's identity JSON paths when key unification fans one reference-site logical field out to
+/// multiple physical binding columns (one identity path, two unified alias columns), while distinct
+/// identity paths that merely share canonical storage each keep their own hash element.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unified_Reference_Identity_For_ReferentialIdentity_Trigger
+{
+    private DerivedRelationalModelSet _result = default!;
+    private DbTriggerInfo _registrationTrigger = default!;
+    private TriggerKindParameters.ReferentialIdentityMaintenance _registrationRefId = default!;
+    private TriggerKindParameters.ReferentialIdentityMaintenance _offeringRefId = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            TriggerInventoryTestSchemaBuilder.BuildKeyUnifiedReferenceIdentityProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+
+        _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _registrationTrigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Table.Name == "Registration"
+            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+        _registrationRefId = (TriggerKindParameters.ReferentialIdentityMaintenance)
+            _registrationTrigger.Parameters;
+
+        _offeringRefId = (TriggerKindParameters.ReferentialIdentityMaintenance)
+            _result
+                .TriggersInCreateOrder.Single(t =>
+                    t.Table.Name == "Offering"
+                    && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+                )
+                .Parameters;
+    }
+
+    [Test]
+    public void It_should_emit_one_identity_element_per_identity_path_on_the_referencing_resource()
+    {
+        _registrationRefId
+            .IdentityElements.Select(e => e.IdentityJsonPath)
+            .Should()
+            .Equal("$.offeringReference.offeringName", "$.offeringReference.schoolId", "$.registrationId");
+    }
+
+    [Test]
+    public void It_should_retain_the_first_member_column_of_the_key_unified_logical_field_group()
+    {
+        var registrationModel = _result
+            .ConcreteResourcesInNameOrder.Single(m => m.ResourceKey.Resource.ResourceName == "Registration")
+            .RelationalModel;
+        var offeringBinding = registrationModel.DocumentReferenceBindings.Single(b =>
+            b.ReferenceObjectPath.Canonical == "$.offeringReference"
+        );
+        var schoolIdGroup = offeringBinding
+            .GetLogicalFieldGroups()
+            .Single(g => g.ReferenceJsonPath.Canonical == "$.offeringReference.schoolId");
+
+        schoolIdGroup
+            .MemberColumns.Should()
+            .HaveCountGreaterThan(
+                1,
+                "the fixture must fan one logical reference field out to multiple unified columns"
+            );
+
+        var element = _registrationRefId.IdentityElements.Single(e =>
+            e.IdentityJsonPath == "$.offeringReference.schoolId"
+        );
+        element.Column.Should().Be(schoolIdGroup.MemberColumns[0]);
+    }
+
+    [Test]
+    public void It_should_retain_distinct_identity_paths_that_share_canonical_storage()
+    {
+        _offeringRefId
+            .IdentityElements.Select(e => e.IdentityJsonPath)
+            .Should()
+            .Equal(
+                "$.offeringName",
+                "$.primarySchoolReference.schoolId",
+                "$.secondarySchoolReference.schoolId"
+            );
+    }
+
+    [Test]
+    public void It_should_keep_identity_projection_columns_on_deduplicated_canonical_stored_columns()
+    {
+        var registrationRoot = _result
+            .ConcreteResourcesInNameOrder.Single(m => m.ResourceKey.Resource.ResourceName == "Registration")
+            .RelationalModel.Root;
+
+        var storedColumns = registrationRoot
+            .Columns.Where(c => c.Storage is not ColumnStorage.UnifiedAlias)
+            .Select(c => c.ColumnName)
+            .ToHashSet();
+
+        _registrationTrigger.IdentityProjectionColumns.Should().OnlyHaveUniqueItems();
+        _registrationTrigger.IdentityProjectionColumns.Should().HaveCount(3);
+        _registrationTrigger
+            .IdentityProjectionColumns.Should()
+            .OnlyContain(column => storedColumns.Contains(column));
+    }
+}
+
+/// <summary>
 /// Test pass that injects a synthetic unmapped reference mapping to validate fail-fast behavior.
 /// </summary>
 file sealed class UnmappedReferenceMappingFixturePass : IRelationalModelSetPass
@@ -1855,6 +1967,216 @@ internal static class TriggerInventoryTestSchemaBuilder
                 {
                     ["isReference"] = false,
                     ["path"] = "$.studentUniqueId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build project schema where a referenced resource's identity contains two reference paths whose
+    /// columns are key-unified, so a downstream referencing resource fans one reference-site logical
+    /// field out to multiple unified binding columns.
+    /// </summary>
+    internal static JsonObject BuildKeyUnifiedReferenceIdentityProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["offerings"] = BuildKeyUnifiedOfferingSchema(),
+                ["registrations"] = BuildKeyUnifiedRegistrationSchema(),
+                ["schools"] = BuildKeyUnifiedSchoolSchema(),
+            },
+        };
+    }
+
+    private static JsonObject BuildKeyUnifiedSchoolSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["schoolId"] = new JsonObject { ["type"] = "integer" } },
+            ["required"] = new JsonArray("schoolId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.schoolId" },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Offering's identity includes both school references; their schoolId columns are key-unified
+    /// through the same-site grouping of the downstream reference plus this resource's own identity.
+    /// </summary>
+    private static JsonObject BuildKeyUnifiedOfferingSchema()
+    {
+        var schoolReferenceSchema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["schoolId"] = new JsonObject { ["type"] = "integer" } },
+        };
+
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["offeringName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 30 },
+                ["primarySchoolReference"] = schoolReferenceSchema,
+                ["secondarySchoolReference"] = schoolReferenceSchema.DeepClone(),
+            },
+            ["required"] = new JsonArray("offeringName"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Offering",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.offeringName",
+                "$.primarySchoolReference.schoolId",
+                "$.secondarySchoolReference.schoolId",
+            },
+            ["equalityConstraints"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.primarySchoolReference.schoolId",
+                    ["targetJsonPath"] = "$.secondarySchoolReference.schoolId",
+                },
+            },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["OfferingName"] = new JsonObject { ["isReference"] = false, ["path"] = "$.offeringName" },
+                ["PrimarySchool"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.primarySchoolReference.schoolId",
+                        },
+                    },
+                },
+                ["SecondarySchool"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.secondarySchoolReference.schoolId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Registration references Offering; two of Offering's identity paths map to the single
+    /// offeringReference.schoolId field, fanning one logical reference field out to two columns.
+    /// </summary>
+    private static JsonObject BuildKeyUnifiedRegistrationSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["registrationId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                ["offeringReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["offeringName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 30 },
+                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+            },
+            ["required"] = new JsonArray("registrationId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Registration",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.offeringReference.offeringName",
+                "$.offeringReference.schoolId",
+                "$.registrationId",
+            },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["Offering"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Offering",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.offeringName",
+                            ["referenceJsonPath"] = "$.offeringReference.offeringName",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.primarySchoolReference.schoolId",
+                            ["referenceJsonPath"] = "$.offeringReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.secondarySchoolReference.schoolId",
+                            ["referenceJsonPath"] = "$.offeringReference.schoolId",
+                        },
+                    },
+                },
+                ["RegistrationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.registrationId",
                 },
             },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,

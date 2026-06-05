@@ -18,10 +18,13 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 internal static class IdentityProjectionResolver
 {
     /// <summary>
-    /// Builds identity element mappings for UUIDv5 computation by pairing each identity projection
-    /// column with its canonical JSON path. For identity-component references, this resolves to
-    /// locally stored identity-part columns (not the FK <c>..._DocumentId</c>) so the computed
-    /// UUIDv5 hash matches Core's <c>ReferentialIdCalculator</c>.
+    /// Builds identity element mappings for UUIDv5 computation by pairing each identity JSON path
+    /// with exactly one column, preserving identity-path order and cardinality so the computed
+    /// UUIDv5 hash matches Core's <c>ReferentialIdCalculator</c> (one element per document identity
+    /// element). For identity-component references, this resolves to locally stored identity-part
+    /// columns (not the FK <c>..._DocumentId</c>); when key unification fans one reference-site
+    /// logical field out to multiple member columns, only the first member represents the path.
+    /// Distinct identity paths are never merged, even when they share a canonical storage column.
     /// </summary>
     internal static IReadOnlyList<IdentityElementMapping> BuildIdentityElementMappings(
         RelationalResourceModel resourceModel,
@@ -51,7 +54,6 @@ internal static class IdentityProjectionResolver
             StringComparer.Ordinal
         );
 
-        HashSet<string> seenColumns = new(StringComparer.Ordinal);
         List<IdentityElementMapping> mappings = new(builderContext.IdentityJsonPaths.Count);
 
         foreach (var canonical in builderContext.IdentityJsonPaths.Select(p => p.Canonical))
@@ -63,23 +65,13 @@ internal static class IdentityProjectionResolver
                 resource
             );
 
+            DbColumnName columnName;
+
             if (identityPartColumns is not null)
             {
-                foreach (var col in identityPartColumns.Where(c => seenColumns.Add(c.Value)))
-                {
-                    mappings.Add(
-                        new IdentityElementMapping(
-                            col,
-                            canonical,
-                            LookupColumnScalarType(columnScalarTypes, col, canonical, resource),
-                            IsDescriptorReference(columnKinds, col, canonical, resource)
-                        )
-                    );
-                }
-                continue;
+                columnName = SelectIdentityElementColumn(identityPartColumns, rootTable, canonical, resource);
             }
-
-            if (!rootColumnsByPath.TryGetValue(canonical, out var columnName))
+            else if (!rootColumnsByPath.TryGetValue(canonical, out columnName))
             {
                 throw new InvalidOperationException(
                     $"Identity path '{canonical}' on resource '{FormatResource(resource)}' "
@@ -87,20 +79,68 @@ internal static class IdentityProjectionResolver
                 );
             }
 
-            if (seenColumns.Add(columnName.Value))
+            mappings.Add(
+                new IdentityElementMapping(
+                    columnName,
+                    canonical,
+                    LookupColumnScalarType(columnScalarTypes, columnName, canonical, resource),
+                    IsDescriptorReference(columnKinds, columnName, canonical, resource)
+                )
+            );
+        }
+
+        return mappings.ToArray();
+    }
+
+    /// <summary>
+    /// Selects the single hash-element column representing one identity JSON path out of its
+    /// same-site logical reference field group. Key unification can fan one identity path out to
+    /// multiple physical member columns (persisted unified aliases over one canonical storage
+    /// column); the hash must contain one element per identity path, so the first member in binding
+    /// order represents the path. Every member must resolve to the same canonical storage column —
+    /// members with different stored values cannot be collapsed into a single element.
+    /// </summary>
+    internal static DbColumnName SelectIdentityElementColumn(
+        IReadOnlyList<DbColumnName> memberColumns,
+        DbTableModel rootTable,
+        string identityPath,
+        QualifiedResourceName resource
+    )
+    {
+        if (memberColumns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{identityPath}' on resource '{FormatResource(resource)}' "
+                    + "resolved to an empty logical reference field group; at least one member "
+                    + "column is required to select an identity hash element."
+            );
+        }
+
+        var first = memberColumns[0];
+
+        if (memberColumns.Count == 1)
+        {
+            return first;
+        }
+
+        var firstStoredColumn = ResolveToStoredColumn(first, rootTable, resource);
+
+        foreach (var member in memberColumns.Skip(1))
+        {
+            var memberStoredColumn = ResolveToStoredColumn(member, rootTable, resource);
+
+            if (memberStoredColumn != firstStoredColumn)
             {
-                mappings.Add(
-                    new IdentityElementMapping(
-                        columnName,
-                        canonical,
-                        LookupColumnScalarType(columnScalarTypes, columnName, canonical, resource),
-                        IsDescriptorReference(columnKinds, columnName, canonical, resource)
-                    )
+                throw new InvalidOperationException(
+                    $"Identity path '{identityPath}' on resource '{FormatResource(resource)}' "
+                        + $"resolved to member columns with different canonical storage columns "
+                        + $"('{firstStoredColumn.Value}' vs '{memberStoredColumn.Value}'); a single "
+                        + "identity hash element cannot represent more than one stored value."
                 );
             }
         }
 
-        return mappings.ToArray();
+        return first;
     }
 
     /// <summary>
