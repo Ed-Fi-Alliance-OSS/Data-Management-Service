@@ -369,68 +369,68 @@ function Build-NuGetPackage {
 
 <#
 .SYNOPSIS
-    Asserts that a DMS instance id is registered in the Configuration Service.
+    Asserts that a data store id is registered in the Configuration Service.
 
 .DESCRIPTION
-    The Configuration Service protects DmsInstance connection strings in API
+    The Configuration Service protects data store connection strings in API
     responses, so a caller that needs a specific target database must pass the
-    id returned when the instance was registered; membership of that id in the
-    registered set is the only property that can be verified here.
+    id returned when the data store was registered; membership of that id in
+    the registered set is the only property that can be verified here.
 #>
-function Assert-DmsInstanceIdRegistered {
+function Assert-DataStoreIdRegistered {
     param (
         [Parameter(Mandatory = $true)]
         [AllowEmptyCollection()]
-        [object[]]$DmsInstances,
+        [object[]]$DataStores,
 
         [Parameter(Mandatory = $true)]
-        [long]$DmsInstanceId
+        [long]$DataStoreId
     )
 
-    $registeredIds = @($DmsInstances | ForEach-Object { [long]$_.id })
+    $registeredIds = @($DataStores | ForEach-Object { [long]$_.id })
 
-    if ($DmsInstanceId -notin $registeredIds) {
+    if ($DataStoreId -notin $registeredIds) {
         $registeredIdList = if ($registeredIds.Count -eq 0) { "<none>" } else { $registeredIds -join ', ' }
-        throw "DMS instance id '$DmsInstanceId' is not registered in the Configuration Service. Registered ids: $registeredIdList."
+        throw "Data store id '$DataStoreId' is not registered in the Configuration Service. Registered ids: $registeredIdList."
     }
 }
 
 <#
 .SYNOPSIS
-    Resolves which DMS instance id a template build should bind applications to.
+    Resolves which data store id a template build should bind applications to.
 
 .DESCRIPTION
-    A caller-supplied instance id is validated for membership and used as-is.
-    Without one, an empty instance list returns $null so the caller registers a
-    new instance. Existing instances cannot be matched to a requested database
-    because the Configuration Service protects connection strings in API
-    responses, so a bound database name with pre-existing instances is an
-    error; callers that bind neither parameter keep first-instance behavior.
+    A caller-supplied data store id is validated for membership and used as-is.
+    Without one, an empty data store list returns $null so the caller registers
+    a new data store. Existing data stores cannot be matched to a requested
+    database because the Configuration Service protects connection strings in
+    API responses, so a bound database name with pre-existing data stores is an
+    error; callers that bind neither parameter keep first-data-store behavior.
 #>
-function Resolve-DmsInstanceIdForTemplate {
+function Resolve-DataStoreIdForTemplate {
     param (
         [AllowEmptyCollection()]
-        [object[]]$DmsInstances = @(),
+        [object[]]$DataStores = @(),
 
-        [System.Nullable[long]]$RequestedDmsInstanceId = $null,
+        [System.Nullable[long]]$RequestedDataStoreId = $null,
 
         [bool]$DatabaseNameBound = $false
     )
 
-    if ($null -ne $RequestedDmsInstanceId) {
-        Assert-DmsInstanceIdRegistered -DmsInstances $DmsInstances -DmsInstanceId $RequestedDmsInstanceId
-        return [long]$RequestedDmsInstanceId
+    if ($null -ne $RequestedDataStoreId) {
+        Assert-DataStoreIdRegistered -DataStores $DataStores -DataStoreId $RequestedDataStoreId
+        return [long]$RequestedDataStoreId
     }
 
-    if ($DmsInstances.Count -eq 0) {
+    if ($DataStores.Count -eq 0) {
         return $null
     }
 
     if ($DatabaseNameBound) {
-        throw "Existing DMS instances cannot be verified against a requested database because the Configuration Service protects connection strings in API responses. Pass -DmsInstanceId for the instance that targets the requested database."
+        throw "Existing data stores cannot be verified against a requested database because the Configuration Service protects connection strings in API responses. Pass -DataStoreId for the data store that targets the requested database."
     }
 
-    return [long]$DmsInstances[0].id
+    return [long]$DataStores[0].id
 }
 
 <#
@@ -571,14 +571,14 @@ enum TemplateType {
 .PARAMETER ApplicationName
     The name of the application to create. Defaults to "Demo application".
 
-.PARAMETER DmsInstanceDatabaseName
-    Database the CMS-registered DMS instance must target; also the database that is dumped into the template.
+.PARAMETER DataStoreDatabaseName
+    Database the CMS-registered data store must target; also the database that is dumped into the template.
 
-.PARAMETER DmsInstanceId
-    Id of an already-registered DMS instance to bind applications to. The Configuration Service
-    protects instance connection strings in API responses, so the registrar of the instance must
-    hand its id forward; requires -DmsInstanceDatabaseName so writes and the dump target the same
-    database.
+.PARAMETER DataStoreId
+    Id of an already-registered data store to bind applications to. The Configuration Service
+    protects data store connection strings in API responses, so the registrar of the data store
+    must hand its id forward; requires -DataStoreDatabaseName so writes and the dump target the
+    same database.
 
 .PARAMETER DumpAllUserSchemas
     Dump every non-system schema of the target database instead of only the dms schema.
@@ -629,38 +629,38 @@ function Build-Template {
 
         [string]$ApplicationName = "Demo application",
 
-        [string]$DmsInstanceDatabaseName = "edfi_datamanagementservice",
+        [string]$DataStoreDatabaseName = "edfi_datamanagementservice",
 
-        [long]$DmsInstanceId,
+        [long]$DataStoreId,
 
         [switch]$DumpAllUserSchemas,
 
         [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
     )
 
-    if ($PSBoundParameters.ContainsKey('DmsInstanceId') -and -not $PSBoundParameters.ContainsKey('DmsInstanceDatabaseName')) {
-        throw "-DmsInstanceId requires -DmsInstanceDatabaseName so the dump targets the same database the bound applications write to."
+    if ($PSBoundParameters.ContainsKey('DataStoreId') -and -not $PSBoundParameters.ContainsKey('DataStoreDatabaseName')) {
+        throw "-DataStoreId requires -DataStoreDatabaseName so the dump targets the same database the bound applications write to."
     }
 
     Add-CmsClient -CmsUrl $CmsUrl
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    # Resolve the DMS instance to bind applications to. The CMS-registered instance
+    # Resolve the data store to bind applications to. The CMS-registered data store
     # connection string controls where bulk-load writes land but is protected in API
-    # responses, so a caller that targets a specific database must hand the instance id
+    # responses, so a caller that targets a specific database must hand the data store id
     # forward from registration; callers that bind neither parameter keep the original
-    # first-instance behavior.
-    $dmsInstances = @(Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken)
-    $targetDmsInstanceId = Resolve-DmsInstanceIdForTemplate `
-        -DmsInstances $dmsInstances `
-        -RequestedDmsInstanceId ($PSBoundParameters.ContainsKey('DmsInstanceId') ? $DmsInstanceId : $null) `
-        -DatabaseNameBound ($PSBoundParameters.ContainsKey('DmsInstanceDatabaseName'))
-    if ($null -eq $targetDmsInstanceId) {
-        $targetDmsInstanceId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword -PostgresDbName $DmsInstanceDatabaseName
+    # first-data-store behavior.
+    $dataStores = @(Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken)
+    $targetDataStoreId = Resolve-DataStoreIdForTemplate `
+        -DataStores $dataStores `
+        -RequestedDataStoreId ($PSBoundParameters.ContainsKey('DataStoreId') ? $DataStoreId : $null) `
+        -DatabaseNameBound ($PSBoundParameters.ContainsKey('DataStoreDatabaseName'))
+    if ($null -eq $targetDataStoreId) {
+        $targetDataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword -PostgresDbName $DataStoreDatabaseName
     }
 
-    # Create Bootstrap application and assign to DMS instance
-    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($targetDmsInstanceId)
+    # Create Bootstrap application and assign to the data store
+    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($targetDataStoreId)
 
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $bootstrapApp.Key -Secret $bootstrapApp.Secret
 
@@ -683,8 +683,8 @@ function Build-Template {
             throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
         }
 
-        # Create Sandbox application and assign to DMS instance
-        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($targetDmsInstanceId)
+        # Create Sandbox application and assign to the data store
+        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($targetDataStoreId)
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
@@ -698,7 +698,7 @@ function Build-Template {
             -ForceReloadMetadata
     }
 
-    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DmsInstanceDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
 }
 
 Export-ModuleMember -Function Build-Template, Get-UserSchemaNames

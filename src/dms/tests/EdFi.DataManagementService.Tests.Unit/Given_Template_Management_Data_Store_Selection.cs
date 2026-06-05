@@ -10,17 +10,17 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Unit;
 
 [TestFixture]
-public partial class Given_Template_Management_Instance_Selection
+public partial class Given_Template_Management_Data_Store_Selection
 {
     [Test]
-    public async Task It_accepts_an_explicit_instance_id_even_when_the_connection_string_is_protected()
+    public async Task It_accepts_an_explicit_data_store_id_even_when_the_connection_string_is_protected()
     {
         var result = await RunInModuleScope(
             """
-            $instances = @(
+            $dataStores = @(
                 [pscustomobject]@{ id = 9; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' }
             )
-            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -RequestedDmsInstanceId 9 -DatabaseNameBound $true
+            Resolve-DataStoreIdForTemplate -DataStores $dataStores -RequestedDataStoreId 9 -DatabaseNameBound $true
             """
         );
 
@@ -29,25 +29,25 @@ public partial class Given_Template_Management_Instance_Selection
     }
 
     [Test]
-    public async Task It_fails_when_the_explicit_instance_id_is_not_registered()
+    public async Task It_fails_when_the_explicit_data_store_id_is_not_registered()
     {
         var result = await RunInModuleScope(
             """
-            $instances = @(
+            $dataStores = @(
                 [pscustomobject]@{ id = 7; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' }
             )
-            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -RequestedDmsInstanceId 9 -DatabaseNameBound $true
+            Resolve-DataStoreIdForTemplate -DataStores $dataStores -RequestedDataStoreId 9 -DatabaseNameBound $true
             """
         );
 
         result.ExitCode.Should().NotBe(0);
         result
             .NormalizedOutput.Should()
-            .Contain("DMS instance id '9' is not registered in the Configuration Service");
+            .Contain("Data store id '9' is not registered in the Configuration Service");
     }
 
     [Test]
-    public async Task It_requires_a_database_name_when_an_instance_id_is_provided_to_Build_Template()
+    public async Task It_requires_a_database_name_when_a_data_store_id_is_provided_to_Build_Template()
     {
         var result = await RunInModuleScope(
             """
@@ -60,24 +60,24 @@ public partial class Given_Template_Management_Instance_Selection
                 -ConfigFilePath './MinimalTemplateSettings.psd1' `
                 -StandardVersion '5.2.0' `
                 -PackageVersion '0.0.1' `
-                -DmsInstanceId 9
+                -DataStoreId 9
             """
         );
 
         result.ExitCode.Should().NotBe(0);
-        result.NormalizedOutput.Should().Contain("-DmsInstanceId requires -DmsInstanceDatabaseName");
+        result.NormalizedOutput.Should().Contain("-DataStoreId requires -DataStoreDatabaseName");
     }
 
     [Test]
-    public async Task It_keeps_the_legacy_first_instance_behavior_when_no_new_parameters_are_bound()
+    public async Task It_keeps_the_legacy_first_data_store_behavior_when_no_new_parameters_are_bound()
     {
         var result = await RunInModuleScope(
             """
-            $instances = @(
+            $dataStores = @(
                 [pscustomobject]@{ id = 7; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' },
                 [pscustomobject]@{ id = 9; connectionString = '/another-protected-value=' }
             )
-            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -DatabaseNameBound $false
+            Resolve-DataStoreIdForTemplate -DataStores $dataStores -DatabaseNameBound $false
             """
         );
 
@@ -86,27 +86,27 @@ public partial class Given_Template_Management_Instance_Selection
     }
 
     [Test]
-    public async Task It_fails_when_a_database_name_is_bound_without_an_instance_id_and_instances_exist()
+    public async Task It_fails_when_a_database_name_is_bound_without_a_data_store_id_and_data_stores_exist()
     {
         var result = await RunInModuleScope(
             """
-            $instances = @(
+            $dataStores = @(
                 [pscustomobject]@{ id = 7; connectionString = '/+upQZSq2rTHZGWDCIbAZ6aWEnTOCYSG7DiiBbqgJpY=' }
             )
-            Resolve-DmsInstanceIdForTemplate -DmsInstances $instances -DatabaseNameBound $true
+            Resolve-DataStoreIdForTemplate -DataStores $dataStores -DatabaseNameBound $true
             """
         );
 
         result.ExitCode.Should().NotBe(0);
-        result.NormalizedOutput.Should().Contain("Pass -DmsInstanceId");
+        result.NormalizedOutput.Should().Contain("Pass -DataStoreId");
     }
 
     [Test]
-    public async Task It_signals_registration_is_needed_when_no_instances_exist()
+    public async Task It_signals_registration_is_needed_when_no_data_stores_exist()
     {
         var result = await RunInModuleScope(
             """
-            $resolved = Resolve-DmsInstanceIdForTemplate -DmsInstances @() -DatabaseNameBound $true
+            $resolved = Resolve-DataStoreIdForTemplate -DataStores @() -DatabaseNameBound $true
             if ($null -eq $resolved) { 'REGISTER_NEW' } else { $resolved }
             """
         );
