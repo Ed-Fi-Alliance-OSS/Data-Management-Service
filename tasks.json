@@ -139,7 +139,7 @@
       "Review the new SurveyResponse scenario under src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios against existing shared scenario patterns.",
       "Run dotnet build src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",

@@ -27,3 +27,9 @@ Key decisions: added minimal core+Sample extension schema covering root extensio
 Files changed: ExtensionReferenceRequirednessTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format relational model source/tests; task filter passed 5 tests; full RelationalModel.Tests.Unit passed 790 tests.
 Notes: authoritative input fixtures were not modified. No blockers.
+
+DMS-1206 task completed: build shared DS52+TPDM SurveyResponse API-level integration scenario.
+Key decisions: added reusable scenario with descriptor/schoolYear/school/calendar/session/survey/contact/staff/student prerequisites; exposed four responder-choice cases plus payload builder; added dialect-neutral DB assertion for selected/absent responder-choice column groups on edfi.SurveyResponse.
+Files changed: SurveyResponseResponderChoiceScenario.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format SurveyResponseResponderChoiceScenario.cs; dotnet build Integration csproj passed.
+Notes: no dialect wrappers added in this task. No blockers.
