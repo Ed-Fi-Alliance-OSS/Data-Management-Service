@@ -130,13 +130,15 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
         // Resolve identity paths to their stored columns via the shared resolver, which handles
         // reference-component identity (locally stored identity-part columns) that a plain SourceJsonPath
-        // match would miss. A single identity path can map to multiple binding columns under key
-        // unification (e.g. Section's $.courseOfferingReference.schoolId binds both the CourseOffering and
-        // Session school columns); those are unification variants that ResolveScalarColumnModel unwraps to
-        // the same canonical storage column, so taking the first binding yields one correct value column.
+        // match would miss. The resolver guarantees exactly one mapping per identity JSON path: under
+        // key unification it represents a same-site logical field group by its first member column,
+        // which ResolveScalarColumnModel unwraps to the canonical storage column.
         var identityColumnByPath = BuildIdentityElementMappings(resourceModel, builderContext, resource)
-            .GroupBy(mapping => mapping.IdentityJsonPath, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First().Column, StringComparer.Ordinal);
+            .ToDictionary(
+                mapping => mapping.IdentityJsonPath,
+                mapping => mapping.Column,
+                StringComparer.Ordinal
+            );
 
         var valueColumns = new List<TrackedChangeColumnInfo>();
         var valueColumnsByOldName = new Dictionary<string, int>(StringComparer.Ordinal);
