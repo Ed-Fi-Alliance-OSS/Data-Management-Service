@@ -33,6 +33,69 @@ This story owns the endpoint-specific conversion. It does not change the semanti
 - The relational database already contains `auth.EducationOrganizationIdToEducationOrganizationId`, `auth.EducationOrganizationIdToStudentDocumentId`, `auth.EducationOrganizationIdToContactDocumentId`, `auth.EducationOrganizationIdToStaffDocumentId`, and `auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility`.
 - Related completed implementation tickets: DMS-902 implemented the original token_info endpoint, DMS-1049 emitted the relational EdOrg hierarchy auth table, and DMS-1096 verified emitted auth DB objects.
 
+## Implementation Design Notes
+
+### token_info EdOrg Lookup Boundary
+
+Split the `/oauth/token_info` education organization lookup out of `IAuthorizationRepository` for this story.
+
+The existing `IAuthorizationRepository` is a broad legacy authorization repository. In addition to `GetTokenInfoEducationOrganizations(...)`, it exposes legacy relationship lookup methods such as:
+
+- `GetAncestorEducationOrganizationIds(...)`
+- `GetEducationOrganizationsForStudent(...)`
+- `GetEducationOrganizationsForStudentResponsibility(...)`
+- `GetEducationOrganizationsForStaff(...)`
+- `GetEducationOrganizationsForContact(...)`
+
+Those methods are consumed by the old Core relationship authorization validators. They should not be converted wholesale or swapped behind the existing interface as part of this story, because doing so would risk changing non-token resource authorization behavior that this story explicitly leaves out of scope.
+
+For the relational backend, normal resource authorization should continue through the relational authorization planner and SQL executor path, using typed request authorization context, mapping-set metadata, and the provisioned `auth.*` companion objects. The relational resource endpoint path should not depend on the old Core `IAuthorizationRepository` methods. If a relational GET-many, GET-by-id, POST, PUT, or DELETE path still reaches those old repository methods, treat that as a relational authorization boundary issue to remove in the owning resource-authorization story, not as a reason to implement a broad relational `IAuthorizationRepository`.
+
+The `/oauth/token_info` endpoint is different: it returns a response projection, not an authorization decision. Its EdOrg portion needs to produce `education_organization_id`, `name_of_institution`, `type`, and ancestor fields for introspection. That makes it a narrow endpoint-specific lookup that can safely be separated from the legacy authorization repository.
+
+Introduce a narrow service contract for this purpose, for example:
+
+```csharp
+public interface ITokenInfoEducationOrganizationLookup
+{
+    Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
+        IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds
+    );
+}
+```
+
+`GetTokenInfoHandler` should depend on this narrow service rather than resolving `IAuthorizationRepository` directly.
+
+### DI and Implementations
+
+Register implementations as follows:
+
+- Non-relational/default path: register an adapter implementation of `ITokenInfoEducationOrganizationLookup` that delegates to the existing `IAuthorizationRepository.GetTokenInfoEducationOrganizations(...)`. This preserves current non-relational token_info behavior.
+- Relational PostgreSQL path: when `AppSettings__UseRelationalBackend=true` and the datastore is PostgreSQL, register the PostgreSQL relational implementation of `ITokenInfoEducationOrganizationLookup`.
+- Relational SQL Server path: when `AppSettings__UseRelationalBackend=true` and the datastore is SQL Server, register the SQL Server relational implementation of `ITokenInfoEducationOrganizationLookup`.
+
+Do not replace the existing `IAuthorizationRepository` registration for this story. The existing registration remains available for legacy/non-relational authorization validators and for the non-relational token_info adapter.
+
+### Relational Service Responsibilities
+
+The relational `ITokenInfoEducationOrganizationLookup` implementation owns only the token_info EdOrg response projection. It should:
+
+- Build the token_info-specific concrete EducationOrganization projection from the runtime relational mapping set.
+- Use the provisioned `auth.EducationOrganizationIdToEducationOrganizationId` table for reachable EdOrg and ancestor relationships.
+- Add direct self rows for claimed EducationOrganization IDs that resolve to concrete EdOrg rows, preserving the direct EdOrg claim rule even if the auth hierarchy self tuple is absent.
+- Ignore unresolved claimed EdOrg IDs and stale auth hierarchy tuples as described in Answers 2.1 and 2.2.
+- Return an empty result for empty or fully unresolved EdOrg claim lists without causing `/oauth/token_info` to fail.
+- Avoid any dependency on `dms.EducationOrganizationHierarchy` or legacy document-store-only authorization tables.
+
+### Long-Term Direction
+
+A complete relational backend switch should not require a relational implementation of the full legacy `IAuthorizationRepository` surface. The expected end state is:
+
+- `IAuthorizationRepository` remains a legacy/non-relational authorization repository while the legacy backend exists.
+- Resource authorization in relational mode is handled by the relational planner/executor path and typed relational authorization context.
+- `ITokenInfoEducationOrganizationLookup` remains a token_info-specific projection service because token introspection has response-shaping needs that are distinct from resource authorization checks.
+- When the legacy backend is removed, the remaining `IAuthorizationRepository` methods can be retired or moved with the legacy validators, rather than preserved as a relational abstraction.
+
 ## Clarifying Questions and Answers
 
 ### Questions 1
