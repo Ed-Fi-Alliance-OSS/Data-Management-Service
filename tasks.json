@@ -68,7 +68,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtensionTableDerivationTests|FullyQualifiedName~ConstraintDerivationRelationalModelSetPassTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests\"",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "fixture-infrastructure",

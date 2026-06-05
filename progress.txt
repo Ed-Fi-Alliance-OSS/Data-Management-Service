@@ -21,3 +21,9 @@ Key decisions: added AuthoritativeDs52Tpdm FixtureKey mapped to authoritative ds
 Files changed: FixtureContext.cs, FixtureRepositoryPaths.cs, Given_FixtureContextLoader.cs, README.md, tasks.json.
 Verification: dotnet csharpier format integration fixture files; dotnet test Integration csproj --filter "FullyQualifiedName~Given_FixtureContextLoader" passed 1 test; dotnet build Integration csproj passed.
 Notes: no database-backed integration scenarios added in this task. No blockers.
+
+DMS-1206 task completed: add focused extension-scope reference requiredness and constraint coverage.
+Key decisions: added minimal core+Sample extension schema covering root extension, collection-aligned extension, and extension child collection refs. Raw isRequired intentionally conflicts with jsonSchemaForInsert in both directions to prove derived requiredness owns nullability; optional refs keep all-or-none checks and composite FKs; no choice-style constraints asserted.
+Files changed: ExtensionReferenceRequirednessTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format relational model source/tests; task filter passed 5 tests; full RelationalModel.Tests.Unit passed 790 tests.
+Notes: authoritative input fixtures were not modified. No blockers.
