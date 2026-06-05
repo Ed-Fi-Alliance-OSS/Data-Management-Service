@@ -74,9 +74,9 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
         "ProgramId",
-        "ProgramName"
+        "ProgramName",
+        "DocumentId"
       ]
     },
     {
@@ -116,7 +116,7 @@
       ]
     },
     {
-      "name": "IX_SchoolProgram_ProgramReference_DocumentId_Program_3f36b63d4e",
+      "name": "IX_SchoolProgram_ProgramReference_ProgramId_ProgramR_b374fb5c0b",
       "table": {
         "schema": "edfi",
         "name": "SchoolProgram"
@@ -124,9 +124,9 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
-        "ProgramReference_DocumentId",
         "ProgramReference_ProgramId",
-        "ProgramReference_ProgramName"
+        "ProgramReference_ProgramName",
+        "ProgramReference_DocumentId"
       ]
     },
     {
@@ -552,9 +552,9 @@
               "kind": "Unique",
               "name": "UX_Program_RefKey",
               "columns": [
-                "DocumentId",
                 "ProgramId",
-                "ProgramName"
+                "ProgramName",
+                "DocumentId"
               ]
             },
             {
@@ -836,18 +836,18 @@
               "kind": "ForeignKey",
               "name": "FK_SchoolProgram_ProgramReference_RefKey",
               "columns": [
-                "ProgramReference_DocumentId",
                 "ProgramReference_ProgramId",
-                "ProgramReference_ProgramName"
+                "ProgramReference_ProgramName",
+                "ProgramReference_DocumentId"
               ],
               "target_table": {
                 "schema": "edfi",
                 "name": "Program"
               },
               "target_columns": [
-                "DocumentId",
                 "ProgramId",
-                "ProgramName"
+                "ProgramName",
+                "DocumentId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"

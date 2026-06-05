@@ -436,7 +436,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
     "ProgramName" varchar(60) NOT NULL,
     CONSTRAINT "PK_Program" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Program_NK" UNIQUE ("ProgramId", "ProgramName"),
-    CONSTRAINT "UX_Program_RefKey" UNIQUE ("DocumentId", "ProgramId", "ProgramName")
+    CONSTRAINT "UX_Program_RefKey" UNIQUE ("ProgramId", "ProgramName", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."School"
@@ -530,8 +530,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SchoolProgram"
         ADD CONSTRAINT "FK_SchoolProgram_ProgramReference_RefKey"
-        FOREIGN KEY ("ProgramReference_DocumentId", "ProgramReference_ProgramId", "ProgramReference_ProgramName")
-        REFERENCES "edfi"."Program" ("DocumentId", "ProgramId", "ProgramName")
+        FOREIGN KEY ("ProgramReference_ProgramId", "ProgramReference_ProgramName", "ProgramReference_DocumentId")
+        REFERENCES "edfi"."Program" ("ProgramId", "ProgramName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -558,7 +558,7 @@ CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("Con
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SchoolProgram_ProgramReference_DocumentId_Program_3f36b63d4e" ON "edfi"."SchoolProgram" ("ProgramReference_DocumentId", "ProgramReference_ProgramId", "ProgramReference_ProgramName");
+CREATE INDEX IF NOT EXISTS "IX_SchoolProgram_ProgramReference_ProgramId_ProgramR_b374fb5c0b" ON "edfi"."SchoolProgram" ("ProgramReference_ProgramId", "ProgramReference_ProgramName", "ProgramReference_DocumentId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

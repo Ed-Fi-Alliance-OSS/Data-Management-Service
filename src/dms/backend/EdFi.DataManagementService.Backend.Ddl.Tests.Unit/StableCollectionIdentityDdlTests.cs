@@ -244,7 +244,7 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Fixture
         new(
             "sample",
             "SchoolExtensionAddressSponsorReference",
-            ["Program_DocumentId", "Program_ProgramName"]
+            ["Program_ProgramName", "Program_DocumentId"]
         ),
         new("sample", "SchoolExtensionInterventionVisit", ["ParentCollectionItemId", "School_DocumentId"]),
     ];
@@ -252,7 +252,7 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Fixture
     [
         "edfi.SchoolAddressPeriod|ParentCollectionItemId|School_DocumentId",
         "sample.SchoolExtensionAddressSponsorReference|BaseCollectionItemId|School_DocumentId",
-        "sample.SchoolExtensionAddressSponsorReference|Program_DocumentId|Program_ProgramName",
+        "sample.SchoolExtensionAddressSponsorReference|Program_ProgramName|Program_DocumentId",
         "sample.SchoolExtensionInterventionVisit|ParentCollectionItemId|School_DocumentId",
     ];
 

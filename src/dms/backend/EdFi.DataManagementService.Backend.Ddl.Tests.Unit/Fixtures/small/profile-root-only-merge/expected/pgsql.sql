@@ -458,7 +458,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId"),
-    CONSTRAINT "UX_Student_RefKey" UNIQUE ("DocumentId", "StudentUniqueId")
+    CONSTRAINT "UX_Student_RefKey" UNIQUE ("StudentUniqueId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
@@ -538,8 +538,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ProfileRootOnlyMergeItem"
         ADD CONSTRAINT "FK_ProfileRootOnlyMergeItem_StudentReference_RefKey"
-        FOREIGN KEY ("StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("StudentReference_StudentUniqueId", "StudentReference_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -568,7 +568,7 @@ CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_ContentVersion" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescrip_5313ae7036" ON "edfi"."ProfileRootOnlyMergeItem" ("PrimarySchoolTypeDescriptor_Unified_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_StudentReference_Documen_443e258273" ON "edfi"."ProfileRootOnlyMergeItem" ("StudentReference_DocumentId", "StudentReference_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItem_StudentReference_Student_706047d2af" ON "edfi"."ProfileRootOnlyMergeItem" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
 

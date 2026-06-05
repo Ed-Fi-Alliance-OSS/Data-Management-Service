@@ -177,15 +177,17 @@ public class Given_ReferenceBindingRelationalModelSetPassTests_With_Extension_Re
     {
         var constraint = table
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == $"{referenceBaseName}_DocumentId");
+            .Single(constraint =>
+                constraint.Columns.Any(column => column.Value == $"{referenceBaseName}_DocumentId")
+            );
 
         constraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal($"{referenceBaseName}_DocumentId", $"{referenceBaseName}_SchoolId");
+            .Equal($"{referenceBaseName}_SchoolId", $"{referenceBaseName}_DocumentId");
         constraint.TargetTable.Schema.Value.Should().Be("edfi");
         constraint.TargetTable.Name.Should().Be("School");
-        constraint.TargetColumns.Select(column => column.Value).Should().Equal("DocumentId", "SchoolId");
+        constraint.TargetColumns.Select(column => column.Value).Should().Equal("SchoolId", "DocumentId");
     }
 
     private static DbColumnModel RequireColumn(DbTableModel table, string columnName)

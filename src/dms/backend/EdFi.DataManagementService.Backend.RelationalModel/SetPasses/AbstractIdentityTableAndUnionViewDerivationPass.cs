@@ -863,8 +863,10 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             var naturalKeyName = ConstraintNaming.BuildNaturalKeyUniqueName(tableName);
             constraints.Add(new TableConstraint.Unique(naturalKeyName, naturalKeyColumns));
 
-            List<DbColumnName> referenceKeyColumns = [RelationalNameConventions.DocumentIdColumnName];
-            referenceKeyColumns.AddRange(naturalKeyColumns);
+            // Identity columns lead and DocumentId trails, matching the concrete-resource
+            // *_RefKey ordering derived by ReferenceConstraintPass.
+            List<DbColumnName> referenceKeyColumns = [.. naturalKeyColumns];
+            referenceKeyColumns.Add(RelationalNameConventions.DocumentIdColumnName);
 
             var referenceKeyName = ConstraintNaming.BuildReferenceKeyUniqueName(tableName);
             constraints.Add(new TableConstraint.Unique(referenceKeyName, referenceKeyColumns.ToArray()));
