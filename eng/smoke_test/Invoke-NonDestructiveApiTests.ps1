@@ -15,7 +15,12 @@ param(
   # 8080 is the default k8s port
   # 5198 is the default when running F5
   [string]
-  $BaseUrl = "http://localhost:5198"
+  $BaseUrl = "http://localhost:5198",
+
+  # Optional explicit OAuth token URL; without it the console resolves the token
+  # endpoint from the DMS discovery document
+  [string]
+  $OAuthUrl
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +36,10 @@ $parameters = @{
   Secret = $Secret
   ToolPath = $path
   TestSet = "NonDestructiveApi"
+}
+
+if ($OAuthUrl) {
+  $parameters.OAuthUrl = $OAuthUrl
 }
 
 Invoke-SmokeTestUtility @parameters
