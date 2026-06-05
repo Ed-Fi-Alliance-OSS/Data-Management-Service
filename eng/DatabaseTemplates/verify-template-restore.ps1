@@ -91,48 +91,17 @@ function Invoke-PsqlScalar {
 Assert-SafeDatabaseName -DatabaseName $SourceDatabaseName
 Assert-SafeDatabaseName -DatabaseName $VerificationDatabaseName
 
-$extractDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "template-restore-$([Guid]::NewGuid().ToString('N'))"
-
 Push-Location $PSScriptRoot
 try {
     Import-Module ./Template-Management.psm1 -Force
     Import-Module ../Dms-Management.psm1 -Force
 
-    # --- Locate and extract the package ---
-    $package = Get-ChildItem -Path $PackageDirectory -Filter *.nupkg | Select-Object -First 1
-
-    if ($null -eq $package) {
-        throw "No .nupkg found in '$PackageDirectory'."
-    }
-
-    Write-Host "Verifying template package: $($package.Name)" -ForegroundColor Cyan
-
-    New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
-    $zipPath = Join-Path $extractDirectory "package.zip"
-    Copy-Item $package.FullName $zipPath
-    Expand-Archive -Path $zipPath -DestinationPath (Join-Path $extractDirectory "contents")
-
-    $sqlFile = Get-ChildItem -Path (Join-Path $extractDirectory "contents") -Filter *.sql -Recurse | Select-Object -First 1
-
-    if ($null -eq $sqlFile) {
-        throw "No .sql dump found inside package '$($package.Name)'."
-    }
-
-    # --- Restore into a fresh verification database ---
+    # --- Restore the package into a fresh verification database ---
     $expectedSchemas = @(Get-UserSchemaNames -ContainerName $ContainerName -DatabaseName $SourceDatabaseName)
     Write-Host "Expected schemas (from '$SourceDatabaseName'): $($expectedSchemas -join ', ')"
 
-    & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $VerificationDatabaseName;"
-    if ($LASTEXITCODE -ne 0) { throw "Failed to drop existing verification database '$VerificationDatabaseName'." }
-
-    & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE $VerificationDatabaseName;"
-    if ($LASTEXITCODE -ne 0) { throw "Failed to create verification database '$VerificationDatabaseName'." }
-
-    & docker cp $sqlFile.FullName "$($ContainerName):/tmp/template-restore.sql"
-    if ($LASTEXITCODE -ne 0) { throw "Failed to copy the dump into container '$ContainerName'." }
-
-    & docker exec $ContainerName psql -U postgres -d $VerificationDatabaseName -v ON_ERROR_STOP=1 -f /tmp/template-restore.sql | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Restore of '$($sqlFile.Name)' into '$VerificationDatabaseName' failed." }
+    $packageName = Restore-TemplatePackage -PackageDirectory $PackageDirectory -DatabaseName $VerificationDatabaseName -ContainerName $ContainerName
+    Write-Host "Verifying template package: $packageName" -ForegroundColor Cyan
 
     # --- Structural and data assertions ---
     $restoredSchemas = @(Get-UserSchemaNames -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName)
@@ -287,8 +256,5 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
     Write-Host "Template restore verification succeeded." -ForegroundColor Green
 }
 finally {
-    if (Test-Path $extractDirectory) {
-        Remove-Item $extractDirectory -Recurse -Force
-    }
     Pop-Location
 }

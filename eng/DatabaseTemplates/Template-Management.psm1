@@ -468,6 +468,82 @@ function Get-UserSchemaNames {
 
 <#
 .SYNOPSIS
+    Restores a database template package into a freshly created database.
+
+.DESCRIPTION
+    Locates the single .nupkg in the package directory, extracts its .sql dump,
+    drops and recreates the target database inside the running PostgreSQL
+    container, and restores the dump into it. Returns the name of the restored
+    package file.
+
+.PARAMETER PackageDirectory
+    Directory containing the template .nupkg (default: current directory).
+
+.PARAMETER DatabaseName
+    The database to drop, recreate, and restore the dump into.
+
+.PARAMETER ContainerName
+    The running PostgreSQL container hosting the database.
+#>
+function Restore-TemplatePackage {
+    param (
+        [string]$PackageDirectory = ".",
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$ContainerName = "dms-postgresql"
+    )
+
+    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
+        throw "Database name '$DatabaseName' contains unsupported characters."
+    }
+
+    $package = Get-ChildItem -Path $PackageDirectory -Filter *.nupkg | Select-Object -First 1
+
+    if ($null -eq $package) {
+        throw "No .nupkg found in '$PackageDirectory'."
+    }
+
+    Write-Host "Restoring template package '$($package.Name)' into database '$DatabaseName'" -ForegroundColor Cyan
+
+    $extractDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "template-restore-$([Guid]::NewGuid().ToString('N'))"
+
+    try {
+        New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
+        $zipPath = Join-Path $extractDirectory "package.zip"
+        Copy-Item $package.FullName $zipPath
+        Expand-Archive -Path $zipPath -DestinationPath (Join-Path $extractDirectory "contents")
+
+        $sqlFile = Get-ChildItem -Path (Join-Path $extractDirectory "contents") -Filter *.sql -Recurse | Select-Object -First 1
+
+        if ($null -eq $sqlFile) {
+            throw "No .sql dump found inside package '$($package.Name)'."
+        }
+
+        & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DatabaseName;" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to drop existing database '$DatabaseName'." }
+
+        & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE $DatabaseName;" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create database '$DatabaseName'." }
+
+        & docker cp $sqlFile.FullName "$($ContainerName):/tmp/template-restore.sql" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to copy the dump into container '$ContainerName'." }
+
+        & docker exec $ContainerName psql -U postgres -d $DatabaseName -v ON_ERROR_STOP=1 -f /tmp/template-restore.sql | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Restore of '$($sqlFile.Name)' into '$DatabaseName' failed." }
+
+        return $package.Name
+    }
+    finally {
+        if (Test-Path $extractDirectory) {
+            Remove-Item $extractDirectory -Recurse -Force
+        }
+    }
+}
+
+<#
+.SYNOPSIS
     Builds a NuGet package containing a PostgreSQL database backup.
 
 .PARAMETER ConfigFilePath
@@ -701,4 +777,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
 }
 
-Export-ModuleMember -Function Build-Template, Get-UserSchemaNames
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage
