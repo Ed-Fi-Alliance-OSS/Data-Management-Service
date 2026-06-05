@@ -156,7 +156,7 @@
       "When SQL Server is configured, run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~SurveyResponse\"",
       "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Postgresql and src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Mssql to confirm both wrappers use the DS52+TPDM fixture key."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",

@@ -33,3 +33,9 @@ Key decisions: added reusable scenario with descriptor/schoolYear/school/calenda
 Files changed: SurveyResponseResponderChoiceScenario.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format SurveyResponseResponderChoiceScenario.cs; dotnet build Integration csproj passed.
 Notes: no dialect wrappers added in this task. No blockers.
+
+DMS-1206 task completed: add DS52+TPDM SurveyResponse API-level integration wrappers.
+Key decisions: bound one PostgreSQL and one SQL Server wrapper to FixtureKey.AuthoritativeDs52Tpdm; reused shared scenario so each dialect runs contact-only, staff-only, student-only, and no-responder-choice POSTs plus DB null-column assertions.
+Files changed: Given_Postgresql_SurveyResponseResponderChoice.cs, Given_Mssql_SurveyResponseResponderChoice.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format new wrapper files; PostgreSQL SurveyResponse filter passed 1 test with local dms-postgresql connection; SQL Server SurveyResponse filter passed 1 test with temporary dms-codex-mssql container.
+Notes: initial PostgreSQL run without ConnectionStrings__DatabaseConnection skipped; reran with README local connection string. Temporary SQL Server container stopped after test. No blockers.
