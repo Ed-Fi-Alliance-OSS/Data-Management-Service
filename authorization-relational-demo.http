@@ -751,8 +751,13 @@ Authorization: Bearer {{peopleTokenRequest.access_token}}
 #
 
 ### Authorized academic week query with post-authorization paging and count
+#
+# The schoolOnlyToken has a single EdOrg claim: School 255901001.
+# AcademicWeek authorization uses the resource item's schoolReference.schoolId.
+# The seed data includes two AcademicWeeks for School 255901001 and one for School 255901222.
+# The School 255901222 week is filtered out before Total-Count is calculated.
+#
 # Expected: 200, Total-Count: 2
-# The week for school 255901222 is filtered out before count.
 GET {{discovery.urls.dataManagementApi}}/ed-fi/academicWeeks?totalCount=true
 Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
 
@@ -764,6 +769,7 @@ Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
 #
 
 ### Try to create an academic week for school 255901001 using a token for school 255901222
+#
 # Expected: 403 Authorization Denied.
 # Error should mention no relationship between EdOrg claim 255901222 and resource item's SchoolId.
 # @name forbiddenAcademicWeekCreate
@@ -782,6 +788,7 @@ Content-Type: application/json
 }
 
 ### Prove the denied POST did not create a record
+#
 # Expected: 200, Total-Count: 0, body [].
 GET {{discovery.urls.dataManagementApi}}/ed-fi/academicWeeks?weekIdentifier=post%20create%20forbidden&totalCount=true
 Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
@@ -807,23 +814,40 @@ Authorization: Bearer {{orInvertedTokenRequest.access_token}}
 #
 # Section 4: People Relationship Delete Demo
 #
+# The people token has EdOrg claims for State 3 and LEA 6255901.
+# The PostSecondaryEvent below references StudentUniqueId 61.
+# Student 61 is authorized only through the seeded StudentSchoolAssociation:
+# Student 61 -> School 6255901001 -> LEA 6255901 -> State 3.
+
 
 ### Before removing the relationship, the PostSecondaryEvent is readable
+#
 # Expected: 200.
 GET {{discovery.urls.dataManagementApi}}/ed-fi/PostSecondaryEvents/{{getPeoplePostSecondaryEvent.id}}
 Authorization: Bearer {{peopleTokenRequest.access_token}}
 
+
 ### Remove the StudentSchoolAssociation relationship
+#
+# This deletes the only relationship row connecting Student 61 to School 6255901001.
+#
 # Expected: 204.
 DELETE {{discovery.urls.dataManagementApi}}/ed-fi/studentSchoolAssociations/{{getPeopleStudentSchoolAssociation.id}}
 Authorization: Bearer {{peopleTokenRequest.access_token}}
 
+
 ### The resource still exists, but the caller no longer has a student relationship path
+#
+# The PostSecondaryEvent still exists and still references Student 61, but the caller
+# can no longer prove a relationship from its State 3 / LEA 6255901 claims to that student.
+#
 # Expected: 403 Authorization Denied.
 GET {{discovery.urls.dataManagementApi}}/ed-fi/PostSecondaryEvents/{{getPeoplePostSecondaryEvent.id}}
 Authorization: Bearer {{peopleTokenRequest.access_token}}
 
+
 ### Delete is denied for the same reason
+#
 # Expected: 403 Authorization Denied.
 DELETE {{discovery.urls.dataManagementApi}}/ed-fi/PostSecondaryEvents/{{getPeoplePostSecondaryEvent.id}}
 Authorization: Bearer {{peopleTokenRequest.access_token}}
@@ -836,6 +860,7 @@ Authorization: Bearer {{peopleTokenRequest.access_token}}
 #
 
 ### Create a descriptor in uri://ns2.org with the ns2 token
+#
 # Expected: 200 or 201.
 # @name createNamespaceDescriptor
 POST {{discovery.urls.dataManagementApi}}/ed-fi/absenceEventCategoryDescriptors
@@ -855,17 +880,22 @@ Content-Type: application/json
   exports.namespaceDescriptorLocation = response.headers.location;
 }}
 
+
 ### Capture the ns2 descriptor id
 # @name getNamespaceDescriptorAsNs2
 GET {{namespaceDescriptorLocation}}
 Authorization: Bearer {{namespaceNs2TokenRequest.access_token}}
 
+
 ### A token limited to uri://ns3.org cannot read the ns2 descriptor by id
+#
 # Expected: 403 Authorization Denied.
 GET {{discovery.urls.dataManagementApi}}/ed-fi/absenceEventCategoryDescriptors/{{getNamespaceDescriptorAsNs2.id}}
 Authorization: Bearer {{namespaceNs3TokenRequest.access_token}}
 
+
 ### Query behavior filters unauthorized namespace data out of the result set
+#
 # Expected: 200 with [].
 GET {{discovery.urls.dataManagementApi}}/ed-fi/absenceEventCategoryDescriptors?codeValue=Namespace%20Based
 Authorization: Bearer {{namespaceNs3TokenRequest.access_token}}
