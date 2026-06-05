@@ -123,7 +123,7 @@
       "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContext.cs, src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureRepositoryPaths.cs, and src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md for the new fixture key mapping.",
       "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContextLoader.cs, src/dms/tests/EdFi.DataManagementService.Tests.Integration/Postgresql/PostgresqlBaselineCache.cs, and src/dms/tests/EdFi.DataManagementService.Tests.Integration/Mssql/MssqlBaselineCache.cs to confirm the DS52+TPDM key uses the same materialized fixture and generated-DDL baseline paths as existing fixtures."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-tests",
