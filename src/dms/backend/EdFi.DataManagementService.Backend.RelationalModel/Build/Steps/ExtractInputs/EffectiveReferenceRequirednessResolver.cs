@@ -61,9 +61,15 @@ internal static class EffectiveReferenceRequirednessResolver
                         referenceObjectPath,
                         resourceLabel
                     );
-                    var requiredProperties = GetRequiredProperties(current, currentPath);
+                    var requiredProperties = JsonSchemaRequirednessConventions.GetRequiredProperties(
+                        current,
+                        currentPath
+                    );
 
-                    if (!requiredProperties.Contains(property.Name) || IsXNullable(propertySchema, nextPath))
+                    if (
+                        !requiredProperties.Contains(property.Name)
+                        || JsonSchemaRequirednessConventions.IsXNullable(propertySchema, nextPath)
+                    )
                     {
                         isRequired = false;
                     }
@@ -80,7 +86,7 @@ internal static class EffectiveReferenceRequirednessResolver
                         resourceLabel
                     );
 
-                    if (IsXNullable(current, nextPath))
+                    if (JsonSchemaRequirednessConventions.IsXNullable(current, nextPath))
                     {
                         isRequired = false;
                     }
@@ -351,70 +357,5 @@ internal static class EffectiveReferenceRequirednessResolver
         }
 
         return itemsSchema;
-    }
-
-    /// <summary>
-    /// Reads the JSON Schema <c>required</c> array for the current object path.
-    /// </summary>
-    private static HashSet<string> GetRequiredProperties(JsonObject schema, string path)
-    {
-        if (!schema.TryGetPropertyValue("required", out var requiredNode) || requiredNode is null)
-        {
-            return new HashSet<string>(StringComparer.Ordinal);
-        }
-
-        if (requiredNode is not JsonArray requiredArray)
-        {
-            throw new InvalidOperationException($"Expected required to be an array at {path}.required.");
-        }
-
-        HashSet<string> requiredProperties = new(StringComparer.Ordinal);
-
-        foreach (var requiredEntry in requiredArray)
-        {
-            if (requiredEntry is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be non-null at {path}.required."
-                );
-            }
-
-            if (requiredEntry is not JsonValue jsonValue)
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be strings at {path}.required."
-                );
-            }
-
-            var name = jsonValue.GetValue<string>();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be non-empty at {path}.required."
-                );
-            }
-
-            requiredProperties.Add(name);
-        }
-
-        return requiredProperties;
-    }
-
-    /// <summary>
-    /// Reads the OpenAPI <c>x-nullable</c> extension from a schema node.
-    /// </summary>
-    private static bool IsXNullable(JsonObject schema, string path)
-    {
-        if (!schema.TryGetPropertyValue("x-nullable", out var nullableNode) || nullableNode is null)
-        {
-            return false;
-        }
-
-        if (nullableNode is not JsonValue jsonValue)
-        {
-            throw new InvalidOperationException($"Expected x-nullable to be a boolean at {path}.");
-        }
-
-        return jsonValue.GetValue<bool>();
     }
 }

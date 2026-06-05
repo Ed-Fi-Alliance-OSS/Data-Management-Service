@@ -191,5 +191,21 @@
       "Review git diff origin/main...HEAD to confirm remaining changes map to DMS-1206 SurveyResponse relational reference nullability coverage."
     ],
     "completed": true
+  },
+  {
+    "category": "implementation",
+    "description": "Low: Consolidate jsonSchemaForInsert requiredness parsing used by scalar, extension, and document-reference nullability derivation.",
+    "acceptance-criteria": [
+      "A shared helper owns JSON Schema required-array parsing and x-nullable boolean parsing for relational nullability decisions.",
+      "EffectiveReferenceRequirednessResolver, DeriveColumnsAndBindDescriptorEdgesStep, and ExtensionTableDerivationPass call the shared helper instead of maintaining separate copies of the same parsing logic.",
+      "The helper preserves existing path-specific diagnostics for malformed required arrays, malformed required entries, and malformed x-nullable values.",
+      "Existing reference requiredness behavior remains unchanged for root, collection, nested collection, root extension, collection-aligned extension, and extension child collection cases."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/EffectiveReferenceRequirednessResolver.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/DeriveColumnsAndBindDescriptorEdgesStep.cs, and src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs to confirm required/x-nullable parsing is shared.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~CoreReferenceRequiredness|FullyQualifiedName~ExtensionReferenceRequiredness|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit"
+    ],
+    "completed": true
   }
 ]

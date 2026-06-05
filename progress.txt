@@ -63,3 +63,9 @@ Key decisions: deleted authorization-relational-demo.http and DMS-1207 token_inf
 Files changed: authorization-relational-demo.http, reference/design/backend-redesign/epics/14-authorization/21-token-info-relational-auth-schema.md, EPIC.md, JIRA-INDEX.md, tasks.json, progress.txt.
 Verification: targeted authorization paths diff empty against origin/main; remaining DMS-1206 diff scanned clean for local absolute path and credential markers.
 Notes: no blockers.
+
+DMS-1206 task completed: consolidate jsonSchemaForInsert requiredness parsing.
+Key decisions: added JsonSchemaRequirednessConventions shared helper for required arrays and x-nullable; scalar, reference, and extension nullability derivation now call it; helper hardens malformed JsonValue diagnostics with canonical path text.
+Files changed: JsonSchemaRequirednessConventions.cs, EffectiveReferenceRequirednessResolver.cs, DeriveColumnsAndBindDescriptorEdgesStep.cs, ExtensionTableDerivationPass.cs, RelationalModelSharedHelperTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format relational model source/tests; focused requiredness/reference/helper filter passed 25 tests; full RelationalModel.Tests.Unit passed 802 tests.
+Notes: no blockers.
