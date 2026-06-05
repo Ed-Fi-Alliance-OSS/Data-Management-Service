@@ -1674,8 +1674,10 @@ internal static class AbstractIdentityTableTestSchemaBuilder
                         {
                             ["schoolId"] = new JsonObject { ["type"] = "integer" },
                         },
+                        ["required"] = new JsonArray { "schoolId" },
                     },
                 },
+                ["required"] = new JsonArray { "schoolReference" },
             },
         };
     }

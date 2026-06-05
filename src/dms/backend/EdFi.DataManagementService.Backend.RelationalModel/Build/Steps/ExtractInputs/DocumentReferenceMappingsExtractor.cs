@@ -18,6 +18,7 @@ internal static class DocumentReferenceMappingsExtractor
     /// </summary>
     internal static IReadOnlyList<DocumentReferenceMapping> ExtractDocumentReferenceMappings(
         JsonObject resourceSchema,
+        JsonNode? jsonSchemaForInsert,
         string projectName,
         string resourceName,
         IReadOnlySet<string> identityJsonPaths
@@ -31,6 +32,7 @@ internal static class DocumentReferenceMappingsExtractor
             ProcessDocumentPathsMappingEntry(
                 mapping.Key,
                 mapping.Value,
+                jsonSchemaForInsert,
                 projectName,
                 resourceName,
                 identityJsonPaths,
@@ -86,6 +88,7 @@ internal static class DocumentReferenceMappingsExtractor
     private static void ProcessDocumentPathsMappingEntry(
         string mappingKey,
         JsonNode? mappingNode,
+        JsonNode? jsonSchemaForInsert,
         string projectName,
         string resourceName,
         IReadOnlySet<string> identityJsonPaths,
@@ -121,6 +124,7 @@ internal static class DocumentReferenceMappingsExtractor
         ProcessDocumentPathsMappingReferenceEntry(
             mappingKey,
             mappingObject,
+            jsonSchemaForInsert,
             projectName,
             resourceName,
             identityJsonPaths,
@@ -167,6 +171,7 @@ internal static class DocumentReferenceMappingsExtractor
     private static void ProcessDocumentPathsMappingReferenceEntry(
         string mappingKey,
         JsonObject mappingObject,
+        JsonNode? jsonSchemaForInsert,
         string projectName,
         string resourceName,
         IReadOnlySet<string> identityJsonPaths,
@@ -208,14 +213,32 @@ internal static class DocumentReferenceMappingsExtractor
 
         var targetProjectName = RequireString(mappingObject, "projectName");
         var targetResourceName = RequireString(mappingObject, "resourceName");
-        var isRequired = mappingObject["isRequired"]?.GetValue<bool>() ?? false;
+        var effectiveIsRequired = EffectiveReferenceRequirednessResolver.Resolve(
+            jsonSchemaForInsert,
+            projectName,
+            resourceName,
+            referenceObjectPath
+        );
 
-        if (referenceIsPartOfIdentity && !isRequired)
+        if (referenceIsPartOfIdentity && !effectiveIsRequired)
         {
+            var identityPath =
+                referenceJsonPaths
+                    .Select(binding => binding.ReferenceJsonPath.Canonical)
+                    .Where(identityJsonPaths.Contains)
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' "
+                        + $"was marked as part of identity for reference path "
+                        + $"'{referenceObjectPath.Canonical}' but no identityJsonPaths entry matched."
+                );
+
             throw new InvalidOperationException(
-                $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
-                    + "mapped to identityJsonPaths but isRequired is false. "
-                    + "Identity references must be required."
+                $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' maps "
+                    + $"identityJsonPaths entry '{identityPath}' through reference path "
+                    + $"'{referenceObjectPath.Canonical}', but that reference is optional by "
+                    + "jsonSchemaForInsert. Identity references must be required."
             );
         }
 
@@ -223,7 +246,7 @@ internal static class DocumentReferenceMappingsExtractor
             new DocumentReferenceMapping(
                 mappingKey,
                 new QualifiedResourceName(targetProjectName, targetResourceName),
-                isRequired,
+                effectiveIsRequired,
                 referenceIsPartOfIdentity,
                 referenceObjectPath,
                 referenceJsonPaths

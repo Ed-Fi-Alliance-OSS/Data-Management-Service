@@ -319,7 +319,10 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             throw new InvalidOperationException($"Expected properties to be an object at {scopePath}.");
         }
 
-        var requiredProperties = GetRequiredProperties(schema, pathSegments);
+        var requiredProperties = JsonSchemaRequirednessConventions.GetRequiredProperties(
+            schema,
+            pathSegments
+        );
         var isReferenceScope = ctx.ReferenceObjectPaths.Contains(scopePath);
 
         foreach (var property in propertiesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
@@ -356,7 +359,10 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             var propertyPath = JsonPathExpressionCompiler.FromSegments(propertyPathSegments);
             var propertySchemaPath = $"{schemaPath}.properties.{property.Key}";
             var isRequired = requiredProperties.Contains(property.Key);
-            var isXNullable = IsXNullable(propertySchema, propertyPath.Canonical);
+            var isXNullable = JsonSchemaRequirednessConventions.IsXNullable(
+                propertySchema,
+                propertyPath.Canonical
+            );
             var isOptional = !isRequired;
             var isNullable = hasOptionalAncestor || isOptional || isXNullable;
             var nextHasOptionalAncestor = hasOptionalAncestor || isOptional || isXNullable;
@@ -460,16 +466,25 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         var extensionPathSegments = BuildPropertySegments(owningScopeSegments, ExtensionPropertyName);
         var extensionPath = JsonPathExpressionCompiler.FromSegments(extensionPathSegments);
         var isExtensionRequired = requiredProperties.Contains(ExtensionPropertyName);
-        var isExtensionXNullable = IsXNullable(extensionSchema, extensionPath.Canonical);
+        var isExtensionXNullable = JsonSchemaRequirednessConventions.IsXNullable(
+            extensionSchema,
+            extensionPath.Canonical
+        );
         var extensionHasOptionalAncestor =
             hasOptionalAncestor || !isExtensionRequired || isExtensionXNullable;
 
-        var extensionRequiredProperties = GetRequiredProperties(extensionSchema, extensionPathSegments);
+        var extensionRequiredProperties = JsonSchemaRequirednessConventions.GetRequiredProperties(
+            extensionSchema,
+            extensionPathSegments
+        );
         var projectPathSegments = BuildPropertySegments(extensionPathSegments, projectKey);
         var projectPath = JsonPathExpressionCompiler.FromSegments(projectPathSegments);
         var projectSchemaPath = $"{schemaPath}.properties.{ExtensionPropertyName}.properties.{projectKey}";
         var isProjectRequired = extensionRequiredProperties.Contains(projectKey);
-        var isProjectXNullable = IsXNullable(projectSchema, projectPath.Canonical);
+        var isProjectXNullable = JsonSchemaRequirednessConventions.IsXNullable(
+            projectSchema,
+            projectPath.Canonical
+        );
         var projectHasOptionalAncestor =
             extensionHasOptionalAncestor || !isProjectRequired || isProjectXNullable;
 
@@ -1061,7 +1076,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         }
 
         var columnSegments = BuildDescriptorArrayColumnSegments(propertySegments);
-        var isNullable = IsXNullable(itemsSchema, elementPath.Canonical);
+        var isNullable = JsonSchemaRequirednessConventions.IsXNullable(itemsSchema, elementPath.Canonical);
 
         AddScalarOrDescriptorColumn(tableBuilder, itemsSchema, columnSegments, elementPath, isNullable, ctx);
     }
@@ -1370,25 +1385,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Reads <c>x-nullable</c> (an OpenAPI extension commonly used in Ed-Fi schemas) as an override for
-    /// JSON Schema required-ness.
-    /// </summary>
-    private static bool IsXNullable(JsonObject schema, string path)
-    {
-        if (!schema.TryGetPropertyValue("x-nullable", out var nullableNode) || nullableNode is null)
-        {
-            return false;
-        }
-
-        if (nullableNode is not JsonValue jsonValue)
-        {
-            throw new InvalidOperationException($"Expected x-nullable to be a boolean at {path}.");
-        }
-
-        return jsonValue.GetValue<bool>();
-    }
-
-    /// <summary>
     /// Returns the JSON Schema <c>type</c> for the node, throwing when missing or non-string.
     /// </summary>
     private static string GetSchemaType(JsonObject schema, string path)
@@ -1487,58 +1483,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         List<string> propertyColumnSegments = [.. columnSegments, propertyName];
 
         return propertyColumnSegments;
-    }
-
-    /// <summary>
-    /// Returns the required property name set for an object schema at the provided scope.
-    /// </summary>
-    private static HashSet<string> GetRequiredProperties(
-        JsonObject schema,
-        List<JsonPathSegment> pathSegments
-    )
-    {
-        var path = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
-
-        if (!schema.TryGetPropertyValue("required", out var requiredNode) || requiredNode is null)
-        {
-            return new HashSet<string>(StringComparer.Ordinal);
-        }
-
-        if (requiredNode is not JsonArray requiredArray)
-        {
-            throw new InvalidOperationException($"Expected required to be an array at {path}.required.");
-        }
-
-        HashSet<string> requiredProperties = new(StringComparer.Ordinal);
-
-        foreach (var requiredEntry in requiredArray)
-        {
-            if (requiredEntry is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be non-null at {path}.required."
-                );
-            }
-
-            if (requiredEntry is not JsonValue jsonValue)
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be strings at {path}.required."
-                );
-            }
-
-            var name = jsonValue.GetValue<string>();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be non-empty at {path}.required."
-                );
-            }
-
-            requiredProperties.Add(name);
-        }
-
-        return requiredProperties;
     }
 
     /// <summary>

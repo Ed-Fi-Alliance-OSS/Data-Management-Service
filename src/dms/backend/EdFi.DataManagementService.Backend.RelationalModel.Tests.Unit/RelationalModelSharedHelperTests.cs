@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -275,6 +276,81 @@ public class Given_Relational_Model_Shared_Helpers
             .Select(column => column.Value)
             .Should()
             .Equal("DocumentId");
+    }
+
+    /// <summary>
+    /// It should read JSON Schema required properties with ordinal uniqueness.
+    /// </summary>
+    [Test]
+    public void It_should_read_json_schema_required_properties_with_ordinal_uniqueness()
+    {
+        var schema = new JsonObject { ["required"] = new JsonArray("alpha", "beta", "alpha") };
+
+        JsonSchemaRequirednessConventions
+            .GetRequiredProperties(schema, "$.scope")
+            .Should()
+            .BeEquivalentTo("alpha", "beta");
+    }
+
+    /// <summary>
+    /// It should reject malformed required arrays with a path-qualified diagnostic.
+    /// </summary>
+    [Test]
+    public void It_should_reject_malformed_required_arrays_with_a_path_qualified_diagnostic()
+    {
+        var schema = new JsonObject { ["required"] = new JsonObject() };
+
+        Action action = () => JsonSchemaRequirednessConventions.GetRequiredProperties(schema, "$.scope");
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Expected required to be an array at $.scope.required.");
+    }
+
+    /// <summary>
+    /// It should reject malformed required entries with a path-qualified diagnostic.
+    /// </summary>
+    [Test]
+    public void It_should_reject_malformed_required_entries_with_a_path_qualified_diagnostic()
+    {
+        var schema = new JsonObject { ["required"] = new JsonArray(17) };
+
+        Action action = () => JsonSchemaRequirednessConventions.GetRequiredProperties(schema, "$.scope");
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Expected required entries to be strings at $.scope.required.");
+    }
+
+    /// <summary>
+    /// It should read x-nullable booleans.
+    /// </summary>
+    [Test]
+    public void It_should_read_x_nullable_booleans()
+    {
+        var nullableSchema = new JsonObject { ["x-nullable"] = true };
+        var nonNullableSchema = new JsonObject();
+
+        JsonSchemaRequirednessConventions.IsXNullable(nullableSchema, "$.field").Should().BeTrue();
+        JsonSchemaRequirednessConventions.IsXNullable(nonNullableSchema, "$.field").Should().BeFalse();
+    }
+
+    /// <summary>
+    /// It should reject malformed x-nullable values with a path-qualified diagnostic.
+    /// </summary>
+    [Test]
+    public void It_should_reject_malformed_x_nullable_values_with_a_path_qualified_diagnostic()
+    {
+        var schema = new JsonObject { ["x-nullable"] = "true" };
+
+        Action action = () => JsonSchemaRequirednessConventions.IsXNullable(schema, "$.field");
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Expected x-nullable to be a boolean at $.field.");
     }
 
     private static DbTableModel CreateTable(string tableName, DbTableIdentityMetadata identityMetadata)

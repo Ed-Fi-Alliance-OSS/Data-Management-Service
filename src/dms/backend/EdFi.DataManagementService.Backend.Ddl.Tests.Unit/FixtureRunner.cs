@@ -105,6 +105,10 @@ public static class FixtureRunner
     {
         // Normalize to LF line endings for deterministic output
         var normalized = content.Contains('\r') ? content.Replace("\r\n", "\n").Replace("\r", "\n") : content;
+        if (normalized.Length > 0)
+        {
+            normalized = normalized.TrimEnd('\n') + "\n";
+        }
 
         File.WriteAllText(path, normalized, _utf8NoBom);
     }

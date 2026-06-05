@@ -2030,6 +2030,7 @@ internal static class TriggerInventoryTestSchemaBuilder
         {
             ["type"] = "object",
             ["properties"] = new JsonObject { ["schoolId"] = new JsonObject { ["type"] = "integer" } },
+            ["required"] = new JsonArray("schoolId"),
         };
 
         var jsonSchemaForInsert = new JsonObject
@@ -2041,7 +2042,11 @@ internal static class TriggerInventoryTestSchemaBuilder
                 ["primarySchoolReference"] = schoolReferenceSchema,
                 ["secondarySchoolReference"] = schoolReferenceSchema.DeepClone(),
             },
-            ["required"] = new JsonArray("offeringName"),
+            ["required"] = new JsonArray(
+                "offeringName",
+                "primarySchoolReference",
+                "secondarySchoolReference"
+            ),
         };
 
         return new JsonObject
@@ -2126,9 +2131,10 @@ internal static class TriggerInventoryTestSchemaBuilder
                         ["offeringName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 30 },
                         ["schoolId"] = new JsonObject { ["type"] = "integer" },
                     },
+                    ["required"] = new JsonArray("offeringName", "schoolId"),
                 },
             },
-            ["required"] = new JsonArray("registrationId"),
+            ["required"] = new JsonArray("registrationId", "offeringReference"),
         };
 
         return new JsonObject

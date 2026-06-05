@@ -20,6 +20,14 @@ public class Given_AuthoritativeDdl_With_Ds52Core : DdlGoldenFixtureTestBase
 
 [TestFixture]
 [Category("Authoritative")]
+public class Given_AuthoritativeDdl_With_Ds52Core_And_TpdmExtension : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "..", "Fixtures", "authoritative", "ds-5.2-tpdm");
+}
+
+[TestFixture]
+[Category("Authoritative")]
 public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGoldenFixtureTestBase
 {
     // Anchored on the CREATE statement (not the table/index name) so existence-guard fragments
