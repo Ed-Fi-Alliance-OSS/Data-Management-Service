@@ -51,3 +51,9 @@ Key decisions: accepted existing checked-in DS52+TPDM goldens after regeneration
 Files changed: tasks.json, progress.txt.
 Verification: UPDATE_GOLDENS=1 dotnet test DDL Unit --filter Category=Authoritative passed 38 tests; dotnet test DDL Unit --filter Category=Authoritative passed 38 tests; inspected DS52+TPDM expected manifests and SQL.
 Notes: authoritative input fixtures were not modified. No blockers.
+
+DMS-1206 task completed: add cross-dialect DS52+TPDM generated DDL smoke and compatibility coverage.
+Key decisions: added dedicated pgsql/mssql DS52+TPDM compatibility subclasses plus smoke tests that provision/reapply authoritative DDL, verify dms.EffectiveSchema/SchemaComponent/ResourceKey rows, and assert SurveyResponse responder-choice nullable columns, all-or-none CHECKs, and composite FKs. Fixed pgsql authoritative sample seed to create required Sample.Bus ref for SchoolExtensionDirectlyOwnedBus.
+Files changed: PostgresqlCompatibilityGateAuthoritativeDs52TpdmTests.cs, MssqlCompatibilityGateAuthoritativeDs52TpdmTests.cs, PostgresqlGeneratedDdlAuthoritativeDs52TpdmSmokeTests.cs, MssqlGeneratedDdlAuthoritativeDs52TpdmSmokeTests.cs, PostgresqlGeneratedDdlAuthoritativeSmokeTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format touched integration files; pgsql Tpdm filter passed 10 tests; mssql Tpdm filter passed 10 tests with temporary dms-codex-mssql; pgsql Authoritative filter passed 89 tests; mssql Authoritative filter passed 61 tests with temporary dms-codex-mssql.
+Notes: temporary SQL Server container stopped. No blockers.
