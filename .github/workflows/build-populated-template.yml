@@ -30,7 +30,7 @@ on:
         type: boolean
         default: true
       use_relational_backend:
-        description: "Build the populated template from a relational-backend DMS instance"
+        description: "Build the populated template from a DMS stack running the relational backend"
         required: false
         type: boolean
         default: false
@@ -176,7 +176,7 @@ jobs:
         if: ${{ inputs.use_relational_backend }}
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -NoDmsInstance
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -NoDataStore
         working-directory: eng/docker-compose/
 
       - name: Provision relational database
@@ -185,25 +185,25 @@ jobs:
           ./provision-relational-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
         working-directory: eng/docker-compose/
 
-      # DMS fails fatally at startup when the Configuration Service has no DMS instances,
-      # and the relational stack was started with -NoDmsInstance so no instance points at
-      # the main database. Register the single relational instance here and hand its id
-      # forward; the Configuration Service protects instance connection strings in API
+      # DMS fails fatally at startup when the Configuration Service has no data stores,
+      # and the relational stack was started with -NoDataStore so no data store points at
+      # the main database. Register the single relational data store here and hand its id
+      # forward; the Configuration Service protects data store connection strings in API
       # responses, so the id from registration is the only reliable way to select this
-      # instance later.
-      - name: Register relational DMS instance
+      # data store later.
+      - name: Register relational data store
         if: ${{ inputs.use_relational_backend }}
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
-          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "DMS Instance Setup Administrator"
-          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -InstanceName "Relational Template Instance" -InstanceType "Template"
-          if (-not $instanceId) {
-            throw "Failed to register the relational DMS instance."
+          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
+          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          if (-not $dataStoreId) {
+            throw "Failed to register the relational data store."
           }
-          "RELATIONAL_DMS_INSTANCE_ID=$instanceId" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELATIONAL_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
 
       - name: Restart DMS to load the provisioned relational schema
@@ -280,8 +280,8 @@ jobs:
                   -StandardVersion '${{ inputs.standard_version }}' `
                   -PackageVersion $packageVersion `
                   -ApplicationName $uniqueAppName `
-                  -DmsInstanceDatabaseName $env:RELATIONAL_DB_NAME `
-                  -DmsInstanceId $env:RELATIONAL_DMS_INSTANCE_ID `
+                  -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
+                  -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
                   -DumpAllUserSchemas
         working-directory: eng/DatabaseTemplates/
 

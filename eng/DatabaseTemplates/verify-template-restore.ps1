@@ -16,8 +16,8 @@
     restored schema set must match the source database's user schemas, and
     core data (dms.EffectiveSchema, dms.Document, dms.Descriptor) must be
     non-empty; extension schemas may be DDL-only. Serveability is then proven
-    end to end: a CMS DmsInstance and application bound only to the restored
-    database are registered, DMS is restarted to clear its instance cache, and
+    end to end: a CMS data store and application bound only to the restored
+    database are registered, DMS is restarted to clear its data store cache, and
     an authenticated descriptor read must return HTTP 200 with a non-empty
     array.
 
@@ -202,13 +202,13 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    $verificationInstanceId = Add-DmsInstance `
+    $verificationDataStoreId = Add-DataStore `
         -CmsUrl $CmsUrl `
         -AccessToken $cmsToken `
         -PostgresPassword $PostgresPassword `
         -PostgresDbName $VerificationDatabaseName `
-        -InstanceName "Template Restore Verification" `
-        -InstanceType "Verification"
+        -Name "Template Restore Verification" `
+        -DataStoreType "Verification"
 
     $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "Template Restore Verification Vendor"
 
@@ -218,7 +218,7 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
         VendorId        = $vendorId
         ClaimSetName    = "EdFiSandbox"
         ApplicationName = "Template Restore Verification"
-        DmsInstanceIds  = @($verificationInstanceId)
+        DataStoreIds    = @($verificationDataStoreId)
     }
 
     if ($RequirePopulatedData) {
@@ -230,7 +230,7 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
     # Close the CMS/OpenIddict application-visibility race before requesting a token.
     Wait-CmsClientAvailable -CmsUrl $CmsUrl -ClientId $application.Key -ClientSecret $application.Secret
 
-    # Restart DMS so the cached instance list includes the verification instance.
+    # Restart DMS so the cached data store list includes the verification data store.
     & docker restart $DmsContainerName
     if ($LASTEXITCODE -ne 0) { throw "Failed to restart DMS container '$DmsContainerName'." }
 

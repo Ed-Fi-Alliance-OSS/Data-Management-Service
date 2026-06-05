@@ -104,7 +104,7 @@ jobs:
       - name: Start DMS Docker
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig -NoDmsInstance
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig -NoDataStore
         working-directory: eng/docker-compose/
 
       - name: Provision relational database
@@ -112,23 +112,23 @@ jobs:
           ./provision-relational-e2e-database.ps1 -EnvironmentFile ./.env.template.relational -Configuration Release
         working-directory: eng/docker-compose/
 
-      # DMS fails fatally at startup when the Configuration Service has no DMS instances,
-      # and the stack was started with -NoDmsInstance so no instance points at the main
-      # database. Register the single relational instance here and hand its id forward;
-      # the Configuration Service protects instance connection strings in API responses,
-      # so the id from registration is the only reliable way to select this instance later.
-      - name: Register relational DMS instance
+      # DMS fails fatally at startup when the Configuration Service has no data stores,
+      # and the stack was started with -NoDataStore so no data store points at the main
+      # database. Register the single relational data store here and hand its id forward;
+      # the Configuration Service protects data store connection strings in API responses,
+      # so the id from registration is the only reliable way to select this data store later.
+      - name: Register relational data store
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
           $envValues = ReadValuesFromEnvFile "./.env.template.relational"
-          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "DMS Instance Setup Administrator"
-          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -InstanceName "Relational Template Instance" -InstanceType "Template"
-          if (-not $instanceId) {
-            throw "Failed to register the relational DMS instance."
+          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
+          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          if (-not $dataStoreId) {
+            throw "Failed to register the relational data store."
           }
-          "RELATIONAL_DMS_INSTANCE_ID=$instanceId" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELATIONAL_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
         working-directory: eng/docker-compose/
 
       - name: Restart DMS to load the provisioned relational schema
@@ -180,8 +180,8 @@ jobs:
                   -StandardVersion '${{ env.STANDARD_VERSION }}'`
                   -PackageVersion $packageVersion `
                   -ApplicationName $uniqueAppName `
-                  -DmsInstanceDatabaseName $env:RELATIONAL_DB_NAME `
-                  -DmsInstanceId $env:RELATIONAL_DMS_INSTANCE_ID `
+                  -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
+                  -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
                   -DumpAllUserSchemas
         working-directory: eng/DatabaseTemplates/
 
