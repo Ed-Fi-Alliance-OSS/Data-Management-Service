@@ -3,3 +3,9 @@ Key decisions: added EffectiveReferenceRequirednessResolver in extract inputs; i
 Files changed: ExtractInputsStep.cs, DocumentReferenceMappingsExtractor.cs, EffectiveReferenceRequirednessResolver.cs, SchemaInputValidationTests.cs, AbstractIdentityTableDerivationTests.cs, relational model authoritative expected manifests.
 Verification: dotnet csharpier format relational model source/tests; dotnet test RelationalModel.Tests.Unit full suite passed 784 tests. Prompt literal filter matched no tests; equivalent fixture filter passed earlier.
 Notes: authoritative input fixtures were not modified. No blockers.
+
+DMS-1206 task completed: validate identity references against derived jsonSchemaForInsert requiredness.
+Key decisions: identity guard now consumes EffectiveReferenceRequirednessResolver result stored in DocumentReferenceMapping.IsRequired path, not raw documentPathsMapping.isRequired. Diagnostic reports owning resource, reference object path, and matching identityJsonPaths entry. Updated hand-authored test fixtures where identityJsonPaths used reference objects but jsonSchemaForInsert omitted required row-level reference property.
+Files changed: DocumentReferenceMappingsExtractor.cs, SchemaInputValidationTests.cs, ReferenceBindingRelationalModelSetPassTests.cs, ConstraintDerivationRelationalModelSetPassTests.cs, DeriveIndexInventoryPassTests.cs, tasks.json.
+Verification: dotnet csharpier format relational model touched files; task literal test filter compiled but matched no tests; equivalent identity/reference-binding filters passed 4 and 8 tests; full RelationalModel.Tests.Unit passed 785 tests.
+Notes: optional identity-reference failure is now fail-fast; raw isRequired false with JSON-schema-required identity reference compiles. No blockers.

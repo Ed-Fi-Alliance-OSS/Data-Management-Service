@@ -34,7 +34,7 @@
       "Review identity-reference validation in src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/ExtractInputsStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/DocumentReferenceMappingsExtractor.cs, and any helper introduced for effective reference requiredness.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "tests",

@@ -213,7 +213,6 @@ internal static class DocumentReferenceMappingsExtractor
 
         var targetProjectName = RequireString(mappingObject, "projectName");
         var targetResourceName = RequireString(mappingObject, "resourceName");
-        var rawIsRequired = mappingObject["isRequired"]?.GetValue<bool>() ?? false;
         var effectiveIsRequired = EffectiveReferenceRequirednessResolver.Resolve(
             jsonSchemaForInsert,
             projectName,
@@ -221,12 +220,25 @@ internal static class DocumentReferenceMappingsExtractor
             referenceObjectPath
         );
 
-        if (referenceIsPartOfIdentity && !rawIsRequired)
+        if (referenceIsPartOfIdentity && !effectiveIsRequired)
         {
+            var identityPath =
+                referenceJsonPaths
+                    .Select(binding => binding.ReferenceJsonPath.Canonical)
+                    .Where(identityJsonPaths.Contains)
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' "
+                        + $"was marked as part of identity for reference path "
+                        + $"'{referenceObjectPath.Canonical}' but no identityJsonPaths entry matched."
+                );
+
             throw new InvalidOperationException(
-                $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
-                    + "mapped to identityJsonPaths but isRequired is false. "
-                    + "Identity references must be required."
+                $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' maps "
+                    + $"identityJsonPaths entry '{identityPath}' through reference path "
+                    + $"'{referenceObjectPath.Canonical}', but that reference is optional by "
+                    + "jsonSchemaForInsert. Identity references must be required."
             );
         }
 

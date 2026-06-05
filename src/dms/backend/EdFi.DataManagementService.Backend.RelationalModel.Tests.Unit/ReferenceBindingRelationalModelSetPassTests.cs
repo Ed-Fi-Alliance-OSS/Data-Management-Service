@@ -832,6 +832,7 @@ internal static class ReferenceBindingTestSchemaBuilder
                     },
                 },
             },
+            ["required"] = new JsonArray { "schoolReference" },
         };
 
         return new JsonObject

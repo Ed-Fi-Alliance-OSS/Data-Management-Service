@@ -3214,6 +3214,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
                     },
                 },
             },
+            ["required"] = new JsonArray { "schoolReference", "studentReference" },
         };
 
         return new JsonObject
@@ -3971,6 +3972,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
                     },
                 },
             },
+            ["required"] = new JsonArray { "educationOrganizationReference" },
         };
 
         return new JsonObject
@@ -4174,6 +4176,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
                     },
                 },
             },
+            ["required"] = new JsonArray { "schoolReference", "studentReference" },
         };
 
         return new JsonObject
