@@ -144,6 +144,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Phase 6: Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
         EmitPeopleAuthViews(writer, authHierarchy, concreteResources);
+        EmitReadChangesAuthViews(writer, authHierarchy, concreteResources, trackedChangeTables);
 
         var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
 
@@ -2334,6 +2335,44 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
+    /// Emits the <c>CREATE VIEW</c> statements for the four <c>ReadChanges</c> authorization views
+    /// in the <c>auth</c> schema, rendered from
+    /// <see cref="AuthObjectDefinitions.ReadChangesAuthViews"/>. Each view unions
+    /// current-association arms with tracked-change (<c>tracked_changes_edfi.*</c>) arms — combined
+    /// with <c>UNION</c>, not <c>UNION ALL</c>, so duplicate authorization pairs are eliminated —
+    /// against the current EdOrg hierarchy. Used only by <c>ReadChanges</c> authorization for
+    /// Change Query <c>/deletes</c> and <c>/keyChanges</c>.
+    /// </summary>
+    /// <remarks>
+    /// Guarded by the same prerequisites as <see cref="EmitPeopleAuthViews"/> — the auth hierarchy
+    /// and all five PrimaryAssociation resources must be present — plus the five
+    /// <c>tracked_changes_edfi</c> association tables the tracked arms join, so a synthetic /
+    /// partial model set without the tracked-change inventory never emits views referencing
+    /// nonexistent tables. Must be emitted after the people auth views (the current/current arms
+    /// select from them) and after the tracked-change tables.
+    /// </remarks>
+    private void EmitReadChangesAuthViews(
+        SqlWriter writer,
+        AuthEdOrgHierarchy? authHierarchy,
+        IReadOnlyList<ConcreteResourceModel> concreteResources,
+        IReadOnlyList<TrackedChangeTableInfo> trackedChangeTables
+    )
+    {
+        if (
+            !AuthObjectDefinitions.GetPeopleAuthViewAvailability(authHierarchy, concreteResources).IsAvailable
+            || !AuthObjectDefinitions.HasReadChangesTrackedChangeTables(trackedChangeTables)
+        )
+        {
+            return;
+        }
+
+        foreach (var view in AuthObjectDefinitions.ReadChangesAuthViews)
+        {
+            EmitPeopleAuthView(writer, view);
+        }
+    }
+
+    /// <summary>
     /// Emits a single people auth view from its shared <see cref="AuthViewDefinition"/>: header,
     /// arms joined by the view's set-operator, and trailing terminator.
     /// </summary>
@@ -2365,8 +2404,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             for (int j = 0; j < arm.OutputColumns.Count; j++)
             {
                 var column = arm.OutputColumns[j];
+                var rename = column.OutputName is { } outputName ? $" AS {Quote(outputName)}" : string.Empty;
                 var trailing = j < arm.OutputColumns.Count - 1 ? "," : string.Empty;
-                writer.AppendLine($"{column.Alias}.{Quote(column.Column)}{trailing}");
+                writer.AppendLine($"{column.Alias}.{Quote(column.Column)}{rename}{trailing}");
             }
         }
         writer.AppendLine($"FROM {Quote(arm.SourceTable)} {arm.SourceAlias}");

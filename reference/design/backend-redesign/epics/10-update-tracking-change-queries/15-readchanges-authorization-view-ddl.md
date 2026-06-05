@@ -18,7 +18,7 @@ These views preserve ODS Change Query authorization semantics while adapting the
   - `auth.EducationOrganizationIdToStudentDocumentIdIncludingDeletes`
   - `auth.EducationOrganizationIdToContactDocumentIdIncludingDeletes`
   - `auth.EducationOrganizationIdToStaffDocumentIdIncludingDeletes`
-  - `auth.EducationOrganizationIdToStudentDocumentIdThroughDeletedResponsibility`
+  - `auth.EducationOrganizationIdToStudentDocumentIdDeletedResponsibility`
 - Each view uses the union arms recorded in inventory without re-deriving table paths inside the dialect emitter.
 - Each emitted view combines current-association and tracked-change arms with SQL `UNION`, not `UNION ALL`.
 - `UNION` is required so duplicate authorization pairs produced by current association arms and tracked-change arms are eliminated before runtime authorization predicates consume the view.

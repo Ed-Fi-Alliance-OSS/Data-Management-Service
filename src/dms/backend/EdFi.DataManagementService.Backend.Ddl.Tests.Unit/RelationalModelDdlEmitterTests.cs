@@ -28,7 +28,10 @@ public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
         );
 
         availability.IsAvailable.Should().BeTrue();
-        EmitPgsql(modelSet).Should().Contain(StudentViewName);
+        var ddl = EmitPgsql(modelSet);
+        ddl.Should().Contain(StudentViewName);
+        // The ReadChanges auth views share the same availability guard (DMS-1178).
+        ddl.Should().Contain(StudentViewName + "IncludingDeletes");
     }
 
     [Test]
@@ -67,7 +70,82 @@ public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
         availability.HasAuthEdOrgHierarchy.Should().BeTrue();
         availability.MissingAssociationResourceNames.Should().Equal(missingResourceName);
         availability.IsAvailable.Should().BeFalse();
-        EmitPgsql(modelSetWithMissingAssociation).Should().NotContain(StudentViewName);
+        var ddl = EmitPgsql(modelSetWithMissingAssociation);
+        ddl.Should().NotContain(StudentViewName);
+        ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
+    }
+
+    [Test]
+    public void It_should_not_emit_readchanges_views_when_tracked_change_tables_are_missing()
+    {
+        // The ReadChanges views additionally join tracked_changes_edfi tables; without the
+        // tracked-change inventory the people views still emit but the ReadChanges views must not,
+        // or the DDL would reference tables it never creates.
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql) with
+        {
+            TrackedChangeTablesInNameOrder = [],
+        };
+
+        AuthObjectDefinitions
+            .HasReadChangesTrackedChangeTables(modelSet.TrackedChangeTablesInNameOrder)
+            .Should()
+            .BeFalse();
+        var ddl = EmitPgsql(modelSet);
+        ddl.Should().Contain(StudentViewName);
+        ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
+    }
+
+    [Test]
+    public void It_should_not_emit_readchanges_views_when_one_tracked_change_table_is_missing()
+    {
+        // HasReadChangesTrackedChangeTables requires all five association tables; a single missing
+        // table must suppress every ReadChanges view, not just the arms that join it.
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        var missingTableName = AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames[^1];
+        var modelSetWithMissingTrackedTable = modelSet with
+        {
+            TrackedChangeTablesInNameOrder =
+            [
+                .. modelSet.TrackedChangeTablesInNameOrder.Where(trackedChangeTable =>
+                    trackedChangeTable.Table.Name != missingTableName
+                ),
+            ],
+        };
+        modelSetWithMissingTrackedTable
+            .TrackedChangeTablesInNameOrder.Should()
+            .HaveCount(modelSet.TrackedChangeTablesInNameOrder.Count - 1);
+
+        AuthObjectDefinitions
+            .HasReadChangesTrackedChangeTables(modelSetWithMissingTrackedTable.TrackedChangeTablesInNameOrder)
+            .Should()
+            .BeFalse();
+        var ddl = EmitPgsql(modelSetWithMissingTrackedTable);
+        ddl.Should().Contain(StudentViewName);
+        ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
+    }
+
+    [Test]
+    public void It_should_not_count_tracked_change_tables_from_other_schemas()
+    {
+        // The guard matches on schema AND name: the views join tracked_changes_edfi.* tables, so a
+        // same-named association table in another tracked-change schema must not satisfy it.
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        var movedTableName = AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames[0];
+        var trackedChangeTables = modelSet
+            .TrackedChangeTablesInNameOrder.Select(trackedChangeTable =>
+                trackedChangeTable.Table.Name == movedTableName
+                    ? trackedChangeTable with
+                    {
+                        Table = trackedChangeTable.Table with
+                        {
+                            Schema = new DbSchemaName("tracked_changes_ext"),
+                        },
+                    }
+                    : trackedChangeTable
+            )
+            .ToList();
+
+        AuthObjectDefinitions.HasReadChangesTrackedChangeTables(trackedChangeTables).Should().BeFalse();
     }
 
     private static void AssertPeopleViewsUnavailableWithoutMissingAssociations(

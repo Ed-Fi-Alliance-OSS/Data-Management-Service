@@ -60,7 +60,12 @@ public static class DerivedModelSetManifestEmitter
             WriteIndexes(writer, modelSet.IndexesInCreateOrder);
             WriteTriggers(writer, modelSet.TriggersInCreateOrder);
             WriteTrackedChangeTables(writer, modelSet.TrackedChangeTablesInNameOrder);
-            WriteAuthObjects(writer, modelSet.AuthEdOrgHierarchy, modelSet.ConcreteResourcesInNameOrder);
+            WriteAuthObjects(
+                writer,
+                modelSet.AuthEdOrgHierarchy,
+                modelSet.ConcreteResourcesInNameOrder,
+                modelSet.TrackedChangeTablesInNameOrder
+            );
 
             if (detailedResources is not null)
             {
@@ -610,7 +615,8 @@ public static class DerivedModelSetManifestEmitter
     private static void WriteAuthObjects(
         Utf8JsonWriter writer,
         AuthEdOrgHierarchy? authHierarchy,
-        IReadOnlyList<ConcreteResourceModel> concreteResources
+        IReadOnlyList<ConcreteResourceModel> concreteResources,
+        IReadOnlyList<TrackedChangeTableInfo> trackedChangeTables
     )
     {
         var peopleAuthViewAvailability = AuthObjectDefinitions.GetPeopleAuthViewAvailability(
@@ -631,6 +637,14 @@ public static class DerivedModelSetManifestEmitter
         if (peopleAuthViewAvailability.IsAvailable)
         {
             WritePeopleAuthViews(writer, AuthObjectDefinitions.PeopleAuthViews);
+
+            // Same guard as RelationalModelDdlEmitter.EmitReadChangesAuthViews: the ReadChanges
+            // views join tracked_changes_edfi tables, so a model set without the tracked-change
+            // inventory must not advertise views the DDL will not create.
+            if (AuthObjectDefinitions.HasReadChangesTrackedChangeTables(trackedChangeTables))
+            {
+                WriteReadChangesAuthViews(writer, AuthObjectDefinitions.ReadChangesAuthViews);
+            }
         }
 
         writer.WriteEndObject();
@@ -691,8 +705,27 @@ public static class DerivedModelSetManifestEmitter
     }
 
     /// <summary>
-    /// Writes a single <c>auth_objects.views[]</c> entry: the view's qualified name, the set-operator
-    /// joining its arms, and the ordered list of arms.
+    /// Writes the <c>auth_objects.read_changes_views</c> array from the shared
+    /// <see cref="AuthObjectDefinitions.ReadChangesAuthViews"/> sequence: the <c>ReadChanges</c>
+    /// authorization views unioning current-association and tracked-change arms.
+    /// </summary>
+    private static void WriteReadChangesAuthViews(
+        Utf8JsonWriter writer,
+        IReadOnlyList<AuthViewDefinition> views
+    )
+    {
+        writer.WritePropertyName("read_changes_views");
+        writer.WriteStartArray();
+        foreach (var view in views)
+        {
+            WriteAuthView(writer, view);
+        }
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Writes a single <c>auth_objects.views[]</c> / <c>auth_objects.read_changes_views[]</c> entry:
+    /// the view's qualified name, the set-operator joining its arms, and the ordered list of arms.
     /// </summary>
     private static void WriteAuthView(Utf8JsonWriter writer, AuthViewDefinition view)
     {
@@ -740,6 +773,12 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteStartObject();
             writer.WriteString("alias", column.Alias);
             writer.WriteString("column", column.Column.Value);
+            // Written only when the projection is renamed (`Old_X AS X`) so existing
+            // people-auth-view manifest output is byte-identical.
+            if (column.OutputName is { } outputName)
+            {
+                writer.WriteString("output_name", outputName.Value);
+            }
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
