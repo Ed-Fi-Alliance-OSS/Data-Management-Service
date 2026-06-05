@@ -737,6 +737,12 @@ Content-Type: application/json
 GET {{postSecondaryEventLocation}}
 Authorization: Bearer {{peopleTokenRequest.access_token}}
 
+
+
+
+
+
+
 #
 # Live demo starts here.
 #
@@ -746,9 +752,12 @@ Authorization: Bearer {{peopleTokenRequest.access_token}}
 
 ### Authorized academic week query with post-authorization paging and count
 # Expected: 200, Total-Count: 2
-# The week for school 255901222 is filtered out before paging/count.
+# The week for school 255901222 is filtered out before count.
 GET {{discovery.urls.dataManagementApi}}/ed-fi/academicWeeks?totalCount=true
 Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
+
+
+
 
 #
 # Section 2: EdOrg Write Denial
@@ -777,6 +786,9 @@ Content-Type: application/json
 GET {{discovery.urls.dataManagementApi}}/ed-fi/academicWeeks?weekIdentifier=post%20create%20forbidden&totalCount=true
 Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
 
+
+
+
 #
 # Section 3: Combined Authorization Strategies
 #
@@ -788,6 +800,9 @@ Authorization: Bearer {{schoolOnlyTokenRequest.access_token}}
 # LEA 302 is not authorized by either, and not shown
 GET {{discovery.urls.dataManagementApi}}/ed-fi/localEducationAgencies
 Authorization: Bearer {{orInvertedTokenRequest.access_token}}
+
+
+
 
 #
 # Section 4: People Relationship Delete Demo
@@ -812,6 +827,9 @@ Authorization: Bearer {{peopleTokenRequest.access_token}}
 # Expected: 403 Authorization Denied.
 DELETE {{discovery.urls.dataManagementApi}}/ed-fi/PostSecondaryEvents/{{getPeoplePostSecondaryEvent.id}}
 Authorization: Bearer {{peopleTokenRequest.access_token}}
+
+
+
 
 #
 # Section 5: Namespace Authorization
