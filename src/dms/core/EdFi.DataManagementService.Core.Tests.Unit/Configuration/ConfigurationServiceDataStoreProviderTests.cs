@@ -99,7 +99,7 @@ public class ConfigurationServiceDataStoreProviderTests
                 },
             };
 
-            handler.SetResponse("v2/dataStores/", dataStoresResponse);
+            handler.SetResponse("v3/dataStores/", dataStoresResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -330,7 +330,7 @@ public class ConfigurationServiceDataStoreProviderTests
                 },
             };
 
-            handler.SetResponse("v2/dataStores/", firstResponse);
+            handler.SetResponse("v3/dataStores/", firstResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -348,7 +348,7 @@ public class ConfigurationServiceDataStoreProviderTests
             await _provider.LoadDataStores();
 
             // Change response for second call
-            handler.SetResponse("v2/dataStores/", secondResponse);
+            handler.SetResponse("v3/dataStores/", secondResponse);
 
             // Second load
             await _provider.LoadDataStores();
@@ -420,7 +420,7 @@ public class ConfigurationServiceDataStoreProviderTests
                 },
             };
 
-            handler.SetResponse("v2/dataStores/", dataStoresResponse);
+            handler.SetResponse("v3/dataStores/", dataStoresResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -550,7 +550,7 @@ public class ConfigurationServiceDataStoreProviderTests
                 },
             };
 
-            handler.SetResponse("v2/dataStores/", dataStoresResponse);
+            handler.SetResponse("v3/dataStores/", dataStoresResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -641,7 +641,7 @@ public class ConfigurationServiceDataStoreProviderTests
                 },
             };
 
-            handler.SetResponse("v2/dataStores/", dataStoresResponse);
+            handler.SetResponse("v3/dataStores/", dataStoresResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -692,7 +692,7 @@ public class ConfigurationServiceDataStoreProviderTests
                 },
             };
 
-            handler.SetResponse("v2/dataStores/", dataStoresResponse);
+            handler.SetResponse("v3/dataStores/", dataStoresResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -758,7 +758,7 @@ public class ConfigurationServiceDataStoreProviderTests
                 },
             };
 
-            handler.SetResponse("v2/dataStores/", dataStoresResponse);
+            handler.SetResponse("v3/dataStores/", dataStoresResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -990,7 +990,7 @@ public class ConfigurationServiceDataStoreProviderTests
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             _handler.SetResponse(
-                "v2/dataStores/",
+                "v3/dataStores/",
                 new[]
                 {
                     new
@@ -1028,7 +1028,7 @@ public class ConfigurationServiceDataStoreProviderTests
             await _provider.LoadDataStores();
 
             _handler.SetResponse(
-                "v2/dataStores/",
+                "v3/dataStores/",
                 new[]
                 {
                     new
@@ -1048,7 +1048,7 @@ public class ConfigurationServiceDataStoreProviderTests
         {
             await _provider!.RefreshInstancesIfExpiredAsync();
 
-            _handler!.GetRequestCount("v2/dataStores/").Should().Be(1);
+            _handler!.GetRequestCount("v3/dataStores/").Should().Be(1);
             _provider.GetAll().Should().ContainSingle(i => i.Name == "Initial Instance");
         }
     }
@@ -1068,7 +1068,7 @@ public class ConfigurationServiceDataStoreProviderTests
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             _handler.SetResponse(
-                "v2/dataStores/",
+                "v3/dataStores/",
                 new[]
                 {
                     new
@@ -1104,7 +1104,7 @@ public class ConfigurationServiceDataStoreProviderTests
             await _provider.LoadDataStores();
 
             _handler.SetResponse(
-                "v2/dataStores/",
+                "v3/dataStores/",
                 new[]
                 {
                     new
@@ -1124,7 +1124,7 @@ public class ConfigurationServiceDataStoreProviderTests
         {
             await _provider!.RefreshInstancesIfExpiredAsync();
 
-            _handler!.GetRequestCount("v2/dataStores/").Should().Be(1);
+            _handler!.GetRequestCount("v3/dataStores/").Should().Be(1);
             _provider.GetAll().Should().ContainSingle(i => i.Name == "Initial Instance");
         }
     }
@@ -1146,7 +1146,7 @@ public class ConfigurationServiceDataStoreProviderTests
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             _handler.SetResponse(
-                "v2/dataStores/",
+                "v3/dataStores/",
                 new[]
                 {
                     new
@@ -1183,7 +1183,7 @@ public class ConfigurationServiceDataStoreProviderTests
             await _provider.LoadDataStores();
 
             _handler.SetResponse(
-                "v2/dataStores/",
+                "v3/dataStores/",
                 new[]
                 {
                     new
@@ -1205,7 +1205,7 @@ public class ConfigurationServiceDataStoreProviderTests
 
             await _provider!.RefreshInstancesIfExpiredAsync();
 
-            _handler!.GetRequestCount("v2/dataStores/").Should().Be(2);
+            _handler!.GetRequestCount("v3/dataStores/").Should().Be(2);
             _provider.GetAll().Should().Contain(i => i.Name == "Updated Instance");
         }
 
@@ -1216,7 +1216,7 @@ public class ConfigurationServiceDataStoreProviderTests
 
             await _provider!.RefreshInstancesIfExpiredAsync();
 
-            _handler!.GetRequestCount("v2/dataStores/").Should().Be(1);
+            _handler!.GetRequestCount("v3/dataStores/").Should().Be(1);
             _provider.GetAll().Should().NotContain(i => i.Name == "Updated Instance");
         }
     }

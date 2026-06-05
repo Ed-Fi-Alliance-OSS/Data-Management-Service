@@ -9,10 +9,10 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1148
 
 CMS needs Admin API-compatible read endpoints for resource claim metadata:
 
-- `GET /v2/resourceClaims`
-- `GET /v2/resourceClaims/{id}`
-- `GET /v2/resourceClaimActions`
-- `GET /v2/resourceClaimActionAuthStrategies`
+- `GET /v3/resourceClaims`
+- `GET /v3/resourceClaims/{id}`
+- `GET /v3/resourceClaimActions`
+- `GET /v3/resourceClaimActionAuthStrategies`
 
 Resource claim structure is stored in the CMS claims hierarchy JSON. The public response metadata comes from `dmscs.ResourceClaim`, keyed by the same full claim URI used in the hierarchy. Action and authorization-strategy details come from the existing claim-set repository.
 
@@ -22,7 +22,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 
 ## Acceptance Criteria
 
-### `GET /v2/resourceClaims`
+### `GET /v3/resourceClaims`
 
 - Loads the single CMS claims hierarchy.
 - Projects every hierarchy node to a `ResourceClaimResponse`.
@@ -37,14 +37,14 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 - Without filters, returns root nodes as the top-level collection. With `id` or `name` filters, applies those filters to the top-level root-node collection only. Matching root nodes retain their original `parentId`, `parentName`, and full recursive `children` subtree.
 - Applies `orderBy`, `direction`, `limit`, and `offset` to the top-level result collection after filtering. Paging and sorting do not remove or reorder descendant `children` within each returned subtree.
 
-### `GET /v2/resourceClaims/{id}`
+### `GET /v3/resourceClaims/{id}`
 
 - Searches the valid projected hierarchy by `dmscs.ResourceClaim.Id`.
 - Returns the matching projected claim node including its full recursive subtree.
 - Returns `404 Not Found` when the requested id is absent.
 - Accepts only its path parameter. Query parameters (`limit`, `offset`, `orderBy`, `direction`) do not apply to this route.
 
-### `GET /v2/resourceClaimActions`
+### `GET /v3/resourceClaimActions`
 
 - Returns a flat list of resource claim actions resolved from claim-set metadata.
 - Action membership for each resource claim is derived from the `DefaultAuthorization` entries in the hierarchy JSON — the same source used by `resourceClaimActionAuthStrategies`.
@@ -54,7 +54,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 - Supports the current CMS paging-query pattern, including `limit`, `offset`, `orderBy`, and `direction`.
 - Supports endpoint-specific filter: `resourceName` (string).
 
-### `GET /v2/resourceClaimActionAuthStrategies`
+### `GET /v3/resourceClaimActionAuthStrategies`
 
 - Returns one flat item for each hierarchy claim with `DefaultAuthorization` actions.
 - Includes `resourceClaimId`, `resourceName`, `claimName`, and `authorizationStrategiesForActions`.
@@ -65,7 +65,7 @@ See the architecture brief at `reference/spikes/DMS-1082/spike-resource-claims-e
 
 ### Query parameter alignment
 
-The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies`) reuse the current CMS query pattern for paging, sorting, validation, and endpoint-specific filters. `GET /v2/resourceClaims/{id}` accepts only its path parameter and does not support these query parameters.
+The three list endpoints (`GET /v3/resourceClaims`, `GET /v3/resourceClaimActions`, and `GET /v3/resourceClaimActionAuthStrategies`) reuse the current CMS query pattern for paging, sorting, validation, and endpoint-specific filters. `GET /v3/resourceClaims/{id}` accepts only its path parameter and does not support these query parameters.
 
 The shared paging behavior to preserve is the existing CMS behavior: optional `limit`/`offset`, validated `direction`, endpoint-specific `orderBy` allowlists, no implicit row cap when paging is omitted, and the current default sort direction behavior.
 
@@ -73,21 +73,21 @@ Endpoint-specific `orderBy` allowlists:
 
 | Endpoint | Allowed `orderBy` values |
 |---|---|
-| `GET /v2/resourceClaims` | `name`, `parentName`, `parentId`, `id` |
-| `GET /v2/resourceClaimActions` | `resourceClaimId`, `resourceName` |
-| `GET /v2/resourceClaimActionAuthStrategies` | `resourceClaimId`, `resourceName`, `claimName` |
+| `GET /v3/resourceClaims` | `name`, `parentName`, `parentId`, `id` |
+| `GET /v3/resourceClaimActions` | `resourceClaimId`, `resourceName` |
+| `GET /v3/resourceClaimActionAuthStrategies` | `resourceClaimId`, `resourceName`, `claimName` |
 
 Additional query rules:
 
 - `name` and `resourceName` filters are case-insensitive.
-- When multiple filters are supplied, including `id` and `name` together for `GET /v2/resourceClaims`, these endpoints follow the existing Config query-filter behavior.
+- When multiple filters are supplied, including `id` and `name` together for `GET /v3/resourceClaims`, these endpoints follow the existing Config query-filter behavior.
 - When `orderBy` is omitted, default ordering is determined by the current query-parameter implementation: `name` for `resourceClaims`, `resourceClaimId` for `resourceClaimActions`, and `resourceClaimId` for `resourceClaimActionAuthStrategies`.
 
 ### Failure handling
 
-- `GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies` return `200 OK` with arrays on success.
+- `GET /v3/resourceClaims`, `GET /v3/resourceClaimActions`, and `GET /v3/resourceClaimActionAuthStrategies` return `200 OK` with arrays on success.
 - Query filters that match no records return `200 OK` with an empty array.
-- `GET /v2/resourceClaims/{id}` returns `200 OK` with a JSON object when found and `404 Not Found` when absent.
+- `GET /v3/resourceClaims/{id}` returns `200 OK` with a JSON object when found and `404 Not Found` when absent.
 - Unsupported `orderBy` values return the existing CMS `400 Bad Request` validation response pattern.
 - Authorization failures remain `401` or `403`.
 - Unhandled server-side exceptions return the same generic CMS unknown-error response shape used by comparable endpoints.

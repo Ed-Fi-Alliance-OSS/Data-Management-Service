@@ -28,7 +28,7 @@ client_id=dms-data-store-admin
 
 ### List all data stores
 # @name listDataStores
-GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
+GET http://localhost:{{configPort}}/v3/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 ### Expected: You should see data stores named "School Year 2022", "School Year 2023", etc.
@@ -40,7 +40,7 @@ Authorization: bearer {{configToken}}
 
 ### List all Data Store Contexts
 # @name listRouteContexts
-GET http://localhost:{{configPort}}/v2/dataStoreContexts?offset=0&limit=50
+GET http://localhost:{{configPort}}/v3/dataStoreContexts?offset=0&limit=50
 Authorization: bearer {{configToken}}
 
 ### Expected: You should see route contexts with contextKey="schoolYear" and contextValue="2022", "2023", etc.
@@ -90,7 +90,7 @@ client_id=dms-data-store-admin
 
 ### Create a new vendor
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -113,12 +113,12 @@ Authorization: bearer {{configToken}}
 @vendorId={{getVendor.response.body.id}}
 
 ### List all data stores
-GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
+GET http://localhost:{{configPort}}/v3/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 ### Create Application -- data store 3 not configurable to see error handling
 # @name createApplication
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 

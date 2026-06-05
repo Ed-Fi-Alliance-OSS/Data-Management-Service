@@ -61,7 +61,7 @@ Feature: Metadata endpoints
                   | /v3/vendors            |
                   | /v3/applications       |
                   | /v3/claimSets          |
-                  | /authorizationMetadata |
+                  | /v3/authorizationMetadata |
 
         Scenario: 06 Service information URLs should be accessible
             Given a GET request is made to "/"

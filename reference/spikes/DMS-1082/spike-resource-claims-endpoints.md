@@ -23,10 +23,10 @@ The following four endpoints are in scope:
 
 | Route | Description |
 |---|---|
-| `GET /v2/resourceClaims` | Returns the full projected claim hierarchy as a collection of root nodes, each containing its full recursive subtree. |
-| `GET /v2/resourceClaims/{id}` | Returns the projected node matching the given `dmscs.ResourceClaim.Id`, including its full recursive subtree. Returns `404` when the requested id is absent. |
-| `GET /v2/resourceClaimActions` | Returns a flat list of resource claim actions resolved from claim-set metadata. |
-| `GET /v2/resourceClaimActionAuthStrategies` | Returns a flat list of resource claims with default authorization, including action and strategy details. |
+| `GET /v3/resourceClaims` | Returns the full projected claim hierarchy as a collection of root nodes, each containing its full recursive subtree. |
+| `GET /v3/resourceClaims/{id}` | Returns the projected node matching the given `dmscs.ResourceClaim.Id`, including its full recursive subtree. Returns `404` when the requested id is absent. |
+| `GET /v3/resourceClaimActions` | Returns a flat list of resource claim actions resolved from claim-set metadata. |
+| `GET /v3/resourceClaimActionAuthStrategies` | Returns a flat list of resource claims with default authorization, including action and strategy details. |
 
 ---
 
@@ -34,8 +34,8 @@ The following four endpoints are in scope:
 
 | Route | Status |
 |---|---|
-| `POST /v2/resourceClaims`, `PUT`, `DELETE` | Out of scope. These endpoints are read-only projections; no write paths are added. |
-| `/v2/claimSets/{id}/resourceClaimActions/...` | Out of scope for this work. Not part of this parity set. |
+| `POST /v3/resourceClaims`, `PUT`, `DELETE` | Out of scope. These endpoints are read-only projections; no write paths are added. |
+| `/v3/claimSets/{id}/resourceClaimActions/...` | Out of scope for this work. Not part of this parity set. |
 | Seed, bootstrap, or maintenance of resource-claim metadata rows | Explicitly out of scope. See Section 6. |
 
 ---
@@ -48,10 +48,10 @@ These endpoints match the Admin API route surface and response shape. Divergence
 
 ### Hierarchy and collection semantics
 
-- `GET /v2/resourceClaims` returns a collection of **root nodes**. Each root node includes its full recursive subtree via nested `children` arrays.
-- `GET /v2/resourceClaims/{id}` returns the **selected node with its full recursive subtree**.
-- `GET /v2/resourceClaimActions` returns a flat list. No tree structure.
-- `GET /v2/resourceClaimActionAuthStrategies` returns a flat list with nested `authorizationStrategiesForActions` per item.
+- `GET /v3/resourceClaims` returns a collection of **root nodes**. Each root node includes its full recursive subtree via nested `children` arrays.
+- `GET /v3/resourceClaims/{id}` returns the **selected node with its full recursive subtree**.
+- `GET /v3/resourceClaimActions` returns a flat list. No tree structure.
+- `GET /v3/resourceClaimActionAuthStrategies` returns a flat list with nested `authorizationStrategiesForActions` per item.
 
 Sample `resourceClaims` response node (normative contract):
 
@@ -117,7 +117,7 @@ Sample `resourceClaimActionAuthStrategies` response item (normative contract):
 
 CMS already has an implemented query-parameter pattern for paged read endpoints. The resource-claim endpoints should follow that pattern rather than introducing feature-specific paging, sorting, or validation plumbing.
 
-The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimActions`, and `GET /v2/resourceClaimActionAuthStrategies`) support these general query parameters:
+The three list endpoints (`GET /v3/resourceClaims`, `GET /v3/resourceClaimActions`, and `GET /v3/resourceClaimActionAuthStrategies`) support these general query parameters:
 
 | Parameter | Type | Notes |
 |---|---|---|
@@ -126,21 +126,21 @@ The three list endpoints (`GET /v2/resourceClaims`, `GET /v2/resourceClaimAction
 | `orderBy` | string | Field name to sort by |
 | `direction` | string | `asc`/`ascending` or `desc`/`descending` |
 
-`GET /v2/resourceClaims/{id}` accepts only its path parameter. Query parameters (`limit`, `offset`, `orderBy`, `direction`) do not apply to this route.
+`GET /v3/resourceClaims/{id}` accepts only its path parameter. Query parameters (`limit`, `offset`, `orderBy`, `direction`) do not apply to this route.
 
 Endpoint-specific filter parameters:
 
 | Endpoint | Filter Parameters |
 |---|---|
-| `GET /v2/resourceClaims` | `id` (long), `name` (string) |
-| `GET /v2/resourceClaimActions` | `resourceName` (string) |
-| `GET /v2/resourceClaimActionAuthStrategies` | `resourceName` (string) |
+| `GET /v3/resourceClaims` | `id` (long), `name` (string) |
+| `GET /v3/resourceClaimActions` | `resourceName` (string) |
+| `GET /v3/resourceClaimActionAuthStrategies` | `resourceName` (string) |
 
 Filter, sort, and paging semantics:
 
-- `GET /v2/resourceClaims` first builds the valid projected hierarchy. Without filters, the result collection contains the root nodes. With `id` or `name` filters, the query applies those filters to the top-level root-node collection only. Matching root nodes retain their full recursive subtree, and the original `parentId` and `parentName` values are preserved.
-- For `GET /v2/resourceClaims`, `orderBy`, `direction`, `limit`, and `offset` apply to the top-level result collection after filtering. They do not page, sort, or remove descendant `children` within each returned subtree.
-- For `GET /v2/resourceClaimActions` and `GET /v2/resourceClaimActionAuthStrategies`, filters, sorting, and paging apply to the flat projected collection.
+- `GET /v3/resourceClaims` first builds the valid projected hierarchy. Without filters, the result collection contains the root nodes. With `id` or `name` filters, the query applies those filters to the top-level root-node collection only. Matching root nodes retain their full recursive subtree, and the original `parentId` and `parentName` values are preserved.
+- For `GET /v3/resourceClaims`, `orderBy`, `direction`, `limit`, and `offset` apply to the top-level result collection after filtering. They do not page, sort, or remove descendant `children` within each returned subtree.
+- For `GET /v3/resourceClaimActions` and `GET /v3/resourceClaimActionAuthStrategies`, filters, sorting, and paging apply to the flat projected collection.
 - `name` and `resourceName` filters are case-insensitive.
 - When multiple filters are supplied, these endpoints follow the existing Config query-filter behavior.
 - Required `orderBy` allowlists are `name`, `parentName`, `parentId`, and `id` for `resourceClaims`; `resourceClaimId` and `resourceName` for `resourceClaimActions`; and `resourceClaimId`, `resourceName`, and `claimName` for `resourceClaimActionAuthStrategies`.
@@ -224,12 +224,12 @@ The public failure behavior should stay aligned with comparable CMS read endpoin
 
 | Endpoint or Condition | API Behavior | Response Shape |
 |---|---|---|
-| `GET /v2/resourceClaims` success | `200 OK` | JSON array |
-| `GET /v2/resourceClaimActions` success | `200 OK` | JSON array |
-| `GET /v2/resourceClaimActionAuthStrategies` success | `200 OK` | JSON array |
+| `GET /v3/resourceClaims` success | `200 OK` | JSON array |
+| `GET /v3/resourceClaimActions` success | `200 OK` | JSON array |
+| `GET /v3/resourceClaimActionAuthStrategies` success | `200 OK` | JSON array |
 | Query filter matches no records | `200 OK` | Empty JSON array |
-| `GET /v2/resourceClaims/{id}` and id exists | `200 OK` | JSON object |
-| `GET /v2/resourceClaims/{id}` and id is absent | `404 Not Found` | Existing CMS not-found error body |
+| `GET /v3/resourceClaims/{id}` and id exists | `200 OK` | JSON object |
+| `GET /v3/resourceClaims/{id}` and id is absent | `404 Not Found` | Existing CMS not-found error body |
 | Unsupported `orderBy` value | `400 Bad Request` | Existing CMS validation error body |
 | Authorization failure | `401` or `403` | Existing CMS auth error body |
 | Unhandled server-side exception | `500 Internal Server Error` | Existing CMS unknown-error body |
@@ -261,7 +261,7 @@ This section records implementation-boundary notes that remain relevant for plan
 
 2. **Startup versus request-time validation** - These endpoints should follow existing CMS behavior. This spike does not add new startup checks, health checks, or datastore-integrity validation beyond what CMS already performs. Hierarchy lookup failures, metadata drift, and projection failures remain request-time concerns for these read endpoints.
 
-3. **`GET /v2/resourceClaimActions` response shape** - **Resolved.** Verified against `management-api-2.3.0.yaml`: the `actions` array contains `{ name: string }` objects only. There is no `actionId` in this response shape. See Section 4 for the normative sample.
+3. **`GET /v3/resourceClaimActions` response shape** - **Resolved.** Verified against `management-api-2.3.0.yaml`: the `actions` array contains `{ name: string }` objects only. There is no `actionId` in this response shape. See Section 4 for the normative sample.
 
 ---
 
@@ -275,10 +275,10 @@ The output of this spike is the companion story `reference/spikes/DMS-1082/ticke
 
 The intended service implementation walks the claim hierarchy at runtime and joins each node with the corresponding metadata row from `dmscs.ResourceClaim`.
 
-- `GET /v2/resourceClaims`: the service walks the hierarchy, projects each root node to `ResourceClaimResponse`, and includes the full recursive subtree.
-- `GET /v2/resourceClaims/{id}`: the service resolves the selected node by id and returns that node with its full recursive subtree.
-- `GET /v2/resourceClaimActions`: the service derives action membership for each resource claim from the `DefaultAuthorization` entries in the hierarchy JSON — the same source used by `resourceClaimActionAuthStrategies`. `IClaimSetRepository.GetActions` is used only to resolve action names from action identifiers; it does not define which actions belong to a resource claim. The projection emits a flat list.
-- `GET /v2/resourceClaimActionAuthStrategies`: the service traverses the hierarchy, filters to claims with `DefaultAuthorization`, resolves action names and authorization strategy names through the existing claim-set repository APIs, and emits a flat response.
+- `GET /v3/resourceClaims`: the service walks the hierarchy, projects each root node to `ResourceClaimResponse`, and includes the full recursive subtree.
+- `GET /v3/resourceClaims/{id}`: the service resolves the selected node by id and returns that node with its full recursive subtree.
+- `GET /v3/resourceClaimActions`: the service derives action membership for each resource claim from the `DefaultAuthorization` entries in the hierarchy JSON — the same source used by `resourceClaimActionAuthStrategies`. `IClaimSetRepository.GetActions` is used only to resolve action names from action identifiers; it does not define which actions belong to a resource claim. The projection emits a flat list.
+- `GET /v3/resourceClaimActionAuthStrategies`: the service traverses the hierarchy, filters to claims with `DefaultAuthorization`, resolves action names and authorization strategy names through the existing claim-set repository APIs, and emits a flat response.
 
 This design reuses existing configuration stores without introducing a parallel persistence model or schema changes.
 

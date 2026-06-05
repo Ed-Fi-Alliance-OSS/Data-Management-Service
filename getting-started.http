@@ -55,7 +55,7 @@ client_id={{sysAdminId}}
 
 ### Create a new vendor
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -85,7 +85,7 @@ Authorization: bearer {{configToken}}
 
 ### Create a DMS instance
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -100,7 +100,7 @@ Authorization: bearer {{configToken}}
 
 ### Create a new application for working with education organizations
 # @name edOrgApplication
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -122,7 +122,7 @@ Authorization: bearer {{configToken}}
 # tutorial. The following command shows the restrictions on this claimset:
 
 ###
-GET http://localhost:{{configPort}}/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
 Authorization: bearer {{configToken}}
 
 # As you can see, this claimset can be used with the following types, among
@@ -456,7 +456,7 @@ Content-Type: application/json
 #########
 
 ### Another useful claimset: E2E-NoFurtherAuthRequiredClaimSet
-GET http://localhost:{{configPort}}/authorizationMetadata?claimSetName=E2E-NoFurtherAuthRequiredClaimSet
+GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=E2E-NoFurtherAuthRequiredClaimSet
 Authorization: bearer {{configToken}}
 
 # What happens when you try to access a resource type that is not covered by the

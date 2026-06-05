@@ -65,7 +65,7 @@ public class ConfigurationServiceClaimSetProvider(
     private async Task<IList<ClaimSetMetadata>> FetchAuthorizationMetadata()
     {
         // Retrieve all claim sets with their authorization metadata in one call by omitting claimSetName
-        string authorizationMetadataEndpoint = "authorizationMetadata";
+        string authorizationMetadataEndpoint = "v3/authorizationMetadata";
         HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
             authorizationMetadataEndpoint
         );

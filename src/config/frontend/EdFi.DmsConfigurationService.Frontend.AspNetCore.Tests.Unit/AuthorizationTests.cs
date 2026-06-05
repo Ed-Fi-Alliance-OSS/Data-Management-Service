@@ -364,7 +364,7 @@ public class AuthorizationTests
 
             //Act
             var getAuthorizationMetaDataResponse = await client.GetAsync(
-                "/authorizationMetadata?claimSetName=ClaimSet1"
+                "/v3/authorizationMetadata?claimSetName=ClaimSet1"
             );
             var getAllClaimSetsResponse = await client.GetAsync("/v3/claimSets");
 

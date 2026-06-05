@@ -52,7 +52,7 @@ public class ConfigurationServiceApplicationProvider(
             logger.LogDebug("Fetching application context for clientId: {ClientId}", clientId);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
-                $"/v2/apiClients/{clientId}"
+                $"/v3/apiClients/{clientId}"
             );
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)

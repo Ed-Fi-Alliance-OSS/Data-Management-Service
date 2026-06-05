@@ -71,7 +71,7 @@ client_id={{sysAdminId}}
 
 ### 1.2 Create a vendor scoped to the ed-fi namespace
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -95,7 +95,7 @@ Authorization: bearer {{configToken}}
 
 ### 1.3 Create a DMS instance pointing at the RELATIONAL database
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -111,7 +111,7 @@ Authorization: bearer {{configToken}}
 ### 1.4 Create an application with NoFurtherAuthorizationRequired
 # (matches the E2E relational-backend lane; avoids namespace-authz noise for the demo)
 # @name createApplication
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 

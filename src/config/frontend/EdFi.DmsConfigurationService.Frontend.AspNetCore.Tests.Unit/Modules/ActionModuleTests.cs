@@ -102,7 +102,7 @@ public class RegisterActionEndpointTests
             client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
-            _response = await client.GetAsync("/actions");
+            _response = await client.GetAsync("/v3/actions");
             string responseString = await _response.Content.ReadAsStringAsync();
             var content = JsonSerializer.Deserialize<List<Action>>(responseString);
 
@@ -123,7 +123,7 @@ public class RegisterActionEndpointTests
             using var client = factory.CreateClient();
 
             // Act
-            _response = await client.GetAsync("/actions");
+            _response = await client.GetAsync("/v3/actions");
 
             // Assert
             _response!.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -158,7 +158,7 @@ public class RegisterActionEndpointTests
             client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
-            _response = await client.GetAsync("/actions");
+            _response = await client.GetAsync("/v3/actions");
 
             // Assert
             _response!.StatusCode.Should().Be(HttpStatusCode.Forbidden);

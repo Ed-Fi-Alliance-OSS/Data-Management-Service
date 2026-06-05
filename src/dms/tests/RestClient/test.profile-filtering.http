@@ -49,7 +49,7 @@ client_id={{sysAdminId}}
 #   </Profile>
 #
 # @name createSchoolProfile
-POST http://localhost:{{configPort}}/v2/profiles/
+POST http://localhost:{{configPort}}/v3/profiles/
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -58,7 +58,7 @@ Authorization: bearer {{configToken}}
   "definition": "<Profile name=\"{{profileName}}\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeOnly\"><Property name=\"nameOfInstitution\" /><Property name=\"webSite\" /></ReadContentType></Resource></Profile>"
 }
 
-### The Location header contains the full URL to the profile (e.g., http://localhost:8081/v2/profiles/123)
+### The Location header contains the full URL to the profile (e.g., http://localhost:8081/v3/profiles/123)
 @schoolProfileLocation={{createSchoolProfile.response.headers.Location}}
 @schoolProfileName={{profileName}}
 
@@ -73,7 +73,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 4: Create a Vendor
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -97,7 +97,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 5: Create a DMS Instance (if not using default)
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -112,7 +112,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 6: Create an Application WITH the IncludeOnly profile assigned
 # @name createApplicationWithProfile
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -131,7 +131,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 6b: Create another Application WITHOUT any profile (for comparison)
 # @name createApplicationNoProfile
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -147,7 +147,7 @@ Authorization: bearer {{configToken}}
 @noProfileClientSecret={{createApplicationNoProfile.response.body.secret}}
 
 ### Step 7: Verify the application has the profile assigned
-GET http://localhost:{{configPort}}/v2/applications/{{applicationId}}
+GET http://localhost:{{configPort}}/v3/applications/{{applicationId}}
 Accept: application/json
 Authorization: bearer {{configToken}}
 

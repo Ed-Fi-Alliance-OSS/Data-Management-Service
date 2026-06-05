@@ -112,7 +112,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     private async Task<List<IAPIResponse>> ProcessDataTable(string entityType, DataTable dataTable)
     {
         List<IAPIResponse> _apiResponses = [];
-        var baseUrl = $"v2";
+        var baseUrl = $"v3";
         foreach (var row in dataTable.Rows)
         {
             var dataUrl = $"{baseUrl}/{entityType}";

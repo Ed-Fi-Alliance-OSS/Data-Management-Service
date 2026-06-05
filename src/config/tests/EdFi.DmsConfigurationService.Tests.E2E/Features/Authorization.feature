@@ -152,7 +152,7 @@ Feature: Authorization
                   """
              Then it should respond with 403
 
-    Rule: Authorized with authorization endpoints only scope. Should have read access to only v2/claimsets and /authorizationMetadata endpoints
+    Rule: Authorized with authorization endpoints only scope. Should have read access to only v3/claimsets and /v3/authorizationMetadata endpoints
 
         Background:
             Given client "CMSAuthMetadataReadOnlyAccess" credentials with "edfi_admin_api/authMetadata_readonly_access" scope
@@ -163,7 +163,7 @@ Feature: Authorization
              Then it should respond with 200
 
         Scenario: 08 Ensure clients can GET authorizationMetadata
-             When a GET request is made to "/authorizationMetadata?claimSetName=ClaimSet1"
+             When a GET request is made to "/v3/authorizationMetadata?claimSetName=ClaimSet1"
              Then it should respond with 200
 
         Scenario: 09 Ensure clients can not GET vendors

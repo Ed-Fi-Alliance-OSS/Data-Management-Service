@@ -82,7 +82,7 @@ public static class AuthorizationDataProvider
         );
 
         using HttpResponseMessage dataStorePostResponse = await _configurationServiceClient.PostAsync(
-            "v2/dataStores",
+            "v3/dataStores",
             dataStoreContent
         );
 
@@ -111,7 +111,7 @@ public static class AuthorizationDataProvider
         );
 
         using HttpResponseMessage vendorPostResponse = await _configurationServiceClient.PostAsync(
-            "v2/vendors",
+            "v3/vendors",
             vendorContent
         );
 
@@ -143,7 +143,7 @@ public static class AuthorizationDataProvider
 
         using StringContent applicationContent = new(requestJson, Encoding.UTF8, "application/json");
         using HttpResponseMessage applicationPostResponse = await _configurationServiceClient.PostAsync(
-            "v2/applications",
+            "v3/applications",
             applicationContent
         );
 

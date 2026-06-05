@@ -12,7 +12,7 @@ public class ActionsModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/actions", GetUserActions);
+        endpoints.MapSecuredGet("/v3/actions", GetUserActions);
     }
 
     private static IResult GetUserActions(IClaimSetRepository repository)

@@ -39,7 +39,7 @@ Authorization is scope-based. Three scopes are defined:
 |---|---|
 | `edfi_admin_api/full_access` | Full access to all CMS API endpoints |
 | `edfi_admin_api/readonly_access` | Read-only access to all CMS API endpoints |
-| `edfi_admin_api/authMetadata_readonly_access` | Access to `/v2/authorizationMetadata` only |
+| `edfi_admin_api/authMetadata_readonly_access` | Access to `/v3/authorizationMetadata` only |
 
 ## Endpoint Authorization Model
 
@@ -51,7 +51,7 @@ Scope requirements are applied per HTTP method via extension helpers:
 | `MapSecuredPost` | `full_access` only | All POST endpoints |
 | `MapSecuredPut` | `full_access` only | All PUT endpoints |
 | `MapSecuredDelete` | `full_access` only | All DELETE endpoints |
-| `MapLimitedAccess` | Any of the three scopes | `/v2/authorizationMetadata` |
+| `MapLimitedAccess` | Any of the three scopes | `/v3/authorizationMetadata` |
 | `MapPublic` | Anonymous | Health, JWKS, discovery endpoints |
 
 ## Roles

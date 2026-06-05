@@ -123,7 +123,7 @@ managing seamless secret rotation. The script/application will:
 * Identify both expired secrets and secrets that are about to expire within a
   configurable number of days.
 * Rotate secrets using the Keycloak API endpoints or
-  `/v2/applications/{{id}}/reset-credential` CMS endpoint.
+  `/v3/applications/{{id}}/reset-credential` CMS endpoint.
 * Optionally delete old secrets after rotation to maintain security.
 * Provide configurable settings for the rotation threshold, allowing proactive
   credential updates before expiration.

@@ -133,7 +133,7 @@ making authorization decisions. The Admin API has been designed for consumers
 performing security metadata management. For this reason, the DMS Configuration
 Service will implement a new endpoint that supports this use case:
 
-* `GET /v2/authorizationMetadata?claimSetName=SIS%20Vendor`
+* `GET /v3/authorizationMetadata?claimSetName=SIS%20Vendor`
   * Returns authorization metadata for the specified claim set, containing the
     resources accessible to API clients and the authorization strategies needed
     to make authorization decisions.
@@ -186,19 +186,19 @@ In the claimset GET requests, the readonly `_applications` array implies that
 the query needs to join to the `Application` table. Thus the `Application` table
 needs an index on `ClaimSetName`.
 
-* `GET /v2/claimSets/{id}/export`
-* `GET /v2/claimSets`
+* `GET /v3/claimSets/{id}/export`
+* `GET /v3/claimSets`
   * Return the simple response body defined in the Admin API specification.
   * Includes paging operations.
-* `GET /v2/claimSets?verbose=true`
+* `GET /v3/claimSets?verbose=true`
   * Returns the entire CLOB, with the same response as the `/export` endpoint.
   * Needs to support the normal paging operations, though `offset` and `limit`
     should _not_ be required fields.
-* `GET /v2/claimSets/{id}`
+* `GET /v3/claimSets/{id}`
   * Return the simple response body defined in the Admin API specification.
-* `GET /v2/claimSets/{id}?verbose=true`
+* `GET /v3/claimSets/{id}?verbose=true`
   * Returns the entire CLOB, with the same response as the `/export` endpoint.
-* `POST /v2/claimSets`
+* `POST /v3/claimSets`
   * In the Admin API interface, only the `name` is used. Continue supporting
     that. Basically, this is creating a placeholder with no useful information.
   * Also support accepting the entire `resourceClaims` CLOB payload, just like
@@ -208,7 +208,7 @@ needs an index on `ClaimSetName`.
   > [!NOTE]
   > ClaimSet `name` must be unique.
 
-* `PUT /v2/claimSets/{id}`
+* `PUT /v3/claimSets/{id}`
   * There is a small mistake in the Admin API specification, and we should fix
     that right now. Thus we have a breaking change compared to the Admin API 2.2
     specification. A `PUT` request _by definition_ must include the entire
@@ -217,42 +217,42 @@ needs an index on `ClaimSetName`.
     1, "name": "claimset name" }` would completely remove the `resourceClaims`
     node. Except for any metadata, we store _exactly_ what was received in the
     `PUT` request.
-* `DELETE /v2/claimSets/{id}`
-* `POST /v2/claimSets/copy`
-* `POST /v2/claimSets/import`
-  * Becomes a synonym to `/v2/claimSets`, except that now the `resourceClaims`
+* `DELETE /v3/claimSets/{id}`
+* `POST /v3/claimSets/copy`
+* `POST /v3/claimSets/import`
+  * Becomes a synonym to `/v3/claimSets`, except that now the `resourceClaims`
     array will be a required attribute.
 
 #### AuthorizationStrategies
 
-Continue supporting the read-only list for `/v2/authorizationStrategies`.
+Continue supporting the read-only list for `/v3/authorizationStrategies`.
 
 #### Actions
 
-Continue supporting the read-only hard-coded list for `/v2/actions`.
+Continue supporting the read-only hard-coded list for `/v3/actions`.
 
 ### Unsupported Endpoints
 
 At this time, the following endpoints will not be supported in the Configuration
-Service, because the `/v2/claimSets` will provide the same support. This is
+Service, because the `/v3/claimSets` will provide the same support. This is
 subject to change based on community feedback.
 
-* `/v2/resourceClaims`
-* `/v2/resourceClaims/{id}`
-* `/v2/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/overrideAuthorizationStrategy`
-* `/v2/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/resetAuthorizationStrategies`
-* `/v2/claimSets/{claimSetId}/resourceClaimActions`
-* `/v2/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}`
-* `/v2/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}`
+* `/v3/resourceClaims`
+* `/v3/resourceClaims/{id}`
+* `/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/overrideAuthorizationStrategy`
+* `/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/resetAuthorizationStrategies`
+* `/v3/claimSets/{claimSetId}/resourceClaimActions`
+* `/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}`
+* `/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}`
 
 ## Summary of Changes Compared to Admin API 2.2 Specification
 
 * `offset` and `limit` should not be required parameters
 * `PUT` requests will require the presence of the matching `id` attribute in the
   request body.
-* Both `POST` and `PUT` on `/v2/claimSets` will support use of the
+* Both `POST` and `PUT` on `/v3/claimSets` will support use of the
   `resourceClaims` attribute.
-* A `GET` request to `/v2/claimSets` or `/v2/claimSets/{id}` will return the
+* A `GET` request to `/v3/claimSets` or `/v3/claimSets/{id}` will return the
   `resourceClaims` array _if_ query string parameter `verbose` is received with
   value `true`.
 

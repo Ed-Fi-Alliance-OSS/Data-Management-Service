@@ -6,7 +6,7 @@
 
 This document describes the design for storing and managing API Profiles in
 the DMS Configuration Service (CMS). Profiles are managed through a new
-`/v2/profiles` endpoint and associated with Applications via a many-to-many
+`/v3/profiles` endpoint and associated with Applications via a many-to-many
 relationship.
 
 ---
@@ -81,15 +81,15 @@ is still assigned to Applications.
 
 ## 3. API Endpoints
 
-### 3.1 Profile Management (`/v2/profiles`)
+### 3.1 Profile Management (`/v3/profiles`)
 
 | Method | Endpoint | Description | Auth Scope |
 |--------|----------|-------------|------------|
-| POST | `/v2/profiles` | Create a new profile | Admin |
-| GET | `/v2/profiles` | List all profiles (paginated) | ReadOnly or Admin |
-| GET | `/v2/profiles/{id}` | Get profile by ID | ReadOnly or Admin |
-| PUT | `/v2/profiles/{id}` | Update a profile | Admin |
-| DELETE | `/v2/profiles/{id}` | Delete a profile | Admin |
+| POST | `/v3/profiles` | Create a new profile | Admin |
+| GET | `/v3/profiles` | List all profiles (paginated) | ReadOnly or Admin |
+| GET | `/v3/profiles/{id}` | Get profile by ID | ReadOnly or Admin |
+| PUT | `/v3/profiles/{id}` | Update a profile | Admin |
+| DELETE | `/v3/profiles/{id}` | Delete a profile | Admin |
 
 ### 3.2 Request/Response Models
 
@@ -264,7 +264,7 @@ The existing Application endpoints are extended to support profile assignment:
 
 ### 5.1 Profile Retrieval and Caching
 
-DMS caches the full profile catalog (all profiles) from `/v2/profiles`,
+DMS caches the full profile catalog (all profiles) from `/v3/profiles`,
 including profile id, profile name, and profile definition. The catalog is
 keyed for lookups by either id or name, so a single cache can serve:
 
@@ -296,7 +296,7 @@ keyed for lookups by either id or name, so a single cache can serve:
 
 ### 5.2 DMS Caching Strategy
 
-1. On first request, DMS calls `GET /v2/profiles` to load and cache the full profile
+1. On first request, DMS calls `GET /v3/profiles` to load and cache the full profile
 catalog (definitions).
 2. DMS parses and caches those profile definitions/resource models.
 3. At request time, DMS can either resolve the requested profile by name or by

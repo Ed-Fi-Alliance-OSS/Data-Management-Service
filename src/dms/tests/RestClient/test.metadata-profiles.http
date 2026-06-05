@@ -36,7 +36,7 @@ client_id={{sysAdminId}}
 #   </Profile>
 #
 # @name createSchoolProfile
-POST http://localhost:{{configPort}}/v2/profiles/
+POST http://localhost:{{configPort}}/v3/profiles/
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -45,7 +45,7 @@ Authorization: bearer {{configToken}}
   "definition": "<Profile name=\"{{profileName}}\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeOnly\"><Property name=\"nameOfInstitution\" /><Property name=\"webSite\" /></ReadContentType></Resource></Profile>"
 }
 
-### The Location header contains the full URL to the profile (e.g., http://localhost:8081/v2/profiles/123)
+### The Location header contains the full URL to the profile (e.g., http://localhost:8081/v3/profiles/123)
 @schoolProfileLocation={{createSchoolProfile.response.headers.Location}}
 @schoolProfileName={{profileName}}
 

@@ -31,7 +31,7 @@ client_id={{sysAdminId}}
 @configToken={{configTokenRequest.response.body.access_token}}
 
 ### Step 3: Create Tenant1
-POST http://localhost:{{configPort}}/v2/tenants/
+POST http://localhost:{{configPort}}/v3/tenants/
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -40,7 +40,7 @@ Authorization: bearer {{configToken}}
 }
 
 ### Step 4: Create Tenant2
-POST http://localhost:{{configPort}}/v2/tenants/
+POST http://localhost:{{configPort}}/v3/tenants/
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -49,7 +49,7 @@ Authorization: bearer {{configToken}}
 }
 
 ### Step 5: Verify tenants were created
-GET http://localhost:{{configPort}}/v2/tenants/
+GET http://localhost:{{configPort}}/v3/tenants/
 Authorization: bearer {{configToken}}
 
 #############################################
@@ -57,7 +57,7 @@ Authorization: bearer {{configToken}}
 #############################################
 
 ### Step 6: Create DMS Instance for Tenant1
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: Tenant1
@@ -69,7 +69,7 @@ Tenant: Tenant1
 }
 
 ### Step 7: Create another DMS Instance for Tenant1
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: Tenant1
@@ -81,7 +81,7 @@ Tenant: Tenant1
 }
 
 ### Step 8: Create DMS Instance for Tenant2
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 Tenant: Tenant2
@@ -93,16 +93,16 @@ Tenant: Tenant2
 }
 
 ### Step 9: Query DMS Instances for Tenant1 (should return 2 instances)
-GET http://localhost:{{configPort}}/v2/dataStores
+GET http://localhost:{{configPort}}/v3/dataStores
 Authorization: bearer {{configToken}}
 Tenant: Tenant1
 
 ### Step 10: Query DMS Instances for Tenant2 (should return 1 instance)
-GET http://localhost:{{configPort}}/v2/dataStores
+GET http://localhost:{{configPort}}/v3/dataStores
 Authorization: bearer {{configToken}}
 Tenant: Tenant2
 
 
 ### Step 11: Query DMS Instances with missing Tenant header
-GET http://localhost:{{configPort}}/v2/dataStores
+GET http://localhost:{{configPort}}/v3/dataStores
 Authorization: bearer {{configToken}}

@@ -21,9 +21,9 @@ client_id={{sysAdminId}}
 ### Read the token from the response body
 @configToken={{configTokenRequest.response.body.access_token}}
 
-### 1) GET list: /v2/resourceClaims (default list)
+### 1) GET list: /v3/resourceClaims (default list)
 # Expected: 200 OK, returns top-level root nodes (with nested `children`)
-GET http://localhost:{{configPort}}/v2/resourceClaims
+GET http://localhost:{{configPort}}/v3/resourceClaims
 Authorization: bearer {{configToken}}
 
 ### Capture first resource claim id and name for subsequent tests
@@ -32,39 +32,39 @@ Authorization: bearer {{configToken}}
 @firstResourceClaimName=assessmentMetadata
 #{{response.body[0].name}}
 
-### 2) GET single item by id: /v2/resourceClaims/{id}
+### 2) GET single item by id: /v3/resourceClaims/{id}
 # Expected: 200 OK with full recursive subtree when found
-GET http://localhost:{{configPort}}/v2/resourceClaims/{{firstResourceClaimId}}
+GET http://localhost:{{configPort}}/v3/resourceClaims/{{firstResourceClaimId}}
 Authorization: bearer {{configToken}}
 
 ### 3) GET list with paging, sorting and direction
-GET http://localhost:{{configPort}}/v2/resourceClaims?limit=5&offset=0&orderBy=name&direction=asc
+GET http://localhost:{{configPort}}/v3/resourceClaims?limit=5&offset=0&orderBy=name&direction=asc
 Authorization: bearer {{configToken}}
 
 ### 4) GET list filtering by name (case-insensitive)
-GET http://localhost:{{configPort}}/v2/resourceClaims?name={{firstResourceClaimName}}
+GET http://localhost:{{configPort}}/v3/resourceClaims?name={{firstResourceClaimName}}
 Authorization: bearer {{configToken}}
 
 ### 5) GET resourceClaimActions (flat list)
 # Expected: 200 OK array of items with resourceClaimId, resourceName, claimName, actions
-GET http://localhost:{{configPort}}/v2/resourceClaimActions
+GET http://localhost:{{configPort}}/v3/resourceClaimActions
 Authorization: bearer {{configToken}}
 
 ### 6) GET resourceClaimActions filtered by resourceName
-GET http://localhost:{{configPort}}/v2/resourceClaimActions?resourceName={{firstResourceClaimName}}
+GET http://localhost:{{configPort}}/v3/resourceClaimActions?resourceName={{firstResourceClaimName}}
 Authorization: bearer {{configToken}}
 
 ### 7) GET resourceClaimActionAuthStrategies (flat list)
 # Expected: 200 OK array with authorizationStrategiesForActions resolved
-GET http://localhost:{{configPort}}/v2/resourceClaimActionAuthStrategies
+GET http://localhost:{{configPort}}/v3/resourceClaimActionAuthStrategies
 Authorization: bearer {{configToken}}
 
 ### 8) GET resourceClaimActionAuthStrategies filtered by resourceName
-GET http://localhost:{{configPort}}/v2/resourceClaimActionAuthStrategies?resourceName={{firstResourceClaimName}}
+GET http://localhost:{{configPort}}/v3/resourceClaimActionAuthStrategies?resourceName={{firstResourceClaimName}}
 Authorization: bearer {{configToken}}
 
 ### 9) Validation test: unsupported orderBy should return 400 Bad Request
-GET http://localhost:{{configPort}}/v2/resourceClaims?orderBy=unsupportedField
+GET http://localhost:{{configPort}}/v3/resourceClaims?orderBy=unsupportedField
 Authorization: bearer {{configToken}}
 
 ### Notes

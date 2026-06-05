@@ -71,7 +71,7 @@ public class SecurityMetadataProviderTests
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
 
             _handler.SetResponse(
-                $"https://api.example.com/authorizationMetadata",
+                $"https://api.example.com/v3/authorizationMetadata",
                 new List<ClaimSetMetadata>
                 {
                     fakeAuthorizationMetadataForClaimSet1,

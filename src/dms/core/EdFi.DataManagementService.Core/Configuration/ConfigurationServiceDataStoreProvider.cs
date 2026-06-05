@@ -255,7 +255,7 @@ public class ConfigurationServiceDataStoreProvider(
     /// </summary>
     private async Task<IList<string>> FetchTenants(string configurationServiceToken)
     {
-        const string TenantsEndpoint = "v2/tenants/";
+        const string TenantsEndpoint = "v3/tenants/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", TenantsEndpoint);
 
@@ -300,7 +300,7 @@ public class ConfigurationServiceDataStoreProvider(
     /// </summary>
     private async Task<IList<DataStore>> FetchDataStores(string configurationServiceToken, string? tenant)
     {
-        const string DataStoresEndpoint = "v2/dataStores/";
+        const string DataStoresEndpoint = "v3/dataStores/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", DataStoresEndpoint);
 
