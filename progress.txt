@@ -1,0 +1,5 @@
+DMS-1206 task completed: derive relational document-reference requiredness from jsonSchemaForInsert.
+Key decisions: added EffectiveReferenceRequirednessResolver in extract inputs; infer owning materialized scope from root/last collection/_ext.project boundary; ignore row-existence ancestors and derive requiredness only within materialized row using required arrays plus x-nullable. Kept raw documentPathsMapping.isRequired only for existing identity guard; next task should move guard to derived requiredness.
+Files changed: ExtractInputsStep.cs, DocumentReferenceMappingsExtractor.cs, EffectiveReferenceRequirednessResolver.cs, SchemaInputValidationTests.cs, AbstractIdentityTableDerivationTests.cs, relational model authoritative expected manifests.
+Verification: dotnet csharpier format relational model source/tests; dotnet test RelationalModel.Tests.Unit full suite passed 784 tests. Prompt literal filter matched no tests; equivalent fixture filter passed earlier.
+Notes: authoritative input fixtures were not modified. No blockers.

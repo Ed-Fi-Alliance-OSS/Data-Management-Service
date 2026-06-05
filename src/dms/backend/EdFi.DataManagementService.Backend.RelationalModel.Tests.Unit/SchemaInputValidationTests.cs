@@ -269,7 +269,7 @@ public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonP
         _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject()
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolReferenceJsonSchema()
         );
     }
 
@@ -328,7 +328,7 @@ public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJson
         _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: identityJsonPaths,
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject()
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolReferenceJsonSchema()
         );
     }
 
@@ -383,7 +383,7 @@ public class Given_An_Identity_Reference_That_Is_Not_Required
         _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
             identityJsonPaths: identityJsonPaths,
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject()
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolReferenceJsonSchema()
         );
     }
 
@@ -752,7 +752,7 @@ public class Given_ArrayUniquenessConstraint_With_Partial_Reference_Identity_Pat
         _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject(),
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolsArraySchoolReferenceJsonSchema(),
             arrayUniquenessConstraints: arrayUniquenessConstraints
         );
     }
@@ -828,7 +828,7 @@ public class Given_Nested_ArrayUniquenessConstraint_With_Partial_Reference_Ident
         _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject(),
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildNestedAssignmentsSchoolReferenceJsonSchema(),
             arrayUniquenessConstraints: arrayUniquenessConstraints
         );
     }
@@ -1131,7 +1131,7 @@ public class Given_A_Relational_NameOverride_For_NonReference_Path
         _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject(),
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolReferenceJsonSchema(),
             relational: relational
         );
     }
@@ -1195,7 +1195,7 @@ public class Given_A_Relational_NameOverride_For_A_Reference_Path
         _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject(),
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolReferenceJsonSchema(),
             relational: relational
         );
     }
@@ -1260,7 +1260,7 @@ public class Given_A_Relational_NameOverride_Inside_A_Reference_Object
         _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject(),
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolReferenceJsonSchema(),
             relational: relational
         );
     }
@@ -1325,7 +1325,7 @@ public class Given_A_Relational_NameOverride_Inside_A_Reference_Object_For_Non_I
         _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
-            jsonSchemaForInsert: new JsonObject(),
+            jsonSchemaForInsert: SchemaInputValidationHelpers.BuildSchoolReferenceJsonSchema(),
             relational: relational
         );
     }
@@ -1493,6 +1493,85 @@ public class Given_A_Relational_RootTableNameOverride_On_A_Resource_Extension
 internal static class SchemaInputValidationHelpers
 {
     /// <summary>
+    /// Builds a minimal JSON schema containing a root school reference.
+    /// </summary>
+    public static JsonObject BuildSchoolReferenceJsonSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["schoolReference"] = BuildSchoolReferenceSchema() },
+            ["required"] = new JsonArray { "schoolReference" },
+        };
+    }
+
+    /// <summary>
+    /// Builds a minimal JSON schema containing a collection item school reference.
+    /// </summary>
+    public static JsonObject BuildSchoolsArraySchoolReferenceJsonSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schools"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolReference"] = BuildSchoolReferenceSchema(),
+                        },
+                        ["required"] = new JsonArray { "schoolReference" },
+                    },
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds a minimal JSON schema containing a nested collection item school reference.
+    /// </summary>
+    public static JsonObject BuildNestedAssignmentsSchoolReferenceJsonSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schools"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["id"] = new JsonObject { ["type"] = "integer" },
+                            ["assignments"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["schoolReference"] = BuildSchoolReferenceSchema(),
+                                    },
+                                    ["required"] = new JsonArray { "schoolReference" },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    /// <summary>
     /// Capture extract inputs exception.
     /// </summary>
     public static Exception CaptureExtractInputsException(
@@ -1644,5 +1723,22 @@ internal static class SchemaInputValidationHelpers
         };
 
         return new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema };
+    }
+
+    /// <summary>
+    /// Builds a minimal school reference schema.
+    /// </summary>
+    private static JsonObject BuildSchoolReferenceSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                ["schoolYear"] = new JsonObject { ["type"] = "integer" },
+            },
+            ["required"] = new JsonArray { "schoolId", "schoolYear" },
+        };
     }
 }

@@ -17,7 +17,7 @@
       "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceObjectPathScopeResolver.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs, and src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs to confirm owning-scope behavior matches the derived model.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests|FullyQualifiedName~ExtensionTableDerivationTests\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "implementation",
