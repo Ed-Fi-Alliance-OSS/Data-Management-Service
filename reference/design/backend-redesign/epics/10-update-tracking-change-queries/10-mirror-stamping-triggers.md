@@ -13,6 +13,8 @@ The trigger must allocate exactly one `dms.ChangeVersionSequence` value per affe
 
 The trigger's affected-document detection must also ignore updates whose only differences are stamp columns. This prevents mirror updates from causing recursive or redundant stamp activity.
 
+Known PostgreSQL follow-up: this story keeps PostgreSQL child / `_ext` `DocumentStamping` triggers on their current row-level shape. When one PostgreSQL statement changes multiple child or `_ext` rows that share the same root `DocumentId`, the final mirror still equals `dms.Document`, but the trigger can allocate more than one `ContentVersion` for that one affected document. Dedupe-by-document PostgreSQL statement-level stamping is tracked separately in `28-postgresql-statement-level-child-stamping.md`.
+
 ## Acceptance Criteria
 
 - PostgreSQL trigger functions capture stamped `DocumentId`, `ContentVersion`, and `ContentLastModifiedAt` values from the `dms.Document` update using `RETURNING`.
@@ -24,10 +26,11 @@ The trigger's affected-document detection must also ignore updates whose only di
 - Inserts, updates, identity changes, child writes, `_ext` writes, FK-cascade updates, extension-project resource writes, and descriptor writes leave the mirror equal to `dms.Document`.
 - Successful no-op updates do not change `dms.Document` stamps and do not change mirror stamps.
 - Direct stamp-only updates do not insert tracked-change rows and do not allocate an additional change version through nested trigger activity.
-- Multi-row updates allocate one distinct `ContentVersion` per affected document and mirror each value correctly.
+- Multi-row updates allocate one distinct `ContentVersion` per affected document and mirror each value correctly for SQL Server statement-level stamping and PostgreSQL root / descriptor stamping. PostgreSQL child / `_ext` multi-row statements where multiple changed rows share one root `DocumentId` are deferred to `28-postgresql-statement-level-child-stamping.md`.
 - PostgreSQL and SQL Server integration tests cover at least a root-only resource, a child-bearing resource, an `_ext`-bearing resource, an extension-project resource, and a descriptor.
 
 ## Out of Scope
 
 - Adding tracked-change tombstone or key-change inserts.
 - Changing read responses to source `_lastModifiedDate` or per-item `ChangeVersion` from the mirror instead of `dms.Document`.
+- Reworking PostgreSQL child / `_ext` `DocumentStamping` triggers from row-level stamping to statement-level or otherwise deduped stamping.
