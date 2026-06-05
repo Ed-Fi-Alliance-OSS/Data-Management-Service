@@ -1,18 +1,19 @@
 [
   {
     "category": "implementation",
-    "description": "Derive each relational document-reference group's requiredness from the owning materialized scope in jsonSchemaForInsert instead of from raw documentPathsMapping.isRequired.",
+    "description": "Derive each relational document-reference group's requiredness from jsonSchemaForInsert in the owning materialized scope and populate DocumentReferenceMapping.IsRequired with that derived value.",
     "acceptance-criteria": [
-      "The relational extraction path populates DocumentReferenceMapping.IsRequired from jsonSchemaForInsert-derived effective requiredness, not from documentPathsMapping.isRequired.",
-      "The requiredness traversal starts at the owning materialized table scope for root, child collection, nested collection, root extension, collection-aligned extension, and extension child collection references.",
-      "A reference group is required only when every object segment from the owning scope to the reference object requires the next property and no traversed schema segment is x-nullable.",
-      "Optional array and _ext ancestors that only decide whether a row exists do not make columns nullable inside an already materialized collection or extension row.",
-      "The derived group requiredness is applied uniformly to the reference group's DocumentId column and every propagated identity or descriptor binding column produced for that reference.",
-      "Raw Core.ApiSchema document path requiredness remains unchanged for non-relational consumers; raw documentPathsMapping.isRequired is not authoritative for relational column nullability.",
+      "The relational extraction path no longer uses raw documentPathsMapping.isRequired as the source of truth for DocumentReferenceMapping.IsRequired.",
+      "Core.ApiSchema DocumentPath.IsRequired and raw documentPathsMapping.isRequired remain unchanged for non-relational consumers such as resource load-order calculation.",
+      "The requiredness resolver walks from the owning materialized table scope to the reference object path and treats a reference group as required only when every object segment requires the next property and no traversed schema segment is x-nullable.",
+      "For root, child collection, nested collection, root extension, collection-aligned extension, and extension child collection scopes, row-existence ancestors that only decide whether a row is materialized do not make columns nullable inside the materialized row.",
+      "The derived group requiredness is applied uniformly by reference binding to the reference group's DocumentId column and every propagated scalar or descriptor identity binding column.",
+      "Missing, non-object, or otherwise mismatched jsonSchemaForInsert path traversal fails fast with a diagnostic naming the resource and reference path.",
       "The implementation is schema-driven and contains no SurveyResponse-specific, choice-name-specific, or column-name-substring rule."
     ],
     "steps-to-verify": [
-      "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/DocumentReferenceMappingsExtractor.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/DeriveColumnsAndBindDescriptorEdgesStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs, and src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs to confirm relational reference nullability follows jsonSchemaForInsert semantics.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/DocumentReferenceMappingsExtractor.cs and any helper introduced for effective reference requiredness.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceObjectPathScopeResolver.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs, and src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs to confirm owning-scope behavior matches the derived model.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests|FullyQualifiedName~ExtensionTableDerivationTests\""
     ],
     "completed": false
@@ -25,6 +26,7 @@
       "Compilation fails when any identityJsonPaths entry is sourced from a reference object that is not effectively required by jsonSchemaForInsert.",
       "The failure diagnostic names the owning resource, reference object path, and identity path that made the optional identity reference invalid.",
       "Required identity-component references that are required by jsonSchemaForInsert continue to compile and produce NOT NULL reference group columns.",
+      "The implementation does not force optional identity-reference groups to NOT NULL as a fallback.",
       "The guard applies uniformly to references in root, collection, nested, extension, and extension child collection scopes."
     ],
     "steps-to-verify": [
@@ -35,39 +37,52 @@
   },
   {
     "category": "tests",
-    "description": "Add focused relational model unit coverage for jsonSchemaForInsert-derived reference requiredness across required, optional, x-nullable, collection, nested, and extension scopes.",
+    "description": "Add focused relational model unit coverage for jsonSchemaForInsert-derived reference requiredness in root, child collection, nested collection, required, optional, and x-nullable cases.",
     "acceptance-criteria": [
       "Unit tests cover an optional choice-like reference where documentPathsMapping.isRequired is true but jsonSchemaForInsert does not require the reference object.",
       "Unit tests assert the reference group's DocumentId and propagated identity columns are nullable when the derived reference group is optional.",
       "Unit tests assert required references remain non-nullable when jsonSchemaForInsert requires the reference object.",
       "Unit tests assert x-nullable on a traversed reference object path makes the reference group optional even when documentPathsMapping.isRequired is true.",
       "Unit tests cover child collection and nested collection scopes where row-existence ancestors are ignored inside the materialized row.",
-      "Unit tests cover root extension, collection-aligned extension, and extension child collection scopes where optional _ext row-presence ancestors are ignored inside the materialized row.",
-      "Unit tests cover the optional identity-reference failure path and assert the diagnostic includes the owning resource, reference path, and identity path.",
-      "Constraint or binding tests confirm optional reference groups still receive their per-reference all-or-none CHECK constraints and composite FKs."
+      "Unit tests cover the optional identity-reference failure path and assert the diagnostic includes the owning resource, reference path, and identity path."
     ],
     "steps-to-verify": [
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests|FullyQualifiedName~ExtensionTableDerivationTests|FullyQualifiedName~ConstraintDerivationRelationalModelSetPassTests\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests\"",
+      "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit"
+    ],
+    "completed": false
+  },
+  {
+    "category": "tests",
+    "description": "Add focused relational model unit coverage for jsonSchemaForInsert-derived reference requiredness inside extension scopes and for preserved reference constraints on optional reference groups.",
+    "acceptance-criteria": [
+      "Unit tests cover root extension, collection-aligned extension, and extension child collection scopes where optional _ext row-presence ancestors are ignored inside the materialized extension row.",
+      "Unit tests assert extension-scope reference groups are nullable or non-nullable according to owning-scope jsonSchemaForInsert requiredness, not raw documentPathsMapping.isRequired.",
+      "Constraint or binding tests confirm optional reference groups still receive their per-reference all-or-none CHECK constraints.",
+      "Constraint or binding tests confirm optional reference groups still receive their composite FKs.",
+      "Tests confirm no choice-group at-most-one or exactly-one CHECK constraint is introduced as part of nullable reference handling."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtensionTableDerivationTests|FullyQualifiedName~ConstraintDerivationRelationalModelSetPassTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests\"",
       "Run dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit"
     ],
     "completed": false
   },
   {
     "category": "fixture-infrastructure",
-    "description": "Add an authoritative DS52+TPDM generated fixture and wire it into the DDL golden and API-level integration fixture harnesses.",
+    "description": "Add a checked-in authoritative DS52+TPDM generated fixture and register it with the DDL golden test suite.",
     "acceptance-criteria": [
-      "A checked-in authoritative DS52+TPDM fixture directory exists under src/dms/backend/Fixtures/authoritative using a clear name such as ds-5.2-tpdm; the existing ds-5.2 core-only and sample-extension fixtures are not treated as equivalent unless TPDM is actually part of their fixture.json.",
-      "The fixture.json loads the real DS 5.2 core ApiSchema plus the real TPDM ApiSchema input, declares both pgsql and mssql dialects, and emits a DDL manifest.",
-      "The fixture input source does not depend on bin output or a hand-written SurveyResponse-only schema shortcut.",
+      "A checked-in authoritative DS52+TPDM fixture directory exists under src/dms/backend/Fixtures/authoritative using a clear name such as ds-5.2-tpdm.",
+      "The fixture.json loads the existing DS 5.2 core authoritative ApiSchema plus a real TPDM ApiSchema input, declares both pgsql and mssql dialects, and emits a DDL manifest.",
+      "The TPDM ApiSchema input is checked in with the fixture or resolved through a repo-relative fixture input path; fixture execution does not depend on bin output or a hand-written SurveyResponse-only schema shortcut.",
+      "The existing ds-5.2 core-only and sample-extension fixtures are not treated as equivalent unless TPDM is actually part of their fixture.json.",
       "Inspection of the fixture's SurveyResponse resource schema verifies the responder-choice document reference mappings reproduce the DMS-1206 mismatch: raw documentPathsMapping.isRequired is true while jsonSchemaForInsert does not require any responder choice branch.",
-      "The DDL golden test suite includes a named DS52+TPDM authoritative fixture so both PostgreSQL and SQL Server outputs are generated and compared.",
-      "The API-level integration harness exposes a FixtureKey such as AuthoritativeDs52Tpdm that resolves to the DS52+TPDM fixture, FixtureContext grants access to SurveyResponse and the prerequisite resources used by the SurveyResponse scenarios, and the integration test README fixture map is updated."
+      "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/AuthoritativeDdlGoldenTests.cs, or an equivalent authoritative golden test registration, includes a named DS52+TPDM fixture so both PostgreSQL and SQL Server outputs are generated and compared."
     ],
     "steps-to-verify": [
       "Inspect src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm/fixture.json, or the selected DS52+TPDM fixture directory, and its inputs to confirm the fixture is real, checked in, includes TPDM, and declares pgsql and mssql.",
       "Inspect the SurveyResponse resourceSchema in the DS52+TPDM fixture input to confirm the DMS-1206 requiredness mismatch is present.",
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~Authoritative\"",
-      "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContext.cs, src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureRepositoryPaths.cs, and src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md for the new fixture key mapping."
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"Category=Authoritative\""
     ],
     "completed": false
   },
@@ -85,9 +100,25 @@
       "Related effective-schema and DDL manifests are updated when the generated fixture hash, statement counts, or inventories change."
     ],
     "steps-to-verify": [
-      "Run UPDATE_GOLDENS=1 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~Authoritative\"",
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"FullyQualifiedName~Authoritative\"",
+      "Run UPDATE_GOLDENS=1 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"Category=Authoritative\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"Category=Authoritative\"",
       "Inspect the DS52+TPDM expected relational-model.pgsql.manifest.json, relational-model.mssql.manifest.json, pgsql.sql, and mssql.sql SurveyResponse sections for nullable choice-reference columns, unchanged all-or-none CHECKs, unchanged composite FKs, and absence of choice-group CHECKs."
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-fixture",
+    "description": "Wire the DS52+TPDM authoritative fixture into the API-level integration test harness.",
+    "acceptance-criteria": [
+      "The API-level integration harness exposes a FixtureKey such as AuthoritativeDs52Tpdm that resolves to the DS52+TPDM fixture directory.",
+      "FixtureContext grants CRUD access to SurveyResponse and the prerequisite resources used by the SurveyResponse scenarios through the same resource enumeration path used by existing fixtures.",
+      "The PostgreSQL and SQL Server baseline caches can provision the DS52+TPDM fixture from the same materialized fixture context used by the in-process DMS host.",
+      "The integration test README fixture map documents the DS52+TPDM fixture key, source repo path, and intended use for SurveyResponse/TPDM production-shape regressions.",
+      "No existing integration fixture key is repointed from DS52 core-only or sample-extension schema to DS52+TPDM."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContext.cs, src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureRepositoryPaths.cs, and src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md for the new fixture key mapping.",
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContextLoader.cs, src/dms/tests/EdFi.DataManagementService.Tests.Integration/Postgresql/PostgresqlBaselineCache.cs, and src/dms/tests/EdFi.DataManagementService.Tests.Integration/Mssql/MssqlBaselineCache.cs to confirm the DS52+TPDM key uses the same materialized fixture and generated-DDL baseline paths as existing fixtures."
     ],
     "completed": false
   },
@@ -100,7 +131,7 @@
       "A shared API-level scenario posts a SurveyResponse with only the student responder choice branch and receives a successful create response.",
       "A shared API-level scenario posts a SurveyResponse with no responder choice branch and receives a successful create response.",
       "PostgreSQL and SQL Server test wrappers bind the shared scenario to the DS52+TPDM FixtureKey; SQL Server may skip when ConnectionStrings__MssqlAdmin is not configured.",
-      "Each scenario creates or seeds the minimum referenced Survey, Contact, Staff, Student, descriptor, and calendar/session prerequisites needed for reference and descriptor validity.",
+      "Each scenario creates or seeds the minimum referenced Survey, Contact, Staff, Student, descriptor, calendar/session, and education organization prerequisites needed for reference and descriptor validity.",
       "The tests assert the API path does not return the unrecognized relational write failure and, where practical, assert the absent responder-choice branch columns persist as NULL.",
       "The tests do not depend on test order and use unique payload identity values per case."
     ],
