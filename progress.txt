@@ -45,3 +45,9 @@ Key decisions: added minimal core schema fixture for root, child collection, and
 Files changed: CoreReferenceRequirednessTests.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format relational model source/tests; focused Core_Reference_Requiredness filter passed 7 tests; task filter FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests passed 12 tests; full RelationalModel.Tests.Unit passed 797 tests.
 Notes: authoritative input fixtures were not modified. No blockers.
+
+DMS-1206 task completed: verify DS52+TPDM authoritative relational model and DDL goldens for SurveyResponse responder-choice nullability.
+Key decisions: accepted existing checked-in DS52+TPDM goldens after regeneration produced no diff; manifests and pgsql/mssql SQL already mark contact/staff/student responder-choice reference groups nullable; retained all-or-none checks and composite FKs; no choice-group CHECK present.
+Files changed: tasks.json, progress.txt.
+Verification: UPDATE_GOLDENS=1 dotnet test DDL Unit --filter Category=Authoritative passed 38 tests; dotnet test DDL Unit --filter Category=Authoritative passed 38 tests; inspected DS52+TPDM expected manifests and SQL.
+Notes: authoritative input fixtures were not modified. No blockers.

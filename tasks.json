@@ -107,7 +107,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"Category=Authoritative\"",
       "Inspect the DS52+TPDM expected relational-model.pgsql.manifest.json, relational-model.mssql.manifest.json, pgsql.sql, and mssql.sql SurveyResponse sections for nullable choice-reference columns, unchanged all-or-none CHECKs, unchanged composite FKs, and absence of choice-group CHECKs."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "integration-fixture",
