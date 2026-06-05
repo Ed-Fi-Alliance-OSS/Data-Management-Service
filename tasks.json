@@ -5,14 +5,15 @@
     "acceptance-criteria": [
       "The relational extraction path no longer uses raw documentPathsMapping.isRequired as the source of truth for DocumentReferenceMapping.IsRequired.",
       "Core.ApiSchema DocumentPath.IsRequired and raw documentPathsMapping.isRequired remain unchanged for non-relational consumers such as resource load-order calculation.",
-      "The requiredness resolver walks from the owning materialized table scope to the reference object path and treats a reference group as required only when every object segment requires the next property and no traversed schema segment is x-nullable.",
+      "The requiredness resolver walks from the owning materialized table scope to the reference object path using jsonSchemaForInsert required arrays and treats a reference group as required only when every object segment requires the next property and no traversed schema segment is x-nullable.",
+      "The resolver follows the same requiredness and x-nullable semantics used by scalar and descriptor column derivation within a materialized row.",
       "For root, child collection, nested collection, root extension, collection-aligned extension, and extension child collection scopes, row-existence ancestors that only decide whether a row is materialized do not make columns nullable inside the materialized row.",
       "The derived group requiredness is applied uniformly by reference binding to the reference group's DocumentId column and every propagated scalar or descriptor identity binding column.",
       "Missing, non-object, or otherwise mismatched jsonSchemaForInsert path traversal fails fast with a diagnostic naming the resource and reference path.",
       "The implementation is schema-driven and contains no SurveyResponse-specific, choice-name-specific, or column-name-substring rule."
     ],
     "steps-to-verify": [
-      "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/DocumentReferenceMappingsExtractor.cs and any helper introduced for effective reference requiredness.",
+      "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/ExtractInputsStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/DocumentReferenceMappingsExtractor.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/ApiSchemaNodeRequirements.cs, and any helper introduced for effective reference requiredness.",
       "Review src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceObjectPathScopeResolver.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs, and src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs to confirm owning-scope behavior matches the derived model.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests|FullyQualifiedName~ExtensionTableDerivationTests\""
     ],
@@ -30,7 +31,7 @@
       "The guard applies uniformly to references in root, collection, nested, extension, and extension child collection scopes."
     ],
     "steps-to-verify": [
-      "Review identity-reference validation in src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/DocumentReferenceMappingsExtractor.cs and any helper introduced for effective reference requiredness.",
+      "Review identity-reference validation in src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/ExtractInputsStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/DocumentReferenceMappingsExtractor.cs, and any helper introduced for effective reference requiredness.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests\""
     ],
     "completed": false
@@ -44,7 +45,8 @@
       "Unit tests assert required references remain non-nullable when jsonSchemaForInsert requires the reference object.",
       "Unit tests assert x-nullable on a traversed reference object path makes the reference group optional even when documentPathsMapping.isRequired is true.",
       "Unit tests cover child collection and nested collection scopes where row-existence ancestors are ignored inside the materialized row.",
-      "Unit tests cover the optional identity-reference failure path and assert the diagnostic includes the owning resource, reference path, and identity path."
+      "Unit tests cover the optional identity-reference failure path and assert the diagnostic includes the owning resource, reference path, and identity path.",
+      "Unit tests or focused assertions confirm raw ApiSchema documentPathsMapping.isRequired values are not rewritten while relational DocumentReferenceMapping.IsRequired receives the derived value."
     ],
     "steps-to-verify": [
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests\"",
@@ -74,7 +76,7 @@
     "acceptance-criteria": [
       "A checked-in authoritative DS52+TPDM fixture directory exists under src/dms/backend/Fixtures/authoritative using a clear name such as ds-5.2-tpdm.",
       "The fixture.json loads the existing DS 5.2 core authoritative ApiSchema plus a real TPDM ApiSchema input, declares both pgsql and mssql dialects, and emits a DDL manifest.",
-      "The TPDM ApiSchema input is checked in with the fixture or resolved through a repo-relative fixture input path; fixture execution does not depend on bin output or a hand-written SurveyResponse-only schema shortcut.",
+      "The TPDM ApiSchema input is checked in under the fixture inputs directory or referenced through the existing repo: fixture input path convention; fixture execution does not depend on bin output or a hand-written SurveyResponse-only schema shortcut.",
       "The existing ds-5.2 core-only and sample-extension fixtures are not treated as equivalent unless TPDM is actually part of their fixture.json.",
       "Inspection of the fixture's SurveyResponse resource schema verifies the responder-choice document reference mappings reproduce the DMS-1206 mismatch: raw documentPathsMapping.isRequired is true while jsonSchemaForInsert does not require any responder choice branch.",
       "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/AuthoritativeDdlGoldenTests.cs, or an equivalent authoritative golden test registration, includes a named DS52+TPDM fixture so both PostgreSQL and SQL Server outputs are generated and compared."
@@ -82,6 +84,7 @@
     "steps-to-verify": [
       "Inspect src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm/fixture.json, or the selected DS52+TPDM fixture directory, and its inputs to confirm the fixture is real, checked in, includes TPDM, and declares pgsql and mssql.",
       "Inspect the SurveyResponse resourceSchema in the DS52+TPDM fixture input to confirm the DMS-1206 requiredness mismatch is present.",
+      "Inspect src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/AuthoritativeDdlGoldenTests.cs for a named DS52+TPDM authoritative test fixture.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"Category=Authoritative\""
     ],
     "completed": false
@@ -124,21 +127,34 @@
   },
   {
     "category": "integration-tests",
-    "description": "Add API-level relational integration tests against the DS52+TPDM generated DDL for SurveyResponse POST payloads that exercise responder-choice optionality.",
+    "description": "Build the shared DS52+TPDM SurveyResponse API-level integration scenario, including prerequisite setup and payload builders for responder-choice variants.",
     "acceptance-criteria": [
-      "A shared API-level scenario posts a SurveyResponse with only the contact responder choice branch and receives a successful create response.",
-      "A shared API-level scenario posts a SurveyResponse with only the staff responder choice branch and receives a successful create response.",
-      "A shared API-level scenario posts a SurveyResponse with only the student responder choice branch and receives a successful create response.",
-      "A shared API-level scenario posts a SurveyResponse with no responder choice branch and receives a successful create response.",
-      "PostgreSQL and SQL Server test wrappers bind the shared scenario to the DS52+TPDM FixtureKey; SQL Server may skip when ConnectionStrings__MssqlAdmin is not configured.",
-      "Each scenario creates or seeds the minimum referenced Survey, Contact, Staff, Student, descriptor, calendar/session, and education organization prerequisites needed for reference and descriptor validity.",
-      "The tests assert the API path does not return the unrecognized relational write failure and, where practical, assert the absent responder-choice branch columns persist as NULL.",
-      "The tests do not depend on test order and use unique payload identity values per case."
+      "A shared SurveyResponse scenario prepares the minimum referenced Survey, Contact, Staff, Student, descriptor, calendar/session, and education organization prerequisites needed for reference and descriptor validity.",
+      "The scenario exposes cases or payload builders for SurveyResponse with only the contact responder choice branch, only the staff responder choice branch, only the student responder choice branch, and no responder choice branch.",
+      "Prerequisite setup follows existing API-level integration-test harness patterns and does not bypass the SurveyResponse API path under test.",
+      "The scenario uses unique identity values per case and does not depend on test order.",
+      "The scenario provides a dialect-neutral assertion hook, where practical, for verifying absent responder-choice branch columns persist as NULL."
+    ],
+    "steps-to-verify": [
+      "Review the new SurveyResponse scenario under src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios against existing shared scenario patterns.",
+      "Run dotnet build src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "integration-tests",
+    "description": "Add PostgreSQL and SQL Server API-level relational integration wrappers that run the DS52+TPDM SurveyResponse responder-choice scenario.",
+    "acceptance-criteria": [
+      "The PostgreSQL wrapper binds the shared SurveyResponse scenario to FixtureKey.AuthoritativeDs52Tpdm or the selected DS52+TPDM fixture key.",
+      "The SQL Server wrapper binds the same shared scenario to the DS52+TPDM fixture key and skips only when ConnectionStrings__MssqlAdmin is not configured.",
+      "The contact-only, staff-only, student-only, and no-responder-choice SurveyResponse POST cases each receive a successful create response.",
+      "The tests assert the API path does not return the unrecognized relational write failure.",
+      "Where practical, the wrappers assert absent responder-choice branch columns persist as NULL on the generated relational table."
     ],
     "steps-to-verify": [
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration&FullyQualifiedName~SurveyResponse\"",
       "When SQL Server is configured, run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~SurveyResponse\"",
-      "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios and the PostgreSQL/MSSQL test wrapper directories to confirm the SurveyResponse scenario uses FixtureKey.AuthoritativeDs52Tpdm or the selected DS52+TPDM fixture key."
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Postgresql and src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Mssql to confirm both wrappers use the DS52+TPDM fixture key."
     ],
     "completed": false
   },
@@ -153,25 +169,10 @@
     ],
     "steps-to-verify": [
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Authoritative\"",
+      "If dedicated DS52+TPDM smoke or compatibility classes are added, also run the same PostgreSQL project with --filter \"FullyQualifiedName~Tpdm\".",
       "Verify SQL Server is listening and ConnectionStrings__MssqlAdmin is set, or start a temporary SQL Server container as described in AGENTS.md.",
-      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Authoritative\""
-    ],
-    "completed": false
-  },
-  {
-    "category": "qa-verification",
-    "description": "Verify the Grand Bend populated bulk load on a DS52+TPDM relational stack after the focused model, DDL, and API integration signals pass.",
-    "acceptance-criteria": [
-      "The dms-local stack is started with the relational backend and DS52+TPDM schema configuration.",
-      "The full Grand Bend populated template load completes without SurveyResponse 500 errors.",
-      "All SurveyResponse rows from the Grand Bend load are inserted on the relational backend.",
-      "Docker logs do not contain NOT NULL violations for SurveyResponderChoiceContact_*, SurveyResponderChoiceStaff_*, or SurveyResponderChoiceStudent_* columns."
-    ],
-    "steps-to-verify": [
-      "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' to provision and validate the relational stack.",
-      "Run pwsh eng/bulkLoad/Invoke-LoadGrandBend.ps1 -BaseUrl 'http://localhost:8080' -FullDataSet with the DS52+TPDM relational DMS endpoint and appropriate key/secret values.",
-      "Inspect docker logs for dms-local-dms-1 and the PostgreSQL container for SurveyResponse failures.",
-      "Query the relational database to confirm SurveyResponse rows were inserted and the responder choice nullable columns are allowed to be NULL when their branch is absent."
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Authoritative\"",
+      "If dedicated DS52+TPDM smoke or compatibility classes are added, also run the same SQL Server project with --filter \"FullyQualifiedName~Tpdm\"."
     ],
     "completed": false
   }
