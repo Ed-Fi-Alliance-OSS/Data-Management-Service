@@ -811,7 +811,99 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_reuse_document_defaults_for_root_inserts_and_restamp_content_on_updates()
+    public void It_should_capture_root_insert_stamps_with_returning_and_assign_new_mirror_columns()
+    {
+        var insertBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "TG_OP = 'INSERT'");
+
+        var returningStart = insertBranch.IndexOf(
+            "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
+            StringComparison.Ordinal
+        );
+        var intoStart = insertBranch.IndexOf(
+            "INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt",
+            StringComparison.Ordinal
+        );
+        var contentVersionAssignmentStart = insertBranch.IndexOf(
+            "NEW.\"ContentVersion\" := _stampedContentVersion;",
+            StringComparison.Ordinal
+        );
+        var contentLastModifiedAssignmentStart = insertBranch.IndexOf(
+            "NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;",
+            StringComparison.Ordinal
+        );
+
+        returningStart.Should().BeGreaterOrEqualTo(0);
+        intoStart.Should().BeGreaterThan(returningStart);
+        contentVersionAssignmentStart.Should().BeGreaterThan(intoStart);
+        contentLastModifiedAssignmentStart.Should().BeGreaterThan(contentVersionAssignmentStart);
+    }
+
+    [Test]
+    public void It_should_capture_root_update_stamps_with_returning_and_assign_new_mirror_columns()
+    {
+        var updateBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "ELSIF TG_OP = 'UPDATE'");
+
+        var returningStart = updateBranch.IndexOf(
+            "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
+            StringComparison.Ordinal
+        );
+        var intoStart = updateBranch.IndexOf(
+            "INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt",
+            StringComparison.Ordinal
+        );
+        var contentVersionAssignmentStart = updateBranch.IndexOf(
+            "NEW.\"ContentVersion\" := _stampedContentVersion;",
+            StringComparison.Ordinal
+        );
+        var contentLastModifiedAssignmentStart = updateBranch.IndexOf(
+            "NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;",
+            StringComparison.Ordinal
+        );
+
+        returningStart.Should().BeGreaterOrEqualTo(0);
+        intoStart.Should().BeGreaterThan(returningStart);
+        contentVersionAssignmentStart.Should().BeGreaterThan(intoStart);
+        contentLastModifiedAssignmentStart.Should().BeGreaterThan(contentVersionAssignmentStart);
+        updateBranch.Should().NotContain("UPDATE \"edfi\".\"School\" r");
+    }
+
+    [Test]
+    public void It_should_mirror_child_write_stamps_from_returning_rows()
+    {
+        var functionBody = GetStampFunctionBody("SchoolAddress");
+
+        var cteStart = functionBody.IndexOf("WITH stamped AS (", StringComparison.Ordinal);
+        var returningStart = functionBody.IndexOf(
+            "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
+            cteStart,
+            StringComparison.Ordinal
+        );
+        var mirrorUpdateStart = functionBody.IndexOf(
+            "UPDATE \"edfi\".\"School\" r",
+            StringComparison.Ordinal
+        );
+        var mirrorSetStart = functionBody.IndexOf(
+            "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\"",
+            StringComparison.Ordinal
+        );
+        var mirrorFromStart = functionBody.IndexOf("FROM stamped", StringComparison.Ordinal);
+        var mirrorWhereStart = functionBody.IndexOf(
+            "WHERE r.\"DocumentId\" = stamped.\"DocumentId\";",
+            StringComparison.Ordinal
+        );
+
+        cteStart
+            .Should()
+            .BeGreaterOrEqualTo(0, "the child stamp function must capture stamped document rows in a CTE");
+        returningStart.Should().BeGreaterThan(cteStart);
+        mirrorUpdateStart.Should().BeGreaterThan(returningStart);
+        mirrorSetStart.Should().BeGreaterThan(mirrorUpdateStart);
+        mirrorFromStart.Should().BeGreaterThan(mirrorSetStart);
+        mirrorWhereStart.Should().BeGreaterThan(mirrorFromStart);
+    }
+
+    [Test]
+    public void It_should_assign_captured_document_stamps_for_root_inserts_and_updates()
     {
         var rootUpdateGuardIndex = _ddl.IndexOf("IF TG_OP = 'UPDATE' THEN", StringComparison.Ordinal);
         var rootContentStampIndex = _ddl.IndexOf(
@@ -860,7 +952,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
                 END IF;
                 """
             );
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"School_DocumentId\";");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"School_DocumentId\"");
     }
 
     [Test]
@@ -896,7 +988,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             .Contain(
                 "\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
             );
-        functionBody.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\";");
+        functionBody.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
         functionBody.Should().NotContain("IF TG_OP = 'UPDATE' THEN");
     }
 
@@ -952,6 +1044,61 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             .BeGreaterOrEqualTo(0, "RI trigger must guard the DELETE/INSERT block on identity diffs");
         deleteIndex.Should().BeGreaterThan(guardIndex);
         insertIndex.Should().BeGreaterThan(guardIndex);
+    }
+
+    private string GetRootStampFunctionBody()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_School_Stamp\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerStart = _ddl.IndexOf(
+            "CREATE TRIGGER \"TR_School_Stamp\"",
+            functionStart,
+            StringComparison.Ordinal
+        );
+
+        triggerStart.Should().BeGreaterThan(functionStart);
+
+        return _ddl.Substring(functionStart, triggerStart - functionStart);
+    }
+
+    private string GetStampFunctionBody(string tableName)
+    {
+        var functionStart = _ddl.IndexOf(
+            $"CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_{tableName}_Stamp\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerStart = _ddl.IndexOf(
+            $"CREATE TRIGGER \"TR_{tableName}_Stamp\"",
+            functionStart,
+            StringComparison.Ordinal
+        );
+
+        triggerStart.Should().BeGreaterThan(functionStart);
+
+        return _ddl.Substring(functionStart, triggerStart - functionStart);
+    }
+
+    private static string ExtractPlpgsqlBlock(string functionBody, string marker)
+    {
+        var blockStart = functionBody.IndexOf(marker, StringComparison.Ordinal);
+        blockStart
+            .Should()
+            .BeGreaterOrEqualTo(
+                0,
+                "the root stamp function must have a branch that captures stamps for {0}",
+                marker
+            );
+
+        var blockEnd = functionBody.IndexOf("END IF;", blockStart, StringComparison.Ordinal);
+        blockEnd.Should().BeGreaterThan(blockStart);
+
+        return functionBody.Substring(blockStart, blockEnd - blockStart + "END IF;".Length);
     }
 }
 
@@ -1045,6 +1192,68 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         var modelSet = MssqlDocumentStampingFixture.Build();
 
         _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_capture_content_stamps_with_output_and_mirror_to_target_table()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        var declareStart = triggerBody.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
+        var documentIdColumnStart = triggerBody.IndexOf(
+            "[DocumentId] bigint NOT NULL PRIMARY KEY",
+            StringComparison.Ordinal
+        );
+        var contentVersionColumnStart = triggerBody.IndexOf(
+            "[ContentVersion] bigint NOT NULL",
+            StringComparison.Ordinal
+        );
+        var contentLastModifiedColumnStart = triggerBody.IndexOf(
+            "[ContentLastModifiedAt] datetime2(7) NOT NULL",
+            StringComparison.Ordinal
+        );
+        var outputStart = triggerBody.IndexOf(
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            StringComparison.Ordinal
+        );
+        var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", StringComparison.Ordinal);
+        var mirrorSetVersionStart = triggerBody.IndexOf(
+            "SET r.[ContentVersion] = s.[ContentVersion],",
+            StringComparison.Ordinal
+        );
+        var mirrorSetLastModifiedStart = triggerBody.IndexOf(
+            "r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]",
+            StringComparison.Ordinal
+        );
+        var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
+        var mirrorJoinStart = triggerBody.IndexOf(
+            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];",
+            StringComparison.Ordinal
+        );
+
+        declareStart
+            .Should()
+            .BeGreaterOrEqualTo(
+                0,
+                "the School stamp trigger must allocate a capture table for stamped document rows"
+            );
+        documentIdColumnStart.Should().BeGreaterThan(declareStart);
+        contentVersionColumnStart.Should().BeGreaterThan(documentIdColumnStart);
+        contentLastModifiedColumnStart.Should().BeGreaterThan(contentVersionColumnStart);
+        outputStart.Should().BeGreaterThan(contentLastModifiedColumnStart);
+        mirrorUpdateStart.Should().BeGreaterThan(outputStart);
+        mirrorSetVersionStart.Should().BeGreaterThan(mirrorUpdateStart);
+        mirrorSetLastModifiedStart.Should().BeGreaterThan(mirrorSetVersionStart);
+        mirrorFromStart.Should().BeGreaterThan(mirrorSetLastModifiedStart);
+        mirrorJoinStart.Should().BeGreaterThan(mirrorFromStart);
+    }
+
+    [Test]
+    public void It_should_not_allocate_a_second_sequence_value_when_mirroring()
+    {
+        var mirrorUpdate = ExtractMirrorUpdateStatement(GetSchoolStampTriggerBody());
+
+        mirrorUpdate.Should().NotContain("NEXT VALUE FOR [dms].[ChangeVersionSequence]");
     }
 
     [Test]
@@ -1152,6 +1361,40 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                 worksetEnd,
                 "RI DELETE must consume the @changedDocs workset after it is populated"
             );
+    }
+
+    private string GetSchoolStampTriggerBody()
+    {
+        var triggerStart = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterOrEqualTo(0);
+
+        var triggerEnd = _ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+
+        return _ddl.Substring(triggerStart, triggerEnd - triggerStart);
+    }
+
+    private static string ExtractMirrorUpdateStatement(string triggerBody)
+    {
+        var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", StringComparison.Ordinal);
+        mirrorUpdateStart
+            .Should()
+            .BeGreaterOrEqualTo(
+                0,
+                "the School stamp trigger must mirror captured stamps to the target table"
+            );
+
+        const string mirrorJoin = "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];";
+        var mirrorJoinStart = triggerBody.IndexOf(mirrorJoin, mirrorUpdateStart, StringComparison.Ordinal);
+        mirrorJoinStart.Should().BeGreaterThan(mirrorUpdateStart);
+
+        return triggerBody.Substring(
+            mirrorUpdateStart,
+            mirrorJoinStart - mirrorUpdateStart + mirrorJoin.Length
+        );
     }
 }
 
@@ -2275,7 +2518,8 @@ internal static class TriggerFixture
             tableName,
             [documentIdColumn],
             [],
-            new TriggerKindParameters.DocumentStamping()
+            new TriggerKindParameters.DocumentStamping(),
+            MirrorStampTargetTable: tableName
         );
 
         return new DerivedRelationalModelSet(
@@ -2318,6 +2562,8 @@ internal static class PgsqlDocumentStampingFixture
         var collectionItemIdColumn = new DbColumnName("CollectionItemId");
         var documentIdColumn = new DbColumnName("DocumentId");
         var schoolIdColumn = new DbColumnName("SchoolId");
+        var contentVersionColumn = new DbColumnName("ContentVersion");
+        var contentLastModifiedAtColumn = new DbColumnName("ContentLastModifiedAt");
         var extensionDataColumn = new DbColumnName("ExtensionData");
         var childDocumentIdColumn = new DbColumnName("School_DocumentId");
         var streetNumberNameColumn = new DbColumnName("StreetNumberName");
@@ -2346,6 +2592,28 @@ internal static class PgsqlDocumentStampingFixture
                     SourceJsonPath: new JsonPathExpression("$.schoolId", []),
                     TargetResource: null
                 ),
+                new DbColumnModel(
+                    contentVersionColumn,
+                    ColumnKind.MirroredContentVersion,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    contentLastModifiedAtColumn,
+                    ColumnKind.MirroredContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
             ],
             []
         )
@@ -2455,21 +2723,24 @@ internal static class PgsqlDocumentStampingFixture
                 tableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
                 childTableName,
                 [childDocumentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolExtension_Stamp"),
                 extensionTableName,
                 [documentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
@@ -2531,6 +2802,8 @@ internal static class MssqlDocumentStampingFixture
         var collectionItemIdColumn = new DbColumnName("CollectionItemId");
         var documentIdColumn = new DbColumnName("DocumentId");
         var schoolIdColumn = new DbColumnName("SchoolId");
+        var contentVersionColumn = new DbColumnName("ContentVersion");
+        var contentLastModifiedAtColumn = new DbColumnName("ContentLastModifiedAt");
         var childDocumentIdColumn = new DbColumnName("School_DocumentId");
         var streetNumberNameColumn = new DbColumnName("StreetNumberName");
         var resource = new QualifiedResourceName("Ed-Fi", "School");
@@ -2557,6 +2830,28 @@ internal static class MssqlDocumentStampingFixture
                     SourceJsonPath: new JsonPathExpression("$.schoolId", []),
                     TargetResource: null
                 ),
+                new DbColumnModel(
+                    contentVersionColumn,
+                    ColumnKind.MirroredContentVersion,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    contentLastModifiedAtColumn,
+                    ColumnKind.MirroredContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
             ],
             []
         );
@@ -2614,14 +2909,16 @@ internal static class MssqlDocumentStampingFixture
                 tableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
                 childTableName,
                 [childDocumentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),

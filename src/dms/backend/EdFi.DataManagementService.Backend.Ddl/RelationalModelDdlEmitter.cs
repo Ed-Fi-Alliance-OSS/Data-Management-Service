@@ -674,6 +674,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(funcName));
         writer.AppendLine("()");
         writer.AppendLine("RETURNS TRIGGER AS $func$");
+        if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
+        {
+            writer.AppendLine("DECLARE");
+            using (writer.Indent())
+            {
+                writer.AppendLine("_stampedDocumentId bigint;");
+                writer.AppendLine("_stampedContentVersion bigint;");
+                writer.AppendLine("_stampedContentLastModifiedAt timestamp with time zone;");
+            }
+        }
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
@@ -691,23 +701,26 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 }
 
                 var deleteKeyColumn = trigger.KeyColumns[0];
+                var tableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
+                var mirrorStampTargetTable = RequireMirrorStampTargetTable(trigger);
+                var isRootDocumentStampingTrigger = IsRootDocumentStampingTrigger(
+                    trigger,
+                    tableModel,
+                    mirrorStampTargetTable
+                );
                 writer.AppendLine("IF TG_OP = 'DELETE' THEN");
                 using (writer.Indent())
                 {
-                    writer.Append("UPDATE ");
-                    writer.AppendLine(Quote(DmsTableNames.Document));
-                    writer.Append("SET ");
-                    writer.Append(Quote(ContentVersionColumn));
-                    writer.Append(" = nextval('");
-                    writer.Append(FormatSequenceName());
-                    writer.Append("'), ");
-                    writer.Append(Quote(ContentLastModifiedAtColumn));
-                    writer.AppendLine(" = now()");
-                    writer.Append("WHERE ");
-                    writer.Append(Quote(DocumentIdColumn));
-                    writer.Append(" = OLD.");
-                    writer.Append(Quote(deleteKeyColumn));
-                    writer.AppendLine(";");
+                    EmitPgsqlDocumentContentStampUpdate(
+                        writer,
+                        Quote(DmsTableNames.Document),
+                        FormatSequenceName(),
+                        deleteKeyColumn,
+                        mirrorStampTargetTable,
+                        "OLD",
+                        assignToNewMirrorColumns: false,
+                        updateMirrorTable: !isRootDocumentStampingTrigger
+                    );
                     writer.AppendLine("RETURN OLD;");
                 }
                 writer.AppendLine("END IF;");
@@ -899,13 +912,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         switch (trigger.Parameters)
         {
             case TriggerKindParameters.DocumentStamping:
-                if (!tableModelsByTableName.TryGetValue(trigger.Table, out var tableModel))
-                {
-                    throw new InvalidOperationException(
-                        $"DocumentStamping trigger '{trigger.Name.Value}' requires a table model for '{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
-                    );
-                }
-
+                var tableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
                 EmitDocumentStampingBody(writer, trigger, tableModel);
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
@@ -970,6 +977,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var documentTable = Quote(DmsTableNames.Document);
         var sequenceName = FormatSequenceName();
         var keyColumn = trigger.KeyColumns[0];
+        var mirrorStampTargetTable = RequireMirrorStampTargetTable(trigger);
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -979,7 +987,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 tableModel,
                 documentTable,
                 sequenceName,
-                keyColumn
+                keyColumn,
+                mirrorStampTargetTable
             );
         }
         else
@@ -990,9 +999,63 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 tableModel,
                 documentTable,
                 sequenceName,
-                keyColumn
+                keyColumn,
+                mirrorStampTargetTable
             );
         }
+    }
+
+    private static DbTableName RequireMirrorStampTargetTable(DbTriggerInfo trigger)
+    {
+        if (trigger.MirrorStampTargetTable is not { } mirrorStampTargetTable)
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{trigger.Name.Value}' requires a non-null MirrorStampTargetTable."
+            );
+        }
+
+        return mirrorStampTargetTable;
+    }
+
+    private static DbTableModel RequireDocumentStampingTableModel(
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+    )
+    {
+        if (tableModelsByTableName.TryGetValue(trigger.Table, out var tableModel))
+        {
+            return tableModel;
+        }
+
+        throw new InvalidOperationException(
+            $"DocumentStamping trigger '{trigger.Name.Value}' requires a table model for '{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
+        );
+    }
+
+    private static bool IsRootDocumentStampingTrigger(
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        DbTableName mirrorStampTargetTable
+    )
+    {
+        var tableKindIdentifiesRoot = tableModel.IdentityMetadata.TableKind == DbTableKind.Root;
+        var mirrorTargetIdentifiesRoot = trigger.Table.Equals(mirrorStampTargetTable);
+
+        if (tableModel.IdentityMetadata.TableKind == DbTableKind.Unspecified)
+        {
+            return mirrorTargetIdentifiesRoot;
+        }
+
+        if (tableKindIdentifiesRoot != mirrorTargetIdentifiesRoot)
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{trigger.Name.Value}' has inconsistent root classification: "
+                    + $"table kind is '{tableModel.IdentityMetadata.TableKind}', but MirrorStampTargetTable is "
+                    + $"'{mirrorStampTargetTable.Schema.Value}.{mirrorStampTargetTable.Name}'."
+            );
+        }
+
+        return tableKindIdentifiesRoot;
     }
 
     private void EmitPgsqlDocumentStampingBody(
@@ -1001,11 +1064,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         DbTableModel tableModel,
         string documentTable,
         string sequenceName,
-        DbColumnName keyColumn
+        DbColumnName keyColumn,
+        DbTableName mirrorStampTargetTable
     )
     {
         var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
-        var isRootDocumentStampingTrigger = tableModel.IdentityMetadata.TableKind == DbTableKind.Root;
+        var isRootDocumentStampingTrigger = IsRootDocumentStampingTrigger(
+            trigger,
+            tableModel,
+            mirrorStampTargetTable
+        );
 
         // Skip successful no-op UPDATEs that do not change any stored row values.
         writer.Append("IF TG_OP = 'UPDATE' AND NOT (");
@@ -1017,20 +1085,51 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine("END IF;");
 
-        // Root-document INSERTs reuse dms.Document defaults so we do not burn an
-        // extra sequence value before the resource row exists.
+        // Root-document INSERTs capture the dms.Document stamp and mirror the same values into NEW.
         if (isRootDocumentStampingTrigger)
         {
-            writer.AppendLine("IF TG_OP = 'UPDATE' THEN");
+            writer.AppendLine("IF TG_OP = 'INSERT' THEN");
             using (writer.Indent())
             {
-                EmitPgsqlDocumentContentStampUpdate(writer, documentTable, sequenceName, keyColumn);
+                EmitPgsqlDocumentContentStampUpdate(
+                    writer,
+                    documentTable,
+                    sequenceName,
+                    keyColumn,
+                    mirrorStampTargetTable,
+                    "NEW",
+                    assignToNewMirrorColumns: true,
+                    updateMirrorTable: false
+                );
+            }
+            writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
+            using (writer.Indent())
+            {
+                EmitPgsqlDocumentContentStampUpdate(
+                    writer,
+                    documentTable,
+                    sequenceName,
+                    keyColumn,
+                    mirrorStampTargetTable,
+                    "NEW",
+                    assignToNewMirrorColumns: true,
+                    updateMirrorTable: false
+                );
             }
             writer.AppendLine("END IF;");
         }
         else
         {
-            EmitPgsqlDocumentContentStampUpdate(writer, documentTable, sequenceName, keyColumn);
+            EmitPgsqlDocumentContentStampUpdate(
+                writer,
+                documentTable,
+                sequenceName,
+                keyColumn,
+                mirrorStampTargetTable,
+                "NEW",
+                assignToNewMirrorColumns: false,
+                updateMirrorTable: true
+            );
         }
 
         // IdentityVersion stamp for root tables with identity projection columns
@@ -1070,22 +1169,99 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         SqlWriter writer,
         string documentTable,
         string sequenceName,
-        DbColumnName keyColumn
+        DbColumnName keyColumn,
+        DbTableName mirrorStampTargetTable,
+        string sourceRowAlias,
+        bool assignToNewMirrorColumns,
+        bool updateMirrorTable
     )
     {
+        if (assignToNewMirrorColumns || !updateMirrorTable)
+        {
+            writer.Append("UPDATE ");
+            writer.AppendLine(documentTable);
+            writer.Append("SET ");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(" = nextval('");
+            writer.Append(sequenceName);
+            writer.Append("'), ");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(" = now()");
+            writer.Append("WHERE ");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = ");
+            writer.Append(sourceRowAlias);
+            writer.Append(".");
+            writer.Append(Quote(keyColumn));
+            writer.AppendLine();
+            writer.Append("RETURNING ");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(", ");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(", ");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(
+                " INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;"
+            );
+
+            if (assignToNewMirrorColumns)
+            {
+                writer.Append("NEW.");
+                writer.Append(Quote(ContentVersionColumn));
+                writer.AppendLine(" := _stampedContentVersion;");
+                writer.Append("NEW.");
+                writer.Append(Quote(ContentLastModifiedAtColumn));
+                writer.AppendLine(" := _stampedContentLastModifiedAt;");
+            }
+
+            return;
+        }
+
+        writer.AppendLine("WITH stamped AS (");
+        using (writer.Indent())
+        {
+            writer.Append("UPDATE ");
+            writer.AppendLine(documentTable);
+            writer.Append("SET ");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(" = nextval('");
+            writer.Append(sequenceName);
+            writer.Append("'), ");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(" = now()");
+            writer.Append("WHERE ");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = ");
+            writer.Append(sourceRowAlias);
+            writer.Append(".");
+            writer.Append(Quote(keyColumn));
+            writer.AppendLine();
+            writer.Append("RETURNING ");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(", ");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(", ");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine();
+        }
+        writer.AppendLine(")");
         writer.Append("UPDATE ");
-        writer.AppendLine(documentTable);
+        writer.Append(Quote(mirrorStampTargetTable));
+        writer.AppendLine(" r");
         writer.Append("SET ");
         writer.Append(Quote(ContentVersionColumn));
-        writer.Append(" = nextval('");
-        writer.Append(sequenceName);
-        writer.Append("'), ");
+        writer.Append(" = stamped.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.Append(", ");
         writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.AppendLine(" = now()");
-        writer.Append("WHERE ");
+        writer.Append(" = stamped.");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.AppendLine();
+        writer.AppendLine("FROM stamped");
+        writer.Append("WHERE r.");
         writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = NEW.");
-        writer.Append(Quote(keyColumn));
+        writer.Append(" = stamped.");
+        writer.Append(Quote(DocumentIdColumn));
         writer.AppendLine(";");
     }
 
@@ -1095,13 +1271,24 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         DbTableModel tableModel,
         string documentTable,
         string sequenceName,
-        DbColumnName keyColumn
+        DbColumnName keyColumn,
+        DbTableName mirrorStampTargetTable
     )
     {
         var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
         var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
         var quotedKeyColumn = Quote(keyColumn);
         var quotedProbeKeyColumn = Quote(tableKeyColumns[0]);
+        var mirrorStampTarget = Quote(mirrorStampTargetTable);
+
+        writer.AppendLine("DECLARE @stamped TABLE (");
+        using (writer.Indent())
+        {
+            writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
+            writer.AppendLine("[ContentVersion] bigint NOT NULL,");
+            writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
+        }
+        writer.AppendLine(");");
 
         // ContentVersion stamp - compute the set of affected documents from inserted/deleted
         // rows that are inserts, deletes, or actual value changes. No-op UPDATEs are excluded.
@@ -1142,6 +1329,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(", d.");
         writer.Append(Quote(ContentLastModifiedAtColumn));
         writer.AppendLine(" = sysutcdatetime()");
+        writer.AppendLine(
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+        );
         writer.Append("FROM ");
         writer.Append(documentTable);
         writer.AppendLine(" d");
@@ -1149,6 +1339,26 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(DocumentIdColumn));
         writer.Append(" = a.");
         writer.Append(quotedKeyColumn);
+        writer.AppendLine(";");
+
+        writer.AppendLine("UPDATE r");
+        writer.Append("SET r.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.Append(" = s.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.AppendLine(",");
+        writer.Append("    r.");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.Append(" = s.");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.AppendLine();
+        writer.Append("FROM ");
+        writer.Append(mirrorStampTarget);
+        writer.AppendLine(" r");
+        writer.Append("INNER JOIN @stamped s ON s.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = r.");
+        writer.Append(Quote(DocumentIdColumn));
         writer.AppendLine(";");
 
         // IdentityVersion stamp for root tables with identity projection columns

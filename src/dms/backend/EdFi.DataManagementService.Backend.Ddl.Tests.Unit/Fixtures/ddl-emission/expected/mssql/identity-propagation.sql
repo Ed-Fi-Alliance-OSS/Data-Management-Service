@@ -94,6 +94,11 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
@@ -107,8 +112,14 @@ BEGIN
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    UPDATE r
+    SET r.[ContentVersion] = s.[ContentVersion],
+        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+    FROM [edfi].[School] r
+    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN
         UPDATE d
@@ -157,6 +168,11 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
@@ -170,8 +186,14 @@ BEGIN
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    UPDATE r
+    SET r.[ContentVersion] = s.[ContentVersion],
+        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+    FROM [edfi].[StudentSchoolAssociation] r
+    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]) OR UPDATE([StudentUniqueId]) OR UPDATE([EntryDate]) OR UPDATE([EntryTimestamp]) OR UPDATE([IsActive]))
     BEGIN
         UPDATE d

@@ -15,8 +15,15 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [Category("PostgresqlIntegration")]
 public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Trigger
 {
-    private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
+    private static readonly string FixtureRelativePath = Path.Combine(
+        "src",
+        "dms",
+        "backend",
+        "EdFi.DataManagementService.Backend.Ddl.Tests.Unit",
+        "Fixtures",
+        "small",
+        "minimal"
+    );
 
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
 
@@ -83,23 +90,41 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("uri", uriOrDiscriminator)
         );
 
-        var (cv, ts) = await ReadStampsAsync(documentId);
-        return (documentId, cv, ts);
+        var stamps = await ReadStampPairAsync(documentId);
+        return (documentId, stamps.Document.ContentVersion, stamps.Document.ContentLastModifiedAt);
     }
 
-    private async Task<(long ContentVersion, DateTime ContentLastModifiedAt)> ReadStampsAsync(long documentId)
+    private async Task<StampPair> ReadStampPairAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM dms."Document"
-            WHERE "DocumentId" = @documentId;
+            SELECT
+                doc."ContentVersion" AS "DocumentContentVersion",
+                doc."ContentLastModifiedAt" AS "DocumentContentLastModifiedAt",
+                descriptor."ContentVersion" AS "MirrorContentVersion",
+                descriptor."ContentLastModifiedAt" AS "MirrorContentLastModifiedAt"
+            FROM dms."Document" doc
+            INNER JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = doc."DocumentId"
+            WHERE doc."DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId)
         );
         var row = rows.Single();
-        return (Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
+        return new(
+            new(
+                Convert.ToInt64(row["DocumentContentVersion"]),
+                Convert.ToDateTime(row["DocumentContentLastModifiedAt"])
+            ),
+            new(
+                Convert.ToInt64(row["MirrorContentVersion"]),
+                Convert.ToDateTime(row["MirrorContentLastModifiedAt"])
+            )
+        );
     }
+
+    private sealed record StampPair(StampValues Document, StampValues Mirror);
+
+    private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
 
     [Test]
     public async Task It_stamps_document_on_descriptor_value_change()
@@ -115,9 +140,10 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("documentId", seed.DocumentId)
         );
 
-        var after = await ReadStampsAsync(seed.DocumentId);
-        after.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        after.ContentLastModifiedAt.Should().BeOnOrAfter(seed.ContentLastModifiedAt);
+        var after = await ReadStampPairAsync(seed.DocumentId);
+        after.Mirror.Should().Be(after.Document);
+        after.Document.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
+        after.Document.ContentLastModifiedAt.Should().BeOnOrAfter(seed.ContentLastModifiedAt);
     }
 
     [Test]
@@ -134,9 +160,10 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("documentId", seed.DocumentId)
         );
 
-        var after = await ReadStampsAsync(seed.DocumentId);
-        after.ContentVersion.Should().Be(seed.ContentVersion);
-        after.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        var after = await ReadStampPairAsync(seed.DocumentId);
+        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
+        after.Document.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Mirror.Should().Be(after.Document);
     }
 
     [Test]
@@ -155,14 +182,16 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("documentIdB", seedB.DocumentId)
         );
 
-        var afterA = await ReadStampsAsync(seedA.DocumentId);
-        var afterB = await ReadStampsAsync(seedB.DocumentId);
-        afterA.ContentVersion.Should().BeGreaterThan(seedA.ContentVersion);
-        afterB.ContentVersion.Should().BeGreaterThan(seedB.ContentVersion);
+        var afterA = await ReadStampPairAsync(seedA.DocumentId);
+        var afterB = await ReadStampPairAsync(seedB.DocumentId);
+        afterA.Mirror.Should().Be(afterA.Document);
+        afterB.Mirror.Should().Be(afterB.Document);
+        afterA.Document.ContentVersion.Should().BeGreaterThan(seedA.ContentVersion);
+        afterB.Document.ContentVersion.Should().BeGreaterThan(seedB.ContentVersion);
         afterA
-            .ContentVersion.Should()
+            .Document.ContentVersion.Should()
             .NotBe(
-                afterB.ContentVersion,
+                afterB.Document.ContentVersion,
                 "each row must pull a distinct nextval — a per-statement cache would collide"
             );
     }

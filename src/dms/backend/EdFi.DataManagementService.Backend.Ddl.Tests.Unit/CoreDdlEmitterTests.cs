@@ -570,14 +570,15 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_create_descriptor_stamping_trigger()
     {
         _ddl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
-        _ddl.Should().Contain("AFTER UPDATE ON \"dms\".\"Descriptor\"");
+        _ddl.Should().Contain("AFTER INSERT OR UPDATE ON \"dms\".\"Descriptor\"");
         _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()");
     }
 
     [Test]
     public void It_should_emit_no_op_guard_in_descriptor_stamping_function()
     {
-        _ddl.Should().Contain("IF TG_OP = 'UPDATE' AND NOT (");
+        _ddl.Should().Contain("IF TG_OP = 'UPDATE' THEN");
+        _ddl.Should().Contain("IF NOT (");
         _ddl.Should().Contain("OLD.\"Namespace\" IS DISTINCT FROM NEW.\"Namespace\"");
         _ddl.Should().Contain("OLD.\"CodeValue\" IS DISTINCT FROM NEW.\"CodeValue\"");
         _ddl.Should().Contain("OLD.\"ShortDescription\" IS DISTINCT FROM NEW.\"ShortDescription\"");
@@ -595,6 +596,19 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
         _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+    }
+
+    [Test]
+    public void It_should_capture_descriptor_document_stamps_with_returning_and_mirror_them()
+    {
+        _ddl.Should().Contain("WITH stamped AS (");
+        _ddl.Should().Contain("RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
+        _ddl.Should()
+            .Contain(
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+            );
+        _ddl.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
     }
 
     [Test]
@@ -1073,7 +1087,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]");
         _ddl.Should().Contain("ON [dms].[Descriptor]");
-        _ddl.Should().Contain("AFTER UPDATE");
+        _ddl.Should().Contain("AFTER INSERT, UPDATE");
     }
 
     [Test]
@@ -1099,12 +1113,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_emit_affected_docs_cte_in_descriptor_stamping_trigger()
     {
-        // AFTER UPDATE guarantees every inserted row has a matching deleted row,
-        // so a single INNER JOIN is sufficient — no LEFT JOIN+UNION ceremony.
+        // INSERT rows have no deleted counterpart and must still be stamped.
+        // UPDATE rows keep the null-safe diff predicate so no-op updates produce
+        // no affected docs, including the recursive mirror-only UPDATE.
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("FROM inserted i");
-        _ddl.Should().Contain("INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
-        _ddl.Should().NotContain("LEFT JOIN deleted");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("WHERE del.[DocumentId] IS NULL OR ");
         _ddl.Should().NotContain("LEFT JOIN inserted");
     }
 
@@ -1140,6 +1155,21 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
+    }
+
+    [Test]
+    public void It_should_capture_descriptor_document_stamps_with_output_and_mirror_them()
+    {
+        _ddl.Should().Contain("DECLARE @stamped TABLE (");
+        _ddl.Should()
+            .Contain(
+                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+            );
+        _ddl.Should().Contain("UPDATE r");
+        _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
+        _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]");
+        _ddl.Should().Contain("FROM [dms].[Descriptor] r");
+        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
     }
 
     [Test]
@@ -1313,7 +1343,7 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     public void It_should_render_the_descriptor_stamping_trigger_targeting_dms_Descriptor()
     {
         _pgsqlDdl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
-        _pgsqlDdl.Should().Contain("AFTER UPDATE ON \"dms\".\"Descriptor\"");
+        _pgsqlDdl.Should().Contain("AFTER INSERT OR UPDATE ON \"dms\".\"Descriptor\"");
     }
 
     [Test]

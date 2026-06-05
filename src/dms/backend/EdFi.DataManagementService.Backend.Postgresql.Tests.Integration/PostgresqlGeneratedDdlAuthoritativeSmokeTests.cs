@@ -38,12 +38,21 @@ internal sealed record DocumentStampState(
 [TestFixture]
 public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS_Sample_Fixture_For_Smoke_Coverage
 {
-    private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
+    private static readonly string FixtureRelativePath = Path.Combine(
+        "src",
+        "dms",
+        "backend",
+        "Fixtures",
+        "authoritative",
+        "sample"
+    );
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private AuthoritativeSampleSmokeSeedData _seedData = null!;
     private DbTableModel _schoolTable = null!;
+    private DbTableModel _studentTable = null!;
+    private DbTableModel _busTable = null!;
     private DbTableModel _schoolExtensionTable = null!;
     private DbTableModel _schoolExtensionDirectlyOwnedBusTable = null!;
     private DbTableModel _studentEducationOrganizationAssociationTable = null!;
@@ -73,14 +82,16 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            FixtureRelativePath,
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+            ResolveFixtureDirectory(),
             strict: true
         );
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         await InstallReferentialIdentityAuditAsync();
 
         _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");
+        _studentTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "Student");
+        _busTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "sample", "Bus");
         _schoolExtensionTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
             _fixture.ModelSet,
             "sample",
@@ -601,6 +612,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var before = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var beforeMirror = await GetRootMirrorStampStateAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        AssertMirrorContentMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -620,8 +636,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var after = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var afterMirror = await GetRootMirrorStampStateAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
 
         after.Should().Be(before);
+        afterMirror.Should().Be(beforeMirror);
+        AssertMirrorContentMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -663,6 +685,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var before = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var beforeMirror = await GetRootMirrorStampStateAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        AssertMirrorContentMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -682,8 +709,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var after = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var afterMirror = await GetRootMirrorStampStateAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
 
         after.Should().Be(before);
+        afterMirror.Should().Be(beforeMirror);
+        AssertMirrorContentMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -761,6 +794,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     public async Task It_should_not_stamp_successful_no_op_root_updates()
     {
         var before = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        var beforeMirror = await GetRootMirrorStampStateAsync(_studentTable, _seedData.StudentDocumentId);
+        AssertMirrorContentMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -773,8 +808,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var after = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        var afterMirror = await GetRootMirrorStampStateAsync(_studentTable, _seedData.StudentDocumentId);
 
         after.Should().Be(before);
+        afterMirror.Should().Be(beforeMirror);
+        AssertMirrorContentMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -918,6 +956,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
         after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
         after.IdentityLastModifiedAt.Should().BeAfter(before.IdentityLastModifiedAt);
+        await AssertRootMirrorMatchesDocumentAsync(_schoolTable, _seedData.SchoolDocumentId);
+        await AssertRootMirrorMatchesDocumentAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
     }
 
     [Test]
@@ -1076,6 +1119,213 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         afterStudent.ContentVersion.Should().NotBe(afterOtherStudent.ContentVersion);
         afterStudent.IdentityVersion.Should().Be(beforeStudent.IdentityVersion);
         afterOtherStudent.IdentityVersion.Should().Be(beforeOtherStudent.IdentityVersion);
+    }
+
+    [Test]
+    public async Task It_should_keep_resource_mirrors_in_lock_step_for_representative_write_paths()
+    {
+        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
+        await AssertRootMirrorMatchesDocumentAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        var studentBefore = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rootRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."Student"
+            SET "FirstName" = @firstName
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("firstName", "Jordan-Mirror"),
+            new NpgsqlParameter("documentId", _seedData.StudentDocumentId)
+        );
+        rootRowsAffected.Should().Be(1);
+
+        var studentAfter = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        studentAfter.ContentVersion.Should().BeGreaterThan(studentBefore.ContentVersion);
+        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
+
+        var associationBefore = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        var childRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentEducationOrganizationAssociationAddress"
+            SET "StreetNumberName" = @streetNumberName
+            WHERE "CollectionItemId" = @collectionItemId
+              AND "StudentEducationOrganizationAssociation_DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("streetNumberName", "300 Mirror Lane"),
+            new NpgsqlParameter(
+                "collectionItemId",
+                _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId
+            ),
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
+        );
+        childRowsAffected.Should().Be(1);
+
+        var associationAfter = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        associationAfter.ContentVersion.Should().BeGreaterThan(associationBefore.ContentVersion);
+        await AssertRootMirrorMatchesDocumentAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        associationBefore = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        var extensionRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "sample"."StudentEducationOrganizationAssociationExtensionAddress"
+            SET "Complex" = @complex
+            WHERE "BaseCollectionItemId" = @baseCollectionItemId
+              AND "StudentEducationOrganizationAssociation_DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("complex", "Mirror-Complex"),
+            new NpgsqlParameter(
+                "baseCollectionItemId",
+                _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId
+            ),
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
+        );
+        extensionRowsAffected.Should().Be(1);
+
+        associationAfter = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        associationAfter.ContentVersion.Should().BeGreaterThan(associationBefore.ContentVersion);
+        await AssertRootMirrorMatchesDocumentAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        studentBefore = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        var otherStudentBefore = await GetDocumentStampStateAsync(_seedData.OtherStudentDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var multiRowRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."Student"
+            SET "LastSurname" = 'Mirror-Multi'
+            WHERE "DocumentId" IN (@studentDocumentId, @otherStudentDocumentId);
+            """,
+            new NpgsqlParameter("studentDocumentId", _seedData.StudentDocumentId),
+            new NpgsqlParameter("otherStudentDocumentId", _seedData.OtherStudentDocumentId)
+        );
+        multiRowRowsAffected.Should().Be(2);
+
+        studentAfter = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        var otherStudentAfter = await GetDocumentStampStateAsync(_seedData.OtherStudentDocumentId);
+        studentAfter.ContentVersion.Should().BeGreaterThan(studentBefore.ContentVersion);
+        otherStudentAfter.ContentVersion.Should().BeGreaterThan(otherStudentBefore.ContentVersion);
+        studentAfter.ContentVersion.Should().NotBe(otherStudentAfter.ContentVersion);
+        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
+        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.OtherStudentDocumentId);
+    }
+
+    [Test]
+    public async Task It_should_keep_extension_project_root_resource_mirrors_in_lock_step()
+    {
+        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
+        var busDocumentId = await InsertDocumentAsync(
+            Guid.Parse("abababab-abab-abab-abab-abababababab"),
+            busResourceKeyId
+        );
+        var beforeInsert = await GetDocumentStampStateAsync(busDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await InsertBusAsync(busDocumentId, "BUS-001");
+
+        var afterInsert = await GetDocumentStampStateAsync(busDocumentId);
+        afterInsert.ContentVersion.Should().BeGreaterThan(beforeInsert.ContentVersion);
+        afterInsert.IdentityVersion.Should().Be(beforeInsert.IdentityVersion);
+        await AssertRootMirrorMatchesDocumentAsync(_busTable, busDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var updateRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "sample"."Bus"
+            SET "BusId" = @busId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("busId", "BUS-002"),
+            new NpgsqlParameter("documentId", busDocumentId)
+        );
+        updateRowsAffected.Should().Be(1);
+
+        var afterUpdate = await GetDocumentStampStateAsync(busDocumentId);
+        afterUpdate.ContentVersion.Should().BeGreaterThan(afterInsert.ContentVersion);
+        afterUpdate.IdentityVersion.Should().BeGreaterThan(afterInsert.IdentityVersion);
+        await AssertRootMirrorMatchesDocumentAsync(_busTable, busDocumentId);
+
+        var beforeNoOpMirror = await GetRootMirrorStampStateAsync(_busTable, busDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var noOpRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "sample"."Bus"
+            SET "BusId" = "BusId"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", busDocumentId)
+        );
+        noOpRowsAffected.Should().Be(1);
+
+        var afterNoOp = await GetDocumentStampStateAsync(busDocumentId);
+        var afterNoOpMirror = await GetRootMirrorStampStateAsync(_busTable, busDocumentId);
+        afterNoOp.Should().Be(afterUpdate);
+        afterNoOpMirror.Should().Be(beforeNoOpMirror);
+        AssertMirrorContentMatchesDocument(afterNoOpMirror, afterNoOp);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_document_or_track_changes_for_direct_root_stamp_only_updates()
+    {
+        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
+        var busDocumentId = await InsertDocumentAsync(
+            Guid.Parse("bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc"),
+            busResourceKeyId
+        );
+
+        await InsertBusAsync(busDocumentId, "BUS-STAMP-ONLY");
+
+        var beforeDocument = await GetDocumentStampStateAsync(busDocumentId);
+        var beforeMirror = await GetRootMirrorStampStateAsync(_busTable, busDocumentId);
+        var trackedChangeRowsBefore = await CountRowsAsync(
+            """SELECT COUNT(*) FROM "tracked_changes_sample"."Bus";"""
+        );
+        AssertMirrorContentMatchesDocument(beforeMirror, beforeDocument);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "sample"."Bus"
+            SET "ContentVersion" = "ContentVersion" + 1
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", busDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var afterDocument = await GetDocumentStampStateAsync(busDocumentId);
+        var afterMirror = await GetRootMirrorStampStateAsync(_busTable, busDocumentId);
+        var trackedChangeRowsAfter = await CountRowsAsync(
+            """SELECT COUNT(*) FROM "tracked_changes_sample"."Bus";"""
+        );
+
+        afterDocument.Should().Be(beforeDocument);
+        trackedChangeRowsAfter.Should().Be(trackedChangeRowsBefore);
+        afterMirror.ContentVersion.Should().Be(beforeMirror.ContentVersion + 1);
+        afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
     }
 
     private async Task<AuthoritativeSampleSmokeSeedData> SeedSmokeRowsAsync()
@@ -1336,6 +1586,18 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
+    private async Task InsertBusAsync(long documentId, string busId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "sample"."Bus" ("DocumentId", "BusId")
+            VALUES (@documentId, @busId);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("busId", busId)
+        );
+    }
+
     private async Task<long> InsertSchoolExtensionDirectlyOwnedBusAsync(long schoolDocumentId, int ordinal)
     {
         var directlyOwnedBusDocumentIdParameter = new NpgsqlParameter(
@@ -1588,6 +1850,49 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
+    private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
+        DbTableModel rootTable,
+        long documentId
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT
+                    "ContentVersion",
+                    "ContentLastModifiedAt"
+                FROM "{rootTable.Table.Schema.Value}"."{rootTable.Table.Name}"
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            IdentityVersion: 0,
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+        );
+    }
+
+    private async Task AssertRootMirrorMatchesDocumentAsync(DbTableModel rootTable, long documentId)
+    {
+        var document = await GetDocumentStampStateAsync(documentId);
+        var mirror = await GetRootMirrorStampStateAsync(rootTable, documentId);
+
+        AssertMirrorContentMatchesDocument(mirror, document);
+    }
+
+    private static void AssertMirrorContentMatchesDocument(
+        DocumentStampState mirror,
+        DocumentStampState document
+    )
+    {
+        mirror.ContentVersion.Should().Be(document.ContentVersion);
+        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
+    }
+
     private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(
         long documentId
     )
@@ -1717,5 +2022,24 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     {
         var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
         exception.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation);
+    }
+
+    private static string ResolveFixtureDirectory()
+    {
+        var fixtureDirectory = FixturePathResolver.ResolveRepositoryRelativePath(
+            TestContext.CurrentContext.TestDirectory,
+            FixtureRelativePath
+        );
+
+        return RemoveWindowsLongPathPrefix(fixtureDirectory);
+    }
+
+    private static string RemoveWindowsLongPathPrefix(string path)
+    {
+        const string windowsLongPathPrefix = @"\\?\";
+
+        return path.StartsWith(windowsLongPathPrefix, StringComparison.Ordinal)
+            ? path[windowsLongPathPrefix.Length..]
+            : path;
     }
 }
