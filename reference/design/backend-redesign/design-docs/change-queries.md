@@ -1604,7 +1604,7 @@ FROM
   JOIN tracked_changes_edfi.StudentContactAssociation sca_tc ON ssa_tc.Old_Student_DocumentId = sca_tc.Old_Student_DocumentId;
 ```
 
-The views are only emitted when all five PrimaryAssociation resources exist in the derived relational model, following the same guard described in [auth.md](auth.md) for the non-`IncludingDeletes` views.
+The views are only emitted when all five PrimaryAssociation resources exist in the derived relational model — following the same guard described in [auth.md](auth.md) for the non-`IncludingDeletes` views — and their five `tracked_changes_edfi` association tables are present in the tracked-change inventory.
 
 #### Preserved authorization peculiarities
 

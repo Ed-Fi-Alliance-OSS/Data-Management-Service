@@ -124,6 +124,30 @@ public class Given_RelationalModelDdlEmitter_With_People_Auth_View_Availability
         ddl.Should().NotContain("IncludingDeletes").And.NotContain("DeletedResponsibility");
     }
 
+    [Test]
+    public void It_should_not_count_tracked_change_tables_from_other_schemas()
+    {
+        // The guard matches on schema AND name: the views join tracked_changes_edfi.* tables, so a
+        // same-named association table in another tracked-change schema must not satisfy it.
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        var movedTableName = AuthObjectDefinitions.RequiredPeopleAuthAssociationResourceNames[0];
+        var trackedChangeTables = modelSet
+            .TrackedChangeTablesInNameOrder.Select(trackedChangeTable =>
+                trackedChangeTable.Table.Name == movedTableName
+                    ? trackedChangeTable with
+                    {
+                        Table = trackedChangeTable.Table with
+                        {
+                            Schema = new DbSchemaName("tracked_changes_ext"),
+                        },
+                    }
+                    : trackedChangeTable
+            )
+            .ToList();
+
+        AuthObjectDefinitions.HasReadChangesTrackedChangeTables(trackedChangeTables).Should().BeFalse();
+    }
+
     private static void AssertPeopleViewsUnavailableWithoutMissingAssociations(
         DerivedRelationalModelSet modelSet
     )
