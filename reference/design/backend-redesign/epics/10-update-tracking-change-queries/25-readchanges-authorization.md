@@ -22,7 +22,7 @@ Unsupported `ReadChanges` strategies are treated as unavailable authorization st
 - `RelationshipsWithEdOrgsOnly` and `RelationshipsWithEdOrgsOnlyInverted` work against tracked-change old-value columns where appropriate.
 - `RelationshipsWithEdOrgsAndPeopleIncludingDeletes` uses the `EducationOrganizationIdToStudentDocumentIdIncludingDeletes`, `EducationOrganizationIdToContactDocumentIdIncludingDeletes`, or `EducationOrganizationIdToStaffDocumentIdIncludingDeletes` view as appropriate.
 - `RelationshipsWithStudentsOnlyIncludingDeletes` uses the student including-deletes view.
-- `RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes` uses `EducationOrganizationIdToStudentDocumentIdThroughDeletedResponsibility`.
+- `RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes` uses `EducationOrganizationIdToStudentDocumentIdDeletedResponsibility`.
 - People authorization predicates use denormalized old/new person `DocumentId` values from tracked-change tables rather than joining intermediate resources.
 - Multiple relationship-based authorization strategies compose with OR semantics.
 - Multiple authorization strategies compose with the semantics defined in `auth.md`, including AND composition with `NamespaceBased` and no-op composition with `NoFurtherAuthorizationRequired` when `27-no-further-and-namespace-readchanges-authorization.md` is implemented.

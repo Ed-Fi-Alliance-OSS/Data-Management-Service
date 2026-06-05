@@ -39266,6 +39266,79 @@ FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
 INNER JOIN "edfi"."StudentEducationOrganizationResponsibilityAssociation" seora ON edOrg."TargetEducationOrganizationId" = seora."EducationOrganization_EducationOrganizationId"
 ;
 
+CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToContactDocumentIdIncludingDeletes" AS
+SELECT
+    edOrgToContact."SourceEducationOrganizationId",
+    edOrgToContact."Contact_DocumentId"
+FROM "auth"."EducationOrganizationIdToContactDocumentId" edOrgToContact
+UNION
+SELECT
+    edOrg."SourceEducationOrganizationId",
+    sca_tc."Old_Contact_DocumentId" AS "Contact_DocumentId"
+FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
+INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId_Unified"
+INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa."Student_DocumentId" = sca_tc."Old_Student_DocumentId"
+UNION
+SELECT
+    edOrg."SourceEducationOrganizationId",
+    sca."Contact_DocumentId"
+FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
+INNER JOIN "edfi"."StudentContactAssociation" sca ON ssa_tc."Old_Student_DocumentId" = sca."Student_DocumentId"
+UNION
+SELECT
+    edOrg."SourceEducationOrganizationId",
+    sca_tc."Old_Contact_DocumentId" AS "Contact_DocumentId"
+FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
+INNER JOIN "tracked_changes_edfi"."StudentContactAssociation" sca_tc ON ssa_tc."Old_Student_DocumentId" = sca_tc."Old_Student_DocumentId"
+;
+
+CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStaffDocumentIdIncludingDeletes" AS
+SELECT
+    edOrgToStaff."SourceEducationOrganizationId",
+    edOrgToStaff."Staff_DocumentId"
+FROM "auth"."EducationOrganizationIdToStaffDocumentId" edOrgToStaff
+UNION
+SELECT
+    edOrg."SourceEducationOrganizationId",
+    seoaa_tc."Old_Staff_DocumentId" AS "Staff_DocumentId"
+FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
+INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationAssignmentAssociation" seoaa_tc ON edOrg."TargetEducationOrganizationId" = seoaa_tc."Old_EducationOrganization_EducationOrganizationId"
+UNION
+SELECT
+    edOrg."SourceEducationOrganizationId",
+    seoea_tc."Old_Staff_DocumentId" AS "Staff_DocumentId"
+FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
+INNER JOIN "tracked_changes_edfi"."StaffEducationOrganizationEmploymentAssociation" seoea_tc ON edOrg."TargetEducationOrganizationId" = seoea_tc."Old_EducationOrganization_EducationOrganizationId"
+;
+
+CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdDeletedResponsibility" AS
+SELECT
+    edOrgToStudentResp."SourceEducationOrganizationId",
+    edOrgToStudentResp."Student_DocumentId"
+FROM "auth"."EducationOrganizationIdToStudentDocumentIdThroughResponsibility" edOrgToStudentResp
+UNION
+SELECT
+    edOrg."SourceEducationOrganizationId",
+    seora_tc."Old_Student_DocumentId" AS "Student_DocumentId"
+FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
+INNER JOIN "tracked_changes_edfi"."StudentEducationOrganizationResponsibilityAssociation" seora_tc ON edOrg."TargetEducationOrganizationId" = seora_tc."Old_EducationOrganization_EducationOrganizationId"
+;
+
+CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdIncludingDeletes" AS
+SELECT
+    edOrgToStudent."SourceEducationOrganizationId",
+    edOrgToStudent."Student_DocumentId"
+FROM "auth"."EducationOrganizationIdToStudentDocumentId" edOrgToStudent
+UNION
+SELECT
+    edOrg."SourceEducationOrganizationId",
+    ssa_tc."Old_Student_DocumentId" AS "Student_DocumentId"
+FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
+INNER JOIN "tracked_changes_edfi"."StudentSchoolAssociation" ssa_tc ON edOrg."TargetEducationOrganizationId" = ssa_tc."Old_SchoolId_Unified"
+;
+
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AcademicWeek_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
