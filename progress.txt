@@ -39,3 +39,9 @@ Key decisions: bound one PostgreSQL and one SQL Server wrapper to FixtureKey.Aut
 Files changed: Given_Postgresql_SurveyResponseResponderChoice.cs, Given_Mssql_SurveyResponseResponderChoice.cs, tasks.json, progress.txt.
 Verification: dotnet csharpier format new wrapper files; PostgreSQL SurveyResponse filter passed 1 test with local dms-postgresql connection; SQL Server SurveyResponse filter passed 1 test with temporary dms-codex-mssql container.
 Notes: initial PostgreSQL run without ConnectionStrings__DatabaseConnection skipped; reran with README local connection string. Temporary SQL Server container stopped after test. No blockers.
+
+DMS-1206 task completed: add focused core reference requiredness coverage.
+Key decisions: added minimal core schema fixture for root, child collection, and nested collection refs with raw isRequired conflicts; asserts nullable/non-nullable DocumentId plus propagated identity columns from jsonSchemaForInsert, x-nullable optionality, row-existence ancestor handling, optional identity fail-fast, and raw metadata preservation.
+Files changed: CoreReferenceRequirednessTests.cs, tasks.json, progress.txt.
+Verification: dotnet csharpier format relational model source/tests; focused Core_Reference_Requiredness filter passed 7 tests; task filter FullyQualifiedName~ExtractInputsStepTests|FullyQualifiedName~ReferenceBindingRelationalModelSetPassTests passed 12 tests; full RelationalModel.Tests.Unit passed 797 tests.
+Notes: authoritative input fixtures were not modified. No blockers.
