@@ -1225,6 +1225,15 @@ public class PostgresqlRuntimeMappingInitializationTests
                     && descriptor.ImplementationType == typeof(PostgresqlDocumentStoreRepository)
                     && descriptor.Lifetime == ServiceLifetime.Scoped
                 );
+
+            _services
+                .Should()
+                .Contain(descriptor =>
+                    descriptor.ServiceType == typeof(ITokenInfoEducationOrganizationLookup)
+                    && descriptor.ImplementationType
+                        == typeof(AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter)
+                    && descriptor.Lifetime == ServiceLifetime.Scoped
+                );
         }
     }
 }

@@ -33,7 +33,7 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfo\"",
       "dotnet csharpier format src/dms/core src/dms/backend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "response-formatting",
