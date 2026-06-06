@@ -142,6 +142,21 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
     }
 
     [Test]
+    public void It_should_emit_reference_identity_alias_query_capabilities_for_sample_resources()
+    {
+        AuthoritativeManifestQueryCapabilityAssertions.AssertRootColumnFields(
+            _manifest,
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Sample",
+                "BusRoute",
+                "staffUniqueId",
+                "$.staffReference.staffEducationOrganizationAssignmentAssociationUniqueId",
+                "StaffEducationOrganizationAssignmentAssociation_StaffUniqueId"
+            )
+        );
+    }
+
+    [Test]
     public void It_should_emit_projection_metadata_for_sample_bus_route()
     {
         foreach (var mappingSet in ParseMappingSets(_manifest))
