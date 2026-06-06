@@ -187,7 +187,7 @@
       "rg -n \"TokenInfo|EducationOrganizationHierarchy|EducationOrganizationIdToEducationOrganizationId\" src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration src/dms/backend/EdFi.DataManagementService.Backend.Postgresql",
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sql-server-integration-tests",
