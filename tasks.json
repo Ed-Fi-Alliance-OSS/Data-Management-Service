@@ -93,7 +93,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~EducationOrganization\"",
       "dotnet csharpier format src/dms/backend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql",
