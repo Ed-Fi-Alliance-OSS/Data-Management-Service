@@ -114,7 +114,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Postgresql&FullyQualifiedName~TokenInfo\"",
       "dotnet csharpier format src/dms/backend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "sql-server",
