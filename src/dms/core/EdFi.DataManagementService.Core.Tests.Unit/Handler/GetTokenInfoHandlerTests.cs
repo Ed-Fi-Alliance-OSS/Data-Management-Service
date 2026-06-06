@@ -132,6 +132,99 @@ public class Given_GetTokenInfoHandler
     }
 
     [Test]
+    public async Task It_preserves_full_response_contract_while_using_token_info_lookup()
+    {
+        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
+        IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
+        [
+            new(
+                EducationOrganizationId: 255901,
+                NameOfInstitution: "Grand Bend School",
+                Discriminator: "School",
+                AncestorDiscriminator: "School",
+                AncestorEducationOrganizationId: 255901
+            ),
+        ];
+
+        A.CallTo(() =>
+                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>.That.Matches(ids =>
+                        ids.Single().Value == 255901
+                    )
+                )
+            )
+            .Returns(Task.FromResult(educationOrganizationRows));
+
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._))
+            .Returns([
+                new ClaimSet(
+                    ClaimSetName,
+                    [
+                        new($"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/Student", "Create", []),
+                        new($"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/Student", "Read", []),
+                        new($"{Conventions.EdFiOdsServiceClaimBaseUri}/identity", "Read", []),
+                    ]
+                ),
+            ]);
+
+        var clientAuthorizations = CreateClientAuthorizations([new EducationOrganizationId(255901)]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup),
+            CreateApiSchemaDocumentsWithStudentAndStaff()
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        JsonNode body = requestInfo.FrontendResponse.Body!;
+        body["active"]!.GetValue<bool>().Should().BeTrue();
+        body["client_id"]!.GetValue<string>().Should().Be(ClientId);
+        body["claim_set"]!["name"]!.GetValue<string>().Should().Be(ClaimSetName);
+        body["namespace_prefixes"]!
+            .AsArray()
+            .Select(namespacePrefix => namespacePrefix!.GetValue<string>())
+            .Should()
+            .Equal("uri://ed-fi");
+        body["assigned_profiles"]!
+            .AsArray()
+            .Select(profile => profile!.GetValue<string>())
+            .Should()
+            .Equal("Reader Profile", "Writer Profile");
+
+        JsonNode educationOrganization = body["education_organizations"]!.AsArray().Single()!;
+        educationOrganization["education_organization_id"]!.GetValue<long>().Should().Be(255901);
+        educationOrganization["name_of_institution"]!.GetValue<string>().Should().Be("Grand Bend School");
+        educationOrganization["type"]!.GetValue<string>().Should().Be("edfi.School");
+        educationOrganization["school_id"]!.GetValue<long>().Should().Be(255901);
+
+        JsonNode resource = body["resources"]!.AsArray().Single()!;
+        resource["resource"]!.GetValue<string>().Should().Be("/ed-fi/students");
+        resource["operations"]!
+            .AsArray()
+            .Select(operation => operation!.GetValue<string>())
+            .Should()
+            .Equal("Create", "Read");
+
+        JsonNode service = body["services"]!.AsArray().Single()!;
+        service["service"]!.GetValue<string>().Should().Be("identity");
+        service["operations"]!
+            .AsArray()
+            .Select(operation => operation!.GetValue<string>())
+            .Should()
+            .Equal("Read");
+
+        A.CallTo(() =>
+                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_formats_relational_ed_fi_discriminators_using_existing_token_info_names()
     {
         var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
@@ -413,6 +506,18 @@ public class Given_GetTokenInfoHandler
         return new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("Student")
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    private static ApiSchemaDocuments CreateApiSchemaDocumentsWithStudentAndStaff()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Student")
+            .WithEndResource()
+            .WithStartResource("Staff")
             .WithEndResource()
             .WithEndProject()
             .ToApiSchemaDocuments();

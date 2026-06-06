@@ -169,7 +169,7 @@
       "rg -n \"ITokenInfoEducationOrganizationLookup|GetTokenInfoEducationOrganizations|ConvertPascalToSnakeCase|ProjectEndpointName\" src/dms/core src/dms/core/EdFi.DataManagementService.Core.Tests.Unit",
       "dotnet csharpier format src/dms/core"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "postgresql-integration-tests",
