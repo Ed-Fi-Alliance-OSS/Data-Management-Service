@@ -104,7 +104,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
-    public void ServiceCollection_replaces_token_info_lookup_with_mssql_relational_lookup()
+    public void ServiceCollection_registers_mssql_relational_token_info_lookup_without_replacing_base_lookup()
     {
         var services = new ServiceCollection();
 
@@ -116,14 +116,19 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
 
-        var tokenInfoLookup = scope
+        scope
             .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
             .Should()
             .ContainSingle()
-            .Which;
+            .Which.Should()
+            .BeOfType<StubTokenInfoEducationOrganizationLookup>();
 
-        tokenInfoLookup.Should().BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
-        tokenInfoLookup.Should().BeAssignableTo<IRelationalTokenInfoEducationOrganizationLookup>();
+        scope
+            .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
     }
 
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)

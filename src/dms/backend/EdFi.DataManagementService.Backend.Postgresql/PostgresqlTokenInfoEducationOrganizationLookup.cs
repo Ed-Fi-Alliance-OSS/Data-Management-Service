@@ -25,19 +25,6 @@ public sealed class PostgresqlTokenInfoEducationOrganizationLookup(IRelationalCo
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
-    public Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
-        IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds
-    )
-    {
-        ArgumentNullException.ThrowIfNull(educationOrganizationIds);
-
-        return educationOrganizationIds.Count == 0
-            ? Task.FromResult<IEnumerable<TokenInfoEducationOrganization>>([])
-            : throw new InvalidOperationException(
-                "PostgreSQL relational token_info education organization lookup requires a MappingSet."
-            );
-    }
-
     public async Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
         IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds,
         MappingSet mappingSet

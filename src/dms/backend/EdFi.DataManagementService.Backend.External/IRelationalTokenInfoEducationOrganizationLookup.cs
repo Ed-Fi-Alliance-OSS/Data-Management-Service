@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.External;
@@ -13,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.External;
 /// Relational token_info education organization lookup contract that receives
 /// the selected runtime mapping set for the current DMS instance.
 /// </summary>
-public interface IRelationalTokenInfoEducationOrganizationLookup : ITokenInfoEducationOrganizationLookup
+public interface IRelationalTokenInfoEducationOrganizationLookup
 {
     public Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
         IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds,

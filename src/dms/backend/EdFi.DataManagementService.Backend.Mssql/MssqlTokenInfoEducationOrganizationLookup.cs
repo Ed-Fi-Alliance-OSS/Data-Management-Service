@@ -23,19 +23,6 @@ public sealed class MssqlTokenInfoEducationOrganizationLookup(
     private readonly IRelationalParameterConfigurator _parameterConfigurator =
         parameterConfigurator ?? throw new ArgumentNullException(nameof(parameterConfigurator));
 
-    public Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
-        IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds
-    )
-    {
-        ArgumentNullException.ThrowIfNull(educationOrganizationIds);
-
-        return educationOrganizationIds.Count == 0
-            ? Task.FromResult<IEnumerable<TokenInfoEducationOrganization>>([])
-            : throw new InvalidOperationException(
-                "SQL Server relational token_info education organization lookup requires a MappingSet."
-            );
-    }
-
     public async Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
         IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds,
         MappingSet mappingSet

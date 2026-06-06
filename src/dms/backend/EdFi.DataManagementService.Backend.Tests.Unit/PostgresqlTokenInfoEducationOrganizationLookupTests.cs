@@ -46,29 +46,6 @@ public class Given_PostgresqlTokenInfoEducationOrganizationLookup
     }
 
     [Test]
-    public async Task It_returns_empty_without_mapping_metadata_for_empty_claims()
-    {
-        var executor = new InMemoryRelationalCommandExecutor([]);
-        var sut = new PostgresqlTokenInfoEducationOrganizationLookup(executor);
-
-        var result = await sut.GetEducationOrganizations([]);
-
-        result.Should().BeEmpty();
-        executor.Commands.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_requires_mapping_metadata_for_non_empty_claims()
-    {
-        var executor = new InMemoryRelationalCommandExecutor([]);
-        var sut = new PostgresqlTokenInfoEducationOrganizationLookup(executor);
-
-        var act = async () => await sut.GetEducationOrganizations([new EducationOrganizationId(255901L)]);
-
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a MappingSet*");
-    }
-
-    [Test]
     public async Task It_executes_the_relational_hierarchy_query_with_a_postgresql_array_parameter()
     {
         var executor = new InMemoryRelationalCommandExecutor([

@@ -216,12 +216,12 @@ internal partial class GetTokenInfoHandler(
             return new AuthorizedEducationOrganizationsResult(true, []);
         }
 
-        var educationOrganizationLookup =
-            requestInfo.ScopedServiceProvider.GetRequiredService<ITokenInfoEducationOrganizationLookup>();
-
         IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows;
 
-        if (educationOrganizationLookup is IRelationalTokenInfoEducationOrganizationLookup relationalLookup)
+        var relationalLookup =
+            requestInfo.ScopedServiceProvider.GetService<IRelationalTokenInfoEducationOrganizationLookup>();
+
+        if (relationalLookup is not null)
         {
             var mappingSetResolution = await tokenInfoRelationalMappingSetResolver.ResolveAsync(requestInfo);
             if (!mappingSetResolution.Succeeded || mappingSetResolution.MappingSet is not { } mappingSet)
@@ -236,6 +236,9 @@ internal partial class GetTokenInfoHandler(
         }
         else
         {
+            var educationOrganizationLookup =
+                requestInfo.ScopedServiceProvider.GetRequiredService<ITokenInfoEducationOrganizationLookup>();
+
             educationOrganizationRows = await educationOrganizationLookup.GetEducationOrganizations(
                 clientEducationOrganizationIds
             );

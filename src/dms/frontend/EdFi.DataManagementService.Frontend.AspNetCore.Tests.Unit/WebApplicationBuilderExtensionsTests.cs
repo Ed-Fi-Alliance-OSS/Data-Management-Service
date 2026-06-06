@@ -226,7 +226,7 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
-        public void It_keeps_the_legacy_authorization_repository_and_uses_the_postgresql_relational_token_info_lookup()
+        public void It_keeps_the_legacy_token_info_lookup_and_registers_the_postgresql_relational_lookup()
         {
             using var serviceProvider = CreateServices(
                 "postgresql",
@@ -241,14 +241,19 @@ public class WebApplicationBuilderExtensionsTests
                 .Which.Should()
                 .BeOfType<PostgresqlAuthorizationRepository>();
 
-            var tokenInfoLookup = scope
+            scope
                 .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
                 .Should()
                 .ContainSingle()
-                .Which;
+                .Which.Should()
+                .BeOfType<AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter>();
 
-            tokenInfoLookup.Should().BeOfType<PostgresqlTokenInfoEducationOrganizationLookup>();
-            tokenInfoLookup.Should().BeAssignableTo<IRelationalTokenInfoEducationOrganizationLookup>();
+            scope
+                .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<PostgresqlTokenInfoEducationOrganizationLookup>();
         }
     }
 
@@ -374,7 +379,7 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
-        public void It_uses_the_mssql_relational_token_info_lookup()
+        public void It_registers_the_mssql_relational_token_info_lookup()
         {
             using var serviceProvider = CreateServices(
                 "mssql",
@@ -382,14 +387,14 @@ public class WebApplicationBuilderExtensionsTests
             );
             using var scope = serviceProvider.CreateScope();
 
-            var tokenInfoLookup = scope
-                .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
+            scope.ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>().Should().BeEmpty();
+
+            scope
+                .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
                 .Should()
                 .ContainSingle()
-                .Which;
-
-            tokenInfoLookup.Should().BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
-            tokenInfoLookup.Should().BeAssignableTo<IRelationalTokenInfoEducationOrganizationLookup>();
+                .Which.Should()
+                .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
         }
     }
 }

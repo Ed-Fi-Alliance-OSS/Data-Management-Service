@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -49,7 +48,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
 
         services.Replace(
             ServiceDescriptor.Scoped<
-                ITokenInfoEducationOrganizationLookup,
+                IRelationalTokenInfoEducationOrganizationLookup,
                 MssqlTokenInfoEducationOrganizationLookup
             >()
         );

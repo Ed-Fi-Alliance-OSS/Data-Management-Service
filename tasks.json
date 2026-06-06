@@ -302,6 +302,6 @@
       "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~WebApplicationBuilder\"",
       "dotnet csharpier format src/dms/core src/dms/backend src/dms/frontend"
     ],
-    "completed": false
+    "completed": true
   }
 ]
