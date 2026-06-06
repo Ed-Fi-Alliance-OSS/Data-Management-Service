@@ -133,7 +133,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Mssql&FullyQualifiedName~TokenInfo\"",
       "dotnet csharpier format src/dms/backend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "dependency-injection",
