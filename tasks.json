@@ -226,6 +226,6 @@
       "rg -n \"Scenario: 01 Valid token|@relational-backend|@relational-ci-shard|ValidTokenReturnsAuthorizationInformation\" src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Security/TokenIntrospection.feature src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Security/TokenIntrospection.feature.cs",
       "docker logs dms-local-dms-1 --tail 200 | rg \"EducationOrganizationHierarchy|42P01|token_info\""
     ],
-    "completed": false
+    "completed": true
   }
 ]
