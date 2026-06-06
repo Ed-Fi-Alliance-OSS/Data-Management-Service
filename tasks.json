@@ -151,7 +151,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~ServiceCollection\"",
       "rg -n \"ITokenInfoEducationOrganizationLookup|IAuthorizationRepository|UseRelationalBackend\" src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure src/dms/backend src/dms/core"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "core-unit-tests",

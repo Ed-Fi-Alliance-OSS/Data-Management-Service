@@ -8,6 +8,9 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
 using FakeItEasy;
@@ -125,6 +128,28 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         providerFailure.Message.Should().Be("1|7|1|0:0:n");
     }
 
+    [Test]
+    public void ServiceCollection_replaces_token_info_lookup_with_postgresql_relational_lookup()
+    {
+        var services = new ServiceCollection();
+
+        services.AddScoped<IRelationalCommandExecutor>(_ => A.Fake<IRelationalCommandExecutor>());
+        services.AddScoped<ITokenInfoEducationOrganizationLookup, StubTokenInfoEducationOrganizationLookup>();
+        services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        var tokenInfoLookup = scope
+            .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
+            .Should()
+            .ContainSingle()
+            .Which;
+
+        tokenInfoLookup.Should().BeOfType<PostgresqlTokenInfoEducationOrganizationLookup>();
+        tokenInfoLookup.Should().BeAssignableTo<IRelationalTokenInfoEducationOrganizationLookup>();
+    }
+
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
@@ -139,6 +164,13 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     {
         public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
             throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
+    }
+
+    private sealed class StubTokenInfoEducationOrganizationLookup : ITokenInfoEducationOrganizationLookup
+    {
+        public Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
+            IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds
+        ) => Task.FromResult<IEnumerable<TokenInfoEducationOrganization>>([]);
     }
 
     private sealed class NoOpHostApplicationLifetime : IHostApplicationLifetime

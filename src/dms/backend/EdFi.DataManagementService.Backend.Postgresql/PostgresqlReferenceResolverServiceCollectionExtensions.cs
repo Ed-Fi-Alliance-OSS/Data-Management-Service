@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Old.Postgresql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,6 +41,22 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             PostgresqlDocumentHydrator,
             PostgresqlSessionDocumentHydrator
         >();
+    }
+
+    public static IServiceCollection AddPostgresqlRelationalTokenInfoEducationOrganizationLookup(
+        this IServiceCollection services
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                ITokenInfoEducationOrganizationLookup,
+                PostgresqlTokenInfoEducationOrganizationLookup
+            >()
+        );
+
+        return services;
     }
 }
 
