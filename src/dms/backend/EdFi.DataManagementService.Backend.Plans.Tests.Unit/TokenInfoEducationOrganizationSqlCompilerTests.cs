@@ -157,6 +157,34 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
             .WithMessage("*Concrete EducationOrganization resource 'Ed-Fi.School'*$.nameOfInstitution*");
     }
 
+    [Test]
+    public void It_should_fail_fast_when_mapping_set_lacks_the_education_organization_union_view()
+    {
+        var compiler = new TokenInfoEducationOrganizationSqlCompiler(SqlDialect.Pgsql);
+        var spec = CreateSpec(SqlDialect.Pgsql, [111L], includeEducationOrganizationUnionView: false);
+
+        var act = () => compiler.Compile(spec);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*does not contain an abstract 'EducationOrganization' union view*");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_the_education_organization_union_view_has_no_projection_arms()
+    {
+        var compiler = new TokenInfoEducationOrganizationSqlCompiler(SqlDialect.Pgsql);
+        var spec = CreateSpec(SqlDialect.Pgsql, [111L], includeEducationOrganizationUnionArms: false);
+
+        var act = () => compiler.Compile(spec);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*EducationOrganization union view '*' does not contain any concrete projection arms*"
+            );
+    }
+
     private static TokenInfoEducationOrganizationSqlPlan Compile(
         SqlDialect dialect,
         IReadOnlyList<long>? claimEducationOrganizationIds = null
@@ -170,11 +198,18 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
     private static TokenInfoEducationOrganizationSqlSpec CreateSpec(
         SqlDialect dialect,
         IReadOnlyList<long> claimEducationOrganizationIds,
-        bool includeSchoolNameOfInstitution = true
+        bool includeSchoolNameOfInstitution = true,
+        bool includeEducationOrganizationUnionView = true,
+        bool includeEducationOrganizationUnionArms = true
     )
     {
         return new TokenInfoEducationOrganizationSqlSpec(
-            CreateMappingSet(dialect, includeSchoolNameOfInstitution),
+            CreateMappingSet(
+                dialect,
+                includeSchoolNameOfInstitution,
+                includeEducationOrganizationUnionView,
+                includeEducationOrganizationUnionArms
+            ),
             AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
                 dialect,
                 claimEducationOrganizationIds,
@@ -183,7 +218,12 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
         );
     }
 
-    private static MappingSet CreateMappingSet(SqlDialect dialect, bool includeSchoolNameOfInstitution = true)
+    private static MappingSet CreateMappingSet(
+        SqlDialect dialect,
+        bool includeSchoolNameOfInstitution = true,
+        bool includeEducationOrganizationUnionView = true,
+        bool includeEducationOrganizationUnionArms = true
+    )
     {
         var resourceKeys = new[]
         {
@@ -243,6 +283,16 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
             ],
             resourceKeys
         );
+        IReadOnlyList<AbstractUnionViewInfo> abstractUnionViews = includeEducationOrganizationUnionView
+            ?
+            [
+                CreateEducationOrganizationUnionView(
+                    resourceKeysByResource[_educationOrganizationResource],
+                    resourceKeysByResource,
+                    includeEducationOrganizationUnionArms
+                ),
+            ]
+            : [];
         var modelSet = new DerivedRelationalModelSet(
             effectiveSchema,
             dialect,
@@ -256,12 +306,7 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
                     resourceKeysByResource[_educationOrganizationResource]
                 ),
             ],
-            [
-                CreateEducationOrganizationUnionView(
-                    resourceKeysByResource[_educationOrganizationResource],
-                    resourceKeysByResource
-                ),
-            ],
+            abstractUnionViews,
             [],
             []
         );
@@ -351,7 +396,8 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
 
     private static AbstractUnionViewInfo CreateEducationOrganizationUnionView(
         ResourceKeyEntry abstractResourceKey,
-        IReadOnlyDictionary<QualifiedResourceName, ResourceKeyEntry> resourceKeysByResource
+        IReadOnlyDictionary<QualifiedResourceName, ResourceKeyEntry> resourceKeysByResource,
+        bool includeUnionArms = true
     )
     {
         var outputColumns = new[]
@@ -375,11 +421,8 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
                 null
             ),
         };
-
-        return new AbstractUnionViewInfo(
-            abstractResourceKey,
-            new DbTableName(_edfiSchema, "EducationOrganization_View"),
-            outputColumns,
+        IReadOnlyList<AbstractUnionViewArm> unionArms = includeUnionArms
+            ?
             [
                 CreateUnionArm(
                     resourceKeysByResource[_schoolResource],
@@ -403,6 +446,13 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
                     "Sample:CustomEducationOrganization"
                 ),
             ]
+            : [];
+
+        return new AbstractUnionViewInfo(
+            abstractResourceKey,
+            new DbTableName(_edfiSchema, "EducationOrganization_View"),
+            outputColumns,
+            unionArms
         );
     }
 

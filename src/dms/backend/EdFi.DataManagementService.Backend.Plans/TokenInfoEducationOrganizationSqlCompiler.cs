@@ -57,9 +57,7 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
             );
 
         return new TokenInfoEducationOrganizationSqlPlan(
-            projectionArms.Count == 0
-                ? BuildEmptyResultSql()
-                : BuildSql(projectionArms, spec.ClaimEducationOrganizationIdParameterization),
+            BuildSql(projectionArms, spec.ClaimEducationOrganizationIdParameterization),
             parametersInOrder,
             projectionArms,
             _resultColumns
@@ -101,17 +99,26 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
 
         if (edOrgUnionViews.Length == 0)
         {
-            return [];
+            throw new InvalidOperationException(
+                $"Mapping set does not contain an abstract '{EducationOrganizationResourceName}' union view."
+            );
         }
 
         if (edOrgUnionViews.Length > 1)
         {
             throw new InvalidOperationException(
-                $"Mapping set contains {edOrgUnionViews.Length} abstract '{EducationOrganizationResourceName}' union views; expected at most one."
+                $"Mapping set contains {edOrgUnionViews.Length} abstract '{EducationOrganizationResourceName}' union views; expected one."
             );
         }
 
         var edOrgUnionView = edOrgUnionViews[0];
+        if (edOrgUnionView.UnionArmsInOrder.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"EducationOrganization union view '{edOrgUnionView.ViewName}' does not contain any concrete projection arms."
+            );
+        }
+
         var educationOrganizationIdOutputIndex = ResolveEducationOrganizationIdOutputIndex(edOrgUnionView);
         var discriminatorOutputIndex = ResolveOutputColumnIndex(edOrgUnionView, DiscriminatorColumnName);
         var concreteResourcesByResource = mappingSet.Model.ConcreteResourcesInNameOrder.ToDictionary(
@@ -496,33 +503,6 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
             AppendQualifiedColumn(writer, TargetAlias, _resultColumns.Discriminator).AppendLine(" ASC,");
             AppendQualifiedColumn(writer, AncestorAlias, _resultColumns.Discriminator).AppendLine(" ASC;");
         }
-    }
-
-    private string BuildEmptyResultSql()
-    {
-        var writer = new SqlWriter(_sqlDialect);
-
-        writer.AppendLine("SELECT");
-        using (writer.Indent())
-        {
-            AppendNullCast(writer, "bigint", _resultColumns.EducationOrganizationId).AppendLine(",");
-            AppendNullCast(writer, "varchar(256)", _resultColumns.NameOfInstitution).AppendLine(",");
-            AppendNullCast(writer, "varchar(256)", _resultColumns.Discriminator).AppendLine(",");
-            AppendNullCast(writer, "varchar(256)", _resultColumns.AncestorDiscriminator).AppendLine(",");
-            AppendNullCast(writer, "bigint", _resultColumns.AncestorEducationOrganizationId).AppendLine();
-        }
-        writer.AppendLine("WHERE 1 = 0;");
-
-        return writer.ToString();
-    }
-
-    private static SqlWriter AppendNullCast(SqlWriter writer, string sqlType, DbColumnName resultColumn)
-    {
-        return writer
-            .Append("CAST(NULL AS ")
-            .Append(sqlType)
-            .Append(") AS ")
-            .AppendQuoted(resultColumn.Value);
     }
 
     private static SqlWriter AppendQualifiedColumn(SqlWriter writer, string tableAlias, DbColumnName column)
