@@ -7,8 +7,10 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -32,7 +34,8 @@ internal partial class GetTokenInfoHandler(
     ILogger<GetTokenInfoHandler> logger,
     IJwtValidationService jwtValidationService,
     IClaimSetProvider claimSetProvider,
-    IProfileService profileService
+    IProfileService profileService,
+    ITokenInfoRelationalMappingSetResolver tokenInfoRelationalMappingSetResolver
 ) : IPipelineStep
 {
     private const string EdFiOdsServiceClaimBaseUri = $"{Conventions.EdFiOdsServiceClaimBaseUri}/";
@@ -161,6 +164,16 @@ internal partial class GetTokenInfoHandler(
             return;
         }
 
+        var educationOrganizations = await GetAuthorizedEducationOrganizations(
+            requestInfo,
+            requestInfo.ClientAuthorizations.EducationOrganizationIds
+        );
+
+        if (!educationOrganizations.Succeeded)
+        {
+            return;
+        }
+
         var response = new TokenInfoResponse
         {
             Active = true,
@@ -168,10 +181,7 @@ internal partial class GetTokenInfoHandler(
             NamespacePrefixes = requestInfo.ClientAuthorizations.NamespacePrefixes.Select(namespacePrefix =>
                 namespacePrefix.Value
             ),
-            EducationOrganizations = await GetAuthorizedEducationOrganizations(
-                requestInfo.ScopedServiceProvider,
-                requestInfo.ClientAuthorizations.EducationOrganizationIds
-            ),
+            EducationOrganizations = educationOrganizations.EducationOrganizations,
             AssignedProfiles = await GetAssignedProfiles(
                 appContext.ApplicationId,
                 requestInfo.FrontendRequest.Tenant
@@ -191,52 +201,84 @@ internal partial class GetTokenInfoHandler(
         );
     }
 
-    private async Task<IEnumerable<OrderedDictionary<string, object>>> GetAuthorizedEducationOrganizations(
-        IServiceProvider scopedServiceProvider,
+    private sealed record AuthorizedEducationOrganizationsResult(
+        bool Succeeded,
+        IEnumerable<OrderedDictionary<string, object>> EducationOrganizations
+    );
+
+    private async Task<AuthorizedEducationOrganizationsResult> GetAuthorizedEducationOrganizations(
+        RequestInfo requestInfo,
         IReadOnlyCollection<EducationOrganizationId> clientEducationOrganizationIds
     )
     {
         if (clientEducationOrganizationIds.Count == 0)
         {
-            return [];
+            return new AuthorizedEducationOrganizationsResult(true, []);
         }
 
         var educationOrganizationLookup =
-            scopedServiceProvider.GetRequiredService<ITokenInfoEducationOrganizationLookup>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<ITokenInfoEducationOrganizationLookup>();
 
-        return (await educationOrganizationLookup.GetEducationOrganizations(clientEducationOrganizationIds))
-            .OrderBy(edOrg => edOrg.EducationOrganizationId)
-            .GroupBy(
-                edOrg => (edOrg.EducationOrganizationId, edOrg.NameOfInstitution, edOrg.Discriminator),
-                edOrg =>
-                {
-                    string edOrgIdPropertyName = ConvertPascalToSnakeCase($"{edOrg.AncestorDiscriminator}Id");
-                    return new
-                    {
-                        PropertyName = edOrgIdPropertyName,
-                        EducationOrganizationId = edOrg.AncestorEducationOrganizationId,
-                    };
-                }
-            )
-            .Select(edOrgGroup =>
+        IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows;
+
+        if (educationOrganizationLookup is IRelationalTokenInfoEducationOrganizationLookup relationalLookup)
+        {
+            var mappingSetResolution = await tokenInfoRelationalMappingSetResolver.ResolveAsync(requestInfo);
+            if (!mappingSetResolution.Succeeded || mappingSetResolution.MappingSet is not { } mappingSet)
             {
-                var tokenInfoEducationOrganization = new OrderedDictionary<string, object>();
+                return new AuthorizedEducationOrganizationsResult(false, []);
+            }
 
-                // Add properties for current claim value
-                var (educationOrganizationId, nameOfInstitution, discriminator) = edOrgGroup.Key;
-                tokenInfoEducationOrganization["education_organization_id"] = educationOrganizationId;
-                tokenInfoEducationOrganization["name_of_institution"] = nameOfInstitution;
-                tokenInfoEducationOrganization["type"] = $"edfi.{discriminator}";
+            educationOrganizationRows = await relationalLookup.GetEducationOrganizations(
+                clientEducationOrganizationIds,
+                mappingSet
+            );
+        }
+        else
+        {
+            educationOrganizationRows = await educationOrganizationLookup.GetEducationOrganizations(
+                clientEducationOrganizationIds
+            );
+        }
 
-                // Add related ancestor EducationOrganizationIds
-                foreach (var ancestorEdOrg in edOrgGroup)
+        return new AuthorizedEducationOrganizationsResult(
+            true,
+            educationOrganizationRows
+                .OrderBy(edOrg => edOrg.EducationOrganizationId)
+                .GroupBy(
+                    edOrg => (edOrg.EducationOrganizationId, edOrg.NameOfInstitution, edOrg.Discriminator),
+                    edOrg =>
+                    {
+                        string edOrgIdPropertyName = ConvertPascalToSnakeCase(
+                            $"{edOrg.AncestorDiscriminator}Id"
+                        );
+                        return new
+                        {
+                            PropertyName = edOrgIdPropertyName,
+                            EducationOrganizationId = edOrg.AncestorEducationOrganizationId,
+                        };
+                    }
+                )
+                .Select(edOrgGroup =>
                 {
-                    tokenInfoEducationOrganization[ancestorEdOrg.PropertyName] =
-                        ancestorEdOrg.EducationOrganizationId;
-                }
+                    var tokenInfoEducationOrganization = new OrderedDictionary<string, object>();
 
-                return tokenInfoEducationOrganization;
-            });
+                    // Add properties for current claim value
+                    var (educationOrganizationId, nameOfInstitution, discriminator) = edOrgGroup.Key;
+                    tokenInfoEducationOrganization["education_organization_id"] = educationOrganizationId;
+                    tokenInfoEducationOrganization["name_of_institution"] = nameOfInstitution;
+                    tokenInfoEducationOrganization["type"] = $"edfi.{discriminator}";
+
+                    // Add related ancestor EducationOrganizationIds
+                    foreach (var ancestorEdOrg in edOrgGroup)
+                    {
+                        tokenInfoEducationOrganization[ancestorEdOrg.PropertyName] =
+                            ancestorEdOrg.EducationOrganizationId;
+                    }
+
+                    return tokenInfoEducationOrganization;
+                })
+        );
     }
 
     private async Task<IEnumerable<TokenInfoResource>> GetAuthorizedResources(

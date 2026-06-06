@@ -5,6 +5,8 @@
 
 using System.Security.Claims;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -35,6 +37,7 @@ public class Given_GetTokenInfoHandler
     private IJwtValidationService _jwtValidationService = null!;
     private IClaimSetProvider _claimSetProvider = null!;
     private IProfileService _profileService = null!;
+    private ITokenInfoRelationalMappingSetResolver _tokenInfoRelationalMappingSetResolver = null!;
 
     [SetUp]
     public void Setup()
@@ -42,6 +45,7 @@ public class Given_GetTokenInfoHandler
         _jwtValidationService = A.Fake<IJwtValidationService>();
         _claimSetProvider = A.Fake<IClaimSetProvider>();
         _profileService = A.Fake<IProfileService>();
+        _tokenInfoRelationalMappingSetResolver = A.Fake<ITokenInfoRelationalMappingSetResolver>();
 
         A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._))
             .Returns([new ClaimSet(ClaimSetName, [])]);
@@ -122,6 +126,8 @@ public class Given_GetTokenInfoHandler
                 )
             )
             .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -145,6 +151,98 @@ public class Given_GetTokenInfoHandler
         body["resources"].Should().NotBeNull();
         body["services"].Should().NotBeNull();
         body["assigned_profiles"].Should().NotBeNull();
+        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_resolves_mapping_set_for_relational_lookup()
+    {
+        var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();
+        var mappingSet = CreateMappingSet();
+        IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
+        [
+            new(
+                EducationOrganizationId: 255901,
+                NameOfInstitution: "Grand Bend School",
+                Discriminator: "School",
+                AncestorDiscriminator: "School",
+                AncestorEducationOrganizationId: 255901
+            ),
+        ];
+
+        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
+            .Returns(new TokenInfoRelationalMappingSetResolutionResult(true, mappingSet));
+
+        A.CallTo(() =>
+                relationalLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>.That.Matches(ids =>
+                        ids.Single().Value == 255901
+                    ),
+                    mappingSet
+                )
+            )
+            .Returns(Task.FromResult(educationOrganizationRows));
+
+        var clientAuthorizations = CreateClientAuthorizations([new EducationOrganizationId(255901)]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(relationalLookup)
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        requestInfo.FrontendResponse.Body!["education_organizations"]!.AsArray().Single()!["school_id"]!
+            .GetValue<long>()
+            .Should()
+            .Be(255901);
+
+        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(requestInfo))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                relationalLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._,
+                    mappingSet
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                relationalLookup.GetEducationOrganizations(A<IReadOnlyCollection<EducationOrganizationId>>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_does_not_call_relational_lookup_when_mapping_set_resolution_fails()
+    {
+        var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();
+        var clientAuthorizations = CreateClientAuthorizations([new EducationOrganizationId(255901)]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
+            .Returns(new TokenInfoRelationalMappingSetResolutionResult(false, null));
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(relationalLookup)
+        );
+
+        await Execute(requestInfo);
+
+        A.CallTo(() =>
+                relationalLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._,
+                    A<MappingSet>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                relationalLookup.GetEducationOrganizations(A<IReadOnlyCollection<EducationOrganizationId>>._)
+            )
+            .MustNotHaveHappened();
     }
 
     private void ConfigureJwtValidation(ClientAuthorizations clientAuthorizations)
@@ -168,7 +266,8 @@ public class Given_GetTokenInfoHandler
             NullLogger<GetTokenInfoHandler>.Instance,
             _jwtValidationService,
             _claimSetProvider,
-            _profileService
+            _profileService,
+            _tokenInfoRelationalMappingSetResolver
         );
 
         await ((IPipelineStep)handler).Execute(requestInfo, () => Task.CompletedTask);
@@ -243,6 +342,44 @@ public class Given_GetTokenInfoHandler
             EducationOrganizationIds: educationOrganizationIds,
             NamespacePrefixes: [new NamespacePrefix("uri://ed-fi")],
             DataStoreIds: [new DataStoreId(1)]
+        );
+    }
+
+    private static MappingSet CreateMappingSet()
+    {
+        const string testHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0",
+            RelationalMappingVersion: "v1",
+            EffectiveSchemaHash: testHash,
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        var modelSet = new DerivedRelationalModelSet(
+            EffectiveSchema: effectiveSchema,
+            Dialect: SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder: [],
+            ConcreteResourcesInNameOrder: [],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey(testHash, SqlDialect.Pgsql, "v1"),
+            Model: modelSet,
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 }

@@ -69,7 +69,7 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetTokenInfo|FullyQualifiedName~ResolveMappingSet\"",
       "dotnet csharpier format src/dms/core src/dms/backend src/dms/frontend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "relational-query",
