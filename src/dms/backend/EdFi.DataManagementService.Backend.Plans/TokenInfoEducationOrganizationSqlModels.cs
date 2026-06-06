@@ -25,7 +25,6 @@ public sealed record TokenInfoEducationOrganizationSqlSpec(
 /// </summary>
 /// <param name="Resource">The concrete EducationOrganization resource.</param>
 /// <param name="Table">The concrete resource root table.</param>
-/// <param name="DocumentIdColumn">The root table column carrying <c>DocumentId</c>.</param>
 /// <param name="EducationOrganizationIdColumn">
 /// The concrete resource identity column projected as <c>EducationOrganizationId</c>.
 /// </param>
@@ -34,7 +33,6 @@ public sealed record TokenInfoEducationOrganizationSqlSpec(
 public sealed record TokenInfoEducationOrganizationProjectionArm(
     QualifiedResourceName Resource,
     DbTableName Table,
-    DbColumnName DocumentIdColumn,
     DbColumnName EducationOrganizationIdColumn,
     DbColumnName NameOfInstitutionColumn,
     string Discriminator

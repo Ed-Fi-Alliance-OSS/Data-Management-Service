@@ -51,7 +51,6 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
                 new TokenInfoEducationOrganizationProjectionArm(
                     _schoolResource,
                     new DbTableName(_edfiSchema, "School"),
-                    new DbColumnName("DocumentId"),
                     new DbColumnName("SchoolId"),
                     new DbColumnName("NameOfInstitution"),
                     "Ed-Fi:School"
@@ -64,6 +63,7 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
         plan.EducationOrganizationSql.Should().Contain("FROM \"sample\".\"CustomEducationOrganization\" r");
         plan.EducationOrganizationSql.Should().Contain("r.\"SchoolId\" AS \"EducationOrganizationId\"");
         plan.EducationOrganizationSql.Should().Contain("'Ed-Fi:School' AS \"Discriminator\"");
+        plan.EducationOrganizationSql.Should().NotContain("AS \"DocumentId\"");
         plan.EducationOrganizationSql.Should().NotContain("Student");
         plan.EducationOrganizationSql.Should().NotContain("GradeLevelDescriptor");
         plan.EducationOrganizationSql.Should().NotContain("EducationOrganization_View");

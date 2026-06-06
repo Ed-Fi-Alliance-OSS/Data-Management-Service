@@ -227,5 +227,23 @@
       "docker logs dms-local-dms-1 --tail 200 | rg \"EducationOrganizationHierarchy|42P01|token_info\""
     ],
     "completed": true
+  },
+  {
+    "category": "simplification",
+    "description": "Low: Remove the unused DocumentId projection from the relational token_info education organization SQL model.",
+    "acceptance-criteria": [
+      "TokenInfoEducationOrganizationProjectionArm no longer carries DocumentIdColumn when DocumentId is not consumed by the token_info lookup.",
+      "TokenInfoEducationOrganizationSqlCompiler no longer resolves the EducationOrganization union view DocumentId output solely for token_info SQL generation.",
+      "The generated concrete_edorg and claimed_edorg CTEs project only the columns needed by the final token_info result: EducationOrganizationId, NameOfInstitution, and Discriminator.",
+      "The relational token_info SQL still returns the same EducationOrganizationId, NameOfInstitution, Discriminator, AncestorDiscriminator, and AncestorEducationOrganizationId result columns for PostgreSQL and SQL Server.",
+      "Existing direct claim, stale tuple, ancestor, and deterministic ordering behavior remains unchanged."
+    ],
+    "steps-to-verify": [
+      "rg -n \"DocumentIdColumn|DocumentIdColumnName|DocumentId\\\" AS\" src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganization\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit"
+    ],
+    "completed": true
   }
 ]

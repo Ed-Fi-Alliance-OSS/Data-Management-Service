@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect)
 {
     private const string EducationOrganizationResourceName = "EducationOrganization";
-    private const string DocumentIdColumnName = "DocumentId";
     private const string DiscriminatorColumnName = "Discriminator";
     private const string NameOfInstitutionJsonPath = "$.nameOfInstitution";
     private const string ConcreteEdOrgCte = "concrete_edorg";
@@ -113,7 +112,6 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
         }
 
         var edOrgUnionView = edOrgUnionViews[0];
-        var documentIdOutputIndex = ResolveOutputColumnIndex(edOrgUnionView, DocumentIdColumnName);
         var educationOrganizationIdOutputIndex = ResolveEducationOrganizationIdOutputIndex(edOrgUnionView);
         var discriminatorOutputIndex = ResolveOutputColumnIndex(edOrgUnionView, DiscriminatorColumnName);
         var concreteResourcesByResource = mappingSet.Model.ConcreteResourcesInNameOrder.ToDictionary(
@@ -147,7 +145,6 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
                 new TokenInfoEducationOrganizationProjectionArm(
                     resource,
                     arm.FromTable,
-                    ResolveSourceColumn(arm, documentIdOutputIndex, DocumentIdColumnName),
                     ResolveSourceColumn(
                         arm,
                         educationOrganizationIdOutputIndex,
@@ -188,7 +185,7 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
         var matches = view
             .OutputColumnsInSelectOrder.Select((column, index) => (column, index))
             .Where(static entry =>
-                !string.Equals(entry.column.ColumnName.Value, DocumentIdColumnName, StringComparison.Ordinal)
+                !string.Equals(entry.column.ColumnName.Value, "DocumentId", StringComparison.Ordinal)
                 && !string.Equals(
                     entry.column.ColumnName.Value,
                     DiscriminatorColumnName,
@@ -311,10 +308,6 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
             writer.AppendLine("SELECT");
             using (writer.Indent())
             {
-                AppendQualifiedColumn(writer, RootAlias, arm.DocumentIdColumn)
-                    .Append(" AS ")
-                    .AppendQuoted(DocumentIdColumnName)
-                    .AppendLine(",");
                 AppendQualifiedColumn(writer, RootAlias, arm.EducationOrganizationIdColumn)
                     .Append(" AS ")
                     .AppendQuoted(_resultColumns.EducationOrganizationId.Value)
@@ -344,8 +337,6 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
             writer.AppendLine("SELECT");
             using (writer.Indent())
             {
-                AppendQualifiedColumn(writer, ConcreteAlias, new DbColumnName(DocumentIdColumnName))
-                    .AppendLine(",");
                 AppendQualifiedColumn(writer, ConcreteAlias, _resultColumns.EducationOrganizationId)
                     .AppendLine(",");
                 AppendQualifiedColumn(writer, ConcreteAlias, _resultColumns.NameOfInstitution)
