@@ -17,6 +17,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 public class Given_Abstract_Identity_Table_Derivation
 {
     private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+    private DerivedRelationalModelSet _modelSet = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -38,9 +39,9 @@ public class Given_Abstract_Identity_Table_Derivation
             }
         );
 
-        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _modelSet = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
 
-        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single(table =>
+        _abstractIdentityTable = _modelSet.AbstractIdentityTablesInNameOrder.Single(table =>
             table.AbstractResourceKey.Resource.ResourceName == "EducationOrganization"
         );
     }
@@ -131,6 +132,23 @@ public class Given_Abstract_Identity_Table_Derivation
         foreignKey.TargetTable.Name.Should().Be("Document");
         foreignKey.OnDelete.Should().Be(ReferentialAction.Cascade);
         foreignKey.OnUpdate.Should().Be(ReferentialAction.NoAction);
+    }
+
+    /// <summary>
+    /// It should carry ApiSchema superclass metadata on subclass concrete resources.
+    /// </summary>
+    [Test]
+    public void It_should_carry_superclass_metadata_on_subclass_concrete_resources()
+    {
+        var subclassResources = _modelSet
+            .ConcreteResourcesInNameOrder.Where(resource => resource.SuperclassResource is not null)
+            .ToArray();
+
+        subclassResources.Should().NotBeEmpty();
+        subclassResources
+            .Select(resource => resource.SuperclassResource!.Value)
+            .Should()
+            .AllBeEquivalentTo(new QualifiedResourceName("Ed-Fi", "EducationOrganization"));
     }
 
     /// <summary>
