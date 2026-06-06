@@ -245,5 +245,63 @@
       "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit"
     ],
     "completed": true
+  },
+  {
+    "category": "simplification",
+    "description": "Low: Deduplicate relational token_info education organization row materialization.",
+    "acceptance-criteria": [
+      "PostgresqlTokenInfoEducationOrganizationLookup and MssqlTokenInfoEducationOrganizationLookup no longer each define an identical ReadRowsAsync implementation.",
+      "A shared helper materializes TokenInfoEducationOrganization rows from TokenInfoEducationOrganizationResultColumns.Default using IRelationalCommandReader.",
+      "Both PostgreSQL and SQL Server lookup implementations call the shared helper without changing command text, parameter binding, or returned row values.",
+      "Existing PostgreSQL and SQL Server token_info lookup unit and provider-backed integration coverage continues to exercise the shared materializer."
+    ],
+    "steps-to-verify": [
+      "rg -n \"ReadRowsAsync|TokenInfoEducationOrganizationResultColumns.Default\" src/dms/backend/EdFi.DataManagementService.Backend.Postgresql src/dms/backend/EdFi.DataManagementService.Backend.Mssql src/dms/backend/EdFi.DataManagementService.Backend",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"Category=PostgresqlIntegration&FullyQualifiedName~TokenInfo\"",
+      "ConnectionStrings__MssqlAdmin='<configured SQL Server admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~TokenInfo\"",
+      "dotnet csharpier format src/dms/backend"
+    ],
+    "completed": false
+  },
+  {
+    "category": "relational-query-guardrail",
+    "description": "Medium: Fail fast when the relational token_info mapping set lacks the EducationOrganization abstract union view.",
+    "acceptance-criteria": [
+      "TokenInfoEducationOrganizationSqlCompiler throws InvalidOperationException when the mapping set has no abstract EducationOrganization union view.",
+      "TokenInfoEducationOrganizationSqlCompiler throws InvalidOperationException when the EducationOrganization union view has zero projection arms.",
+      "The compiler no longer emits a synthetic empty SELECT or WHERE 1 = 0 result for missing EducationOrganization projection metadata.",
+      "Relational provider lookups continue to return an empty result for empty claim lists before invoking the compiler.",
+      "Unresolved claimed education organization IDs and stale auth hierarchy tuples still produce empty or partial results through normal SQL filtering rather than through a missing-metadata fallback.",
+      "Unit coverage proves missing projection metadata fails fast and does not return a successful empty plan."
+    ],
+    "steps-to-verify": [
+      "rg -n \"BuildEmptyResultSql|WHERE 1 = 0|projectionArms.Count == 0|EducationOrganization union view\" src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationSqlCompiler\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit"
+    ],
+    "completed": false
+  },
+  {
+    "category": "contract",
+    "description": "Low: Split the relational token_info lookup contract from the base lookup contract so relational implementations no longer carry a non-mapping-set overload.",
+    "acceptance-criteria": [
+      "IRelationalTokenInfoEducationOrganizationLookup no longer inherits from ITokenInfoEducationOrganizationLookup.",
+      "IRelationalTokenInfoEducationOrganizationLookup exposes only the MappingSet-aware GetEducationOrganizations overload required by relational providers.",
+      "PostgresqlTokenInfoEducationOrganizationLookup and MssqlTokenInfoEducationOrganizationLookup implement only the relational contract and no longer define a GetEducationOrganizations overload that accepts only EducationOrganizationIds.",
+      "Relational DI registers IRelationalTokenInfoEducationOrganizationLookup for PostgreSQL and SQL Server and does not replace ITokenInfoEducationOrganizationLookup with relational provider classes.",
+      "GetTokenInfoHandler resolves and uses IRelationalTokenInfoEducationOrganizationLookup when present, resolving the MappingSet before invocation; otherwise it uses ITokenInfoEducationOrganizationLookup for the non-relational adapter.",
+      "Existing empty claim short-circuit behavior remains in GetTokenInfoHandler and no relational lookup is invoked for empty education organization claim lists.",
+      "Unit and service registration tests cover both relational and non-relational lookup resolution paths without relying on an invalid throwing overload."
+    ],
+    "steps-to-verify": [
+      "rg -n \"interface IRelationalTokenInfoEducationOrganizationLookup|: ITokenInfoEducationOrganizationLookup|requires a MappingSet|GetEducationOrganizations\\(\\s*IReadOnlyCollection<EducationOrganizationId>\" src/dms/core src/dms/backend src/dms/frontend",
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetTokenInfo\"",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~ServiceCollection|FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~WebApplicationBuilder\"",
+      "dotnet csharpier format src/dms/core src/dms/backend src/dms/frontend"
+    ],
+    "completed": false
   }
 ]
