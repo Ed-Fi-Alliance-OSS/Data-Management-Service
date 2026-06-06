@@ -51,7 +51,7 @@
       "rg -n \"ProjectEndpointName|ConvertPascalToSnakeCase|AncestorDiscriminator|Discriminator\" src/dms/core",
       "dotnet csharpier format src/dms/core"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "mapping-context",

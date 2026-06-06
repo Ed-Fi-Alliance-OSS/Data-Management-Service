@@ -246,11 +246,25 @@ internal partial class GetTokenInfoHandler(
             educationOrganizationRows
                 .OrderBy(edOrg => edOrg.EducationOrganizationId)
                 .GroupBy(
-                    edOrg => (edOrg.EducationOrganizationId, edOrg.NameOfInstitution, edOrg.Discriminator),
                     edOrg =>
                     {
+                        var discriminator = ParseEducationOrganizationDiscriminator(edOrg.Discriminator);
+                        return (
+                            edOrg.EducationOrganizationId,
+                            edOrg.NameOfInstitution,
+                            Type: FormatEducationOrganizationType(
+                                requestInfo.ApiSchemaDocuments,
+                                discriminator
+                            )
+                        );
+                    },
+                    edOrg =>
+                    {
+                        var ancestorDiscriminator = ParseEducationOrganizationDiscriminator(
+                            edOrg.AncestorDiscriminator
+                        );
                         string edOrgIdPropertyName = ConvertPascalToSnakeCase(
-                            $"{edOrg.AncestorDiscriminator}Id"
+                            $"{ancestorDiscriminator.ResourceName}Id"
                         );
                         return new
                         {
@@ -264,10 +278,10 @@ internal partial class GetTokenInfoHandler(
                     var tokenInfoEducationOrganization = new OrderedDictionary<string, object>();
 
                     // Add properties for current claim value
-                    var (educationOrganizationId, nameOfInstitution, discriminator) = edOrgGroup.Key;
+                    var (educationOrganizationId, nameOfInstitution, type) = edOrgGroup.Key;
                     tokenInfoEducationOrganization["education_organization_id"] = educationOrganizationId;
                     tokenInfoEducationOrganization["name_of_institution"] = nameOfInstitution;
-                    tokenInfoEducationOrganization["type"] = $"edfi.{discriminator}";
+                    tokenInfoEducationOrganization["type"] = type;
 
                     // Add related ancestor EducationOrganizationIds
                     foreach (var ancestorEdOrg in edOrgGroup)
@@ -279,6 +293,67 @@ internal partial class GetTokenInfoHandler(
                     return tokenInfoEducationOrganization;
                 })
         );
+    }
+
+    private readonly record struct EducationOrganizationDiscriminator(
+        string ProjectName,
+        string ResourceName,
+        bool HasProjectName
+    );
+
+    private static EducationOrganizationDiscriminator ParseEducationOrganizationDiscriminator(
+        string discriminator
+    )
+    {
+        int separatorIndex = discriminator.IndexOf(':');
+        if (separatorIndex < 0)
+        {
+            return new EducationOrganizationDiscriminator(
+                ProjectName: string.Empty,
+                ResourceName: discriminator,
+                HasProjectName: false
+            );
+        }
+
+        return new EducationOrganizationDiscriminator(
+            ProjectName: discriminator[..separatorIndex],
+            ResourceName: discriminator[(separatorIndex + 1)..],
+            HasProjectName: true
+        );
+    }
+
+    private static string FormatEducationOrganizationType(
+        ApiSchemaDocuments apiSchemaDocuments,
+        EducationOrganizationDiscriminator discriminator
+    )
+    {
+        if (!discriminator.HasProjectName)
+        {
+            return $"edfi.{discriminator.ResourceName}";
+        }
+
+        ProjectSchema? projectSchema = apiSchemaDocuments.FindProjectSchemaForProjectName(
+            new ProjectName(discriminator.ProjectName)
+        );
+
+        if (projectSchema is null)
+        {
+            throw new InvalidOperationException(
+                $"Unable to resolve token_info education organization discriminator project '{discriminator.ProjectName}'."
+            );
+        }
+
+        string projectEndpointName = IsStandardEdFiProject(projectSchema)
+            ? "edfi"
+            : projectSchema.ProjectEndpointName.Value;
+
+        return $"{projectEndpointName}.{discriminator.ResourceName}";
+    }
+
+    private static bool IsStandardEdFiProject(ProjectSchema projectSchema)
+    {
+        return projectSchema.ProjectName.Value.Equals("Ed-Fi", StringComparison.OrdinalIgnoreCase)
+            || projectSchema.ProjectEndpointName.Value.Equals("ed-fi", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<IEnumerable<TokenInfoResource>> GetAuthorizedResources(

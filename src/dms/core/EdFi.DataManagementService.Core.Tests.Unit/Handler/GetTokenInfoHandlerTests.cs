@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -128,6 +129,103 @@ public class Given_GetTokenInfoHandler
             .MustHaveHappenedOnceExactly();
         A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_formats_relational_ed_fi_discriminators_using_existing_token_info_names()
+    {
+        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
+        IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
+        [
+            new(
+                EducationOrganizationId: 255901,
+                NameOfInstitution: "Grand Bend School",
+                Discriminator: "Ed-Fi:School",
+                AncestorDiscriminator: "Ed-Fi:LocalEducationAgency",
+                AncestorEducationOrganizationId: 255901001
+            ),
+            new(
+                EducationOrganizationId: 255901,
+                NameOfInstitution: "Grand Bend School",
+                Discriminator: "Ed-Fi:School",
+                AncestorDiscriminator: "Ed-Fi:School",
+                AncestorEducationOrganizationId: 255901
+            ),
+        ];
+
+        A.CallTo(() =>
+                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._
+                )
+            )
+            .Returns(Task.FromResult(educationOrganizationRows));
+
+        var clientAuthorizations = CreateClientAuthorizations([new EducationOrganizationId(255901)]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup)
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        JsonNode educationOrganization = requestInfo.FrontendResponse.Body!["education_organizations"]!
+            .AsArray()
+            .Single()!;
+        educationOrganization["type"]!.GetValue<string>().Should().Be("edfi.School");
+        educationOrganization["local_education_agency_id"]!.GetValue<long>().Should().Be(255901001);
+        educationOrganization["school_id"]!.GetValue<long>().Should().Be(255901);
+    }
+
+    [Test]
+    public async Task It_formats_extension_relational_discriminators_using_project_endpoint_name()
+    {
+        var tokenInfoEducationOrganizationLookup = A.Fake<ITokenInfoEducationOrganizationLookup>();
+        IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows =
+        [
+            new(
+                EducationOrganizationId: 900001,
+                NameOfInstitution: "Sample Custom Education Organization",
+                Discriminator: "Sample:CustomEducationOrganization",
+                AncestorDiscriminator: "Ed-Fi:LocalEducationAgency",
+                AncestorEducationOrganizationId: 255901001
+            ),
+            new(
+                EducationOrganizationId: 900001,
+                NameOfInstitution: "Sample Custom Education Organization",
+                Discriminator: "Sample:CustomEducationOrganization",
+                AncestorDiscriminator: "Sample:CustomEducationOrganization",
+                AncestorEducationOrganizationId: 900001
+            ),
+        ];
+
+        A.CallTo(() =>
+                tokenInfoEducationOrganizationLookup.GetEducationOrganizations(
+                    A<IReadOnlyCollection<EducationOrganizationId>>._
+                )
+            )
+            .Returns(Task.FromResult(educationOrganizationRows));
+
+        var clientAuthorizations = CreateClientAuthorizations([new EducationOrganizationId(900001)]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(tokenInfoEducationOrganizationLookup),
+            CreateApiSchemaDocumentsWithSampleExtension()
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        JsonNode educationOrganization = requestInfo.FrontendResponse.Body!["education_organizations"]!
+            .AsArray()
+            .Single()!;
+        educationOrganization["type"]!.GetValue<string>().Should().Be("sample.CustomEducationOrganization");
+        educationOrganization["local_education_agency_id"]!.GetValue<long>().Should().Be(255901001);
+        educationOrganization["custom_education_organization_id"]!.GetValue<long>().Should().Be(900001);
     }
 
     [Test]
@@ -278,6 +376,19 @@ public class Given_GetTokenInfoHandler
         IServiceProvider scopedServiceProvider
     )
     {
+        return CreateRequestInfo(
+            clientAuthorizations,
+            scopedServiceProvider,
+            CreateDefaultApiSchemaDocuments()
+        );
+    }
+
+    private static RequestInfo CreateRequestInfo(
+        ClientAuthorizations clientAuthorizations,
+        IServiceProvider scopedServiceProvider,
+        ApiSchemaDocuments apiSchemaDocuments
+    )
+    {
         return new RequestInfo(
             new FrontendRequest(
                 Path: "/oauth/token_info",
@@ -292,14 +403,33 @@ public class Given_GetTokenInfoHandler
             scopedServiceProvider
         )
         {
-            ApiSchemaDocuments = new ApiSchemaBuilder()
-                .WithStartProject()
-                .WithStartResource("Student")
-                .WithEndResource()
-                .WithEndProject()
-                .ToApiSchemaDocuments(),
+            ApiSchemaDocuments = apiSchemaDocuments,
             ClientAuthorizations = clientAuthorizations,
         };
+    }
+
+    private static ApiSchemaDocuments CreateDefaultApiSchemaDocuments()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Student")
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    private static ApiSchemaDocuments CreateApiSchemaDocumentsWithSampleExtension()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Student")
+            .WithEndResource()
+            .WithEndProject()
+            .WithStartProject("Sample")
+            .WithStartResource("CustomEducationOrganization")
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
     }
 
     private static ServiceProvider CreateScopedServiceProvider(
