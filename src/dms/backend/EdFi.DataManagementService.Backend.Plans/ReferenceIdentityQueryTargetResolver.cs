@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -342,6 +343,223 @@ internal sealed class ReferenceIdentityQueryTargetResolver
     {
         return columns.Distinct().OrderBy(static column => column.Value, StringComparer.Ordinal).ToArray();
     }
+
+    private const string UniqueIdSuffix = "UniqueId";
+    private const string ReferenceSuffix = "Reference";
+
+    /// <summary>
+    /// Maps the schema's three person-identity unique-id leaf names to their public person reference
+    /// parent names. Only person identities participate in the 3-hop alias-parent bridge: a schema-mangled
+    /// alias parent names the public person reference (e.g. "studentReference"), not the intermediate
+    /// resource's own identity-source reference (e.g. "studentEducationOrganizationAssociationReference").
+    /// No arbitrary "fooUniqueId -> fooReference" derivation is applied outside this map.
+    /// </summary>
+    private static readonly FrozenDictionary<string, string> _personReferenceNamesByUniqueIdLeaf =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["studentUniqueId"] = "studentReference",
+            ["staffUniqueId"] = "staffReference",
+            ["contactUniqueId"] = "contactReference",
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Bridges schema-mangled alias query paths to reference-identity candidates using binding metadata.
+    /// Recognises two alias shapes: through-reference (alias leaf names the intermediate target resource)
+    /// and direct-site superclass-mangled (alias leaf names the compiling resource's superclass).
+    /// Returns <see cref="ReferenceIdentityQueryCandidateResolution.NoMatch"/> for any query path that is
+    /// not a two-segment property path whose leaf ends in <c>UniqueId</c>, or when neither shape matches;
+    /// <see cref="ReferenceIdentityQueryCandidateResolution.Match"/> for a single unambiguous candidate group;
+    /// or <see cref="ReferenceIdentityQueryCandidateResolution.Ambiguous"/> when multiple groups qualify.
+    /// </summary>
+    public ReferenceIdentityQueryCandidateResolution ResolveAliasPath(
+        string queryFieldName,
+        JsonPathExpression queryPath,
+        QualifiedResourceName? superclassResource
+    )
+    {
+        ArgumentNullException.ThrowIfNull(queryFieldName);
+
+        if (
+            queryPath.Segments
+                is not [JsonPathSegment.Property aliasParent, JsonPathSegment.Property aliasLeaf]
+            || !aliasLeaf.Name.EndsWith(UniqueIdSuffix, StringComparison.Ordinal)
+        )
+        {
+            return new ReferenceIdentityQueryCandidateResolution.NoMatch();
+        }
+
+        var matchedGroups = CandidateGroupsInOrder
+            .Select(group => new ReferenceIdentityQueryCandidateGroupMatch(
+                group,
+                group
+                    .CandidatesInOrder.Where(candidate =>
+                        IsAliasCandidateMatch(
+                            group,
+                            candidate,
+                            queryFieldName,
+                            aliasParent.Name,
+                            aliasLeaf.Name,
+                            superclassResource
+                        )
+                    )
+                    .ToArray()
+            ))
+            .Where(static match => match.MatchedCandidatesInOrder.Count > 0)
+            .ToArray();
+
+        return CreateResolution(matchedGroups);
+    }
+
+    private static bool IsAliasCandidateMatch(
+        ReferenceIdentityQueryCandidateGroup group,
+        ReferenceIdentityQueryCandidate candidate,
+        string queryFieldName,
+        string aliasParentName,
+        string aliasLeafName,
+        QualifiedResourceName? superclassResource
+    )
+    {
+        if (!TryResolveRolePrefix(group, out var rolePrefix))
+        {
+            return false;
+        }
+
+        // Through-reference shape: the target resource's identity element is itself
+        // reference-sourced (its identity path has a reference parent), and the alias
+        // leaf names the intermediate target resource. The alias parent must equal either
+        // the role-adjusted identity-source parent (2-hop case) or the role-adjusted public
+        // person reference derived from the identity leaf (3-hop person-identity case, where
+        // the intermediate resource's student/staff/contact identity is itself reference-derived).
+        if (
+            candidate.IdentityJsonPath.Segments
+            is [JsonPathSegment.Property identityParent, JsonPathSegment.Property identityLeafThrough]
+        )
+        {
+            if (
+                !identityLeafThrough.Name.EndsWith(UniqueIdSuffix, StringComparison.Ordinal)
+                || !string.Equals(
+                    queryFieldName,
+                    ApplyRolePrefix(rolePrefix, identityLeafThrough.Name),
+                    StringComparison.Ordinal
+                )
+                || !string.Equals(
+                    aliasLeafName,
+                    ToLowerCamelCase(group.TargetResource.ResourceName) + UniqueIdSuffix,
+                    StringComparison.Ordinal
+                )
+                || !IsLocalPropagatedIdentityBinding(group, candidate, identityLeafThrough.Name)
+            )
+            {
+                return false;
+            }
+
+            // Arm 1: alias parent is the role-adjusted intermediate identity-source parent.
+            if (
+                string.Equals(
+                    aliasParentName,
+                    ApplyRolePrefix(rolePrefix, identityParent.Name),
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return true;
+            }
+
+            // Arm 2: alias parent is the role-adjusted public person reference — applies only when
+            // the identity leaf is one of the three person unique-id fields, because the schema
+            // mangles the alias parent to name the public person reference rather than the
+            // intermediate resource's own identity-source reference.
+            return _personReferenceNamesByUniqueIdLeaf.TryGetValue(
+                    identityLeafThrough.Name,
+                    out var personReferenceName
+                )
+                && string.Equals(
+                    aliasParentName,
+                    ApplyRolePrefix(rolePrefix, personReferenceName),
+                    StringComparison.Ordinal
+                );
+        }
+
+        // Direct-site shape: the target resource's identity element is a root scalar,
+        // and the alias leaf names the compiling resource's superclass.
+        if (
+            candidate.IdentityJsonPath.Segments is [JsonPathSegment.Property identityLeafDirect]
+            && superclassResource is { } superclass
+            && group.ReferenceObjectPath.Segments is [JsonPathSegment.Property referenceObjectLeaf]
+        )
+        {
+            return identityLeafDirect.Name.EndsWith(UniqueIdSuffix, StringComparison.Ordinal)
+                && string.Equals(aliasParentName, referenceObjectLeaf.Name, StringComparison.Ordinal)
+                && string.Equals(
+                    queryFieldName,
+                    ApplyRolePrefix(rolePrefix, identityLeafDirect.Name),
+                    StringComparison.Ordinal
+                )
+                && string.Equals(
+                    aliasLeafName,
+                    ToLowerCamelCase(superclass.ResourceName) + UniqueIdSuffix,
+                    StringComparison.Ordinal
+                )
+                && IsLocalPropagatedIdentityBinding(group, candidate, identityLeafDirect.Name);
+        }
+
+        return false;
+    }
+
+    private static bool IsLocalPropagatedIdentityBinding(
+        ReferenceIdentityQueryCandidateGroup group,
+        ReferenceIdentityQueryCandidate candidate,
+        string identityLeafName
+    )
+    {
+        return candidate.ReferenceJsonPath.Segments
+                is [JsonPathSegment.Property referenceParent, JsonPathSegment.Property referenceLeaf]
+            && group.ReferenceObjectPath.Segments is [JsonPathSegment.Property referenceObjectLeaf]
+            && string.Equals(referenceParent.Name, referenceObjectLeaf.Name, StringComparison.Ordinal)
+            && string.Equals(referenceLeaf.Name, identityLeafName, StringComparison.Ordinal);
+    }
+
+    private static bool TryResolveRolePrefix(
+        ReferenceIdentityQueryCandidateGroup group,
+        out string rolePrefix
+    )
+    {
+        rolePrefix = "";
+
+        if (group.ReferenceObjectPath.Segments is not [.., JsonPathSegment.Property referenceObjectLeaf])
+        {
+            return false;
+        }
+
+        var baseReferenceName = ToLowerCamelCase(group.TargetResource.ResourceName) + ReferenceSuffix;
+
+        if (string.Equals(referenceObjectLeaf.Name, baseReferenceName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var roleNamedSuffix = ToUpperCamelCase(baseReferenceName);
+
+        if (
+            referenceObjectLeaf.Name.Length > roleNamedSuffix.Length
+            && referenceObjectLeaf.Name.EndsWith(roleNamedSuffix, StringComparison.Ordinal)
+        )
+        {
+            rolePrefix = referenceObjectLeaf.Name[..^roleNamedSuffix.Length];
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string ApplyRolePrefix(string rolePrefix, string name) =>
+        rolePrefix.Length == 0 ? name : rolePrefix + ToUpperCamelCase(name);
+
+    private static string ToLowerCamelCase(string name) =>
+        name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name[1..];
+
+    private static string ToUpperCamelCase(string name) =>
+        name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name[1..];
 
     private static ReferenceIdentityQueryCandidateResolution CreateResolution(
         IReadOnlyList<ReferenceIdentityQueryCandidateGroupMatch> matchedGroups
