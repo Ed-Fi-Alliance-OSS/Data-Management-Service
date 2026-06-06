@@ -40,9 +40,11 @@ filesystem inputs.
   fail fast before Docker operations start.
 - `-Extensions` and `-ApiSchemaPath` are mutually exclusive. Supplying both fails fast with guidance to use
   standard mode for package-backed extensions or expert mode for a custom schema directory.
-- Package-backed resolution uses the configured NuGet feed and package/version defaults. The exact core
-  package ID, extension package identity convention or metadata source, and version defaults are documented
-  and validated against the feed during implementation.
+- Package-backed resolution uses the configured NuGet feed and package/version defaults. The package-identity
+  convention is Data-Standard-qualified: the core package is `EdFi.DataStandard52.ApiSchema` and extension
+  packages follow `EdFi.DataStandard52.ApiSchema.<Project>` (for example `EdFi.DataStandard52.ApiSchema.Sample`,
+  `EdFi.DataStandard52.ApiSchema.Homograph`, and `EdFi.DataStandard52.ApiSchema.TPDM`). Version defaults are
+  documented and validated against the feed during implementation.
 - Package materialization rejects invalid package payloads before finalizing the staged workspace:
   - missing asset-only ApiSchema payload,
   - missing or malformed package manifest,

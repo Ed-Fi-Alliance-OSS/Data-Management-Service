@@ -206,6 +206,11 @@ Extension packages use the same shape. The schema file should be named `ApiSchem
 contract even if MetaEd originally emitted `ApiSchema-EXTENSION.json`; the package manifest and schema
 content identify whether the project is core or extension.
 
+Published ApiSchema package IDs are Data-Standard-qualified. The core package is
+`EdFi.DataStandard52.ApiSchema`, and extension packages follow the `EdFi.DataStandard52.ApiSchema.<Project>`
+convention (for example `EdFi.DataStandard52.ApiSchema.Sample`, `EdFi.DataStandard52.ApiSchema.Homograph`,
+and `EdFi.DataStandard52.ApiSchema.TPDM`), where `<Project>` is the MetaEd project name.
+
 The package should contain no `lib/` or `ref/` entries. It may include docs and license files:
 
 ```text
@@ -219,7 +224,7 @@ Example package manifest:
 ```json
 {
   "version": 1,
-  "packageId": "EdFi.Sample.ApiSchema",
+  "packageId": "EdFi.DataStandard52.ApiSchema.Sample",
   "projectName": "Sample",
   "projectEndpointName": "sample",
   "isExtensionProject": true,
