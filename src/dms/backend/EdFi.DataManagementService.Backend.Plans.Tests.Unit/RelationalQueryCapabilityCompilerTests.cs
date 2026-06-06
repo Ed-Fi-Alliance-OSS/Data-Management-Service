@@ -137,17 +137,6 @@ public class Given_RelationalQueryCapabilityCompiler
         "ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId"
     )]
     [TestCase(
-        "StudentCTEProgramAssociation",
-        "studentUniqueId",
-        "$.studentReference.generalStudentProgramAssociationUniqueId",
-        "Student",
-        "$.studentReference",
-        "$.studentReference.studentUniqueId",
-        "$.studentReference.studentUniqueId",
-        "Student_DocumentId",
-        "Student_StudentUniqueId"
-    )]
-    [TestCase(
         "BusRoute",
         "staffUniqueId",
         "$.staffReference.staffEducationOrganizationAssignmentAssociationUniqueId",
@@ -158,7 +147,18 @@ public class Given_RelationalQueryCapabilityCompiler
         "StaffEducationOrganizationAssignmentAssociation_DocumentId",
         "StaffEducationOrganizationAssignmentAssociation_StaffUniqueId"
     )]
-    public void It_should_leave_reference_identity_alias_paths_unsupported_until_the_api_schema_paths_are_fixed(
+    [TestCase(
+        "StudentAssessmentRegistrationBatteryPartAssociation",
+        "studentUniqueId",
+        "$.studentReference.studentAssessmentRegistrationUniqueId",
+        "StudentAssessmentRegistration",
+        "$.studentAssessmentRegistrationReference",
+        "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+        "$.studentAssessmentRegistrationReference.studentUniqueId",
+        "StudentAssessmentRegistration_DocumentId",
+        "StudentAssessmentRegistration_StudentUniqueId"
+    )]
+    public void It_should_resolve_through_reference_identity_alias_paths_to_root_binding_columns(
         string rootTableName,
         string queryFieldName,
         string queryPath,
@@ -194,11 +194,220 @@ public class Given_RelationalQueryCapabilityCompiler
 
         var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
 
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Supported>();
+        capability.UnsupportedFieldsByQueryField.Should().BeEmpty();
+        capability
+            .SupportedFieldsByQueryField[queryFieldName]
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName(expectedColumn)));
+        capability.SupportedFieldsByQueryField[queryFieldName].Path.Path.Canonical.Should().Be(queryPath);
+    }
+
+    [Test]
+    public void It_should_not_bridge_non_person_identity_leaves_through_the_person_reference_parent()
+    {
+        var targetResource = new QualifiedResourceName("Ed-Fi", "CourseOffering");
+        var rootTable = CreateRootTable(
+            "Section",
+            [
+                DocumentFkColumn("CourseOffering_DocumentId", "$.courseOfferingReference", targetResource),
+                ScalarColumn(
+                    "CourseOffering_LocalCourseUniqueId",
+                    "$.courseOfferingReference.localCourseUniqueId"
+                ),
+            ]
+        );
+        var binding = CreateBinding(
+            "$.courseOfferingReference",
+            rootTable.Table,
+            "CourseOffering_DocumentId",
+            targetResource,
+            "$.offeringReference.localCourseUniqueId",
+            "$.courseOfferingReference.localCourseUniqueId",
+            "CourseOffering_LocalCourseUniqueId"
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(new QualifiedResourceName("Ed-Fi", "Section"), rootTable, [binding], []),
+            ("localCourseUniqueId", [("$.localCourseReference.courseOfferingUniqueId", "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
         capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
         capability
-            .UnsupportedFieldsByQueryField[queryFieldName]
+            .UnsupportedFieldsByQueryField["localCourseUniqueId"]
             .FailureKind.Should()
             .Be(RelationalQueryFieldFailureKind.UnmappedPath);
+        capability.SupportedFieldsByQueryField.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_resolve_direct_site_superclass_alias_paths_to_root_binding_columns()
+    {
+        var rootTable = CreateRootTable(
+            "StudentCTEProgramAssociation",
+            [
+                DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource),
+                ScalarColumn("Student_StudentUniqueId", "$.studentReference.studentUniqueId"),
+            ]
+        );
+        var binding = CreateBinding(
+            "$.studentReference",
+            rootTable.Table,
+            "Student_DocumentId",
+            _studentResource,
+            "$.studentUniqueId",
+            "$.studentReference.studentUniqueId",
+            "Student_StudentUniqueId"
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(
+                new QualifiedResourceName("Ed-Fi", "StudentCTEProgramAssociation"),
+                rootTable,
+                [binding],
+                []
+            ),
+            new QualifiedResourceName("Ed-Fi", "GeneralStudentProgramAssociation"),
+            ("studentUniqueId", [("$.studentReference.generalStudentProgramAssociationUniqueId", "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Supported>();
+        capability.UnsupportedFieldsByQueryField.Should().BeEmpty();
+        capability
+            .SupportedFieldsByQueryField["studentUniqueId"]
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Student_StudentUniqueId")));
+    }
+
+    [TestCase("$.studentReference.notGeneralStudentProgramAssociationUniqueId")]
+    [TestCase("$.otherStudentReference.generalStudentProgramAssociationUniqueId")]
+    public void It_should_leave_direct_site_alias_near_misses_unsupported(string queryPath)
+    {
+        var rootTable = CreateRootTable(
+            "StudentCTEProgramAssociation",
+            [
+                DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource),
+                ScalarColumn("Student_StudentUniqueId", "$.studentReference.studentUniqueId"),
+            ]
+        );
+        var binding = CreateBinding(
+            "$.studentReference",
+            rootTable.Table,
+            "Student_DocumentId",
+            _studentResource,
+            "$.studentUniqueId",
+            "$.studentReference.studentUniqueId",
+            "Student_StudentUniqueId"
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(
+                new QualifiedResourceName("Ed-Fi", "StudentCTEProgramAssociation"),
+                rootTable,
+                [binding],
+                []
+            ),
+            new QualifiedResourceName("Ed-Fi", "GeneralStudentProgramAssociation"),
+            ("studentUniqueId", [(queryPath, "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
+        capability
+            .UnsupportedFieldsByQueryField["studentUniqueId"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.UnmappedPath);
+        capability.SupportedFieldsByQueryField.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_direct_site_alias_paths_unsupported_without_superclass_metadata()
+    {
+        var rootTable = CreateRootTable(
+            "StudentCTEProgramAssociation",
+            [
+                DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource),
+                ScalarColumn("Student_StudentUniqueId", "$.studentReference.studentUniqueId"),
+            ]
+        );
+        var binding = CreateBinding(
+            "$.studentReference",
+            rootTable.Table,
+            "Student_DocumentId",
+            _studentResource,
+            "$.studentUniqueId",
+            "$.studentReference.studentUniqueId",
+            "Student_StudentUniqueId"
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(
+                new QualifiedResourceName("Ed-Fi", "StudentCTEProgramAssociation"),
+                rootTable,
+                [binding],
+                []
+            ),
+            ("studentUniqueId", [("$.studentReference.generalStudentProgramAssociationUniqueId", "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
+        capability
+            .UnsupportedFieldsByQueryField["studentUniqueId"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.UnmappedPath);
+        capability.SupportedFieldsByQueryField.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_leave_alias_paths_matching_multiple_reference_sites_ambiguous()
+    {
+        var rootTable = CreateRootTable(
+            "CourseTranscript",
+            [
+                DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource),
+                ScalarColumn("Student_StudentUniqueId", "$.studentReference.studentUniqueId"),
+                DocumentFkColumn(
+                    "StudentAcademicRecord_DocumentId",
+                    "$.studentAcademicRecordReference",
+                    _studentAcademicRecordResource
+                ),
+                ScalarColumn(
+                    "StudentAcademicRecord_StudentUniqueId",
+                    "$.studentAcademicRecordReference.studentUniqueId"
+                ),
+            ]
+        );
+        var directBinding = CreateBinding(
+            "$.studentReference",
+            rootTable.Table,
+            "Student_DocumentId",
+            _studentResource,
+            "$.studentUniqueId",
+            "$.studentReference.studentUniqueId",
+            "Student_StudentUniqueId"
+        );
+        var throughBinding = CreateStudentAcademicRecordBinding(rootTable.Table);
+        var concreteResource = CreateConcreteResource(
+            CreateModel(
+                new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+                rootTable,
+                [directBinding, throughBinding],
+                []
+            ),
+            new QualifiedResourceName("Ed-Fi", "StudentAcademicRecord"),
+            ("studentUniqueId", [("$.studentReference.studentAcademicRecordUniqueId", "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
+        capability
+            .UnsupportedFieldsByQueryField["studentUniqueId"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.AmbiguousRootTarget);
         capability.SupportedFieldsByQueryField.Should().BeEmpty();
     }
 
@@ -319,7 +528,7 @@ public class Given_RelationalQueryCapabilityCompiler
     }
 
     [Test]
-    public void It_should_not_use_reference_identity_aliases_to_collapse_duplicate_root_columns()
+    public void It_should_collapse_same_site_alias_duplicates_to_representative_binding_column()
     {
         var rootTable = CreateRootTable(
             "CourseTranscript",
@@ -377,12 +586,16 @@ public class Given_RelationalQueryCapabilityCompiler
 
         var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
 
-        capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Supported>();
+        capability.UnsupportedFieldsByQueryField.Should().BeEmpty();
         capability
-            .UnsupportedFieldsByQueryField["studentUniqueId"]
-            .FailureKind.Should()
-            .Be(RelationalQueryFieldFailureKind.UnmappedPath);
-        capability.SupportedFieldsByQueryField.Should().BeEmpty();
+            .SupportedFieldsByQueryField["studentUniqueId"]
+            .Target.Should()
+            .Be(
+                new RelationalQueryFieldTarget.RootColumn(
+                    new DbColumnName("StudentAcademicRecord_StudentUniqueIdAlias")
+                )
+            );
     }
 
     [Test]
@@ -750,6 +963,12 @@ public class Given_RelationalQueryCapabilityCompiler
     private static ConcreteResourceModel CreateConcreteResource(
         RelationalResourceModel model,
         params (string QueryFieldName, (string Path, string Type)[] Paths)[] queryFields
+    ) => CreateConcreteResource(model, superclassResource: null, queryFields);
+
+    private static ConcreteResourceModel CreateConcreteResource(
+        RelationalResourceModel model,
+        QualifiedResourceName? superclassResource,
+        params (string QueryFieldName, (string Path, string Type)[] Paths)[] queryFields
     )
     {
         return new ConcreteResourceModel(
@@ -759,6 +978,7 @@ public class Given_RelationalQueryCapabilityCompiler
         )
         {
             QueryFieldMappingsByQueryField = CreateQueryFieldMappings(queryFields),
+            SuperclassResource = superclassResource,
         };
     }
 
