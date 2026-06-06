@@ -11,7 +11,8 @@ Feature: Resources "Read" Operation validations
                     }
                   """
 
-        @API-181
+        @API-181 @relational-backend
+        @relational-ci-shard-1
         Scenario: 01 Verify response code 404 when trying to get a school with an ID that corresponds to Course
             Given the system has these "Schools"
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                  | gradeLevels                                                                     |

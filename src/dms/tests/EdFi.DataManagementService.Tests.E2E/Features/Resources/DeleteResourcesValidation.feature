@@ -65,7 +65,8 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
-        @API-180
+        @API-180 @relational-backend
+        @relational-ci-shard-1
         Scenario: 05 Verify response when deleting
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """

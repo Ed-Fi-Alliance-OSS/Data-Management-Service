@@ -3,6 +3,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
+        @relational-ci-shard-4
+        @relational-backend
         Scenario: 00 Background
             Given the system has these descriptors
                   | descriptorValue                                           |
@@ -11,7 +13,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   | codeValue | description | namespace                               | shortDescription | effectiveBeginDate | effectiveEndDate |
                   | Fake      | Fake        | uri://ed-fi.org/CalendarEventDescriptor | Fake             | 2020-01-01         | 2020-12-31       |
 
-        @API-115
+        @API-115 @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Verify existing descriptors can be retrieved successfully
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
@@ -28,7 +31,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
                     ]
                   """
 
-        @API-116
+        @API-116 @relational-backend
+        @relational-ci-shard-4
         Scenario: 05 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/?codeValue=Sick+Leave"
              Then it should respond with 200
@@ -45,7 +49,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   ]
                   """
 
-        @API-117
+        @API-117 @relational-backend
+        @relational-ci-shard-4
         Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Test"
              Then it should respond with 200
@@ -54,7 +59,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   []
                   """
 
-        @API-118
+        @API-118 @relational-backend
+        @relational-ci-shard-4
         Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid namespace
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave"
              Then it should respond with 200
@@ -71,7 +77,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   ]
                   """
 
-        @API-119
+        @API-119 @relational-backend
+        @relational-ci-shard-4
         Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
              Then it should respond with 200
@@ -80,6 +87,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   []
                   """
 
+        @relational-ci-shard-4
+        @relational-backend
         Scenario: 09 Ensure clients can query by effectiveBeginDate and effectiveEndDate
              When a GET request is made to "/ed-fi/calendarEventDescriptors?effectiveBeginDate=2020-01-01"
              Then it should respond with 200

@@ -3,6 +3,8 @@ Feature: Validation of Natural Key Unification
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
+        @relational-ci-shard-4
+        @relational-backend
         Scenario: 00 Background
             Given the system has these descriptors
                   | descriptorValue                                                      |
@@ -39,7 +41,8 @@ Feature: Validation of Natural Key Unification
                    }
                   """
 
-        @API-100
+        @API-100 @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 Verify clients can create a resource that contains multiple references with an overlapping natural key field
              When a POST request is made to "/ed-fi/courseOfferings" with
                   """
@@ -64,7 +67,8 @@ Feature: Validation of Natural Key Unification
                   """
              Then it should respond with 201 or 200
 
-        @API-101
+        @API-101 @relational-backend
+        @relational-ci-shard-4
         Scenario: 02 Verify clients cannot create a resource that contains mismatched values on an overlapping natural key field
              When a POST request is made to "/ed-fi/courseOfferings" with
                   """
@@ -108,7 +112,8 @@ Feature: Validation of Natural Key Unification
                   """
               And it should respond with 400
 
-        @API-102
+        @API-102 @relational-backend
+        @relational-ci-shard-4
         Scenario: 03 Verify clients cannot update a resource that contains mismatched values on an overlapping natural key field
             Given the system has these "courseOfferings" references
                   | localCourseCode | courseReference                                         | schoolReference  | sessionReference                                                |
@@ -153,7 +158,8 @@ Feature: Validation of Natural Key Unification
                   }
                   """
 
-        @API-103
+        @API-103 @relational-backend
+        @relational-ci-shard-4
         Scenario: 04 Verify clients can create a resource with a reference to a resource with a complex identity (CourseOffering)
             Given the system has these "courseOfferings"
                   | localCourseCode | courseReference                                         | schoolReference  | sessionReference                                                |

@@ -463,7 +463,8 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @API-166 @POST
+        @API-166 @POST @relational-backend
+        @relational-ci-shard-1
         Scenario: 16 Post a new document (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """

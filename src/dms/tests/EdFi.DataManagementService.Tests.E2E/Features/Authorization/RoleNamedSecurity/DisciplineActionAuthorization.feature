@@ -58,6 +58,8 @@ Feature: DisciplineAction Authorization
              When a GET request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 200
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 02.2 Ensure authorized client can get a DisciplineAction by query
             Given a POST request is made to "/ed-fi/disciplineActions" with
                   """
@@ -198,6 +200,8 @@ Feature: DisciplineAction Authorization
                   }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 06.2 Ensure unauthorized client can not get a DisciplineAction by query
              When a GET request is made to "/ed-fi/disciplineActions?disciplineActionIdentifier=TEST-001"
              Then it should respond with 200

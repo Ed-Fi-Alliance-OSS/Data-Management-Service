@@ -149,6 +149,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 05 Ensure client can POST staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -165,6 +167,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
 
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 06 Ensure client can Get staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -198,6 +202,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
 
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 07 Ensure client can PUT staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -224,6 +230,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 08 Ensure client can DELETE staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -390,6 +398,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
     Rule: StaffEducationOrganizationEmploymentAssociation CRUD is properly authorized
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 14 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
@@ -475,6 +485,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 17 Ensure client can POST staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -489,6 +501,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 18 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -519,6 +533,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 19 Ensure client can PUT staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -545,6 +561,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 20 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with

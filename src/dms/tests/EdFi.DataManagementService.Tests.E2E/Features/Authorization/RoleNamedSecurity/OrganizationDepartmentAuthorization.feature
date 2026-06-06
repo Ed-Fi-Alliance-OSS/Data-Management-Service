@@ -36,6 +36,8 @@ Feature: OrganizationDepartment Authorization
              When a GET request is made to "/ed-fi/organizationDepartments/{orgDepId}"
              Then it should respond with 200
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 02.2 Ensure authorized client can get a OrganizationDepartment by query
             Given a POST request is made to "/ed-fi/organizationDepartments" with
                   """
@@ -152,6 +154,8 @@ Feature: OrganizationDepartment Authorization
                   }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 06.2 Ensure unauthorized client can not get a OrganizationDepartment by query
              When a GET request is made to "/ed-fi/organizationDepartments?nameOfInstitution=Test Office"
              Then it should respond with 200
