@@ -262,7 +262,7 @@
       "ConnectionStrings__MssqlAdmin='<configured SQL Server admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"Category=MssqlIntegration&FullyQualifiedName~TokenInfo\"",
       "dotnet csharpier format src/dms/backend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "relational-query-guardrail",

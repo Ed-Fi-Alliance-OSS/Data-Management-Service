@@ -52,7 +52,9 @@ public sealed class MssqlTokenInfoEducationOrganizationLookup(
             BuildParameters(plan.ParametersInOrder, claimParameterization)
         );
 
-        return await _commandExecutor.ExecuteReaderAsync(command, ReadRowsAsync).ConfigureAwait(false);
+        return await _commandExecutor
+            .ExecuteReaderAsync(command, TokenInfoEducationOrganizationRowReader.ReadAsync)
+            .ConfigureAwait(false);
     }
 
     private IReadOnlyList<RelationalParameter> BuildParameters(
@@ -76,44 +78,5 @@ public sealed class MssqlTokenInfoEducationOrganizationLookup(
                 )
             ),
         ];
-    }
-
-    private static async Task<IReadOnlyList<TokenInfoEducationOrganization>> ReadRowsAsync(
-        IRelationalCommandReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        List<TokenInfoEducationOrganization> rows = [];
-
-        var educationOrganizationIdOrdinal = reader.GetOrdinal(
-            TokenInfoEducationOrganizationResultColumns.Default.EducationOrganizationId.Value
-        );
-        var nameOfInstitutionOrdinal = reader.GetOrdinal(
-            TokenInfoEducationOrganizationResultColumns.Default.NameOfInstitution.Value
-        );
-        var discriminatorOrdinal = reader.GetOrdinal(
-            TokenInfoEducationOrganizationResultColumns.Default.Discriminator.Value
-        );
-        var ancestorDiscriminatorOrdinal = reader.GetOrdinal(
-            TokenInfoEducationOrganizationResultColumns.Default.AncestorDiscriminator.Value
-        );
-        var ancestorEducationOrganizationIdOrdinal = reader.GetOrdinal(
-            TokenInfoEducationOrganizationResultColumns.Default.AncestorEducationOrganizationId.Value
-        );
-
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rows.Add(
-                new TokenInfoEducationOrganization(
-                    reader.GetFieldValue<long>(educationOrganizationIdOrdinal),
-                    reader.GetFieldValue<string>(nameOfInstitutionOrdinal),
-                    reader.GetFieldValue<string>(discriminatorOrdinal),
-                    reader.GetFieldValue<string>(ancestorDiscriminatorOrdinal),
-                    reader.GetFieldValue<long>(ancestorEducationOrganizationIdOrdinal)
-                )
-            );
-        }
-
-        return rows;
     }
 }
