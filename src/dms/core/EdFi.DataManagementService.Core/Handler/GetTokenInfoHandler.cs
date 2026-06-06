@@ -48,8 +48,6 @@ internal partial class GetTokenInfoHandler(
         );
 
         // Resolve scoped dependencies from per-request scope
-        var authorizationRepository =
-            requestInfo.ScopedServiceProvider.GetRequiredService<IAuthorizationRepository>();
         var applicationContextProvider =
             requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
 
@@ -171,7 +169,7 @@ internal partial class GetTokenInfoHandler(
                 namespacePrefix.Value
             ),
             EducationOrganizations = await GetAuthorizedEducationOrganizations(
-                authorizationRepository,
+                requestInfo.ScopedServiceProvider,
                 requestInfo.ClientAuthorizations.EducationOrganizationIds
             ),
             AssignedProfiles = await GetAssignedProfiles(
@@ -194,13 +192,19 @@ internal partial class GetTokenInfoHandler(
     }
 
     private async Task<IEnumerable<OrderedDictionary<string, object>>> GetAuthorizedEducationOrganizations(
-        IAuthorizationRepository authorizationRepository,
+        IServiceProvider scopedServiceProvider,
         IReadOnlyCollection<EducationOrganizationId> clientEducationOrganizationIds
     )
     {
-        return (
-            await authorizationRepository.GetTokenInfoEducationOrganizations(clientEducationOrganizationIds)
-        )
+        if (clientEducationOrganizationIds.Count == 0)
+        {
+            return [];
+        }
+
+        var educationOrganizationLookup =
+            scopedServiceProvider.GetRequiredService<ITokenInfoEducationOrganizationLookup>();
+
+        return (await educationOrganizationLookup.GetEducationOrganizations(clientEducationOrganizationIds))
             .OrderBy(edOrg => edOrg.EducationOrganizationId)
             .GroupBy(
                 edOrg => (edOrg.EducationOrganizationId, edOrg.NameOfInstitution, edOrg.Discriminator),

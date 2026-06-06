@@ -1,0 +1,5 @@
+2026-06-05 - Completed contract task for reference/design/backend-redesign/epics/14-authorization/21-token-info-edorg-relational-auth-schema.md.
+- Decisions: added narrow ITokenInfoEducationOrganizationLookup in Core.External; GetTokenInfoHandler resolves it from request scope only for non-empty EdOrg claims; empty EdOrg claims return [] without resolving backend lookup.
+- Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Interface/ITokenInfoEducationOrganizationLookup.cs; src/dms/core/EdFi.DataManagementService.Core/Handler/GetTokenInfoHandler.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/GetTokenInfoHandlerTests.cs; tasks.json; progress.txt.
+- Verify: dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "FullyQualifiedName~GetTokenInfo"; dotnet csharpier format src/dms/core; rg verification for lookup/repository symbols.
+- Notes: non-relational adapter and DI registration intentionally left for next tasks.
