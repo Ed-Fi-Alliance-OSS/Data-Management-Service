@@ -2022,9 +2022,65 @@ EdFi.BulkLoadClient.Console fake
         }
     }
 
+    Context "template-build BulkLoadClient pin" {
+        BeforeAll {
+            # Register Template-Management so InModuleScope can target it. Importing from its own
+            # directory satisfies the module's CWD-relative sibling imports.
+            Push-Location (Join-Path $script:sourceRepoRoot "eng/DatabaseTemplates")
+            try {
+                Import-Module ./Template-Management.psm1 -Force
+            }
+            finally {
+                Pop-Location
+            }
+        }
+
+        It "Initialize-BulkLoad resolves the shared pin by default" {
+            $fakeBlcRoot = New-TestDirectory
+            $dllDir = Join-Path $fakeBlcRoot "tools/net10.0/any"
+            New-Item -ItemType Directory -Path $dllDir -Force | Out-Null
+            "" | Set-Content -LiteralPath (Join-Path $dllDir "EdFi.BulkLoadClient.Console.dll") -Encoding utf8
+
+            try {
+                InModuleScope Template-Management -Parameters @{ FakeBlcRoot = $fakeBlcRoot } {
+                    param($FakeBlcRoot)
+                    Mock -CommandName Get-BulkLoadClient -MockWith { $FakeBlcRoot }
+
+                    $paths = Initialize-BulkLoad
+                    $paths.bulkLoadClientExe | Should -Not -BeNullOrEmpty
+
+                    Should -Invoke Get-BulkLoadClient -Times 1 -Exactly -ParameterFilter {
+                        $PackageVersion -eq (Get-BulkLoadClientPinnedVersion)
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $fakeBlcRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "Initialize-BulkLoad rejects a <Override> override before any resolution" -ForEach @(
+            @{ Override = '7.3' }
+            @{ Override = '7.3.*' }
+        ) {
+            InModuleScope Template-Management -Parameters @{ Override = $Override } {
+                param($Override)
+                Mock -CommandName Get-BulkLoadClient -MockWith { throw "resolver must not be called" }
+
+                { Initialize-BulkLoad -BulkLoadVersion $Override } |
+                    Should -Throw -ExpectedMessage "*diagnostic override*exact three-part numeric version*"
+
+                Should -Invoke Get-BulkLoadClient -Times 0 -Exactly
+            }
+        }
+    }
+
     Context "BulkLoadClient invocation and school-year loop" {
         BeforeAll {
             Import-Module "$script:sourceDockerComposeRoot/env-utility.psm1" -Force
+            # SchoolYearType preconditions call ConvertTo-FormBody; import its module so this
+            # context is self-sufficient regardless of module-table churn from sibling contexts.
+            Import-Module "$script:sourceDockerComposeRoot/../Dms-Management.psm1" -Force
         }
 
         It "treats SchoolYearType REST 201 and 200 as created and 409 as already existing" {
