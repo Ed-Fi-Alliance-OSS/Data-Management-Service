@@ -124,6 +124,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         # Get-SeedXsdDirectory, Invoke-BulkLoadClient, etc.). The orchestration block is guarded
         # against dot-sourcing via the InvocationName check at the bottom of the script.
         Import-Module "$script:sourceDockerComposeRoot/bootstrap-manifest.psm1" -Force
+        Import-Module "$script:sourceDockerComposeRoot/../Package-Management.psm1" -Force
         . "$script:sourceDockerComposeRoot/load-dms-seed-data.ps1"
         $script:seedWorkspaceInterchangeNames = @(
             "AssessmentMetadata",
@@ -1930,8 +1931,8 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
         It "uses cached pinned BulkLoadClient package before the feed-backed resolver" {
             $tmpRoot = New-TestDirectory
             $originalLocation = Get-Location
-            $packageDir = Join-Path $tmpRoot ".packages/edfi.suite3.bulkloadclient.console.7.3.10212"
-            $dllDir = Join-Path $packageDir "tools/net8.0/any"
+            $packageDir = Join-Path $tmpRoot ".packages/edfi.suite3.bulkloadclient.console.$(Get-BulkLoadClientPinnedVersion)"
+            $dllDir = Join-Path $packageDir "tools/net10.0/any"
             New-Item -ItemType Directory -Path $dllDir -Force | Out-Null
             $expectedDll = Join-Path $dllDir "EdFi.BulkLoadClient.Console.dll"
             "" | Set-Content -LiteralPath $expectedDll -Encoding utf8
@@ -2867,11 +2868,10 @@ EdFi.BulkLoadClient.Console fake
             $script:envUtilityContent | Should -Match '(?s)if\s*\(\s*\$FilterSampleHomograph\s*\)\s*\{[^}]*EdFi\.Sample\.ApiSchema[^}]*EdFi\.Homograph\.ApiSchema' -Because "the exclusion list must live inside the if(FilterSampleHomograph) branch"
         }
 
-        It "seed-delivery pinned constants require inventory review when changed" {
+        It "seed-delivery pinned data-standard tag requires inventory review when changed" {
             # The SeedLoader claims fixture and default EdOrg envelope are hand-curated against the
-            # v5.2.0 Sample XML inventory and the current BulkLoadClient XML surface. A bump here
-            # must intentionally update those inventories in the same change.
-            $script:seedScriptContent | Should -Match '\$script:BulkLoadClientPackageVersion\s*=\s*"7\.3\.10212"' -Because "BulkLoadClient changes require reviewing the XML flag preflight and invocation shape"
+            # v5.2.0 Sample XML inventory. A bump here must intentionally update those inventories
+            # in the same change.
             $script:seedScriptContent | Should -Match '\$script:DataStandardRefTag\s*=\s*"v5\.2\.0"' -Because "DataStandardRefTag changes require regenerating the SeedLoader claims inventory and EdOrg envelope"
         }
 

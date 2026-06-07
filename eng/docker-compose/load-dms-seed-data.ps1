@@ -30,7 +30,8 @@ Import-Module "$PSScriptRoot/data-standard.psm1" -Force
 Import-Module "$PSScriptRoot/../Package-Management.psm1" -Force
 Import-Module "$PSScriptRoot/../Dms-Management.psm1" -Force
 
-$script:BulkLoadClientPackageVersion = "7.3.10212"
+# Canonical BulkLoadClient version comes from the shared repo pin in eng/Package-Management.psm1.
+$script:BulkLoadClientPackageVersion = Get-BulkLoadClientPinnedVersion
 $script:DataStandardRefTag = "v5.2.0"
 
 # ODS package metadata that BulkLoadClient should never see. Shared between
