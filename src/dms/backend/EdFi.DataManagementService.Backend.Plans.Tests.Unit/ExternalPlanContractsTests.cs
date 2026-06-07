@@ -666,11 +666,13 @@ public class Given_ExternalPlanContracts
                             [
                                 new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
                                     schoolYearPath,
-                                    ColumnOrdinal: 9
+                                    ColumnOrdinal: 9,
+                                    ScalarType: new RelationalScalarType(ScalarKind.Int32)
                                 ),
                                 new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
                                     schoolIdPath,
-                                    ColumnOrdinal: 8
+                                    ColumnOrdinal: 8,
+                                    ScalarType: new RelationalScalarType(ScalarKind.Int32)
                                 ),
                             ]
                         ),
@@ -688,7 +690,8 @@ public class Given_ExternalPlanContracts
                             [
                                 new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
                                     schoolIdPath,
-                                    ColumnOrdinal: 4
+                                    ColumnOrdinal: 4,
+                                    ScalarType: new RelationalScalarType(ScalarKind.Int32)
                                 ),
                             ]
                         ),

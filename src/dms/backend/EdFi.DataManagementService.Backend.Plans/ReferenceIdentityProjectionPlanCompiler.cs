@@ -70,8 +70,17 @@ internal static class ReferenceIdentityProjectionPlanCompiler
                                 $"Cannot compile reference identity projection plan for '{binding.Table}': document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column '{missingColumn.Value}' does not exist in hydration select-list columns."
                             )
                         ),
-                        IdentityFieldOrdinalsInOrder: logicalFieldsInOrder.Select(
-                            logicalField => new ReferenceIdentityProjectionFieldOrdinal(
+                        IdentityFieldOrdinalsInOrder: logicalFieldsInOrder.Select(logicalField =>
+                        {
+                            var representativeColumn = ProjectionMetadataResolver.ResolveTableColumnOrThrow(
+                                tableModel,
+                                logicalField.RepresentativeBindingColumn,
+                                missingColumn => new InvalidOperationException(
+                                    $"Cannot compile reference identity projection plan for '{binding.Table}': grouped reference-identity binding '{logicalField.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' representative column '{missingColumn.Value}' does not exist in table columns."
+                                )
+                            );
+
+                            return new ReferenceIdentityProjectionFieldOrdinal(
                                 ReferenceJsonPath: logicalField.ReferenceJsonPath,
                                 ColumnOrdinal: ProjectionMetadataResolver.ResolveHydrationColumnOrdinalOrThrow(
                                     columnOrdinals,
@@ -79,9 +88,13 @@ internal static class ReferenceIdentityProjectionPlanCompiler
                                     missingColumn => new InvalidOperationException(
                                         $"Cannot compile reference identity projection plan for '{binding.Table}': grouped reference-identity binding '{logicalField.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' representative column '{missingColumn.Value}' does not exist in hydration select-list columns."
                                     )
-                                )
-                            )
-                        )
+                                ),
+                                ScalarType: representativeColumn.ScalarType
+                                    ?? throw new InvalidOperationException(
+                                        $"Cannot compile reference identity projection plan for '{binding.Table}': grouped reference-identity binding '{logicalField.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' representative column '{logicalField.RepresentativeBindingColumn.Value}' does not declare a scalar type."
+                                    )
+                            );
+                        })
                     );
                 })
                 .ToArray();

@@ -40,7 +40,11 @@ public class Given_ReferenceIdentityProjector_With_Concrete_Reference
             FkColumnOrdinal: 1,
             IdentityFieldOrdinalsInOrder:
             [
-                new ReferenceIdentityProjectionFieldOrdinal(_schoolIdPath, ColumnOrdinal: 2),
+                new ReferenceIdentityProjectionFieldOrdinal(
+                    _schoolIdPath,
+                    ColumnOrdinal: 2,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64)
+                ),
             ]
         );
 
@@ -120,7 +124,11 @@ public class Given_ReferenceIdentityProjector_With_Abstract_Reference
             FkColumnOrdinal: 1,
             IdentityFieldOrdinalsInOrder:
             [
-                new ReferenceIdentityProjectionFieldOrdinal(_educationOrgIdPath, ColumnOrdinal: 2),
+                new ReferenceIdentityProjectionFieldOrdinal(
+                    _educationOrgIdPath,
+                    ColumnOrdinal: 2,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64)
+                ),
             ]
         );
 
@@ -177,7 +185,8 @@ public class Given_ReferenceIdentityProjector_With_Null_Fk
                             new JsonPathSegment.Property("schoolId"),
                         ]
                     ),
-                    ColumnOrdinal: 2
+                    ColumnOrdinal: 2,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64)
                 ),
             ]
         );
@@ -229,7 +238,8 @@ public class Given_ReferenceIdentityProjector_With_Multiple_References_On_Same_R
                             new JsonPathSegment.Property("schoolId"),
                         ]
                     ),
-                    ColumnOrdinal: 2
+                    ColumnOrdinal: 2,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64)
                 ),
             ]
         );
@@ -249,7 +259,8 @@ public class Given_ReferenceIdentityProjector_With_Multiple_References_On_Same_R
                             new JsonPathSegment.Property("calendarCode"),
                         ]
                     ),
-                    ColumnOrdinal: 4
+                    ColumnOrdinal: 4,
+                    ScalarType: new RelationalScalarType(ScalarKind.String)
                 ),
             ]
         );
@@ -323,9 +334,21 @@ public class Given_ReferenceIdentityProjector_With_Multiple_Identity_Fields
             FkColumnOrdinal: 1,
             IdentityFieldOrdinalsInOrder:
             [
-                new ReferenceIdentityProjectionFieldOrdinal(_schoolIdPath, ColumnOrdinal: 2),
-                new ReferenceIdentityProjectionFieldOrdinal(_schoolYearPath, ColumnOrdinal: 3),
-                new ReferenceIdentityProjectionFieldOrdinal(_sessionNamePath, ColumnOrdinal: 4),
+                new ReferenceIdentityProjectionFieldOrdinal(
+                    _schoolIdPath,
+                    ColumnOrdinal: 2,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64)
+                ),
+                new ReferenceIdentityProjectionFieldOrdinal(
+                    _schoolYearPath,
+                    ColumnOrdinal: 3,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32)
+                ),
+                new ReferenceIdentityProjectionFieldOrdinal(
+                    _sessionNamePath,
+                    ColumnOrdinal: 4,
+                    ScalarType: new RelationalScalarType(ScalarKind.String)
+                ),
             ]
         );
 
@@ -446,7 +469,11 @@ public class Given_ReferenceIdentityProjector_ProjectTable_With_Grouped_Results
                     FkColumnOrdinal: 1,
                     IdentityFieldOrdinalsInOrder:
                     [
-                        new ReferenceIdentityProjectionFieldOrdinal(_schoolIdPath, ColumnOrdinal: 2),
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            _schoolIdPath,
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int64)
+                        ),
                     ]
                 ),
             ]
@@ -696,7 +723,8 @@ public class Given_Project_With_Collection_Scope_Row
                             new JsonPathSegment.Property("codeValue"),
                         ]
                     ),
-                    ColumnOrdinal: 4
+                    ColumnOrdinal: 4,
+                    ScalarType: new RelationalScalarType(ScalarKind.String)
                 ),
             ]
         );
@@ -866,7 +894,11 @@ public class Given_ProjectPage_With_Root_Table_Projections
                     FkColumnOrdinal: 1,
                     IdentityFieldOrdinalsInOrder:
                     [
-                        new ReferenceIdentityProjectionFieldOrdinal(_schoolIdPath, ColumnOrdinal: 2),
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            _schoolIdPath,
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int64)
+                        ),
                     ]
                 ),
             ]
@@ -1181,7 +1213,11 @@ public class Given_ProjectPage_With_Mixed_Root_And_Collection_Plans
                     FkColumnOrdinal: 1,
                     IdentityFieldOrdinalsInOrder:
                     [
-                        new ReferenceIdentityProjectionFieldOrdinal(_schoolIdPath, ColumnOrdinal: 2),
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            _schoolIdPath,
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int64)
+                        ),
                     ]
                 ),
             ]
@@ -1277,7 +1313,8 @@ public class Given_ReferenceIdentityProjector_With_NonNull_Fk_But_Null_Identity_
                             new JsonPathSegment.Property("schoolId"),
                         ]
                     ),
-                    ColumnOrdinal: 2
+                    ColumnOrdinal: 2,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64)
                 ),
             ]
         );
@@ -1375,7 +1412,11 @@ public class Given_ProjectTable_With_RootExtension_Table
                     FkColumnOrdinal: 1,
                     IdentityFieldOrdinalsInOrder:
                     [
-                        new ReferenceIdentityProjectionFieldOrdinal(_mentorIdPath, ColumnOrdinal: 2),
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            _mentorIdPath,
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 32)
+                        ),
                     ]
                 ),
             ]

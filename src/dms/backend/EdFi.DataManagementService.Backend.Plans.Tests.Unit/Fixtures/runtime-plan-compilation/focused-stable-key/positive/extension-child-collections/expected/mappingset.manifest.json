@@ -770,7 +770,8 @@
                     "identity_field_ordinals_in_order": [
                       {
                         "reference_json_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
-                        "column_ordinal": 5
+                        "column_ordinal": 5,
+                        "scalar_kind": "string"
                       }
                     ]
                   }
@@ -1562,7 +1563,8 @@
                     "identity_field_ordinals_in_order": [
                       {
                         "reference_json_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
-                        "column_ordinal": 5
+                        "column_ordinal": 5,
+                        "scalar_kind": "string"
                       }
                     ]
                   }

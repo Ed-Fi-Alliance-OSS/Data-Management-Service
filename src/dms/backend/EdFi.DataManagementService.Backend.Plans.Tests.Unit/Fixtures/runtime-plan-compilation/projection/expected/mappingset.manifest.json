@@ -187,15 +187,18 @@
                     "identity_field_ordinals_in_order": [
                       {
                         "reference_json_path": "$.sessionTermReference.schoolId",
-                        "column_ordinal": 2
+                        "column_ordinal": 2,
+                        "scalar_kind": "int32"
                       },
                       {
                         "reference_json_path": "$.sessionTermReference.schoolYear",
-                        "column_ordinal": 3
+                        "column_ordinal": 3,
+                        "scalar_kind": "int32"
                       },
                       {
                         "reference_json_path": "$.sessionTermReference.sessionName",
-                        "column_ordinal": 4
+                        "column_ordinal": 4,
+                        "scalar_kind": "string"
                       }
                     ]
                   }
@@ -565,15 +568,18 @@
                     "identity_field_ordinals_in_order": [
                       {
                         "reference_json_path": "$.sessionTermReference.schoolId",
-                        "column_ordinal": 2
+                        "column_ordinal": 2,
+                        "scalar_kind": "int32"
                       },
                       {
                         "reference_json_path": "$.sessionTermReference.schoolYear",
-                        "column_ordinal": 3
+                        "column_ordinal": 3,
+                        "scalar_kind": "int32"
                       },
                       {
                         "reference_json_path": "$.sessionTermReference.sessionName",
-                        "column_ordinal": 4
+                        "column_ordinal": 4,
+                        "scalar_kind": "string"
                       }
                     ]
                   }

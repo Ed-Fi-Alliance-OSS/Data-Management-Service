@@ -323,7 +323,8 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
                     [
                         new ReferenceIdentityProjectionFieldOrdinal(
                             ReferenceJsonPath: _schoolReferenceSchoolIdPath,
-                            ColumnOrdinal: 2
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int32)
                         ),
                     ]
                 ),
