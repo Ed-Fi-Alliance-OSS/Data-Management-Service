@@ -1989,6 +1989,38 @@ EdFi.BulkLoadClient.Console fake
         }
     }
 
+    Context "shared BulkLoadClient pin" {
+        BeforeAll {
+            Import-Module "$script:sourceDockerComposeRoot/../Package-Management.psm1" -Force
+        }
+
+        It "Get-BulkLoadClientPinnedVersion returns the exact repo pin" {
+            # Tripwire: bumping the shared pin is a deliberate change that must be reviewed
+            # against the BulkLoadClient XML flag preflight and invocation shape.
+            Get-BulkLoadClientPinnedVersion | Should -Be "7.3.20144"
+        }
+
+        It "Get-BulkLoadClient resolves the shared pin when no version is supplied" {
+            Mock -CommandName Get-NugetPackage -ModuleName Package-Management -MockWith { ".packages/fake" }
+
+            Get-BulkLoadClient | Out-Null
+
+            Should -Invoke Get-NugetPackage -ModuleName Package-Management -Times 1 -Exactly -ParameterFilter {
+                $PackageVersion -eq (Get-BulkLoadClientPinnedVersion)
+            }
+        }
+
+        It "Get-BulkLoadClient still honors an explicit version override" {
+            Mock -CommandName Get-NugetPackage -ModuleName Package-Management -MockWith { ".packages/fake" }
+
+            Get-BulkLoadClient -PackageVersion "9.9.9" | Out-Null
+
+            Should -Invoke Get-NugetPackage -ModuleName Package-Management -Times 1 -Exactly -ParameterFilter {
+                $PackageVersion -eq "9.9.9"
+            }
+        }
+    }
+
     Context "BulkLoadClient invocation and school-year loop" {
         BeforeAll {
             Import-Module "$script:sourceDockerComposeRoot/env-utility.psm1" -Force
