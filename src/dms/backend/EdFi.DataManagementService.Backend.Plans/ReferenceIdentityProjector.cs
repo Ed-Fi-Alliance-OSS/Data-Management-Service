@@ -9,12 +9,17 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// A single projected reference identity field: the JSON path under the reference object
-/// and its CLR value from the hydrated row buffer.
+/// A single projected reference identity field: the JSON path under the reference object,
+/// its CLR value from the hydrated row buffer, and the projected column's scalar type.
 /// </summary>
 /// <param name="ReferenceJsonPath">The identity field path within the reference object.</param>
 /// <param name="Value">The CLR value read from the hydrated row buffer.</param>
-public sealed record ProjectedReferenceField(JsonPathExpression ReferenceJsonPath, object Value);
+/// <param name="ScalarType">Relational scalar type of the projected column, used for typed JSON value conversion.</param>
+public sealed record ProjectedReferenceField(
+    JsonPathExpression ReferenceJsonPath,
+    object Value,
+    RelationalScalarType ScalarType
+);
 
 /// <summary>
 /// The projection result for a single reference binding on a hydrated row.
@@ -88,7 +93,11 @@ public static class ReferenceIdentityProjector
                         + $"(path '{fieldOrdinal.ReferenceJsonPath.Canonical}') is null "
                         + "but FK column is non-null — CHECK constraint may be violated."
                 );
-            fields[i] = new ProjectedReferenceField(fieldOrdinal.ReferenceJsonPath, value);
+            fields[i] = new ProjectedReferenceField(
+                fieldOrdinal.ReferenceJsonPath,
+                value,
+                fieldOrdinal.ScalarType
+            );
         }
 
         return new ReferenceProjectionResult.Present(

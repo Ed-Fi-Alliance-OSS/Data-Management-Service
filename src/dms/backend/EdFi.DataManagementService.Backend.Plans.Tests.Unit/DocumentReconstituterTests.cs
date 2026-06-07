@@ -1037,6 +1037,242 @@ public class Given_DocumentReconstituter_With_Reference
 }
 
 [TestFixture]
+public class Given_DocumentReconstituter_With_A_Reference_Identity_Date_Field_Read_As_DateTime
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "Grade");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _referencePath = new(
+        "$.studentSectionAssociationReference",
+        [new JsonPathSegment.Property("studentSectionAssociationReference")]
+    );
+
+    private static readonly JsonPathExpression _beginDatePath = new(
+        "$.studentSectionAssociationReference.beginDate",
+        [
+            new JsonPathSegment.Property("studentSectionAssociationReference"),
+            new JsonPathSegment.Property("beginDate"),
+        ]
+    );
+
+    private static readonly QualifiedResourceName _targetResource = new("Ed-Fi", "StudentSectionAssociation");
+
+    [SetUp]
+    public void SetUp()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("StudentSectionAssociation_DocumentId"),
+                Kind: ColumnKind.DocumentFk,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: _targetResource
+            ),
+            new(
+                ColumnName: new DbColumnName("StudentSectionAssociationReference_BeginDate"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.Date),
+                IsNullable: false,
+                SourceJsonPath: _beginDatePath,
+                TargetResource: null
+            ),
+        };
+
+        var tableModel = new DbTableModel(
+            Table: _tableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_Grade",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var refPlan = new ReferenceIdentityProjectionTablePlan(
+            Table: _tableName,
+            BindingsInOrder:
+            [
+                new ReferenceIdentityProjectionBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: _referencePath,
+                    TargetResource: _targetResource,
+                    FkColumnOrdinal: 1,
+                    IdentityFieldOrdinalsInOrder:
+                    [
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            ReferenceJsonPath: _beginDatePath,
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Date)
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        // PostgreSQL/MSSQL date columns hydrate as CLR DateTime — the regression input.
+        object?[] row = [1L, 10L, new DateTime(2024, 8, 1, 0, 0, 0, DateTimeKind.Unspecified)];
+
+        var tableRows = new HydratedTableRows(tableModel, [row]);
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: [tableRows],
+            referenceProjectionPlans: [refPlan],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_emit_beginDate_as_date_only()
+    {
+        _result["studentSectionAssociationReference"]!["beginDate"]!
+            .GetValue<string>()
+            .Should()
+            .Be("2024-08-01");
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_A_Reference_Identity_Time_Field_Read_As_TimeSpan
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "SectionTimeSlot");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _referencePath = new(
+        "$.classPeriodReference",
+        [new JsonPathSegment.Property("classPeriodReference")]
+    );
+
+    private static readonly JsonPathExpression _startTimePath = new(
+        "$.classPeriodReference.startTime",
+        [new JsonPathSegment.Property("classPeriodReference"), new JsonPathSegment.Property("startTime")]
+    );
+
+    private static readonly QualifiedResourceName _targetResource = new("Ed-Fi", "ClassPeriod");
+
+    [SetUp]
+    public void SetUp()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("ClassPeriod_DocumentId"),
+                Kind: ColumnKind.DocumentFk,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: _targetResource
+            ),
+            new(
+                ColumnName: new DbColumnName("ClassPeriodReference_StartTime"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.Time),
+                IsNullable: false,
+                SourceJsonPath: _startTimePath,
+                TargetResource: null
+            ),
+        };
+
+        var tableModel = new DbTableModel(
+            Table: _tableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_SectionTimeSlot",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var refPlan = new ReferenceIdentityProjectionTablePlan(
+            Table: _tableName,
+            BindingsInOrder:
+            [
+                new ReferenceIdentityProjectionBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: _referencePath,
+                    TargetResource: _targetResource,
+                    FkColumnOrdinal: 1,
+                    IdentityFieldOrdinalsInOrder:
+                    [
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            ReferenceJsonPath: _startTimePath,
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Time)
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        // MSSQL time columns hydrate as CLR TimeSpan — unsupported by untyped conversion.
+        object?[] row = [1L, 10L, new TimeSpan(8, 30, 0)];
+
+        var tableRows = new HydratedTableRows(tableModel, [row]);
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: [tableRows],
+            referenceProjectionPlans: [refPlan],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_emit_startTime_as_time_only()
+    {
+        _result["classPeriodReference"]!["startTime"]!.GetValue<string>().Should().Be("08:30:00");
+    }
+}
+
+[TestFixture]
 public class Given_DocumentReconstituter_With_Descriptor
 {
     private JsonNode _result = null!;
