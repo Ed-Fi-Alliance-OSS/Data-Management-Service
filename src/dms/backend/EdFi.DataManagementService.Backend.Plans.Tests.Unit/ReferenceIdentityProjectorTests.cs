@@ -376,6 +376,21 @@ public class Given_ReferenceIdentityProjector_With_Multiple_Identity_Fields
         present.FieldsInOrder[2].ReferenceJsonPath.Canonical.Should().Be("$.sessionReference.sessionName");
         present.FieldsInOrder[2].Value.Should().Be("Fall");
     }
+
+    [Test]
+    public void It_should_carry_the_field_ordinal_scalar_type_on_each_projected_field()
+    {
+        var present = (ReferenceProjectionResult.Present)_result;
+
+        present
+            .FieldsInOrder.Select(static field => field.ScalarType)
+            .Should()
+            .Equal(
+                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
+                new RelationalScalarType(ScalarKind.String)
+            );
+    }
 }
 
 [TestFixture]
