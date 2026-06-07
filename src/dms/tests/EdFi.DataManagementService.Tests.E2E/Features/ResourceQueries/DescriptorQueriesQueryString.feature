@@ -2,11 +2,7 @@ Feature: Query String handling for GET requests for Descriptor Queries
 
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-
-        @relational-ci-shard-4
-        @relational-backend
-        Scenario: 00 Background
-            Given the system has these descriptors
+              And the system has these descriptors
                   | descriptorValue                                           |
                   | uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave |
               And the system has these "calendarEventDescriptors"

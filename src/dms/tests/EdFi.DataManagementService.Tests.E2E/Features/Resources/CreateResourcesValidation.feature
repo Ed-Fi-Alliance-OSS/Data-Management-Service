@@ -469,22 +469,22 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
-                      "contentIdentifier": "Testing",
-                      "namespace": "Testing",
-                      "shortDescription": "Testing",
+                      "contentIdentifier": "Testing-API-166",
+                      "namespace": "Testing-API-166",
+                      "shortDescription": "Testing-API-166",
                       "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                      "learningResourceMetadataURI": "Testing"
+                      "learningResourceMetadataURI": "Testing-API-166"
                   }
                   """
              Then it should respond with 201
              When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
-                      "contentIdentifier": "Testing",
-                      "namespace": "Testing",
-                      "shortDescription": "Testing",
+                      "contentIdentifier": "Testing-API-166",
+                      "namespace": "Testing-API-166",
+                      "shortDescription": "Testing-API-166",
                       "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                      "learningResourceMetadataURI": "Testing"
+                      "learningResourceMetadataURI": "Testing-API-166"
                   }
                   """
              Then it should respond with 200

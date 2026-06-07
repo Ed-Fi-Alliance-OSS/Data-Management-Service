@@ -2,11 +2,7 @@ Feature: Validation of Natural Key Unification
 
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-
-        @relational-ci-shard-4
-        @relational-backend
-        Scenario: 00 Background
-            Given the system has these descriptors
+              And the system has these descriptors
                   | descriptorValue                                                      |
                   | uri://ed-fi.org/GradeLevelDescriptor#TenthGrade                      |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School       |
