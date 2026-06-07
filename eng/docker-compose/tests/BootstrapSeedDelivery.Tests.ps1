@@ -2801,7 +2801,6 @@ EdFi.BulkLoadClient.Console fake
             $script:localWrapperContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1") -Raw
             $script:publishedWrapperContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1") -Raw
             $script:wrapperModuleContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
-            $script:envUtilityContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Raw
         }
 
         It "build-dms.ps1 -LoadSeedData routes to the direct-SQL path via start-(local|published)-dms.ps1" {
