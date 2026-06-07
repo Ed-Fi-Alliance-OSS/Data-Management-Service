@@ -85,6 +85,8 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
              Then it should respond with 201
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure client can not create a StudentSpecialEducationProgramEligibilityAssociation without a StudentEducationOrganizationResponsibilityAssociation
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
              When a POST request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations" with
@@ -110,14 +112,13 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's EducationOrganizationId value.",
-                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's StudentUniqueId value."
+                      "No relationships have been established between the caller's education organization id claim ('1255901001') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
                     ]
                   }
                   """
@@ -254,6 +255,8 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 06 Ensure client cannot update a StudentSpecialEducationProgramEligibilityAssociation
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
              When a PUT request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}" with
@@ -280,32 +283,32 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's EducationOrganizationId value.",
-                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's StudentUniqueId value."
+                      "No relationships have been established between the caller's education organization id claim ('1255901001') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
                     ]
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 07 Ensure client cannot delete a StudentSpecialEducationProgramEligibilityAssociation
              When a DELETE request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}"
              Then it should respond with 403
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's EducationOrganizationId value.",
-                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's StudentUniqueId value."
+                      "No relationships have been established between the caller's education organization id claim ('1255901001') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
                     ]
                   }
                   """

@@ -121,6 +121,8 @@ Feature: Namespace Authorization
                   []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 06 Ensure claimSet with different namespace can not get a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
@@ -128,17 +130,17 @@ Feature: Namespace Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
-                   "title": "Authorization Denied",
-                   "status": 403,
-                   "validationErrors": {},
-                   "errors": [
-                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
-                    ]
+                    "detail": "Access to the requested data could not be authorized. The existing 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org').",
+                    "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 07 Ensure claimSet with different namespace can not update a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -157,16 +159,16 @@ Feature: Namespace Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. The existing 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org').",
+                    "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
-                    "errors": [
-                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
-                    ]
+                    "errors": []
                   }
                   """
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 08 Ensure claimSet with different namespace cannot delete a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
@@ -174,14 +176,12 @@ Feature: Namespace Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
-                   "title": "Authorization Denied",
-                   "status": 403,
-                   "validationErrors": {},
-                   "errors": [
-                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
-                    ]
+                    "detail": "Access to the requested data could not be authorized. The existing 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org').",
+                    "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
@@ -302,6 +302,8 @@ Feature: Namespace Authorization
              When a DELETE request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 13 Ensure claimSet with different namespace can not create a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a POST request is made to "/ed-fi/surveys" with
@@ -319,17 +321,17 @@ Feature: Namespace Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
-                   "title": "Authorization Denied",
-                   "status": 403,
-                   "validationErrors": {},
-                   "errors": [
-                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
-                    ]
+                    "detail": "Access to the requested data could not be authorized. The existing 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org').",
+                    "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 14 Ensure claimSet with different namespace can not get a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/surveys/{id}"
@@ -337,14 +339,12 @@ Feature: Namespace Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
-                   "title": "Authorization Denied",
-                   "status": 403,
-                   "validationErrors": {},
-                   "errors": [
-                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
-                    ]
+                    "detail": "Access to the requested data could not be authorized. The existing 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org').",
+                    "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
@@ -366,6 +366,8 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 16 Ensure claimSet with different namespace cannot delete a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/surveys/{id}"
@@ -373,13 +375,11 @@ Feature: Namespace Authorization
               And the response body is
                   """
                   {
-                   "detail": "Access to the resource could not be authorized.",
-                   "type": "urn:ed-fi:api:security:authorization:",
-                   "title": "Authorization Denied",
-                   "status": 403,
-                   "validationErrors": {},
-                   "errors": [
-                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
-                    ]
+                    "detail": "Access to the requested data could not be authorized. The existing 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org').",
+                    "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """

@@ -108,6 +108,8 @@ Feature: ProgramEvaluationObjective Authorization
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 Ensure unauthorized client can not create a ProgramEvaluationObjective
              When a POST request is made to "/ed-fi/programEvaluationObjectives" with
                   """
@@ -127,31 +129,33 @@ Feature: ProgramEvaluationObjective Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluation value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'ProgramEvaluation' value."
+                    ]
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 06.1 Ensure unauthorized client can not get a ProgramEvaluationObjective by id
              When a GET request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}"
              Then it should respond with 403
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluation value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'ProgramEvaluation' value."
+                    ]
                   }
                   """
 
@@ -165,6 +169,8 @@ Feature: ProgramEvaluationObjective Authorization
                   []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 07 Ensure unauthorized client can not update a ProgramEvaluationObjective
              When a PUT request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}" with
                   """
@@ -185,30 +191,32 @@ Feature: ProgramEvaluationObjective Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluation value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'ProgramEvaluation' value."
+                    ]
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 08 Ensure unauthorized client can not delete a ProgramEvaluationObjective
              When a DELETE request is made to "/ed-fi/programEvaluationObjectives/{programEvaluationObjectiveId}"
              Then it should respond with 403
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluation value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'ProgramEvaluation' value."
+                    ]
                   }
                   """
