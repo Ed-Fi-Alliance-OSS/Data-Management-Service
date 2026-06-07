@@ -1324,38 +1324,6 @@ SAMPLING_DURATION_SECONDS=10
             }
         }
 
-        It "Write-DerivedEnvFile filters SCHEMA_PACKAGES entries by name (Sample/Homograph dropped)" {
-            $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
-            $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
-            @"
-LOG_LEVEL=DEBUG
-SCHEMA_PACKAGES='[
-  { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema", "extensionName": "Sample" },
-  { "version": "1.0", "name": "EdFi.Homograph.ApiSchema", "extensionName": "Homograph" },
-  { "version": "1.0", "name": "EdFi.TPDM.ApiSchema" }
-]'
-"@ | Set-Content -LiteralPath $base -Encoding utf8
-            try {
-                Write-DerivedEnvFile `
-                    -BaseEnvironmentFile $base `
-                    -TargetPath $derived `
-                    -SchemaPackageExclusions @("EdFi.Sample.ApiSchema", "EdFi.Homograph.ApiSchema")
-
-                $content = Get-Content -LiteralPath $derived -Raw
-                $content | Should -Match "EdFi.DataStandard52.ApiSchema"
-                $content | Should -Match "EdFi.TPDM.ApiSchema"
-                $content | Should -Not -Match "EdFi.Sample.ApiSchema"
-                $content | Should -Not -Match "EdFi.Homograph.ApiSchema"
-                # The SCHEMA_PACKAGES key must still exist as quoted JSON
-                $content | Should -Match "(?ms)^SCHEMA_PACKAGES='\["
-            }
-            finally {
-                Remove-Item -LiteralPath $base -Force -ErrorAction SilentlyContinue
-                Remove-Item -LiteralPath $derived -Force -ErrorAction SilentlyContinue
-            }
-        }
-
         It "Write-DerivedEnvFile is idempotent across reruns (same input to same output)" {
             $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
             $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
@@ -1369,13 +1337,11 @@ SCHEMA_PACKAGES='[
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
                 Write-DerivedEnvFile -BaseEnvironmentFile $base -TargetPath $derived `
-                    -KeyOverrides @{ FAILURE_RATIO = "0.95" } `
-                    -SchemaPackageExclusions @("EdFi.Sample.ApiSchema")
+                    -KeyOverrides @{ FAILURE_RATIO = "0.95" }
                 $first = Get-Content -LiteralPath $derived -Raw
 
                 Write-DerivedEnvFile -BaseEnvironmentFile $base -TargetPath $derived `
-                    -KeyOverrides @{ FAILURE_RATIO = "0.95" } `
-                    -SchemaPackageExclusions @("EdFi.Sample.ApiSchema")
+                    -KeyOverrides @{ FAILURE_RATIO = "0.95" }
                 $second = Get-Content -LiteralPath $derived -Raw
 
                 $first | Should -Be $second
@@ -1402,42 +1368,10 @@ SCHEMA_PACKAGES='[
             }
         }
 
-        It "Resolve-BootstrapDerivedEnv with -FilterSampleHomograph filters Sample+Homograph" {
-            $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
-            $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
-            @"
-LOG_LEVEL=DEBUG
-FAILURE_RATIO=0.01
-SCHEMA_PACKAGES='[
-  { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Homograph.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.TPDM.ApiSchema" }
-]'
-"@ | Set-Content -LiteralPath $base -Encoding utf8
-            try {
-                $result = Resolve-BootstrapDerivedEnv -BaseEnvironmentFile $base -DerivedTargetPath $derived -FilterSampleHomograph
-                $result | Should -Be $derived
-
-                $content = Get-Content -LiteralPath $derived -Raw
-                $content | Should -Match "(?m)^FAILURE_RATIO=0\.95$"
-                $content | Should -Not -Match "FAILURE_RATIO=0\.01"
-                $content | Should -Match "EdFi.DataStandard52.ApiSchema"
-                $content | Should -Match "EdFi.TPDM.ApiSchema"
-                $content | Should -Not -Match "EdFi.Sample.ApiSchema"
-                $content | Should -Not -Match "EdFi.Homograph.ApiSchema"
-                $content | Should -Match "(?m)^LOG_LEVEL=DEBUG$"
-            }
-            finally {
-                Remove-Item -LiteralPath $base -Force -ErrorAction SilentlyContinue
-                Remove-Item -LiteralPath $derived -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It "Resolve-BootstrapDerivedEnv without -FilterSampleHomograph retains Sample+Homograph" {
-            # Round-2 finding #3: when a custom -SeedDataPath is supplied, the wrappers do not pass
-            # -FilterSampleHomograph, and the developer's XML must be able to reference Sample or
-            # Homograph resources against the running API.
+        It "Resolve-BootstrapDerivedEnv retains Sample+Homograph in SCHEMA_PACKAGES" {
+            # The derived env applies the seed profile (loose circuit breaker) without
+            # narrowing the schema surface: built-in and custom seed runs alike must see
+            # every package the base env serves.
             $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
             $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
             @"
@@ -1456,8 +1390,12 @@ SCHEMA_PACKAGES='[
 
                 $content = Get-Content -LiteralPath $derived -Raw
                 $content | Should -Match "(?m)^FAILURE_RATIO=0\.95$" -Because "circuit-breaker override must still apply"
-                $content | Should -Match "EdFi.Sample.ApiSchema" -Because "custom-path callers must retain the full schema surface"
-                $content | Should -Match "EdFi.Homograph.ApiSchema" -Because "custom-path callers must retain the full schema surface"
+                $content | Should -Not -Match "FAILURE_RATIO=0\.01"
+                $content | Should -Match "EdFi.DataStandard52.ApiSchema"
+                $content | Should -Match "EdFi.TPDM.ApiSchema"
+                $content | Should -Match "EdFi.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "(?m)^LOG_LEVEL=DEBUG$"
             }
             finally {
                 Remove-Item -LiteralPath $base -Force -ErrorAction SilentlyContinue
@@ -2908,20 +2846,6 @@ EdFi.BulkLoadClient.Console fake
             $mgmtContent | Should -Match '(?s)if\s*\(\s*-not\s+\[string\]::IsNullOrWhiteSpace\(\$AdminToken\)\s*\)\s*\{\s*\$token\s*=\s*\$AdminToken' -Because "supplied -AdminToken must short-circuit the internal Add-CmsClient + Get-CmsToken call"
 
             $script:seedScriptContent | Should -Match 'New-SeedLoaderCredentials[\s\S]+?-AdminToken\s+\$cmsToken' -Because "orchestrator must forward the existing $cmsToken into New-SeedLoaderCredentials"
-        }
-
-        It "shared wrapper module passes -SeedDataPathSupplied to Get-EffectiveBootstrapEnvFile" {
-            # Regression guard for round-2 finding #3: the Sample/Homograph exclusion must depend on
-            # whether a custom -SeedDataPath was supplied, so the shared wrapper body must forward
-            # that signal.
-            $script:wrapperModuleContent | Should -Match 'Get-EffectiveBootstrapEnvFile[\s\S]+?-SeedDataPathSupplied' -Because "the shared module's Get-EffectiveBootstrapEnvFile call must forward -SeedDataPathSupplied"
-        }
-
-        It "Resolve-BootstrapDerivedEnv exposes -FilterSampleHomograph and applies it conditionally" {
-            # Regression guard for round-2 finding #3: the env utility must accept the switch and
-            # the Sample/Homograph exclusion list must be empty when the switch is not set.
-            $script:envUtilityContent | Should -Match '\[switch\]\$FilterSampleHomograph' -Because "Resolve-BootstrapDerivedEnv must accept -FilterSampleHomograph"
-            $script:envUtilityContent | Should -Match '(?s)if\s*\(\s*\$FilterSampleHomograph\s*\)\s*\{[^}]*EdFi\.Sample\.ApiSchema[^}]*EdFi\.Homograph\.ApiSchema' -Because "the exclusion list must live inside the if(FilterSampleHomograph) branch"
         }
 
         It "seed-delivery pinned data-standard tag requires inventory review when changed" {
