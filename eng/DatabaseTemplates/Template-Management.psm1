@@ -279,7 +279,12 @@ function Invoke-DatabaseDump {
         $options += $schema
     }
 
-    & docker @options | Out-File -FilePath $backupPath -Encoding utf8
+    # Schema-scoped pg_dump never emits CREATE EXTENSION statements, but the dumped
+    # dms.uuidv5() function requires pgcrypto's digest(). Emit the extension bootstrap
+    # ahead of the dump so the template restores as a self-contained, writable database.
+    "CREATE EXTENSION IF NOT EXISTS ""pgcrypto"";" | Out-File -FilePath $backupPath -Encoding utf8
+
+    & docker @options | Out-File -FilePath $backupPath -Encoding utf8 -Append
 
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
