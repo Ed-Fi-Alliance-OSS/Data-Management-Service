@@ -996,7 +996,8 @@ public class Given_DocumentReconstituter_With_Reference
                     [
                         new ReferenceIdentityProjectionFieldOrdinal(
                             ReferenceJsonPath: _schoolReferenceSchoolIdPath,
-                            ColumnOrdinal: 2
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int32)
                         ),
                     ]
                 ),
@@ -3279,7 +3280,8 @@ public class Given_DocumentReconstituter_With_Null_Optional_Reference
                     [
                         new ReferenceIdentityProjectionFieldOrdinal(
                             ReferenceJsonPath: _schoolReferenceSchoolIdPath,
-                            ColumnOrdinal: 2
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int32)
                         ),
                     ]
                 ),
@@ -3518,11 +3520,13 @@ public class Given_DocumentReconstituter_With_Physical_Order_Different_From_Comp
                     [
                         new ReferenceIdentityProjectionFieldOrdinal(
                             ReferenceJsonPath: _alphaReferenceNamespacePath,
-                            ColumnOrdinal: 4
+                            ColumnOrdinal: 4,
+                            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50)
                         ),
                         new ReferenceIdentityProjectionFieldOrdinal(
                             ReferenceJsonPath: _alphaReferenceCodePath,
-                            ColumnOrdinal: 6
+                            ColumnOrdinal: 6,
+                            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50)
                         ),
                     ]
                 ),
@@ -4467,7 +4471,11 @@ file static class PageBasedDocumentReconstituterTestData
                         FkColumnOrdinal: 2,
                         IdentityFieldOrdinalsInOrder:
                         [
-                            new ReferenceIdentityProjectionFieldOrdinal(localEducationAgencyIdPath, 3),
+                            new ReferenceIdentityProjectionFieldOrdinal(
+                                localEducationAgencyIdPath,
+                                3,
+                                new RelationalScalarType(ScalarKind.Int32)
+                            ),
                         ]
                     ),
                 ]

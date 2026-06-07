@@ -719,6 +719,7 @@ internal static class MappingSetManifestJsonEmitter
                 writer.WriteStartObject();
                 writer.WriteString("reference_json_path", fieldOrdinal.ReferenceJsonPath.Canonical);
                 writer.WriteNumber("column_ordinal", fieldOrdinal.ColumnOrdinal);
+                writer.WriteString("scalar_kind", ToScalarKindToken(fieldOrdinal.ScalarType.Kind));
                 writer.WriteEndObject();
             }
 
@@ -933,7 +934,7 @@ internal static class MappingSetManifestJsonEmitter
         };
     }
 
-    private static string ToScalarKindToken(ScalarKind scalarKind)
+    internal static string ToScalarKindToken(ScalarKind scalarKind)
     {
         return scalarKind switch
         {

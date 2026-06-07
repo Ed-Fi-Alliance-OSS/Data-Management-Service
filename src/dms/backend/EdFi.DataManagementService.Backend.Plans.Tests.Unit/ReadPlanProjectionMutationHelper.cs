@@ -216,6 +216,70 @@ internal static class ReadPlanProjectionMutationHelper
         };
     }
 
+    public static RelationalResourceModel CreateModelWithNullReferenceIdentityColumnScalarType(
+        RelationalResourceModel model
+    )
+    {
+        var binding = model.DocumentReferenceBindings[0];
+        var identityColumn = binding.IdentityBindings[0].Column;
+
+        var tables = model
+            .TablesInDependencyOrder.Select(table =>
+                table.Table.Equals(binding.Table)
+                    ? table with
+                    {
+                        Columns =
+                        [
+                            .. table.Columns.Select(column =>
+                                column.ColumnName.Equals(identityColumn)
+                                    ? column with
+                                    {
+                                        ScalarType = null,
+                                    }
+                                    : column
+                            ),
+                        ],
+                    }
+                    : table
+            )
+            .ToArray();
+
+        return model with
+        {
+            Root = tables.Single(table => table.Table.Equals(model.Root.Table)),
+            TablesInDependencyOrder = [.. tables],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithReferenceProjectionFieldScalarType(
+        ResourceReadPlan readPlan,
+        RelationalScalarType scalarType
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var binding = projectionTablePlan.BindingsInOrder.Single();
+        var identityFieldOrdinals = binding.IdentityFieldOrdinalsInOrder.ToArray();
+
+        identityFieldOrdinals[0] = identityFieldOrdinals[0] with { ScalarType = scalarType };
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder =
+                    [
+                        binding with
+                        {
+                            IdentityFieldOrdinalsInOrder = [.. identityFieldOrdinals],
+                        },
+                    ],
+                },
+            ],
+        };
+    }
+
     public static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionFields(
         ResourceReadPlan readPlan
     )
