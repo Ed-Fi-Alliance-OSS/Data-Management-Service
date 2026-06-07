@@ -553,7 +553,8 @@ internal sealed record ReferenceIdentityProjectionBindingDto
 
 internal sealed record ReferenceIdentityProjectionFieldOrdinalDto(
     string ReferenceJsonPath,
-    int ColumnOrdinal
+    int ColumnOrdinal,
+    RelationalScalarTypeDto ScalarType
 );
 
 internal sealed record DescriptorProjectionPlanDto

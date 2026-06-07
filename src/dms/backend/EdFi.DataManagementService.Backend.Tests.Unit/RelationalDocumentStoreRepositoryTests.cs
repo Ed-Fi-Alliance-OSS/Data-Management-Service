@@ -11619,7 +11619,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                                 [
                                     new ReferenceIdentityProjectionFieldOrdinal(
                                         new JsonPathExpression(studentPath, []),
-                                        ColumnOrdinal: 2
+                                        ColumnOrdinal: 2,
+                                        ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 32)
                                     ),
                                 ]
                             ),
