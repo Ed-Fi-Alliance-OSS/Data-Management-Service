@@ -45,7 +45,8 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-185 @PUT
+        @API-185 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 02 Put an existing document with optional properties removed (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -66,7 +67,8 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-186 @API-234 @PUT
+        @API-186 @API-234 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 03 Put an existing document with an extra property (overpost) (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -96,7 +98,8 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-187 @PUT
+        @API-187 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 04 Update a document that does not exist (Resource)
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "/ed-fi/educationContents/00000000-0000-4000-a000-000000000000" with
@@ -554,7 +557,8 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-201 @PUT
+        @API-201 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 18 Verify clients can update the identity of resources that allow identity updates
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -603,7 +607,8 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-202 @PUT
+        @API-202 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 19 Verify cascading updates on non reference values
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -713,7 +718,8 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-203 @PUT
+        @API-203 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 20 Verify recursive cascading updates on non reference values
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -831,7 +837,8 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-204 @PUT
+        @API-204 @PUT @relational-backend
+        @relational-ci-shard-1
         Scenario: 21 Verify cascading updates on dependent resources in lists
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |

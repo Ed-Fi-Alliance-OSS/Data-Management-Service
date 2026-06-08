@@ -13,6 +13,8 @@ Feature: ProgramEvaluation Authorization
                   | programEvaluationId         | Test Evaluation        | uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year | uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey | {"educationOrganizationId": 255901, "programName": "21st CCLC", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"} |
 
     Rule: When the client is authorized
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 01 Ensure authorized client can create a ProgramEvaluation
              When a POST request is made to "/ed-fi/programEvaluations" with
                   """
@@ -29,10 +31,14 @@ Feature: ProgramEvaluation Authorization
                   """
              Then it should respond with 201
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 02.1 Ensure authorized client can get a ProgramEvaluation by id
              When a GET request is made to "/ed-fi/programEvaluations/{programEvaluationId}"
              Then it should respond with 200
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 02.2 Ensure authorized client can get a ProgramEvaluation by query
             Given a POST request is made to "/ed-fi/programEvaluations" with
                   """
@@ -66,6 +72,8 @@ Feature: ProgramEvaluation Authorization
                   ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 03 Ensure authorized client can update a ProgramEvaluation
              When a PUT request is made to "/ed-fi/programEvaluations/{programEvaluationId}" with
                   """
@@ -83,6 +91,8 @@ Feature: ProgramEvaluation Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 04 Ensure authorized client can delete a ProgramEvaluation
              When a DELETE request is made to "/ed-fi/programEvaluations/{programEvaluationId}"
              Then it should respond with 204
@@ -137,6 +147,8 @@ Feature: ProgramEvaluation Authorization
                   }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 06.2 Ensure unauthorized client can not get a ProgramEvaluation by query
              When a GET request is made to "/ed-fi/programEvaluations?programEvaluationTitle=Test Evaluation"
              Then it should respond with 200

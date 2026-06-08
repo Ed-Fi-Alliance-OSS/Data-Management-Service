@@ -178,6 +178,8 @@ Feature: Homograph extension resources
              When a GET request is made to "/homograph/students/{id}"
              Then it should respond with 404
 
+        @relational-ci-shard-2
+        @relational-backend
         Scenario: 03 Ensure clients can create, update, and delete a student-school association in homograph extension
       # POST request to create a schoolYearType
             Given a POST request is made to "/homograph/schoolYearTypes/" with

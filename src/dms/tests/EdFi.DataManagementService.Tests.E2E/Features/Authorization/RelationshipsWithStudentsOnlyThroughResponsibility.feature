@@ -48,6 +48,8 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
              Then it should respond with 201
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 02 Ensure client can create a StudentSpecialEducationProgramEligibilityAssociation
             Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
@@ -120,6 +122,8 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 04 Ensure client can update a StudentSpecialEducationProgramEligibilityAssociation
             Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
@@ -175,6 +179,8 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 05 Ensure client can delete a StudentSpecialEducationProgramEligibilityAssociation
             Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """

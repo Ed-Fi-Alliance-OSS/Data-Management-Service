@@ -71,6 +71,10 @@ public static class PostgresqlServiceExtensions
         // Register all repositories as scoped (they depend on scoped NpgsqlDataSourceProvider)
         services.AddScoped<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
         services.AddScoped<IAuthorizationRepository, PostgresqlAuthorizationRepository>();
+        services.TryAddScoped<
+            ITokenInfoEducationOrganizationLookup,
+            AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter
+        >();
         services.AddScoped<IGetDocumentById, GetDocumentById>();
         services.AddScoped<IQueryDocument, QueryDocument>();
         services.AddScoped<IUpdateDocumentById, UpdateDocumentById>();

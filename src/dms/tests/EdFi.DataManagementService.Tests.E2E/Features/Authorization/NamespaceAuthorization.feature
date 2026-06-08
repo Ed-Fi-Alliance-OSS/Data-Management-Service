@@ -35,6 +35,8 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 02 Ensure client can get a descriptor in the ns2 namespace
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
@@ -62,6 +64,8 @@ Feature: Namespace Authorization
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 05 Ensure claimSet with different namespace can not create a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -77,6 +81,8 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
              
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 17 Ensure clients can GET information when querying a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns2.org"
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -104,6 +110,8 @@ Feature: Namespace Authorization
                       "shortDescription": "Namespace Based"
                   }]
                   """
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 18 Ensure clients GET empty array when querying a resource with ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Sick Leave"
@@ -215,6 +223,8 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 19 Ensure client can get a resource in the ed-fi namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
               And a POST request is made to "/ed-fi/surveys" with
@@ -244,6 +254,8 @@ Feature: Namespace Authorization
                   }]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 20 Ensure clients can query a resource when the token is assigned to multiple namespaces
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org, uri://ns2.org"
              When a GET request is made to "/ed-fi/surveys?surveyIdentifier=CE_1&namespace=uri%3A%2F%2Fns2.org"
@@ -336,6 +348,8 @@ Feature: Namespace Authorization
                   }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 15 Ensure claimSet with different namespace can not update a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a PUT request is made to "/ed-fi/surveys/{id}" with

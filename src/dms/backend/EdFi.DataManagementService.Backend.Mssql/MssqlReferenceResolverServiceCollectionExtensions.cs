@@ -39,6 +39,22 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             MssqlSessionDocumentHydrator
         >();
     }
+
+    public static IServiceCollection AddMssqlRelationalTokenInfoEducationOrganizationLookup(
+        this IServiceCollection services
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                IRelationalTokenInfoEducationOrganizationLookup,
+                MssqlTokenInfoEducationOrganizationLookup
+            >()
+        );
+
+        return services;
+    }
 }
 
 internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)

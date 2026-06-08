@@ -132,6 +132,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 05 Ensure client can not search StudentContactAssociation with wrong educationOrganizationId
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -738,6 +740,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
     Rule: Associate more than one students with a contact
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 21 Ensure client can retrieve the contact using any associated student's edorg id when associated with multiple students
 
              When a POST request is made to "/ed-fi/contacts" with
@@ -817,6 +821,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
                   | { "schoolId": 255901904 } | { "studentUniqueId": "S91114" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 22 Ensure client can retrieve only the associated contacts using student's edorg id
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -896,6 +902,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
 
     Rule: Edge cases are properly authorized
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 50 Ensure client can retrieve a Contact after an SSA has been created
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001, 1255901002, 1255901003"
@@ -1032,6 +1040,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 51 Ensure client can no longer retrieve a Contact after the SSA has been deleted
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1355901001, 1355901002, 1355901003"
@@ -1169,6 +1179,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 52 Ensure client can retrieve a Contact after the SSA has been recreated
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1455901001"
@@ -1248,6 +1260,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 53 Ensure client can retrieve a Contact after the SSA has been updated to a new School
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1555901001, 1555901002, 1555901003"
@@ -1393,6 +1407,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 54 Ensure client can retrieve a Contact after the SSA has been updated to a new Student
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1655901001"
@@ -1534,6 +1550,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 55 Ensure client can retrieve a Contact after the SCA has been recreated
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1755901001, 1755901002, 1755901003"

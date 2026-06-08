@@ -572,6 +572,8 @@ Feature: EducationOrganizationChanges Authorization
                       "contactUniqueId": "91111"
                   }
                   """
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 10 Ensure client can  access the staff  when a School updated to new LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
