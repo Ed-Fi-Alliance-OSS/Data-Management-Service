@@ -25,7 +25,7 @@ jobs:
     uses: ./.github/workflows/build-populated-template.yml
     with:
       standard_version: "5.2.0"
-      package_name: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0"
+      package_name: "EdFi.Dms.Smoke.Template.PostgreSQL.5.2.0"
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: "populated.template.intoto.jsonl"
       # The smoke test consumes the template artifact built in this run; nothing is
@@ -33,7 +33,7 @@ jobs:
       # the template package workflows (tag/release and explicit dispatch opt-in).
       publish_package: false
       use_relational_backend: true
-      environment_file: "./.env.template.relational"
+      environment_file: "./.env.smoke.relational"
       verify_restore: true
       require_populated_data: true
     secrets:
@@ -99,18 +99,18 @@ jobs:
       - name: Download Populated Template Package artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0-NuGet"
+          name: "EdFi.Dms.Smoke.Template.PostgreSQL.5.2.0-NuGet"
           path: ${{ github.workspace }}/template-package
 
-      # The smoke environment serves the same Core (DS52) + TPDM surface the populated
-      # template was built from. The dms.EffectiveSchema fingerprint requires the running
-      # schema packages and the restored database to match exactly, so the smoke test
-      # reuses the template build's environment file. Sample and Homograph remain covered
-      # by the relational E2E suite (.env.e2e.relational).
-      - name: Start DMS on the relational backend with Core and TPDM (SmokeTest)
+      # The smoke environment serves the four-package DS52 + TPDM + Sample + Homograph
+      # surface the published ODS SDK sweep expects. The dms.EffectiveSchema fingerprint
+      # requires the running schema packages and the restored database to match exactly,
+      # so the smoke test reuses the same .env.smoke.relational the in-run template was
+      # built from. This is smoke coverage only; the product template stays Core+TPDM.
+      - name: Start DMS on the relational backend with Core, TPDM, Sample, and Homograph (SmokeTest)
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.smoke.relational" -EnableConfig
         working-directory: eng/docker-compose/
 
       - name: Wait for the Configuration Service to be ready
@@ -147,7 +147,7 @@ jobs:
         run: |
           Import-Module ../Dms-Management.psm1 -Force
           Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          $envValues = ReadValuesFromEnvFile "./.env.smoke.relational"
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
           $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:SMOKE_DATABASE_NAME -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
