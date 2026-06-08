@@ -438,9 +438,11 @@ internal static class ManifestWriterHelpers
             .Where(constraint =>
                 constraint.TargetTable.Equals(descriptorTableName)
                 && constraint.TargetColumns.Count == 1
-                && constraint.TargetColumns[0].Equals(RelationalNameConventions.DocumentIdColumnName)
+                && constraint.TargetColumns.Any(column =>
+                    column.Equals(RelationalNameConventions.DocumentIdColumnName)
+                )
                 && constraint.Columns.Count == 1
-                && constraint.Columns[0].Equals(storageColumn)
+                && constraint.Columns.Any(column => column.Equals(storageColumn))
             )
             .Select(constraint => constraint.Name)
             .Distinct(StringComparer.Ordinal)
