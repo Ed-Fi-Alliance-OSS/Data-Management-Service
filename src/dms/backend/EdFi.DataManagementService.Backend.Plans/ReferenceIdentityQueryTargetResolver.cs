@@ -293,11 +293,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
                     .Select(identityBinding => new ReferenceIdentityQueryCandidate(
                         identityBinding.IdentityJsonPath,
                         identityBinding.ReferenceJsonPath,
-                        identityBinding.Column,
-                        binding.TargetResource,
-                        binding.ReferenceObjectPath,
-                        binding.FkColumn,
-                        logicalField.RepresentativeBindingColumn
+                        identityBinding.Column
                     ))
                     .ToArray();
 
@@ -526,7 +522,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
     {
         rolePrefix = "";
 
-        if (group.ReferenceObjectPath.Segments is not [.., JsonPathSegment.Property referenceObjectLeaf])
+        if (group.ReferenceObjectPath.Segments is not [JsonPathSegment.Property referenceObjectLeaf])
         {
             return false;
         }
@@ -587,11 +583,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
 internal sealed record ReferenceIdentityQueryCandidate(
     JsonPathExpression IdentityJsonPath,
     JsonPathExpression ReferenceJsonPath,
-    DbColumnName Column,
-    QualifiedResourceName TargetResource,
-    JsonPathExpression ReferenceObjectPath,
-    DbColumnName FkColumn,
-    DbColumnName RepresentativeBindingColumn
+    DbColumnName Column
 );
 
 internal sealed record ReferenceIdentityQueryCandidateGroup(

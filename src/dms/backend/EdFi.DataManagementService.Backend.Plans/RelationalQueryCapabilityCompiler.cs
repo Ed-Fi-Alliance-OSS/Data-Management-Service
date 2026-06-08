@@ -278,8 +278,12 @@ internal sealed class RelationalQueryCapabilityCompiler
             return;
         }
 
-        var aliasResolution = getReferenceIdentityQueryTargetResolver()
-            .ResolveAliasPath(queryFieldMapping.QueryFieldName, queryPath.Path, superclassResource);
+        var referenceIdentityQueryTargetResolver = getReferenceIdentityQueryTargetResolver();
+        var aliasResolution = referenceIdentityQueryTargetResolver.ResolveAliasPath(
+            queryFieldMapping.QueryFieldName,
+            queryPath.Path,
+            superclassResource
+        );
 
         switch (aliasResolution)
         {
@@ -287,7 +291,7 @@ internal sealed class RelationalQueryCapabilityCompiler
                 AddSupportedQueryFieldOrUnsupportedType(
                     queryFieldMapping,
                     queryPath,
-                    getReferenceIdentityQueryTargetResolver().ResolveTargetOrThrow(aliasMatch),
+                    referenceIdentityQueryTargetResolver.ResolveTargetOrThrow(aliasMatch),
                     rootColumnsByName,
                     supportedFieldsByQueryField,
                     unsupportedFieldsByQueryField
