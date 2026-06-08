@@ -92,11 +92,27 @@ jobs:
           $useRelationalBackend = [bool]::Parse('${{ inputs.use_relational_backend }}')
           $verifyRestore = [bool]::Parse('${{ inputs.verify_restore }}')
           $requirePopulatedData = [bool]::Parse('${{ inputs.require_populated_data }}')
+          $publishPackage = [bool]::Parse('${{ inputs.publish_package }}')
           $environmentFile = '${{ inputs.environment_file }}'
+          $packageName = '${{ inputs.package_name }}'
 
-          if ($useRelationalBackend -and $environmentFile -ne './.env.template.relational') {
-            throw "use_relational_backend requires environment_file './.env.template.relational'; got '$environmentFile'."
+          $relationalEnvFiles = @('./.env.template.relational', './.env.smoke.relational')
+          if ($useRelationalBackend -and $environmentFile -notin $relationalEnvFiles) {
+            throw "use_relational_backend requires environment_file to be one of: $($relationalEnvFiles -join ', '); got '$environmentFile'."
           }
+
+          # The four-package smoke surface (DS52+TPDM+Sample+Homograph) is an in-run
+          # smoke artifact only. It must never publish under the product template
+          # contract, and must not reuse a product package name.
+          if ($environmentFile -eq './.env.smoke.relational') {
+            if ($publishPackage) {
+              throw "environment_file './.env.smoke.relational' is smoke-only and must not be published; set publish_package to false."
+            }
+            if ($packageName -notlike 'EdFi.Dms.Smoke.Template.PostgreSQL*') {
+              throw "environment_file './.env.smoke.relational' requires a smoke package_name (prefix 'EdFi.Dms.Smoke.Template.PostgreSQL'); got '$packageName'."
+            }
+          }
+
           if ($requirePopulatedData -and -not $verifyRestore) {
             throw "require_populated_data requires verify_restore."
           }
