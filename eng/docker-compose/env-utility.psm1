@@ -302,11 +302,10 @@ function Resolve-OAuthTokenUrl {
 function Write-DerivedEnvFile {
     <#
     .SYNOPSIS
-        Materializes a derived environment file from a base env file, applying scalar key overrides
-        and (optionally) filtering entries out of the SCHEMA_PACKAGES JSON-in-quotes value. The base
-        file is left untouched. Used by the bootstrap wrapper to produce a per-run profile (e.g. a
-        loose circuit-breaker for bulk loads, Sample/Homograph excluded for BulkLoadClient 7.3.1
-        compatibility) without mutating the developer's checked-in env files.
+        Materializes a derived environment file from a base env file, applying scalar key
+        overrides. The base file is left untouched. Used by the bootstrap wrapper to produce
+        a per-run profile (e.g. a loose circuit-breaker for bulk loads) without mutating the
+        developer's checked-in env files.
 
     .PARAMETER BaseEnvironmentFile
         Path to the source env file (e.g. eng/docker-compose/.env or .env.example).
@@ -319,12 +318,6 @@ function Write-DerivedEnvFile {
         is replaced; if not, a new line is appended. Values are written verbatim (caller is responsible
         for quoting if the value needs it).
 
-    .PARAMETER SchemaPackageExclusions
-        Names of SCHEMA_PACKAGES entries to remove (matched by the JSON object's "name" property).
-        For example, @("EdFi.Sample.ApiSchema", "EdFi.Homograph.ApiSchema") drops those extensions
-        from the derived SCHEMA_PACKAGES JSON array. The original quoted-JSON shape is preserved.
-        If the base file has no SCHEMA_PACKAGES key, this parameter is silently ignored.
-
     .OUTPUTS
         None. Writes the derived file to TargetPath as UTF-8 without BOM, with LF line endings and
         a final newline.
@@ -333,15 +326,13 @@ function Write-DerivedEnvFile {
         Write-DerivedEnvFile `
             -BaseEnvironmentFile ./.env `
             -TargetPath ./.bootstrap/.env.derived `
-            -KeyOverrides @{ FAILURE_RATIO = "0.95" } `
-            -SchemaPackageExclusions @("EdFi.Sample.ApiSchema", "EdFi.Homograph.ApiSchema")
+            -KeyOverrides @{ FAILURE_RATIO = "0.95" }
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Bootstrap helper, no -WhatIf surface needed.')]
     param(
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
         [Parameter(Mandatory)] [string]$TargetPath,
-        [hashtable]$KeyOverrides = @{},
-        [string[]]$SchemaPackageExclusions = @()
+        [hashtable]$KeyOverrides = @{}
     )
 
     if (-not (Test-Path -LiteralPath $BaseEnvironmentFile -PathType Leaf)) {
@@ -351,30 +342,7 @@ function Write-DerivedEnvFile {
     $content = Get-Content -LiteralPath $BaseEnvironmentFile -Raw
     if ($null -eq $content) { $content = "" }
 
-    # 1) Filter SCHEMA_PACKAGES JSON array if exclusions supplied.
-    if ($SchemaPackageExclusions.Count -gt 0) {
-        $schemaPattern = "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
-        $schemaMatch = [Regex]::Match($content, $schemaPattern)
-        if ($schemaMatch.Success) {
-            $packages = @($schemaMatch.Groups['value'].Value | ConvertFrom-Json)
-            $exclusionsLower = $SchemaPackageExclusions | ForEach-Object { $_.ToLowerInvariant() }
-            $kept = @($packages | Where-Object {
-                $name = [string]$_.name
-                ($exclusionsLower -notcontains $name.ToLowerInvariant())
-            })
-
-            $rebuiltJson = if ($kept.Count -eq 0) {
-                "[]"
-            } else {
-                $kept | ConvertTo-Json -Depth 10 -AsArray
-            }
-
-            $replacement = "SCHEMA_PACKAGES='$rebuiltJson'"
-            $content = $content.Substring(0, $schemaMatch.Index) + $replacement + $content.Substring($schemaMatch.Index + $schemaMatch.Length)
-        }
-    }
-
-    # 2) Apply scalar key overrides. Replace `^KEY=...$` lines, or append if missing.
+    # 1) Apply scalar key overrides. Replace `^KEY=...$` lines, or append if missing.
     foreach ($key in $KeyOverrides.Keys) {
         $value = [string]$KeyOverrides[$key]
         $linePattern = "(?m)^[ \t]*$([Regex]::Escape($key))=.*$"
@@ -388,7 +356,7 @@ function Write-DerivedEnvFile {
         }
     }
 
-    # 3) Normalize line endings (LF) and ensure final newline.
+    # 2) Normalize line endings (LF) and ensure final newline.
     $content = $content -replace "`r`n", "`n"
     if (-not $content.EndsWith("`n")) { $content += "`n" }
 
@@ -406,11 +374,8 @@ function Resolve-BootstrapDerivedEnv {
     .SYNOPSIS
         Materializes the per-run derived env file with the canonical bootstrap seed-loading profile.
         Always sets FAILURE_RATIO=0.95 so the circuit breaker tolerates bulk-load failures.
-        Conditionally filters SCHEMA_PACKAGES to drop Sample/Homograph (BulkLoadClient 7.3.1 NREs
-        on sample_* inline-object array shapes) — only when the seed source is built-in. Custom
-        -SeedDataPath callers retain the full schema surface so their XML can reference Sample or
-        Homograph resources. The base env file is left untouched. Shared by
-        bootstrap-{local,published}-dms.ps1 wrappers so the two stay in lockstep.
+        The base env file is left untouched. Shared by bootstrap-{local,published}-dms.ps1
+        wrappers so the two stay in lockstep.
 
     .PARAMETER BaseEnvironmentFile
         Absolute path to the source env file. Must exist.
@@ -418,27 +383,14 @@ function Resolve-BootstrapDerivedEnv {
     .PARAMETER DerivedTargetPath
         Path where the derived file is written. Parent directory is created if missing.
 
-    .PARAMETER FilterSampleHomograph
-        When set, drops EdFi.Sample.ApiSchema and EdFi.Homograph.ApiSchema from the derived
-        SCHEMA_PACKAGES list. Wrappers pass this only when no custom -SeedDataPath is supplied,
-        because the exclusion is a built-in-template-specific workaround for BulkLoadClient 7.3.1.
-
     .OUTPUTS
         [string] Returns the DerivedTargetPath on success.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Bootstrap helper, no -WhatIf surface needed.')]
     param(
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
-        [Parameter(Mandatory)] [string]$DerivedTargetPath,
-        [switch]$FilterSampleHomograph
+        [Parameter(Mandatory)] [string]$DerivedTargetPath
     )
-
-    $exclusions = if ($FilterSampleHomograph) {
-        @("EdFi.Sample.ApiSchema", "EdFi.Homograph.ApiSchema")
-    }
-    else {
-        @()
-    }
 
     Write-DerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
@@ -448,8 +400,7 @@ function Resolve-BootstrapDerivedEnv {
             NEED_DATABASE_SETUP = "false"
             DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
             AppSettings__DeployDatabaseOnStartup = "false"
-        } `
-        -SchemaPackageExclusions $exclusions
+        }
 
     return $DerivedTargetPath
 }

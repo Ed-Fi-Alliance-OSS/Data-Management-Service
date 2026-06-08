@@ -124,6 +124,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
         # Get-SeedXsdDirectory, Invoke-BulkLoadClient, etc.). The orchestration block is guarded
         # against dot-sourcing via the InvocationName check at the bottom of the script.
         Import-Module "$script:sourceDockerComposeRoot/bootstrap-manifest.psm1" -Force
+        Import-Module "$script:sourceDockerComposeRoot/../Package-Management.psm1" -Force
         . "$script:sourceDockerComposeRoot/load-dms-seed-data.ps1"
         $script:seedWorkspaceInterchangeNames = @(
             "AssessmentMetadata",
@@ -1323,38 +1324,6 @@ SAMPLING_DURATION_SECONDS=10
             }
         }
 
-        It "Write-DerivedEnvFile filters SCHEMA_PACKAGES entries by name (Sample/Homograph dropped)" {
-            $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
-            $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
-            @"
-LOG_LEVEL=DEBUG
-SCHEMA_PACKAGES='[
-  { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema", "extensionName": "Sample" },
-  { "version": "1.0", "name": "EdFi.Homograph.ApiSchema", "extensionName": "Homograph" },
-  { "version": "1.0", "name": "EdFi.TPDM.ApiSchema" }
-]'
-"@ | Set-Content -LiteralPath $base -Encoding utf8
-            try {
-                Write-DerivedEnvFile `
-                    -BaseEnvironmentFile $base `
-                    -TargetPath $derived `
-                    -SchemaPackageExclusions @("EdFi.Sample.ApiSchema", "EdFi.Homograph.ApiSchema")
-
-                $content = Get-Content -LiteralPath $derived -Raw
-                $content | Should -Match "EdFi.DataStandard52.ApiSchema"
-                $content | Should -Match "EdFi.TPDM.ApiSchema"
-                $content | Should -Not -Match "EdFi.Sample.ApiSchema"
-                $content | Should -Not -Match "EdFi.Homograph.ApiSchema"
-                # The SCHEMA_PACKAGES key must still exist as quoted JSON
-                $content | Should -Match "(?ms)^SCHEMA_PACKAGES='\["
-            }
-            finally {
-                Remove-Item -LiteralPath $base -Force -ErrorAction SilentlyContinue
-                Remove-Item -LiteralPath $derived -Force -ErrorAction SilentlyContinue
-            }
-        }
-
         It "Write-DerivedEnvFile is idempotent across reruns (same input to same output)" {
             $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
             $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
@@ -1368,13 +1337,11 @@ SCHEMA_PACKAGES='[
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
                 Write-DerivedEnvFile -BaseEnvironmentFile $base -TargetPath $derived `
-                    -KeyOverrides @{ FAILURE_RATIO = "0.95" } `
-                    -SchemaPackageExclusions @("EdFi.Sample.ApiSchema")
+                    -KeyOverrides @{ FAILURE_RATIO = "0.95" }
                 $first = Get-Content -LiteralPath $derived -Raw
 
                 Write-DerivedEnvFile -BaseEnvironmentFile $base -TargetPath $derived `
-                    -KeyOverrides @{ FAILURE_RATIO = "0.95" } `
-                    -SchemaPackageExclusions @("EdFi.Sample.ApiSchema")
+                    -KeyOverrides @{ FAILURE_RATIO = "0.95" }
                 $second = Get-Content -LiteralPath $derived -Raw
 
                 $first | Should -Be $second
@@ -1401,42 +1368,10 @@ SCHEMA_PACKAGES='[
             }
         }
 
-        It "Resolve-BootstrapDerivedEnv with -FilterSampleHomograph filters Sample+Homograph" {
-            $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
-            $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
-            @"
-LOG_LEVEL=DEBUG
-FAILURE_RATIO=0.01
-SCHEMA_PACKAGES='[
-  { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Homograph.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.TPDM.ApiSchema" }
-]'
-"@ | Set-Content -LiteralPath $base -Encoding utf8
-            try {
-                $result = Resolve-BootstrapDerivedEnv -BaseEnvironmentFile $base -DerivedTargetPath $derived -FilterSampleHomograph
-                $result | Should -Be $derived
-
-                $content = Get-Content -LiteralPath $derived -Raw
-                $content | Should -Match "(?m)^FAILURE_RATIO=0\.95$"
-                $content | Should -Not -Match "FAILURE_RATIO=0\.01"
-                $content | Should -Match "EdFi.DataStandard52.ApiSchema"
-                $content | Should -Match "EdFi.TPDM.ApiSchema"
-                $content | Should -Not -Match "EdFi.Sample.ApiSchema"
-                $content | Should -Not -Match "EdFi.Homograph.ApiSchema"
-                $content | Should -Match "(?m)^LOG_LEVEL=DEBUG$"
-            }
-            finally {
-                Remove-Item -LiteralPath $base -Force -ErrorAction SilentlyContinue
-                Remove-Item -LiteralPath $derived -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It "Resolve-BootstrapDerivedEnv without -FilterSampleHomograph retains Sample+Homograph" {
-            # Round-2 finding #3: when a custom -SeedDataPath is supplied, the wrappers do not pass
-            # -FilterSampleHomograph, and the developer's XML must be able to reference Sample or
-            # Homograph resources against the running API.
+        It "Resolve-BootstrapDerivedEnv retains Sample+Homograph in SCHEMA_PACKAGES" {
+            # The derived env applies the seed profile (loose circuit breaker) without
+            # narrowing the schema surface: built-in and custom seed runs alike must see
+            # every package the base env serves.
             $base = Join-Path ([System.IO.Path]::GetTempPath()) "base-$([Guid]::NewGuid().ToString('N')).env"
             $derived = Join-Path ([System.IO.Path]::GetTempPath()) "derived-$([Guid]::NewGuid().ToString('N')).env"
             @"
@@ -1455,8 +1390,12 @@ SCHEMA_PACKAGES='[
 
                 $content = Get-Content -LiteralPath $derived -Raw
                 $content | Should -Match "(?m)^FAILURE_RATIO=0\.95$" -Because "circuit-breaker override must still apply"
-                $content | Should -Match "EdFi.Sample.ApiSchema" -Because "custom-path callers must retain the full schema surface"
-                $content | Should -Match "EdFi.Homograph.ApiSchema" -Because "custom-path callers must retain the full schema surface"
+                $content | Should -Not -Match "FAILURE_RATIO=0\.01"
+                $content | Should -Match "EdFi.DataStandard52.ApiSchema"
+                $content | Should -Match "EdFi.TPDM.ApiSchema"
+                $content | Should -Match "EdFi.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "(?m)^LOG_LEVEL=DEBUG$"
             }
             finally {
                 Remove-Item -LiteralPath $base -Force -ErrorAction SilentlyContinue
@@ -1930,8 +1869,8 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
         It "uses cached pinned BulkLoadClient package before the feed-backed resolver" {
             $tmpRoot = New-TestDirectory
             $originalLocation = Get-Location
-            $packageDir = Join-Path $tmpRoot ".packages/edfi.suite3.bulkloadclient.console.7.3.10212"
-            $dllDir = Join-Path $packageDir "tools/net8.0/any"
+            $packageDir = Join-Path $tmpRoot ".packages/edfi.suite3.bulkloadclient.console.$(Get-BulkLoadClientPinnedVersion)"
+            $dllDir = Join-Path $packageDir "tools/net10.0/any"
             New-Item -ItemType Directory -Path $dllDir -Force | Out-Null
             $expectedDll = Join-Path $dllDir "EdFi.BulkLoadClient.Console.dll"
             "" | Set-Content -LiteralPath $expectedDll -Encoding utf8
@@ -1989,9 +1928,97 @@ EdFi.BulkLoadClient.Console fake
         }
     }
 
+    Context "shared BulkLoadClient pin" {
+        BeforeAll {
+            Import-Module "$script:sourceDockerComposeRoot/../Package-Management.psm1" -Force
+        }
+
+        It "Get-BulkLoadClientPinnedVersion returns the exact repo pin" {
+            # Tripwire: bumping the shared pin is a deliberate change that must be reviewed
+            # against the BulkLoadClient XML flag preflight and invocation shape.
+            Get-BulkLoadClientPinnedVersion | Should -Be "7.3.20144"
+        }
+
+        It "Get-BulkLoadClient resolves the shared pin when no version is supplied" {
+            Mock -CommandName Get-NugetPackage -ModuleName Package-Management -MockWith { ".packages/fake" }
+
+            Get-BulkLoadClient | Out-Null
+
+            Should -Invoke Get-NugetPackage -ModuleName Package-Management -Times 1 -Exactly -ParameterFilter {
+                $PackageVersion -eq (Get-BulkLoadClientPinnedVersion)
+            }
+        }
+
+        It "Get-BulkLoadClient still honors an explicit version override" {
+            Mock -CommandName Get-NugetPackage -ModuleName Package-Management -MockWith { ".packages/fake" }
+
+            Get-BulkLoadClient -PackageVersion "9.9.9" | Out-Null
+
+            Should -Invoke Get-NugetPackage -ModuleName Package-Management -Times 1 -Exactly -ParameterFilter {
+                $PackageVersion -eq "9.9.9"
+            }
+        }
+    }
+
+    Context "template-build BulkLoadClient pin" {
+        BeforeAll {
+            # Register Template-Management so InModuleScope can target it. Importing from its own
+            # directory satisfies the module's CWD-relative sibling imports.
+            Push-Location (Join-Path $script:sourceRepoRoot "eng/DatabaseTemplates")
+            try {
+                Import-Module ./Template-Management.psm1 -Force
+            }
+            finally {
+                Pop-Location
+            }
+        }
+
+        It "Initialize-BulkLoad resolves the shared pin by default" {
+            $fakeBlcRoot = New-TestDirectory
+            $dllDir = Join-Path $fakeBlcRoot "tools/net10.0/any"
+            New-Item -ItemType Directory -Path $dllDir -Force | Out-Null
+            "" | Set-Content -LiteralPath (Join-Path $dllDir "EdFi.BulkLoadClient.Console.dll") -Encoding utf8
+
+            try {
+                InModuleScope Template-Management -Parameters @{ FakeBlcRoot = $fakeBlcRoot } {
+                    param($FakeBlcRoot)
+                    Mock -CommandName Get-BulkLoadClient -MockWith { $FakeBlcRoot }
+
+                    $paths = Initialize-BulkLoad
+                    $paths.bulkLoadClientExe | Should -Not -BeNullOrEmpty
+
+                    Should -Invoke Get-BulkLoadClient -Times 1 -Exactly -ParameterFilter {
+                        $PackageVersion -eq (Get-BulkLoadClientPinnedVersion)
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $fakeBlcRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "Initialize-BulkLoad rejects a <Override> override before any resolution" -ForEach @(
+            @{ Override = '7.3' }
+            @{ Override = '7.3.*' }
+        ) {
+            InModuleScope Template-Management -Parameters @{ Override = $Override } {
+                param($Override)
+                Mock -CommandName Get-BulkLoadClient -MockWith { throw "resolver must not be called" }
+
+                { Initialize-BulkLoad -BulkLoadVersion $Override } |
+                    Should -Throw -ExpectedMessage "*diagnostic override*exact three-part numeric version*"
+
+                Should -Invoke Get-BulkLoadClient -Times 0 -Exactly
+            }
+        }
+    }
+
     Context "BulkLoadClient invocation and school-year loop" {
         BeforeAll {
             Import-Module "$script:sourceDockerComposeRoot/env-utility.psm1" -Force
+            # SchoolYearType preconditions call ConvertTo-FormBody; import its module so this
+            # context is self-sufficient regardless of module-table churn from sibling contexts.
+            Import-Module "$script:sourceDockerComposeRoot/../Dms-Management.psm1" -Force
         }
 
         It "treats SchoolYearType REST 201 and 200 as created and 409 as already existing" {
@@ -2774,7 +2801,6 @@ EdFi.BulkLoadClient.Console fake
             $script:localWrapperContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1") -Raw
             $script:publishedWrapperContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1") -Raw
             $script:wrapperModuleContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
-            $script:envUtilityContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Raw
         }
 
         It "build-dms.ps1 -LoadSeedData routes to the direct-SQL path via start-(local|published)-dms.ps1" {
@@ -2821,25 +2847,10 @@ EdFi.BulkLoadClient.Console fake
             $script:seedScriptContent | Should -Match 'New-SeedLoaderCredentials[\s\S]+?-AdminToken\s+\$cmsToken' -Because "orchestrator must forward the existing $cmsToken into New-SeedLoaderCredentials"
         }
 
-        It "shared wrapper module passes -SeedDataPathSupplied to Get-EffectiveBootstrapEnvFile" {
-            # Regression guard for round-2 finding #3: the Sample/Homograph exclusion must depend on
-            # whether a custom -SeedDataPath was supplied, so the shared wrapper body must forward
-            # that signal.
-            $script:wrapperModuleContent | Should -Match 'Get-EffectiveBootstrapEnvFile[\s\S]+?-SeedDataPathSupplied' -Because "the shared module's Get-EffectiveBootstrapEnvFile call must forward -SeedDataPathSupplied"
-        }
-
-        It "Resolve-BootstrapDerivedEnv exposes -FilterSampleHomograph and applies it conditionally" {
-            # Regression guard for round-2 finding #3: the env utility must accept the switch and
-            # the Sample/Homograph exclusion list must be empty when the switch is not set.
-            $script:envUtilityContent | Should -Match '\[switch\]\$FilterSampleHomograph' -Because "Resolve-BootstrapDerivedEnv must accept -FilterSampleHomograph"
-            $script:envUtilityContent | Should -Match '(?s)if\s*\(\s*\$FilterSampleHomograph\s*\)\s*\{[^}]*EdFi\.Sample\.ApiSchema[^}]*EdFi\.Homograph\.ApiSchema' -Because "the exclusion list must live inside the if(FilterSampleHomograph) branch"
-        }
-
-        It "seed-delivery pinned constants require inventory review when changed" {
+        It "seed-delivery pinned data-standard tag requires inventory review when changed" {
             # The SeedLoader claims fixture and default EdOrg envelope are hand-curated against the
-            # v5.2.0 Sample XML inventory and the current BulkLoadClient XML surface. A bump here
-            # must intentionally update those inventories in the same change.
-            $script:seedScriptContent | Should -Match '\$script:BulkLoadClientPackageVersion\s*=\s*"7\.3\.10212"' -Because "BulkLoadClient changes require reviewing the XML flag preflight and invocation shape"
+            # v5.2.0 Sample XML inventory. A bump here must intentionally update those inventories
+            # in the same change.
             $script:seedScriptContent | Should -Match '\$script:DataStandardRefTag\s*=\s*"v5\.2\.0"' -Because "DataStandardRefTag changes require regenerating the SeedLoader claims inventory and EdOrg envelope"
         }
 

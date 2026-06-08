@@ -137,13 +137,14 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             {
                 // Arrange
                 string packageId = "EdFi.DataStandard52.ApiSchema";
+                string packageVersion = "1.0.328";
                 string feedUrl =
                     "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
                 // Act
                 string packagePath = await _downloader.DownloadNuGetPackageAsync(
                     packageId,
-                    string.Empty,
+                    packageVersion,
                     feedUrl,
                     _tempDirectory
                 );

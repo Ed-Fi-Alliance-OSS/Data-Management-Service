@@ -7,13 +7,12 @@
 $ErrorActionPreference = "Stop"
 
 
-$bulkLoadVersion = "7.2"
-
 function Initialize-ToolsAndDirectories {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Overly aggressive rule.')]
     param()
 
-    $bulkLoader = (Join-Path -Path (Get-BulkLoadClient $bulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
+    # Resolves the repo-pinned BulkLoadClient version (see Package-Management.psm1).
+    $bulkLoader = (Join-Path -Path (Get-BulkLoadClient).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
     $bulkLoader = Resolve-Path $bulkLoader
 
     $xsdDirectory = "$($PSScriptRoot)/../.packages/XSD"
