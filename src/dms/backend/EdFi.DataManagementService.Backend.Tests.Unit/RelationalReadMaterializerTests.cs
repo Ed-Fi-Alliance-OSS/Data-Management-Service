@@ -995,7 +995,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
                     [
                         new ReferenceIdentityProjectionFieldOrdinal(
                             ReferenceJsonPath: _schoolReferenceSchoolIdPath,
-                            ColumnOrdinal: 2
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int32)
                         ),
                     ]
                 ),

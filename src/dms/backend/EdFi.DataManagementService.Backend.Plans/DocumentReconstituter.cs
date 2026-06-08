@@ -483,7 +483,7 @@ public static class DocumentReconstituter
                 field.ReferenceJsonPath,
                 present.ReferenceObjectPath
             );
-            fieldParent[fieldPropertyName] = ConvertToJsonValue(field.Value);
+            fieldParent[fieldPropertyName] = ConvertToJsonValue(field.Value, field.ScalarType);
         }
 
         EmitReferenceLink(referenceObject, row, binding, tablePlan, pageReconstitutionContext);
