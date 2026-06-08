@@ -211,6 +211,10 @@ Published ApiSchema package IDs are Data-Standard-qualified. The core package is
 convention (for example `EdFi.DataStandard52.ApiSchema.Sample`, `EdFi.DataStandard52.ApiSchema.Homograph`,
 and `EdFi.DataStandard52.ApiSchema.TPDM`), where `<Project>` is the MetaEd project name.
 
+This is the canonical DMS-916 target package identity convention. Some current repository package references
+and `SCHEMA_PACKAGES` examples still use legacy unqualified extension IDs such as `EdFi.Sample.ApiSchema`,
+`EdFi.Homograph.ApiSchema`, and `EdFi.TPDM.ApiSchema` until the Story 04/06 migration updates those consumers.
+
 The package should contain no `lib/` or `ref/` entries. It may include docs and license files:
 
 ```text

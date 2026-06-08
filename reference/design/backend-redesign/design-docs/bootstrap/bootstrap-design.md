@@ -393,9 +393,8 @@ Modes 1 and 2 cover the vast majority of development workflows. Use these for da
 **Mode 1 - Default (core Ed-Fi only)**
 
 Omit `-Extensions` entirely. In the target package-backed flow, bootstrap resolves only the standard core
-Data Standard ApiSchema asset package (e.g. `EdFi.DataStandard52.ApiSchema`; **exact package name must be
-confirmed against the NuGet feed before Story 06 implementation begins**, not Story 00 or Story
-01) host-side, extracts it into an isolated package-specific temporary directory, normalizes its asset payload into
+Data Standard ApiSchema asset package (`EdFi.DataStandard52.ApiSchema`) host-side, extracts it into an
+isolated package-specific temporary directory, normalizes its asset payload into
 `eng/docker-compose/.bootstrap/ApiSchema/`, and computes the expected `EffectiveSchemaHash` from the
 normalized core schema file. The target package payload is asset-only as defined in
 [`apischema-container.md`](apischema-container.md); publishing that package shape is tracked separately in
@@ -1905,7 +1904,7 @@ Bootstrap-DMS: Starting...
 
 [prepare-dms-schema]                                       (0.4s)
   Core:  EdFi.DataStandard52.ApiSchema        1.0.328
-  Ext:   EdFi.DataStandard52.ApiSchema.Sample 1.0.328
+  Ext:   EdFi.DataStandard52.ApiSchema.Sample 1.0.154
 [prepare-dms-claims]                                       (0.2s)
   Hybrid mode: 1 security fragment(s) staged
 [start-local-dms -InfraOnly]                              (13.7s)
@@ -1938,6 +1937,9 @@ Summary
   ----------------------------------------------
   Total                                   216.0s
 ```
+
+> The core and extension ApiSchema packages are versioned independently and may not share a version (the
+> versions above are illustrative); bootstrap resolves each package to its own configured feed version.
 
 CI environments may suppress color output. The summary table is always emitted on both success and failure;
 on failure the failing phase name and error are printed before the summary.

@@ -40,11 +40,14 @@ filesystem inputs.
   fail fast before Docker operations start.
 - `-Extensions` and `-ApiSchemaPath` are mutually exclusive. Supplying both fails fast with guidance to use
   standard mode for package-backed extensions or expert mode for a custom schema directory.
-- Package-backed resolution uses the configured NuGet feed and package/version defaults. The package-identity
-  convention is Data-Standard-qualified: the core package is `EdFi.DataStandard52.ApiSchema` and extension
-  packages follow `EdFi.DataStandard52.ApiSchema.<Project>` (for example `EdFi.DataStandard52.ApiSchema.Sample`,
-  `EdFi.DataStandard52.ApiSchema.Homograph`, and `EdFi.DataStandard52.ApiSchema.TPDM`). Version defaults are
-  documented and validated against the feed during implementation.
+- Package-backed resolution uses the configured NuGet feed and package/version defaults. Package IDs use the
+  canonical Data-Standard-qualified convention defined in
+  [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md):
+  the core package is `EdFi.DataStandard52.ApiSchema`, and extension packages follow
+  `EdFi.DataStandard52.ApiSchema.<Project>`. Version defaults are documented and validated against the feed
+  during implementation.
+- Current repository package references and `SCHEMA_PACKAGES` examples may still use legacy unqualified
+  extension IDs until the Story 04/06 migration updates those consumers.
 - Package materialization rejects invalid package payloads before finalizing the staged workspace:
   - missing asset-only ApiSchema payload,
   - missing or malformed package manifest,
@@ -74,9 +77,9 @@ filesystem inputs.
 
 ## Tasks
 
-1. Define package-backed schema resolution for standard mode: core package identity/version defaults,
-   extension package identity convention or metadata source, namespace prefixes, and the security fragment
-   lookup keys shared with claims staging.
+1. Wire standard-mode package-backed schema resolution to the package identity convention defined above: core
+   package version defaults, namespace prefixes, and the security fragment lookup keys shared with claims
+   staging.
 2. Update `prepare-dms-schema.ps1` so standard mode is valid when `-ApiSchemaPath` is omitted:
    core-only when `-Extensions` is omitted, and core plus selected extensions when it is supplied.
 3. Preserve `-ApiSchemaPath` as the expert direct-filesystem path from Story 00 and enforce mutual
