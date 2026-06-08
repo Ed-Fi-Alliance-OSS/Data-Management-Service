@@ -1645,7 +1645,10 @@ public class Given_MappingSetManifestJsonEmitter
                         .IdentityFieldOrdinalsInOrder.Select(
                             fieldOrdinal => new ReferenceIdentityProjectionFieldOrdinalSummary(
                                 ReferenceJsonPath: fieldOrdinal.ReferenceJsonPath.Canonical,
-                                ColumnOrdinal: fieldOrdinal.ColumnOrdinal
+                                ColumnOrdinal: fieldOrdinal.ColumnOrdinal,
+                                ScalarKind: MappingSetManifestJsonEmitter.ToScalarKindToken(
+                                    fieldOrdinal.ScalarType.Kind
+                                )
                             )
                         )
                         .ToArray()
@@ -1776,7 +1779,8 @@ public class Given_MappingSetManifestJsonEmitter
     {
         return new ReferenceIdentityProjectionFieldOrdinalSummary(
             ReferenceJsonPath: RequireString(fieldOrdinal, "reference_json_path"),
-            ColumnOrdinal: RequireInt(fieldOrdinal, "column_ordinal")
+            ColumnOrdinal: RequireInt(fieldOrdinal, "column_ordinal"),
+            ScalarKind: RequireString(fieldOrdinal, "scalar_kind")
         );
     }
 
@@ -2319,7 +2323,8 @@ public class Given_MappingSetManifestJsonEmitter
 
     private sealed record ReferenceIdentityProjectionFieldOrdinalSummary(
         string ReferenceJsonPath,
-        int ColumnOrdinal
+        int ColumnOrdinal,
+        string ScalarKind
     );
 
     private sealed record DescriptorProjectionPlanSummary(

@@ -586,6 +586,69 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_populate_reference_identity_field_scalar_types_from_the_hydration_columns()
+    {
+        var tableModelsByTable = _pgsqlProjectionReadPlan.TablePlansInDependencyOrder.ToDictionary(
+            static tablePlan => tablePlan.TableModel.Table,
+            static tablePlan => tablePlan.TableModel
+        );
+
+        var fieldOrdinalsWithTables = _pgsqlProjectionReadPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder.SelectMany(projectionPlan =>
+                projectionPlan.BindingsInOrder.SelectMany(binding =>
+                    binding.IdentityFieldOrdinalsInOrder.Select(fieldOrdinal =>
+                        (FieldOrdinal: fieldOrdinal, TableModel: tableModelsByTable[projectionPlan.Table])
+                    )
+                )
+            )
+            .ToArray();
+
+        fieldOrdinalsWithTables.Should().NotBeEmpty();
+        fieldOrdinalsWithTables
+            .Should()
+            .AllSatisfy(pair =>
+                pair.FieldOrdinal.ScalarType.Should()
+                    .Be(pair.TableModel.Columns[pair.FieldOrdinal.ColumnOrdinal].ScalarType)
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_a_projected_reference_identity_column_lacks_a_scalar_type()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateModelWithNullReferenceIdentityColumnScalarType(_projectionResourceModel)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile reference identity projection plan for 'edfi.StudentProjection': grouped reference-identity binding '$.schoolReference.schoolId' for reference '$.schoolReference' representative column 'School_RefSchoolId' does not declare a scalar type."
+            );
+    }
+
+    [Test]
+    public void It_should_reject_a_reference_identity_field_scalar_type_that_differs_from_the_column()
+    {
+        var mutatedReadPlan = CreateReadPlanWithReferenceProjectionFieldScalarType(
+            _pgsqlProjectionReadPlan,
+            new RelationalScalarType(ScalarKind.Boolean)
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "reference identity projection field '$.schoolReference.schoolId' at index '0' for reference '$.schoolReference' on table 'edfi.StudentProjection' has ScalarType 'Boolean', but column 'School_RefSchoolId' declares 'Int32'"
+            );
+    }
+
+    [Test]
     public void It_should_emit_null_DocumentReferenceLookup_when_model_has_no_document_reference_bindings()
     {
         _pgsqlRootOnlyReadPlan.DocumentReferenceLookup.Should().BeNull();
