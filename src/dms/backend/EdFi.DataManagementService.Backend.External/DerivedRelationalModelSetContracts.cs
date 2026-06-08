@@ -105,6 +105,14 @@ public sealed record ConcreteResourceModel(
     > QueryFieldMappingsByQueryField { get; init; } =
         new Dictionary<string, RelationalQueryFieldMapping>(StringComparer.Ordinal);
 #pragma warning restore IDE0055
+
+    /// <summary>
+    /// The superclass resource identity for subclass resources, extracted from ApiSchema.json
+    /// (<c>superclassProjectName</c>/<c>superclassResourceName</c>). Null for non-subclass resources.
+    /// Reference-identity alias query compilation uses this to validate superclass-derived
+    /// query field paths against schema metadata.
+    /// </summary>
+    public QualifiedResourceName? SuperclassResource { get; init; }
 }
 
 /// <summary>

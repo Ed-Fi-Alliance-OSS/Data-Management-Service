@@ -85,6 +85,21 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                 resourceContext.ResourceSchema,
                 resourceKey
             );
+            var isSubclass = ApiSchemaNodeRequirements.TryGetOptionalBoolean(
+                resourceContext.ResourceSchema,
+                "isSubclass",
+                defaultValue: false
+            );
+            // Best-effort extraction; AbstractIdentityTableAndUnionViewDerivationPass
+            // hard-validates superclass metadata for subclass resources.
+            QualifiedResourceName? superclassResource =
+                isSubclass
+                && TryGetOptionalString(resourceContext.ResourceSchema, "superclassProjectName")
+                    is { } superclassProjectName
+                && TryGetOptionalString(resourceContext.ResourceSchema, "superclassResourceName")
+                    is { } superclassResourceName
+                    ? new QualifiedResourceName(superclassProjectName, superclassResourceName)
+                    : null;
 
             context.ConcreteResourcesInNameOrder.Add(
                 new ConcreteResourceModel(
@@ -95,6 +110,7 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                 {
                     SecurableElements = securableElements,
                     QueryFieldMappingsByQueryField = queryFieldMappings,
+                    SuperclassResource = superclassResource,
                 }
             );
             context.RegisterExtensionSitesForResource(resourceKey, result.ExtensionSites);

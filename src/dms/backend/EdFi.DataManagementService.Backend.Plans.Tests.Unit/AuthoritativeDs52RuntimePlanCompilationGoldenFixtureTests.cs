@@ -163,6 +163,49 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
                 "surveyIdentifier",
                 "$.surveySectionResponseReference.surveyIdentifier",
                 "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "CourseTranscript",
+                "studentUniqueId",
+                "$.studentReference.studentAcademicRecordUniqueId",
+                "StudentAcademicRecord_StudentUniqueId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "Grade",
+                "studentUniqueId",
+                "$.studentReference.studentSectionAssociationUniqueId",
+                "StudentSectionAssociation_StudentUniqueId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "StudentProgramAssociation",
+                "studentUniqueId",
+                "$.studentReference.generalStudentProgramAssociationUniqueId",
+                "Student_StudentUniqueId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "StudentAssessmentRegistration",
+                "studentUniqueId",
+                "$.studentReference.studentEducationOrganizationAssociationUniqueId",
+                "StudentEducationOrganizationAssociation_StudentUniqueId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "StudentAssessmentRegistration",
+                "scheduledStudentUniqueId",
+                "$.scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId",
+                "ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId",
+                "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "StudentAssessmentRegistrationBatteryPartAssociation",
+                "studentUniqueId",
+                "$.studentReference.studentAssessmentRegistrationUniqueId",
+                "StudentAssessmentRegistration_StudentUniqueId"
             )
         );
     }

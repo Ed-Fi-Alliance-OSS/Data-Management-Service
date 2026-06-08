@@ -86,6 +86,7 @@ internal sealed class RelationalQueryCapabilityCompiler
         {
             CompileQueryField(
                 queryFieldMapping,
+                concreteResourceModel.SuperclassResource,
                 rootColumnsByPath,
                 rootColumnsByName,
                 nonRootColumnsByPath,
@@ -138,6 +139,7 @@ internal sealed class RelationalQueryCapabilityCompiler
 
     private static void CompileQueryField(
         RelationalQueryFieldMapping queryFieldMapping,
+        QualifiedResourceName? superclassResource,
         FrozenDictionary<string, DbColumnName[]> rootColumnsByPath,
         FrozenDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
         FrozenDictionary<string, DbColumnName[]> nonRootColumnsByPath,
@@ -274,6 +276,34 @@ internal sealed class RelationalQueryCapabilityCompiler
                 unsupportedFieldsByQueryField
             );
             return;
+        }
+
+        var referenceIdentityQueryTargetResolver = getReferenceIdentityQueryTargetResolver();
+        var aliasResolution = referenceIdentityQueryTargetResolver.ResolveAliasPath(
+            queryFieldMapping.QueryFieldName,
+            queryPath.Path,
+            superclassResource
+        );
+
+        switch (aliasResolution)
+        {
+            case ReferenceIdentityQueryCandidateResolution.Match aliasMatch:
+                AddSupportedQueryFieldOrUnsupportedType(
+                    queryFieldMapping,
+                    queryPath,
+                    referenceIdentityQueryTargetResolver.ResolveTargetOrThrow(aliasMatch),
+                    rootColumnsByName,
+                    supportedFieldsByQueryField,
+                    unsupportedFieldsByQueryField
+                );
+                return;
+            case ReferenceIdentityQueryCandidateResolution.Ambiguous:
+                MarkUnsupported(
+                    queryFieldMapping,
+                    RelationalQueryFieldFailureKind.AmbiguousRootTarget,
+                    unsupportedFieldsByQueryField
+                );
+                return;
         }
 
         MarkUnsupported(
