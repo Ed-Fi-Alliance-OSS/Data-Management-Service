@@ -146,6 +146,8 @@ Feature: DisciplineAction Authorization
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901044"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 Ensure unauthorized client can not create a DisciplineAction
              When a POST request is made to "/ed-fi/disciplineActions" with
                   """
@@ -172,31 +174,33 @@ Feature: DisciplineAction Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
+                    ]
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 06.1 Ensure unauthorized client can not get a DisciplineAction by id
              When a GET request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 403
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
+                    ]
                   }
                   """
 
@@ -210,6 +214,8 @@ Feature: DisciplineAction Authorization
                   []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 07 Ensure unauthorized client can not update a DisciplineAction
              When a PUT request is made to "/ed-fi/disciplineActions/{disciplineActionId}" with
                   """
@@ -237,30 +243,32 @@ Feature: DisciplineAction Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
+                    ]
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 08 Ensure unauthorized client can not delete a DisciplineAction
              When a DELETE request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 403
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "validationErrors": {},
-                     "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
+                    ]
                   }
                   """

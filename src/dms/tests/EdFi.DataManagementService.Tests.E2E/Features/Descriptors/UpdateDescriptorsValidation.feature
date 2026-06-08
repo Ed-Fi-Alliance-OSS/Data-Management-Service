@@ -275,6 +275,8 @@ Feature: Update a Descriptor
                   """
 
         @API-042
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 10 Update a descriptor with modification of an identity field
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -291,14 +293,13 @@ Feature: Update a Descriptor
               And the response body is
                   """
                   {
-                    "detail": "Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead.",
+                    "detail": "Identity of resource 'Ed-Fi.AbsenceEventCategoryDescriptor' cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
                     "title": "Key Change Not Supported",
                     "status": 400,
-                    "correlationId": null,
                     "validationErrors": {},
                     "errors": []
-                    }
+                  }
                   """
 
         @API-043
@@ -520,6 +521,8 @@ Feature: Update a Descriptor
                   """
 
         @API-050
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 18 Ensure clients cannot update a codeValue
             Given a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
@@ -543,17 +546,18 @@ Feature: Update a Descriptor
               And the response body is
                   """
                   {
-                    "validationErrors": {},
-                    "errors": [],
-                    "detail": "Identifying values for the DisabilityDescriptor resource cannot be changed. Delete and recreate the resource item instead.",
+                    "detail": "Identity of resource 'Ed-Fi.DisabilityDescriptor' cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
                     "title": "Key Change Not Supported",
                     "status": 400,
-                    "correlationId": null
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
         @API-051
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 19 Ensure clients cannot update a namespace
             Given a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
@@ -576,13 +580,12 @@ Feature: Update a Descriptor
               And the response body is
                   """
                   {
-                    "validationErrors": {},
-                    "errors": [],
-                    "detail": "Identifying values for the DisabilityDescriptor resource cannot be changed. Delete and recreate the resource item instead.",
+                    "detail": "Identity of resource 'Ed-Fi.DisabilityDescriptor' cannot be changed. Descriptor identity fields (Namespace, CodeValue) are immutable on PUT.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
                     "title": "Key Change Not Supported",
                     "status": 400,
-                    "correlationId": null
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 

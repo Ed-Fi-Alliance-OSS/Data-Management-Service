@@ -1393,6 +1393,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | studentReference            | schoolReference            | entryGradeLevelDescriptor                          | entryDate  | exitGradeLevel                                     | exitWithdrawTypeDescriptor                                    |
                   | { "studentUniqueId": "61" } | { "schoolId": 6255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
         @addrelationships
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 41 Ensure client can not delete or get a PostSecondaryEvent with out student school association
 
              When a POST request is made to "/ed-fi/PostSecondaryEvents" with
@@ -1426,13 +1428,13 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                         {
-                         "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                         "type": "urn:ed-fi:api:security:authorization:",
-                         "title": "Authorization Denied",
-                         "status": 403,
-                         "validationErrors": {},
-                         "errors": [
-                              "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's StudentUniqueId value."
+                          "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                          "type": "urn:ed-fi:api:security:authorization",
+                          "title": "Authorization Denied",
+                          "status": 403,
+                          "validationErrors": {},
+                          "errors": [
+                            "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's 'StudentUniqueId' value."
                           ]
                         }
                   """
@@ -1441,15 +1443,15 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                         {
-                        "detail": "Access to the resource could not be authorized.",
-                        "type": "urn:ed-fi:api:security:authorization:",
-                        "title": "Authorization Denied",
-                        "status": 403,
-                        "validationErrors": {},
-                        "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's StudentUniqueId value."
-                        ]
-                      }
+                          "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                          "type": "urn:ed-fi:api:security:authorization",
+                          "title": "Authorization Denied",
+                          "status": 403,
+                          "validationErrors": {},
+                          "errors": [
+                            "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's 'StudentUniqueId' value."
+                          ]
+                        }
                   """
 
     Rule: Edge cases are properly authorized
