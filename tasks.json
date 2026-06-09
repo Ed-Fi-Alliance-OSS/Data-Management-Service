@@ -194,6 +194,6 @@
       "Run jq empty tasks.json",
       "Run git diff --check"
     ],
-    "completed": false
+    "completed": true
   }
 ]
