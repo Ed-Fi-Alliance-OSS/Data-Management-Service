@@ -32,3 +32,8 @@ Task completed: Focused precedence tests; story 409-fix-plan.md
 Key decisions: added executor regressions for mixed descriptor+missing document failures staying immediate, immutable identity beating deferred Missing references, and proposed namespace denial beating deferred Missing references; kept assertions at backend result/call-order level.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DefaultRelationalWriteExecutorTests.cs; tasks.json; progress.txt
 Notes: dotnet csharpier formatted executor tests; literal filter FullyQualifiedName~DefaultRelationalWriteExecutor still matched no tests; fixture-aware FullyQualifiedName~Given_Default_Relational_Write_Executor passed 141 tests.
+
+Task completed: Database fallback preservation; story 409-fix-plan.md
+Key decisions: preserved production DbException catch/mapper unchanged; added mapper fixture named for prompt filter proving late FK document-reference violations map to Missing reference, unmatched request references stay UnknownFailure, unrecognized/unclassified DB failures are not remapped to references.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteDatabaseFailureResultMapperTests.cs; tasks.json; progress.txt
+Notes: prompt filter FullyQualifiedName~RelationalWriteDatabaseFailureResultMapper|FullyQualifiedName~DefaultRelationalWriteExecutor passed 4 mapper tests; fixture-aware mapper+Given_Default_Relational_Write_Executor passed 145 tests.

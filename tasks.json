@@ -145,7 +145,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteDatabaseFailureResultMapper|FullyQualifiedName~DefaultRelationalWriteExecutor\"",
       "Confirm no new catch block maps unrelated InvalidOperationException or validation failures to unresolved-reference results."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Relational E2E scenario alignment",
