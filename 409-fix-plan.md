@@ -35,7 +35,7 @@ In scope:
 - Defer only `DocumentReferenceFailureReason.Missing` failures produced by the resolver.
 - Keep descriptor-reference failures immediate.
 - Keep non-missing document-reference failures, such as incompatible target type, immediate.
-- Keep profile writes on the current immediate reference-failure path.
+- Keep profile writes on the current immediate reference-failure path for this fix.
 - Allow only the no-profile merge/proposed-authorization preflight to continue with explicitly deferred missing document references.
 - Return the remembered missing document-reference failures as `409` only if no higher-precedence result occurs.
 - Preserve database FK mapping as the final race-condition fallback.
@@ -47,6 +47,7 @@ Out of scope:
 - Profile data-policy behavior.
 - Numeric/date serialization.
 - General reference resolver semantics.
+- Core response/status mapping.
 - Any fallback that hides unrelated flattener, mapping, or planner bugs.
 - Reordering the existing stored-target authorization/locking boundary.
 
@@ -77,7 +78,7 @@ merge selected body with current state
 run immutable identity/key-change check
 run proposed namespace authorization
 run proposed relationship authorization
-run deferred If-Match precondition evaluation, when applicable
+run deferred If-Match precondition evaluation in its existing location, when applicable
 
 if remembered missing document-reference failures exist:
     return 409 Unresolved Reference
@@ -153,7 +154,7 @@ Add the smallest explicit opt-in:
 - Pass `AllowMissingDocumentReferencesForPrecedence: true` only from `DefaultRelationalWriteExecutor` when `deferMissingDocumentReferenceFailures` is true.
 - Apply the opt-in only to the no-profile flattening path. Profile writes stay on the immediate reference-failure path.
 
-When the opt-in is true, derive the exact tolerated occurrences from `resolvedReferences.InvalidDocumentReferences` where `Reason` is `Missing`. Do not let callers supply arbitrary tolerated paths.
+When the opt-in is true, derive the exact tolerated occurrences from `resolvedReferences.InvalidDocumentReferences` where `Reason` is `Missing`. Do not let callers supply arbitrary tolerated paths, and do not fabricate successful resolved references.
 
 The simplest responsible implementation is for `FlatteningResolvedReferenceLookupSet` to derive this internal lookup from the existing `ResolvedReferenceSet` plus the opt-in flag. It can map resolver failure paths to the compiled document-reference binding index and ordinal path, then expose a narrow method such as:
 
@@ -169,7 +170,7 @@ Treat an unresolved failure path that cannot be matched to a compiled document-r
 In `RelationalWriteFlattener`:
 
 - In `ResolveDocumentReferenceValue`, if the reference object exists but no document id is resolved, return `FlattenedWriteValue.Literal(null)` only when that exact binding/ordinal occurrence is marked as a deferred missing document reference. Otherwise keep the current exception.
-- In `ResolveReferenceDerivedValue`, after confirming the reference object exists, apply the same exact-occurrence check before calling the literal resolver that would throw for a missing backing reference lookup. Return `FlattenedWriteValue.Literal(null)` only for an explicitly deferred missing occurrence.
+- In `ResolveReferenceDerivedValue`, after confirming the reference object exists, apply the same exact-occurrence check using `referenceDerived.ReferenceSource.BindingIndex` and the current ordinal path before calling the literal resolver that would throw for a missing backing reference lookup. Return `FlattenedWriteValue.Literal(null)` only for an explicitly deferred missing occurrence.
 - Do not catch and remap unrelated `RelationalWriteRequestValidationException` or `InvalidOperationException` failures. If a request-shape or mapping error still occurs, keep the existing failure behavior unless a unit test proves it is directly caused by the allowed deferred missing-reference occurrence.
 
 The executor must not persist or return guarded no-op success while deferred missing document-reference failures are remembered.
