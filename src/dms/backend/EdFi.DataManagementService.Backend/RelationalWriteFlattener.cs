@@ -29,7 +29,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         var rootScopeNode = GetRootScopeNode(flatteningInput.SelectedBody);
         var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
             writePlan,
-            flatteningInput.ResolvedReferences
+            flatteningInput.ResolvedReferences,
+            flatteningInput.AllowMissingDocumentReferencesForPrecedence
         );
         var rootDocumentIdValue = ResolveRootDocumentIdValue(flatteningInput.TargetContext);
         var traversalPlans = new TraversalPlans(

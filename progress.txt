@@ -7,3 +7,8 @@ Task completed: Flattening opt-in plumbing; story 409-fix-plan.md
 Key decisions: FlatteningInput flag defaults false and appended after existing optional bools to preserve call sites; merge orchestrator accepts defaulted allow flag but uses it only for no-profile flattening; executor passes true only for deferred no-profile Missing document-reference failures.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteMergeOrchestrator.cs; src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteContractsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DefaultRelationalWriteExecutorTests.cs; tasks.json; progress.txt
 Notes: prompt filter passed 6 tests; fixture-aware filter FullyQualifiedName~RelationalWriteContracts|FullyQualifiedName~Given_Default_Relational_Write_Executor passed 142 tests.
+
+Task completed: Exact missing-reference lookup; story 409-fix-plan.md
+Key decisions: lookup opt-in remains default false; deferred missing map derived only from resolver InvalidDocumentReferences with Missing reason; concrete paths match compiled binding wildcard plus ordinal path; unmatched opt-in path throws invariant.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs; src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/FlatteningResolvedReferenceLookupSetTests.cs; tasks.json; progress.txt
+Notes: required filter FullyQualifiedName~FlatteningResolvedReferenceLookupSet passed 18 tests.

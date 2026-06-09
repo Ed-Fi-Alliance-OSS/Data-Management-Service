@@ -53,7 +53,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet\"",
       "Confirm tests cover root and nested ordinal paths, mixed successful and deferred references, and an unmatched failure-path invariant."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Flattener deferred-reference tolerance",
