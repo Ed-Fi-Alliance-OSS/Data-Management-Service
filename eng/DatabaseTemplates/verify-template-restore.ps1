@@ -40,6 +40,8 @@
     restore and be serveable by DMS.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Verification entry script intentionally writes operator progress to the console.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL password is read as plaintext from the environment and handed to psql / a PostgreSQL connection string, where it must be plaintext; SecureString adds no protection across that boundary.')]
 [CmdletBinding()]
 param (
     [Parameter(Mandatory = $true)]

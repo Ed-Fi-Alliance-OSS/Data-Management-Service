@@ -501,6 +501,7 @@ function Get-UserSchemaNames {
     The running PostgreSQL container hosting the database.
 #>
 function Restore-TemplatePackage {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     param (
         [string]$PackageDirectory = ".",
 
@@ -581,6 +582,7 @@ function Restore-TemplatePackage {
     Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
 #>
 function Build-TemplateNuGetPackage {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     param (
         [Parameter(Mandatory = $true)]
         [string]$ConfigFilePath,
@@ -690,6 +692,8 @@ enum TemplateType {
         -PostgresPassword "mypassword"
 #>
 function Build-Template {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; there is no companion username credential and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; SecureString adds no protection across that boundary.')]
     param (
 
         [Parameter(Mandatory = $true)]
