@@ -611,7 +611,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             resolvedReferenceLookups,
             ordinalPath,
             values,
-            valueAssigned
+            valueAssigned,
+            flatteningInput.AllowMissingDocumentReferencesForPrecedence
         );
         ApplyCollectionKeyPreallocationValue(tableWritePlan, values, valueAssigned);
         EnsureAllBindingsAssigned(tableWritePlan, values, valueAssigned);
@@ -625,12 +626,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ReadOnlySpan<int> ordinalPath,
         FlattenedWriteValue[] values,
-        bool[] valueAssigned
+        bool[] valueAssigned,
+        bool allowMissingDocumentReferencesForPrecedence
     )
     {
         foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
         {
-            var canonicalValue = EvaluateCanonicalValue(
+            var canonicalEvaluation = EvaluateCanonicalValue(
                 tableWritePlan,
                 keyUnificationPlan,
                 scopeNode,
@@ -641,21 +643,24 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             );
 
             values[keyUnificationPlan.CanonicalBindingIndex] = new FlattenedWriteValue.Literal(
-                canonicalValue
+                canonicalEvaluation.Value
             );
             valueAssigned[keyUnificationPlan.CanonicalBindingIndex] = true;
 
             Profile.ProfileKeyUnificationGuardrails.Validate(
                 tableWritePlan,
                 keyUnificationPlan,
-                canonicalValue,
+                canonicalEvaluation.Value,
                 values,
-                valueAssigned
+                valueAssigned,
+                allowNullCanonicalForDeferredMissingReference: allowMissingDocumentReferencesForPrecedence
+                    && canonicalEvaluation.Value is null
+                    && canonicalEvaluation.HasDeferredMissingReferenceMember
             );
         }
     }
 
-    private static object? EvaluateCanonicalValue(
+    private static KeyUnificationCanonicalEvaluation EvaluateCanonicalValue(
         TableWritePlan tableWritePlan,
         KeyUnificationWritePlan keyUnificationPlan,
         JsonNode scopeNode,
@@ -667,9 +672,18 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         object? canonicalValue = null;
         KeyUnificationMemberWritePlan? firstPresentMember = null;
+        var hasDeferredMissingReferenceMember = false;
 
         foreach (var member in keyUnificationPlan.MembersInOrder)
         {
+            hasDeferredMissingReferenceMember |= IsDeferredMissingReferenceDerivedKeyUnificationMember(
+                tableWritePlan,
+                member,
+                scopeNode,
+                resolvedReferenceLookups,
+                ordinalPath
+            );
+
             var evaluation = Profile.FlattenerMemberEvaluation.EvaluateKeyUnificationMember(
                 tableWritePlan,
                 member,
@@ -713,7 +727,38 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
         }
 
-        return canonicalValue;
+        return new KeyUnificationCanonicalEvaluation(canonicalValue, hasDeferredMissingReferenceMember);
+    }
+
+    private static bool IsDeferredMissingReferenceDerivedKeyUnificationMember(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan member,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (member is not KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceDerivedMember)
+        {
+            return false;
+        }
+
+        if (
+            !TryGetReferenceObjectNode(
+                tableWritePlan,
+                scopeNode,
+                referenceDerivedMember.ReferenceSource,
+                out var referenceNode
+            ) || referenceNode is null
+        )
+        {
+            return false;
+        }
+
+        return resolvedReferenceLookups.IsDeferredMissingDocumentReference(
+            referenceDerivedMember.ReferenceSource.BindingIndex,
+            ordinalPath
+        );
     }
 
     private static void EnsureAllBindingsAssigned(
@@ -2008,6 +2053,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         TableWritePlan TableWritePlan,
         ImmutableArray<JsonPathSegment> RelativeScopeSegments,
         bool NavigateFromRoot
+    );
+
+    private sealed record KeyUnificationCanonicalEvaluation(
+        object? Value,
+        bool HasDeferredMissingReferenceMember
     );
 
     private sealed record TraversalPlans(

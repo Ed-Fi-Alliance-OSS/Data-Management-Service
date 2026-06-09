@@ -215,18 +215,21 @@ Feature: Equality Constraint Validation
                       }
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                      "title": "Data Validation Failed",
-                      "status": 400,
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
+                      "title": "Unresolved Reference",
+                      "status": 409,
                       "correlationId": null,
                       "validationErrors": {
-                          "$.locationReference.schoolId": [
-                              "Column 'LocationLocation_SchoolId' on table 'edfi.Section' could not materialize reference-derived value at path '$.locationReference.schoolId' because reference object '$.locationReference' did not produce a matching resolved reference occurrence."
+                          "$.courseOfferingReference": [
+                              "The referenced CourseOffering item does not exist."
+                          ],
+                          "$.locationReference": [
+                              "The referenced Location item does not exist."
                           ]
                       },
                       "errors": []

@@ -195,5 +195,24 @@
       "Run git diff --check"
     ],
     "completed": true
+  },
+  {
+    "category": "Key-unification deferred-reference tolerance",
+    "description": "High: Honor deferred missing document-reference occurrences when key-unification reference-derived members materialize no-profile preflight rows.",
+    "acceptance-criteria": [
+      "KeyUnificationMemberWritePlan.ReferenceDerivedMember evaluation checks the same resolver-derived deferred missing document-reference marker before calling ResolveReferenceDerivedLiteralValue.",
+      "For an exact deferred missing binding and ordinal occurrence, key-unification preflight materializes null canonical and presence values consistently with the document-reference FK null instead of throwing a reference-derived lookup validation failure.",
+      "Default flattening, profile writes, non-missing document-reference failures, descriptor failures, and non-deferred missing occurrences keep their existing fail-fast behavior.",
+      "Focused unit coverage proves key-unification reference-derived members tolerate only exact deferred missing occurrences and still fail for non-deferred or wrong-ordinal missing references.",
+      "Relational E2E expectations for scenarios enabled by this story no longer assert internal reference-derived materialization 400s as passing behavior."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/Profile/FlattenerMemberEvaluation.cs and src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs for shared or equivalent deferred-missing handling across WriteValueSource.ReferenceDerived and KeyUnificationMemberWritePlan.ReferenceDerivedMember.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~DefaultRelationalWriteExecutor\"",
+      "Run dotnet build src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release",
+      "Run pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'",
+      "Run pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-4'"
+    ],
+    "completed": true
   }
 ]

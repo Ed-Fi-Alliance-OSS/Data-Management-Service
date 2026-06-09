@@ -172,6 +172,16 @@ internal static class FlattenerMemberEvaluation
             return KeyUnificationMemberEvaluation.Absent;
         }
 
+        if (
+            resolvedReferenceLookups.IsDeferredMissingDocumentReference(
+                member.ReferenceSource.BindingIndex,
+                ordinalPath
+            )
+        )
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
         var memberPathColumn = RelationalWriteFlattener.GetRequiredColumnModel(
             tableWritePlan,
             member.MemberPathColumn

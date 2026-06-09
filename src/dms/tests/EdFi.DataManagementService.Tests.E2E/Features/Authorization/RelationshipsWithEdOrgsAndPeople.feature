@@ -869,23 +869,19 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                       "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
                   }
                   """
-	             Then it should respond with 400
-	              And the response body is
-	                  """
-	                  {
-	                      "detail": "Data validation failed. See 'validationErrors' for details.",
-	                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-	                      "title": "Data Validation Failed",
-	                      "status": 400,
-	                      "correlationId": null,
-	                      "validationErrors": {
-	                          "$.schoolReference.schoolId": [
-	                              "Column 'School_SchoolId' on table 'edfi.StudentSchoolAssociation' could not materialize reference-derived value at path '$.schoolReference.schoolId' because reference object '$.schoolReference' did not produce a matching resolved reference occurrence."
-	                          ]
-	                      },
-	                      "errors": []
-	                  }
-	                  """
+		             Then it should respond with 403
+		              And the response body is
+		                  """
+		                  {
+		                      "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'SchoolId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+		                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+		                      "title": "Authorization Denied",
+		                      "status": 403,
+		                      "correlationId": null,
+		                      "validationErrors": {},
+		                      "errors": []
+		                  }
+		                  """
 
         @relational-ci-shard-3
         @relational-backend

@@ -22,7 +22,8 @@ internal static class ProfileKeyUnificationGuardrails
         KeyUnificationWritePlan keyUnificationPlan,
         object? canonicalValue,
         IReadOnlyList<FlattenedWriteValue> values,
-        IReadOnlyList<bool> valueAssigned
+        IReadOnlyList<bool> valueAssigned,
+        bool allowNullCanonicalForDeferredMissingReference = false
     )
     {
         foreach (var member in keyUnificationPlan.MembersInOrder)
@@ -60,7 +61,11 @@ internal static class ProfileKeyUnificationGuardrails
 
         var canonicalBinding = tableWritePlan.ColumnBindings[keyUnificationPlan.CanonicalBindingIndex];
 
-        if (!canonicalBinding.Column.IsNullable && canonicalValue is null)
+        if (
+            !canonicalBinding.Column.IsNullable
+            && canonicalValue is null
+            && !allowNullCanonicalForDeferredMissingReference
+        )
         {
             throw new InvalidOperationException(
                 $"Key-unification canonical column '{canonicalBinding.Column.ColumnName.Value}' on table "
