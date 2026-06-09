@@ -244,15 +244,11 @@ jobs:
           ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
-      - name: Run NonDestructive ODS SDK Tests
-        run: |
-          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk" -OAuthUrl "http://localhost:8080/oauth/token"
-        working-directory: eng/smoke_test/
-
-      - name: Run Destructive ODS SDK Tests
-        run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk" -OAuthUrl "http://localhost:8080/oauth/token"
-        working-directory: eng/smoke_test/
+      # The published ODS SDK sweep (EdFi.OdsApi.Sdk) exercises the full ODS resource
+      # surface, including the Sample and Homograph extensions. This relational smoke
+      # path serves only the Core (DS52) + TPDM product surface, so that sweep would
+      # 404 on Sample/Homograph resources. ODS SDK smoke coverage is reintroduced once
+      # the Sample/Homograph smoke surface is restored.
 
       - name: Export Docker Logs on Failure
         if: failure()
@@ -293,7 +289,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
