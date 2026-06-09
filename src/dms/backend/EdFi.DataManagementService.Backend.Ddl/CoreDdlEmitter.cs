@@ -294,7 +294,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Uri"), StringType(306), false)},");
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", SequenceDefault)},"
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", "0")},"
             );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentLastModifiedAt"), DateTimeType, false, "DF_Descriptor_ContentLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
@@ -855,50 +855,62 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             }
             writer.AppendLine("END IF;");
 
-            writer.AppendLine("WITH stamped AS (");
+            writer.AppendLine("IF TG_OP = 'INSERT' THEN");
             using (writer.Indent())
             {
-                writer.Append("UPDATE ");
-                writer.AppendLine(documentTable);
-                writer.Append("SET ");
-                writer.Append(Quote("ContentVersion"));
-                writer.Append(" = nextval('");
-                writer.Append(sequenceName);
-                writer.Append("'), ");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.AppendLine(" = now()");
-                writer.Append("WHERE ");
-                writer.Append(Quote("DocumentId"));
-                writer.Append(" = NEW.");
-                writer.Append(Quote("DocumentId"));
-                writer.AppendLine();
-                writer.Append("RETURNING ");
-                writer.Append(Quote("DocumentId"));
-                writer.Append(", ");
-                writer.Append(Quote("ContentVersion"));
-                writer.Append(", ");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.AppendLine();
+                writer.AppendLine("WITH stamped AS (");
+                using (writer.Indent())
+                {
+                    writer.Append("SELECT ");
+                    writer.Append(Quote("DocumentId"));
+                    writer.Append(", ");
+                    writer.Append(Quote("ContentVersion"));
+                    writer.Append(", ");
+                    writer.Append(Quote("ContentLastModifiedAt"));
+                    writer.AppendLine();
+                    writer.Append("FROM ");
+                    writer.AppendLine(documentTable);
+                    writer.Append("WHERE ");
+                    writer.Append(Quote("DocumentId"));
+                    writer.Append(" = NEW.");
+                    writer.Append(Quote("DocumentId"));
+                    writer.AppendLine();
+                }
+                writer.AppendLine(")");
+                EmitPgsqlDescriptorMirrorUpdateFromStamped(writer, descriptorTable);
             }
-            writer.AppendLine(")");
-            writer.Append("UPDATE ");
-            writer.Append(descriptorTable);
-            writer.AppendLine(" r");
-            writer.Append("SET ");
-            writer.Append(Quote("ContentVersion"));
-            writer.Append(" = stamped.");
-            writer.Append(Quote("ContentVersion"));
-            writer.Append(", ");
-            writer.Append(Quote("ContentLastModifiedAt"));
-            writer.Append(" = stamped.");
-            writer.Append(Quote("ContentLastModifiedAt"));
-            writer.AppendLine();
-            writer.AppendLine("FROM stamped");
-            writer.Append("WHERE r.");
-            writer.Append(Quote("DocumentId"));
-            writer.Append(" = stamped.");
-            writer.Append(Quote("DocumentId"));
-            writer.AppendLine(";");
+            writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("WITH stamped AS (");
+                using (writer.Indent())
+                {
+                    writer.Append("UPDATE ");
+                    writer.AppendLine(documentTable);
+                    writer.Append("SET ");
+                    writer.Append(Quote("ContentVersion"));
+                    writer.Append(" = nextval('");
+                    writer.Append(sequenceName);
+                    writer.Append("'), ");
+                    writer.Append(Quote("ContentLastModifiedAt"));
+                    writer.AppendLine(" = now()");
+                    writer.Append("WHERE ");
+                    writer.Append(Quote("DocumentId"));
+                    writer.Append(" = NEW.");
+                    writer.Append(Quote("DocumentId"));
+                    writer.AppendLine();
+                    writer.Append("RETURNING ");
+                    writer.Append(Quote("DocumentId"));
+                    writer.Append(", ");
+                    writer.Append(Quote("ContentVersion"));
+                    writer.Append(", ");
+                    writer.Append(Quote("ContentLastModifiedAt"));
+                    writer.AppendLine();
+                }
+                writer.AppendLine(")");
+                EmitPgsqlDescriptorMirrorUpdateFromStamped(writer, descriptorTable);
+            }
+            writer.AppendLine("END IF;");
             writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
@@ -916,12 +928,34 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    private void EmitPgsqlDescriptorMirrorUpdateFromStamped(SqlWriter writer, string descriptorTable)
+    {
+        writer.Append("UPDATE ");
+        writer.Append(descriptorTable);
+        writer.AppendLine(" r");
+        writer.Append("SET ");
+        writer.Append(Quote("ContentVersion"));
+        writer.Append(" = stamped.");
+        writer.Append(Quote("ContentVersion"));
+        writer.Append(", ");
+        writer.Append(Quote("ContentLastModifiedAt"));
+        writer.Append(" = stamped.");
+        writer.Append(Quote("ContentLastModifiedAt"));
+        writer.AppendLine();
+        writer.AppendLine("FROM stamped");
+        writer.Append("WHERE r.");
+        writer.Append(Quote("DocumentId"));
+        writer.Append(" = stamped.");
+        writer.Append(Quote("DocumentId"));
+        writer.AppendLine(";");
+    }
+
     /// <summary>
-    /// Emits the SQL Server descriptor stamping trigger. INSERT rows are included
-    /// because they have no <c>deleted</c> counterpart; UPDATE rows still flow through
-    /// the null-safe per-column diff predicates across every stored descriptor column,
-    /// so no-op UPDATEs produce no CTE rows and the downstream stamp/mirror updates
-    /// stamp nothing.
+    /// Emits the SQL Server descriptor stamping trigger. INSERT rows copy the
+    /// <c>dms.Document</c> defaults into the descriptor mirror; UPDATE rows flow
+    /// through the null-safe per-column diff predicates across every stored descriptor
+    /// column, so no-op UPDATEs produce no CTE rows and the downstream stamp/mirror
+    /// updates stamp nothing.
     /// </summary>
     private void EmitMssqlDescriptorStampingTrigger(SqlWriter writer)
     {
@@ -950,6 +984,24 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
             }
             writer.AppendLine(");");
+            writer.AppendLine(
+                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])"
+            );
+            writer.AppendLine("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+            writer.Append("FROM ");
+            writer.Append(documentTable);
+            writer.AppendLine(" d");
+            writer.Append("INNER JOIN inserted i ON d.");
+            writer.Append(quotedKeyColumn);
+            writer.Append(" = i.");
+            writer.AppendLine(quotedKeyColumn);
+            writer.Append("LEFT JOIN deleted del ON del.");
+            writer.Append(quotedKeyColumn);
+            writer.Append(" = i.");
+            writer.AppendLine(quotedKeyColumn);
+            writer.Append("WHERE del.");
+            writer.Append(quotedKeyColumn);
+            writer.AppendLine(" IS NULL;");
             writer.AppendLine(";WITH affectedDocs AS (");
             using (writer.Indent())
             {
@@ -962,8 +1014,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine(quotedKeyColumn);
                 writer.Append("WHERE del.");
                 writer.Append(quotedKeyColumn);
-                writer.Append(" IS NULL OR ");
+                writer.Append(" IS NOT NULL AND (");
                 EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
+                writer.Append(")");
                 writer.AppendLine();
             }
             writer.AppendLine(")");

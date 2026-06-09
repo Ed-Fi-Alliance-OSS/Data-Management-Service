@@ -889,36 +889,23 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_capture_root_insert_and_update_stamps_with_returning_and_assign_new_mirror_columns()
+    public void It_should_copy_existing_document_stamps_for_root_inserts()
     {
-        var stampBranch = ExtractPlpgsqlBlock(
+        var insertBranch = ExtractPlpgsqlSegment(
             GetRootStampFunctionBody(),
-            "IF TG_OP IN ('INSERT', 'UPDATE') THEN"
+            "IF TG_OP = 'INSERT' THEN",
+            "ELSIF TG_OP = 'UPDATE' THEN"
         );
 
-        var returningStart = stampBranch.IndexOf(
-            "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
-            StringComparison.Ordinal
-        );
-        var intoStart = stampBranch.IndexOf(
-            "INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt",
-            StringComparison.Ordinal
-        );
-        var contentVersionAssignmentStart = stampBranch.IndexOf(
-            "NEW.\"ContentVersion\" := _stampedContentVersion;",
-            StringComparison.Ordinal
-        );
-        var contentLastModifiedAssignmentStart = stampBranch.IndexOf(
-            "NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;",
-            StringComparison.Ordinal
-        );
-
-        returningStart.Should().BeGreaterOrEqualTo(0);
-        intoStart.Should().BeGreaterThan(returningStart);
-        contentVersionAssignmentStart.Should().BeGreaterThan(intoStart);
-        contentLastModifiedAssignmentStart.Should().BeGreaterThan(contentVersionAssignmentStart);
-        stampBranch.Should().NotContain("UPDATE \"edfi\".\"School\" r");
-        stampBranch.Should().NotContain("ELSIF TG_OP = 'UPDATE'");
+        insertBranch.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        insertBranch.Should().Contain("FROM \"dms\".\"Document\"");
+        insertBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+        insertBranch
+            .Should()
+            .Contain("INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt");
+        insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
+        insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
+        insertBranch.Should().NotContain("nextval");
     }
 
     [Test]
@@ -957,23 +944,19 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_assign_captured_document_stamps_for_root_inserts_and_updates()
+    public void It_should_allocate_document_stamps_for_root_updates()
     {
-        var rootStampGuardIndex = _ddl.IndexOf(
-            "IF TG_OP IN ('INSERT', 'UPDATE') THEN",
-            StringComparison.Ordinal
-        );
-        var rootContentStampIndex = _ddl.IndexOf(
-            "WHERE \"DocumentId\" = NEW.\"DocumentId\";",
-            StringComparison.Ordinal
-        );
+        var updateBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "ELSIF TG_OP = 'UPDATE' THEN");
 
-        rootStampGuardIndex.Should().BeGreaterOrEqualTo(0);
-        rootContentStampIndex.Should().BeGreaterThan(rootStampGuardIndex);
-        _ddl.Should()
+        updateBranch.Should().Contain("UPDATE \"dms\".\"Document\"");
+        updateBranch
+            .Should()
             .Contain(
                 "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
             );
+        updateBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+        updateBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
+        updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
     }
 
     [Test]
@@ -1157,6 +1140,23 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
 
         return functionBody.Substring(blockStart, blockEnd - blockStart + "END IF;".Length);
     }
+
+    private static string ExtractPlpgsqlSegment(string functionBody, string marker, string endMarker)
+    {
+        var segmentStart = functionBody.IndexOf(marker, StringComparison.Ordinal);
+        segmentStart
+            .Should()
+            .BeGreaterOrEqualTo(
+                0,
+                "the root stamp function must have a branch that captures stamps for {0}",
+                marker
+            );
+
+        var segmentEnd = functionBody.IndexOf(endMarker, segmentStart, StringComparison.Ordinal);
+        segmentEnd.Should().BeGreaterThan(segmentStart);
+
+        return functionBody.Substring(segmentStart, segmentEnd - segmentStart);
+    }
 }
 
 [TestFixture]
@@ -1306,6 +1306,21 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
+    public void It_should_copy_existing_document_stamps_for_root_inserts()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        triggerBody
+            .Should()
+            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
+        triggerBody.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+        triggerBody.Should().Contain("FROM [dms].[Document] d");
+        triggerBody.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
+        triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        triggerBody.Should().Contain("WHERE del.[DocumentId] IS NULL;");
+    }
+
+    [Test]
     public void It_should_not_allocate_a_second_sequence_value_when_mirroring()
     {
         var mirrorUpdate = ExtractMirrorUpdateStatement(GetSchoolStampTriggerBody());
@@ -1318,6 +1333,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     {
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
         _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
         _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[CollectionItemId] = i.[CollectionItemId]");
@@ -1359,7 +1375,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     {
         _ddl.Should()
             .Contain(
-                "WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))"
+                "WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)))"
             );
         _ddl.Should()
             .Contain(

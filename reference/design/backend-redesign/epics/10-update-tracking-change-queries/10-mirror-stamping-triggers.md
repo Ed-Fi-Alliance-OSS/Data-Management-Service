@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1173
 
 Extend every `DbTriggerKind.DocumentStamping` trigger renderer so the stamped `dms.Document` values are captured once and copied to the trigger's `MirrorStampTargetTable`.
 
-The trigger must allocate exactly one `dms.ChangeVersionSequence` value per affected document, write that value to `dms.Document.ContentVersion`, and then mirror the same value to the concrete root table or `dms.Descriptor`. It must not call the sequence a second time for the mirror update.
+For representation-changing updates and deletes, the trigger must allocate exactly one `dms.ChangeVersionSequence` value per affected document, write that value to `dms.Document.ContentVersion`, and then mirror the same value to the concrete root table or `dms.Descriptor`. Root-resource and descriptor inserts must copy the existing `dms.Document.ContentVersion` initialized by `dms.Document` defaults instead of allocating another content version. No mirror update may call the sequence a second time for the same document.
 
 The trigger's affected-document detection must also ignore updates whose only differences are stamp columns. This prevents mirror updates from causing recursive or redundant stamp activity.
 
@@ -17,10 +17,10 @@ Known PostgreSQL follow-up: this story keeps PostgreSQL child / `_ext` `Document
 
 ## Acceptance Criteria
 
-- PostgreSQL trigger functions capture stamped `DocumentId`, `ContentVersion`, and `ContentLastModifiedAt` values from the `dms.Document` update using `RETURNING`.
-- SQL Server triggers capture the same values using `OUTPUT`.
+- PostgreSQL trigger functions capture update/delete `DocumentId`, `ContentVersion`, and `ContentLastModifiedAt` values from the `dms.Document` update using `RETURNING`; root/descriptor insert trigger paths read the existing `dms.Document` stamp values.
+- SQL Server triggers capture update/delete values using `OUTPUT`; root/descriptor insert trigger paths insert the existing `dms.Document` stamp values into the same stamped workset.
 - Trigger renderers update `DbTriggerInfo.MirrorStampTargetTable` with the captured stamp values.
-- The mirror update uses the same `ContentVersion` and `ContentLastModifiedAt` written to `dms.Document`.
+- The mirror update uses the same `ContentVersion` and `ContentLastModifiedAt` stored on `dms.Document`.
 - The trigger does not allocate a second sequence value for the mirror.
 - The affected-document workset excludes rows whose only old/new differences are `ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, or `IdentityLastModifiedAt`.
 - Inserts, updates, identity changes, child writes, `_ext` writes, FK-cascade updates, extension-project resource writes, and descriptor writes leave the mirror equal to `dms.Document`.

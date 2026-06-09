@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
-    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
@@ -412,16 +412,28 @@ BEGIN
             RETURN NEW;
         END IF;
     END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-    )
-    UPDATE "dms"."Descriptor" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-    FROM stamped
-    WHERE r."DocumentId" = stamped."DocumentId";
+    IF TG_OP = 'INSERT' THEN
+        WITH stamped AS (
+            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+            FROM "dms"."Document"
+            WHERE "DocumentId" = NEW."DocumentId"
+        )
+        UPDATE "dms"."Descriptor" r
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        FROM stamped
+        WHERE r."DocumentId" = stamped."DocumentId";
+    ELSIF TG_OP = 'UPDATE' THEN
+        WITH stamped AS (
+            UPDATE "dms"."Document"
+            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+            WHERE "DocumentId" = NEW."DocumentId"
+            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        )
+        UPDATE "dms"."Descriptor" r
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        FROM stamped
+        WHERE r."DocumentId" = stamped."DocumentId";
+    END IF;
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -440,7 +452,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationId" integer NOT NULL,
     "LocalEducationAgencyId" integer NOT NULL,
     CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId"),
@@ -451,7 +463,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationId" integer NOT NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
@@ -649,7 +661,14 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId" OR OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    IF TG_OP = 'INSERT' THEN
+        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        FROM "dms"."Document"
+        WHERE "DocumentId" = NEW."DocumentId";
+        NEW."ContentVersion" := _stampedContentVersion;
+        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+    ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
@@ -761,7 +780,14 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    IF TG_OP = 'INSERT' THEN
+        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        FROM "dms"."Document"
+        WHERE "DocumentId" = NEW."DocumentId";
+        NEW."ContentVersion" := _stampedContentVersion;
+        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+    ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"

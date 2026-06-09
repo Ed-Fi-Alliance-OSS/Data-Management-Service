@@ -142,7 +142,7 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
-    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
@@ -398,11 +398,17 @@ BEGIN
         [ContentVersion] bigint NOT NULL,
         [ContentLastModifiedAt] datetime2(7) NOT NULL
     );
+    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
+    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL;
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL))
+        WHERE del.[DocumentId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -427,7 +433,7 @@ CREATE TABLE [edfi].[NamingStressItem]
 (
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_NamingStressItem_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_NamingStressItem_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_NamingStressItem_ContentVersion] DEFAULT 0,
     [NamingStressItemId] int NOT NULL,
     [Order] int NULL,
     [ShortName] nvarchar(60) NULL,
@@ -510,11 +516,17 @@ BEGIN
         [ContentVersion] bigint NOT NULL,
         [ContentLastModifiedAt] datetime2(7) NOT NULL
     );
+    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
+    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL;
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[NamingStressItemId] <> del.[NamingStressItemId] OR (i.[NamingStressItemId] IS NULL AND del.[NamingStressItemId] IS NOT NULL) OR (i.[NamingStressItemId] IS NOT NULL AND del.[NamingStressItemId] IS NULL)) OR (i.[Order] <> del.[Order] OR (i.[Order] IS NULL AND del.[Order] IS NOT NULL) OR (i.[Order] IS NOT NULL AND del.[Order] IS NULL)) OR (CAST(i.[ShortName] AS varbinary(max)) <> CAST(del.[ShortName] AS varbinary(max)) OR (i.[ShortName] IS NULL AND del.[ShortName] IS NOT NULL) OR (i.[ShortName] IS NOT NULL AND del.[ShortName] IS NULL)) OR (CAST(i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] AS varbinary(max)) <> CAST(del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] AS varbinary(max)) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NOT NULL) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NOT NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NULL)) OR (CAST(i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] AS varbinary(max)) <> CAST(del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] AS varbinary(max)) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NOT NULL) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NOT NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NULL)) OR (CAST(i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] AS varbinary(max)) <> CAST(del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] AS varbinary(max)) OR (i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NULL AND del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NOT NULL) OR (i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NOT NULL AND del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NULL))
+        WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[NamingStressItemId] <> del.[NamingStressItemId] OR (i.[NamingStressItemId] IS NULL AND del.[NamingStressItemId] IS NOT NULL) OR (i.[NamingStressItemId] IS NOT NULL AND del.[NamingStressItemId] IS NULL)) OR (i.[Order] <> del.[Order] OR (i.[Order] IS NULL AND del.[Order] IS NOT NULL) OR (i.[Order] IS NOT NULL AND del.[Order] IS NULL)) OR (CAST(i.[ShortName] AS varbinary(max)) <> CAST(del.[ShortName] AS varbinary(max)) OR (i.[ShortName] IS NULL AND del.[ShortName] IS NOT NULL) OR (i.[ShortName] IS NOT NULL AND del.[ShortName] IS NULL)) OR (CAST(i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] AS varbinary(max)) <> CAST(del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] AS varbinary(max)) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NOT NULL) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NOT NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree] IS NULL)) OR (CAST(i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] AS varbinary(max)) <> CAST(del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] AS varbinary(max)) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NOT NULL) OR (i.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NOT NULL AND del.[ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX] IS NULL)) OR (CAST(i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] AS varbinary(max)) <> CAST(del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] AS varbinary(max)) OR (i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NULL AND del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NOT NULL) OR (i.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NOT NULL AND del.[VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL] IS NULL)))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del

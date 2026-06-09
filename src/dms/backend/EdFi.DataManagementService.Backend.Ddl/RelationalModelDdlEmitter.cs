@@ -456,7 +456,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Resolves the named default constraint for a synthesized change-version mirror column:
-    /// <c>ContentVersion</c> defaults to the next <c>dms.ChangeVersionSequence</c> value and
+    /// <c>ContentVersion</c> defaults to a non-null sentinel and
     /// <c>ContentLastModifiedAt</c> defaults to the current UTC timestamp. Both use a
     /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by PostgreSQL),
     /// matching the <c>dms.Document</c> convention. The trigger overwrites these defaults at write time.
@@ -472,10 +472,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             case ColumnKind.MirroredContentVersion:
                 constraintName = BuildMirrorDefaultConstraintName(table, column);
-                defaultExpression = _dialect.RenderSequenceDefaultExpression(
-                    DmsTableNames.DmsSchema,
-                    DmsTableNames.ChangeVersionSequence
-                );
+                defaultExpression = "0";
                 return true;
             case ColumnKind.MirroredContentLastModifiedAt:
                 constraintName = BuildMirrorDefaultConstraintName(table, column);
@@ -1089,7 +1086,18 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Root-document INSERTs and changed UPDATEs capture the dms.Document stamp and mirror the same values into NEW.
         if (isRootDocumentStampingTrigger)
         {
-            writer.AppendLine("IF TG_OP IN ('INSERT', 'UPDATE') THEN");
+            writer.AppendLine("IF TG_OP = 'INSERT' THEN");
+            using (writer.Indent())
+            {
+                EmitPgsqlExistingDocumentContentStampRead(
+                    writer,
+                    documentTable,
+                    keyColumn,
+                    "NEW",
+                    assignToNewMirrorColumns: true
+                );
+            }
+            writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
             {
                 EmitPgsqlDocumentContentStampUpdate(
@@ -1149,6 +1157,43 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             }
 
             writer.AppendLine("END IF;");
+        }
+    }
+
+    private void EmitPgsqlExistingDocumentContentStampRead(
+        SqlWriter writer,
+        string documentTable,
+        DbColumnName keyColumn,
+        string sourceRowAlias,
+        bool assignToNewMirrorColumns
+    )
+    {
+        writer.Append("SELECT ");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(", ");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.Append(", ");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.AppendLine();
+        writer.AppendLine("INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt");
+        writer.Append("FROM ");
+        writer.AppendLine(documentTable);
+        writer.Append("WHERE ");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = ");
+        writer.Append(sourceRowAlias);
+        writer.Append(".");
+        writer.Append(Quote(keyColumn));
+        writer.AppendLine(";");
+
+        if (assignToNewMirrorColumns)
+        {
+            writer.Append("NEW.");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.AppendLine(" := _stampedContentVersion;");
+            writer.Append("NEW.");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(" := _stampedContentLastModifiedAt;");
         }
     }
 
@@ -1267,6 +1312,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var quotedKeyColumn = Quote(keyColumn);
         var quotedProbeKeyColumn = Quote(tableKeyColumns[0]);
         var mirrorStampTarget = Quote(mirrorStampTargetTable);
+        var isRootDocumentStampingTrigger = IsRootDocumentStampingTrigger(
+            trigger,
+            tableModel,
+            mirrorStampTargetTable
+        );
 
         writer.AppendLine("DECLARE @stamped TABLE (");
         using (writer.Indent())
@@ -1276,6 +1326,32 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
         }
         writer.AppendLine(");");
+
+        if (isRootDocumentStampingTrigger)
+        {
+            writer.AppendLine(
+                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])"
+            );
+            writer.Append("SELECT d.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(", d.");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(", d.");
+            writer.AppendLine(Quote(ContentLastModifiedAtColumn));
+            writer.Append("FROM ");
+            writer.Append(documentTable);
+            writer.AppendLine(" d");
+            writer.Append("INNER JOIN inserted i ON d.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = i.");
+            writer.AppendLine(quotedKeyColumn);
+            writer.Append("LEFT JOIN deleted del ON ");
+            EmitMssqlJoinConjunction(writer, "del", "i", tableKeyColumns);
+            writer.AppendLine();
+            writer.Append("WHERE del.");
+            writer.Append(quotedProbeKeyColumn);
+            writer.AppendLine(" IS NULL;");
+        }
 
         // ContentVersion stamp - compute the set of affected documents from inserted/deleted
         // rows that are inserts, deletes, or actual value changes. No-op UPDATEs are excluded.
@@ -1290,8 +1366,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine();
             writer.Append("WHERE del.");
             writer.Append(quotedProbeKeyColumn);
-            writer.Append(" IS NULL OR ");
-            EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+            if (isRootDocumentStampingTrigger)
+            {
+                writer.Append(" IS NOT NULL AND (");
+                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                writer.Append(")");
+            }
+            else
+            {
+                writer.Append(" IS NULL OR ");
+                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+            }
             writer.AppendLine();
             writer.AppendLine("UNION");
             writer.Append("SELECT del.");

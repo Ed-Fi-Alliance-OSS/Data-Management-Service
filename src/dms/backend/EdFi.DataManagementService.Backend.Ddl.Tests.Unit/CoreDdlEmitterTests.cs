@@ -238,6 +238,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_default_descriptor_content_version_to_zero()
+    {
+        _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT 0");
+    }
+
+    [Test]
     public void It_should_create_document_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"");
@@ -590,12 +596,26 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_stamp_document_from_descriptor_trigger()
+    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
     {
+        _ddl.Should().Contain("IF TG_OP = 'INSERT' THEN");
+        _ddl.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("FROM \"dms\".\"Document\"");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
+        _ddl.Should()
+            .Contain(
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+            );
+    }
+
+    [Test]
+    public void It_should_allocate_document_stamps_for_descriptor_updates()
+    {
+        _ddl.Should().Contain("ELSIF TG_OP = 'UPDATE' THEN");
         _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
         _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
     }
 
     [Test]
@@ -905,6 +925,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime())");
     }
 
+    [Test]
+    public void It_should_default_descriptor_content_version_to_zero()
+    {
+        _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0");
+    }
+
     // ── MSSQL named default constraints ─────────────────────────────
 
     [Test]
@@ -1113,13 +1139,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_emit_affected_docs_cte_in_descriptor_stamping_trigger()
     {
-        // INSERT rows have no deleted counterpart and must still be stamped.
+        // INSERT rows have no deleted counterpart and copy the dms.Document default stamps.
         // UPDATE rows keep the null-safe diff predicate so no-op updates produce
         // no affected docs, including the recursive mirror-only UPDATE.
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("FROM inserted i");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
-        _ddl.Should().Contain("WHERE del.[DocumentId] IS NULL OR ");
+        _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
         _ddl.Should().NotContain("LEFT JOIN inserted");
     }
 
@@ -1155,6 +1181,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
+    }
+
+    [Test]
+    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
+    {
+        _ddl.Should()
+            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
+        _ddl.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+        _ddl.Should().Contain("FROM [dms].[Document] d");
+        _ddl.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("WHERE del.[DocumentId] IS NULL;");
     }
 
     [Test]

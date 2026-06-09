@@ -112,11 +112,17 @@ BEGIN
         [ContentVersion] bigint NOT NULL,
         [ContentLastModifiedAt] datetime2(7) NOT NULL
     );
+    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
+    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL;
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+        WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
