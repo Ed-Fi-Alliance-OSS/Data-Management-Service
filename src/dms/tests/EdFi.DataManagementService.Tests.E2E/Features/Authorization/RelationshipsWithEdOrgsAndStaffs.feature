@@ -81,6 +81,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
 
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
@@ -110,19 +112,17 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "programAssignmentDescriptor": "uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education"
                   }
                   """
-             Then it should respond with 403
+             Then it should respond with 400
               And the response body is
                   """
                       {
-                          "detail": "Access to the resource could not be authorized.",
-                          "type": "urn:ed-fi:api:security:authorization:",
-                          "title": "Authorization Denied",
-                          "status": 403,
-                          "correlationId": "0HNCJPIJKHR7K:0000001A",
+                          "detail": "Identifying values for the StaffSchoolAssociation resource cannot be changed. Delete and recreate the resource item instead.",
+                          "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                          "title": "Key Change Not Supported",
+                          "status": 400,
+                          "correlationId": null,
                           "validationErrors": {},
-                          "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901', '25590100100000') and the resource item's StaffUniqueId value."
-                          ]
+                          "errors": []
                       }
                   """
 
@@ -424,6 +424,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 15 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
@@ -453,19 +455,17 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "programAssignmentDescriptor": "uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education"
                   }
                   """
-             Then it should respond with 403
+             Then it should respond with 400
               And the response body is
                   """
                       {
-                          "detail": "Access to the resource could not be authorized.",
-                          "type": "urn:ed-fi:api:security:authorization:",
-                          "title": "Authorization Denied",
-                          "status": 403,
-                          "correlationId": "0HNCJPIJKHR7K:0000001A",
+                          "detail": "Identifying values for the StaffSchoolAssociation resource cannot be changed. Delete and recreate the resource item instead.",
+                          "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                          "title": "Key Change Not Supported",
+                          "status": 400,
+                          "correlationId": null,
                           "validationErrors": {},
-                          "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901', '25590100100000') and the resource item's StaffUniqueId value."
-                          ]
+                          "errors": []
                       }
                   """
 

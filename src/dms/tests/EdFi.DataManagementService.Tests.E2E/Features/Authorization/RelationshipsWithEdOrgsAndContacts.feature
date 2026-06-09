@@ -716,6 +716,8 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 20 Ensure client should get 403 When associating a nonexistent student
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -739,20 +741,18 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      "emergencyContactStatus": true
                   }
                   """
-             Then it should respond with 403
-              And the response body is
-                  """
-                    {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                      "type": "urn:ed-fi:api:security:authorization:",
-                      "title": "Authorization Denied",
-                      "status": 403,
-                      "validationErrors": {},
-                      "errors": [
-                            "No relationships have been established between the caller's education organization id claims ('255901901', '25590190200000') and the resource item's StudentUniqueId value."
-                          ]
-                    }
-                  """
+	             Then it should respond with 403
+	              And the response body is
+	                  """
+	                    {
+	                      "detail": "Access to the requested data could not be authorized. The 'StudentUniqueId' value is required for authorization purposes. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+	                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+	                      "title": "Authorization Denied",
+	                      "status": 403,
+	                      "validationErrors": {},
+	                      "errors": []
+	                    }
+	                  """
 
     Rule: Associate more than one students with a contact
 

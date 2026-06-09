@@ -171,7 +171,7 @@
       "From the repository root, run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-4' for the newly enabled UpdateReferenceValidation scenarios, or use the updated shard tag if the feature file convention changes during implementation.",
       "If the E2E run fails before issuing API requests, inspect dms-local Docker logs and the stack environment before classifying the result."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Final validation",
