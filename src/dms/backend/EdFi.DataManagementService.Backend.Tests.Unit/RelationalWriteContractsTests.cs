@@ -78,6 +78,20 @@ public class Given_RelationalWriteContracts
     }
 
     [Test]
+    public void It_defaults_missing_document_reference_precedence_opt_in_to_false()
+    {
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            _fixture.ResourceWritePlan,
+            _fixture.SelectedBody,
+            _fixture.ResolvedReferences
+        );
+
+        flatteningInput.AllowMissingDocumentReferencesForPrecedence.Should().BeFalse();
+    }
+
+    [Test]
     public void It_keeps_collection_aligned_extension_scope_rows_attached_to_the_owning_collection_candidate()
     {
         var addressCollectionItemId = NewCollectionItemId();

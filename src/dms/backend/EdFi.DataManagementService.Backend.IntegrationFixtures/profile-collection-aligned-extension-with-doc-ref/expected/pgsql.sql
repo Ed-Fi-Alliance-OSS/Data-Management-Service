@@ -489,7 +489,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Sponsor"
     "SponsorName" varchar(30) NOT NULL,
     CONSTRAINT "PK_Sponsor" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Sponsor_NK" UNIQUE ("SponsorName"),
-    CONSTRAINT "UX_Sponsor_RefKey" UNIQUE ("DocumentId", "SponsorName")
+    CONSTRAINT "UX_Sponsor_RefKey" UNIQUE ("SponsorName", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."ParentResource"
@@ -573,8 +573,8 @@ BEGIN
     THEN
         ALTER TABLE "aligned"."ParentResourceExtensionParent"
         ADD CONSTRAINT "FK_ParentResourceExtensionParent_Sponsor_RefKey"
-        FOREIGN KEY ("Sponsor_DocumentId", "Sponsor_SponsorName")
-        REFERENCES "edfi"."Sponsor" ("DocumentId", "SponsorName")
+        FOREIGN KEY ("Sponsor_SponsorName", "Sponsor_DocumentId")
+        REFERENCES "edfi"."Sponsor" ("SponsorName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -599,7 +599,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParent_BaseCollectionItemI_cb97dc7774" ON "aligned"."ParentResourceExtensionParent" ("BaseCollectionItemId", "ParentResource_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParent_Sponsor_DocumentId__1ec37ce0d8" ON "aligned"."ParentResourceExtensionParent" ("Sponsor_DocumentId", "Sponsor_SponsorName");
+CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParent_Sponsor_SponsorName_051c973a24" ON "aligned"."ParentResourceExtensionParent" ("Sponsor_SponsorName", "Sponsor_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
 

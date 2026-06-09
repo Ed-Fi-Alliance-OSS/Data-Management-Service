@@ -80,8 +80,8 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
-        "ProgramName"
+        "ProgramName",
+        "DocumentId"
       ]
     },
     {
@@ -273,7 +273,7 @@
       ]
     },
     {
-      "name": "IX_SchoolExtensionAddressSponsorReference_Program_DocumentId_Program_ProgramName",
+      "name": "IX_SchoolExtensionAddressSponsorReference_Program_ProgramName_Program_DocumentId",
       "table": {
         "schema": "sample",
         "name": "SchoolExtensionAddressSponsorReference"
@@ -281,8 +281,8 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
-        "Program_DocumentId",
-        "Program_ProgramName"
+        "Program_ProgramName",
+        "Program_DocumentId"
       ]
     },
     {
@@ -862,8 +862,8 @@
               "kind": "Unique",
               "name": "UX_Program_RefKey",
               "columns": [
-                "DocumentId",
-                "ProgramName"
+                "ProgramName",
+                "DocumentId"
               ]
             },
             {
@@ -1541,16 +1541,16 @@
               "kind": "ForeignKey",
               "name": "FK_SchoolExtensionAddressSponsorReference_Program_RefKey",
               "columns": [
-                "Program_DocumentId",
-                "Program_ProgramName"
+                "Program_ProgramName",
+                "Program_DocumentId"
               ],
               "target_table": {
                 "schema": "edfi",
                 "name": "Program"
               },
               "target_columns": [
-                "DocumentId",
-                "ProgramName"
+                "ProgramName",
+                "DocumentId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"

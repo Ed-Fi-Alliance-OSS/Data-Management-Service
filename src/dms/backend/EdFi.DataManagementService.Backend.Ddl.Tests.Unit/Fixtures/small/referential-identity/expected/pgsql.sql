@@ -466,7 +466,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
     "DecimalKey" numeric(9,2) NOT NULL,
     CONSTRAINT "PK_DecimalKeyResource" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_DecimalKeyResource_NK" UNIQUE ("DecimalKey"),
-    CONSTRAINT "UX_DecimalKeyResource_RefKey" UNIQUE ("DocumentId", "DecimalKey")
+    CONSTRAINT "UX_DecimalKeyResource_RefKey" UNIQUE ("DecimalKey", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
@@ -506,7 +506,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
     "EdOrgDependentResourceId" varchar(64) NOT NULL,
     CONSTRAINT "PK_EdOrgDependentResource" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EdOrgDependentResource_NK" UNIQUE ("EdOrgDependentResourceId", "EducationOrganization_DocumentId"),
-    CONSTRAINT "UX_EdOrgDependentResource_RefKey" UNIQUE ("DocumentId", "EdOrgDependentResourceId", "EducationOrganization_EducationOrganizationId"),
+    CONSTRAINT "UX_EdOrgDependentResource_RefKey" UNIQUE ("EdOrgDependentResourceId", "EducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_EdOrgDependentResource_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -539,7 +539,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
     "ResourceAId" varchar(64) NOT NULL,
     CONSTRAINT "PK_ResourceA" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ResourceA_NK" UNIQUE ("ResourceAId", "StudentReference_DocumentId"),
-    CONSTRAINT "UX_ResourceA_RefKey" UNIQUE ("DocumentId", "ResourceAId", "StudentReference_StudentUniqueId"),
+    CONSTRAINT "UX_ResourceA_RefKey" UNIQUE ("ResourceAId", "StudentReference_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_ResourceA_StudentReference_AllNone" CHECK (("StudentReference_DocumentId" IS NULL AND "StudentReference_StudentUniqueId" IS NULL) OR ("StudentReference_DocumentId" IS NOT NULL AND "StudentReference_StudentUniqueId" IS NOT NULL))
 );
 
@@ -553,7 +553,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
     "ResourceBId" varchar(64) NOT NULL,
     CONSTRAINT "PK_ResourceB" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ResourceB_NK" UNIQUE ("ResourceBId", "StudentReference_DocumentId"),
-    CONSTRAINT "UX_ResourceB_RefKey" UNIQUE ("DocumentId", "ResourceBId", "StudentReference_StudentUniqueId"),
+    CONSTRAINT "UX_ResourceB_RefKey" UNIQUE ("ResourceBId", "StudentReference_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_ResourceB_StudentReference_AllNone" CHECK (("StudentReference_DocumentId" IS NULL AND "StudentReference_StudentUniqueId" IS NULL) OR ("StudentReference_DocumentId" IS NOT NULL AND "StudentReference_StudentUniqueId" IS NOT NULL))
 );
 
@@ -567,7 +567,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId"),
-    CONSTRAINT "UX_School_RefKey" UNIQUE ("DocumentId", "SchoolId")
+    CONSTRAINT "UX_School_RefKey" UNIQUE ("SchoolId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
@@ -579,7 +579,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId"),
-    CONSTRAINT "UX_Student_RefKey" UNIQUE ("DocumentId", "StudentUniqueId")
+    CONSTRAINT "UX_Student_RefKey" UNIQUE ("StudentUniqueId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
@@ -739,7 +739,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationIdentity_NK" UNIQUE ("EducationOrganizationId"),
-    CONSTRAINT "UX_EducationOrganizationIdentity_RefKey" UNIQUE ("DocumentId", "EducationOrganizationId")
+    CONSTRAINT "UX_EducationOrganizationIdentity_RefKey" UNIQUE ("EducationOrganizationId", "DocumentId")
 );
 
 DO $$
@@ -786,8 +786,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."DecimalRefResource"
         ADD CONSTRAINT "FK_DecimalRefResource_DecimalKeyReference_RefKey"
-        FOREIGN KEY ("DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey")
-        REFERENCES "edfi"."DecimalKeyResource" ("DocumentId", "DecimalKey")
+        FOREIGN KEY ("DecimalKeyReference_DecimalKey", "DecimalKeyReference_DocumentId")
+        REFERENCES "edfi"."DecimalKeyResource" ("DecimalKey", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -831,14 +831,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EdOrgDependentChildResource_EdOrgDependentResourc_ff9296b2cd'
+        WHERE conname = 'FK_EdOrgDependentChildResource_EdOrgDependentResourc_6a74c7e5ff'
         AND conrelid = to_regclass('"edfi"."EdOrgDependentChildResource"')
     )
     THEN
         ALTER TABLE "edfi"."EdOrgDependentChildResource"
-        ADD CONSTRAINT "FK_EdOrgDependentChildResource_EdOrgDependentResourc_ff9296b2cd"
-        FOREIGN KEY ("EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId")
-        REFERENCES "edfi"."EdOrgDependentResource" ("DocumentId", "EdOrgDependentResourceId", "EducationOrganization_EducationOrganizationId")
+        ADD CONSTRAINT "FK_EdOrgDependentChildResource_EdOrgDependentResourc_6a74c7e5ff"
+        FOREIGN KEY ("EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId", "EdOrgDependentResourceReference_DocumentId")
+        REFERENCES "edfi"."EdOrgDependentResource" ("EdOrgDependentResourceId", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -871,8 +871,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."EdOrgDependentResource"
         ADD CONSTRAINT "FK_EdOrgDependentResource_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -905,8 +905,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."KeyUnifiedResource"
         ADD CONSTRAINT "FK_KeyUnifiedResource_ResourceAReference_RefKey"
-        FOREIGN KEY ("ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "StudentUniqueId_Unified")
-        REFERENCES "edfi"."ResourceA" ("DocumentId", "ResourceAId", "StudentReference_StudentUniqueId")
+        FOREIGN KEY ("ResourceAReference_ResourceAId", "StudentUniqueId_Unified", "ResourceAReference_DocumentId")
+        REFERENCES "edfi"."ResourceA" ("ResourceAId", "StudentReference_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -922,8 +922,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."KeyUnifiedResource"
         ADD CONSTRAINT "FK_KeyUnifiedResource_ResourceBReference_RefKey"
-        FOREIGN KEY ("ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified")
-        REFERENCES "edfi"."ResourceB" ("DocumentId", "ResourceBId", "StudentReference_StudentUniqueId")
+        FOREIGN KEY ("ResourceBReference_ResourceBId", "StudentUniqueId_Unified", "ResourceBReference_DocumentId")
+        REFERENCES "edfi"."ResourceB" ("ResourceBId", "StudentReference_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -956,8 +956,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ResourceA"
         ADD CONSTRAINT "FK_ResourceA_StudentReference_RefKey"
-        FOREIGN KEY ("StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("StudentReference_StudentUniqueId", "StudentReference_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -990,8 +990,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ResourceB"
         ADD CONSTRAINT "FK_ResourceB_StudentReference_RefKey"
-        FOREIGN KEY ("StudentReference_DocumentId", "StudentReference_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("StudentReference_StudentUniqueId", "StudentReference_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -1058,8 +1058,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_SchoolReference_RefKey"
-        FOREIGN KEY ("SchoolReference_DocumentId", "SchoolReference_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("SchoolReference_SchoolId", "SchoolReference_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -1090,29 +1090,29 @@ CREATE INDEX IF NOT EXISTS "IX_DecimalKeyResource_ContentVersion" ON "edfi"."Dec
 
 CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_ContentVersion" ON "edfi"."DecimalRefResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_DecimalKeyReference_DocumentId_1972800496" ON "edfi"."DecimalRefResource" ("DecimalKeyReference_DocumentId", "DecimalKeyReference_DecimalKey");
+CREATE INDEX IF NOT EXISTS "IX_DecimalRefResource_DecimalKeyReference_DecimalKey_d031852f35" ON "edfi"."DecimalRefResource" ("DecimalKeyReference_DecimalKey", "DecimalKeyReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_ContentVersion" ON "edfi"."EdOrgDependentChildResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_EdOrgDependentResourc_42d6c19595" ON "edfi"."EdOrgDependentChildResource" ("EdOrgDependentResourceReference_DocumentId", "EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentChildResource_EdOrgDependentResourc_3459d40e7c" ON "edfi"."EdOrgDependentChildResource" ("EdOrgDependentResourceReference_EdOrgDependentResourceId", "EdOrgDependentResourceReference_EducationOrganizationId", "EdOrgDependentResourceReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_ContentVersion" ON "edfi"."EdOrgDependentResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_EducationOrganization_Docu_abaf527b99" ON "edfi"."EdOrgDependentResource" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_EdOrgDependentResource_EducationOrganization_Educ_18a40a602a" ON "edfi"."EdOrgDependentResource" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ContentVersion" ON "edfi"."KeyUnifiedResource" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceAReference_DocumentId__1b15ae82f2" ON "edfi"."KeyUnifiedResource" ("ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "StudentUniqueId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceAReference_ResourceAId_858ee7fc27" ON "edfi"."KeyUnifiedResource" ("ResourceAReference_ResourceAId", "StudentUniqueId_Unified", "ResourceAReference_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceBReference_DocumentId__9ec2040deb" ON "edfi"."KeyUnifiedResource" ("ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_KeyUnifiedResource_ResourceBReference_ResourceBId_4a44a79720" ON "edfi"."KeyUnifiedResource" ("ResourceBReference_ResourceBId", "StudentUniqueId_Unified", "ResourceBReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceA_ContentVersion" ON "edfi"."ResourceA" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ResourceA_StudentReference_DocumentId_StudentRefe_661e48fb55" ON "edfi"."ResourceA" ("StudentReference_DocumentId", "StudentReference_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_ResourceA_StudentReference_StudentUniqueId_Studen_01f592da4e" ON "edfi"."ResourceA" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ResourceB_ContentVersion" ON "edfi"."ResourceB" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ResourceB_StudentReference_DocumentId_StudentRefe_59f7d306df" ON "edfi"."ResourceB" ("StudentReference_DocumentId", "StudentReference_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_ResourceB_StudentReference_StudentUniqueId_Studen_a5dd41ea49" ON "edfi"."ResourceB" ("StudentReference_StudentUniqueId", "StudentReference_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
@@ -1120,7 +1120,7 @@ CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("Con
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ContentVersion" ON "edfi"."StudentSchoolAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolReference_Document_73243293fa" ON "edfi"."StudentSchoolAssociation" ("SchoolReference_DocumentId", "SchoolReference_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolReference_SchoolId_d4059e9cc0" ON "edfi"."StudentSchoolAssociation" ("SchoolReference_SchoolId", "SchoolReference_DocumentId");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
 SELECT "DocumentId" AS "DocumentId", "SchoolId" AS "EducationOrganizationId", 'Ed-Fi:School'::varchar(256) AS "Discriminator"

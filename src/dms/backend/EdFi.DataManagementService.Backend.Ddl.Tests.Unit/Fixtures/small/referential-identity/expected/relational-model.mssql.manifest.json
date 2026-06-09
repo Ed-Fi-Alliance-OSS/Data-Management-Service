@@ -154,8 +154,8 @@
             "kind": "Unique",
             "name": "UX_EducationOrganizationIdentity_RefKey",
             "columns": [
-              "DocumentId",
-              "EducationOrganizationId"
+              "EducationOrganizationId",
+              "DocumentId"
             ]
           },
           {
@@ -340,8 +340,8 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
-        "DecimalKey"
+        "DecimalKey",
+        "DocumentId"
       ]
     },
     {
@@ -357,7 +357,7 @@
       ]
     },
     {
-      "name": "IX_DecimalRefResource_DecimalKeyReference_DocumentId_DecimalKeyReference_DecimalKey",
+      "name": "IX_DecimalRefResource_DecimalKeyReference_DecimalKey_DecimalKeyReference_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "DecimalRefResource"
@@ -365,8 +365,8 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
-        "DecimalKeyReference_DocumentId",
-        "DecimalKeyReference_DecimalKey"
+        "DecimalKeyReference_DecimalKey",
+        "DecimalKeyReference_DocumentId"
       ]
     },
     {
@@ -501,9 +501,9 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
         "EdOrgDependentResourceId",
-        "EducationOrganization_EducationOrganizationId"
+        "EducationOrganization_EducationOrganizationId",
+        "DocumentId"
       ]
     },
     {
@@ -539,8 +539,8 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
-        "EducationOrganizationId"
+        "EducationOrganizationId",
+        "DocumentId"
       ]
     },
     {
@@ -663,9 +663,9 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
         "ResourceAId",
-        "StudentReference_StudentUniqueId"
+        "StudentReference_StudentUniqueId",
+        "DocumentId"
       ]
     },
     {
@@ -726,9 +726,9 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
         "ResourceBId",
-        "StudentReference_StudentUniqueId"
+        "StudentReference_StudentUniqueId",
+        "DocumentId"
       ]
     },
     {
@@ -776,8 +776,8 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
-        "SchoolId"
+        "SchoolId",
+        "DocumentId"
       ]
     },
     {
@@ -825,8 +825,8 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
-        "StudentUniqueId"
+        "StudentUniqueId",
+        "DocumentId"
       ]
     },
     {
@@ -2760,8 +2760,8 @@
               "kind": "Unique",
               "name": "UX_DecimalKeyResource_RefKey",
               "columns": [
-                "DocumentId",
-                "DecimalKey"
+                "DecimalKey",
+                "DocumentId"
               ]
             },
             {
@@ -2915,16 +2915,16 @@
               "kind": "ForeignKey",
               "name": "FK_DecimalRefResource_DecimalKeyReference_RefKey",
               "columns": [
-                "DecimalKeyReference_DocumentId",
-                "DecimalKeyReference_DecimalKey"
+                "DecimalKeyReference_DecimalKey",
+                "DecimalKeyReference_DocumentId"
               ],
               "target_table": {
                 "schema": "edfi",
                 "name": "DecimalKeyResource"
               },
               "target_columns": [
-                "DocumentId",
-                "DecimalKey"
+                "DecimalKey",
+                "DocumentId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -3316,9 +3316,9 @@
               "kind": "Unique",
               "name": "UX_EdOrgDependentResource_RefKey",
               "columns": [
-                "DocumentId",
                 "EdOrgDependentResourceId",
-                "EducationOrganization_EducationOrganizationId"
+                "EducationOrganization_EducationOrganizationId",
+                "DocumentId"
               ]
             },
             {
@@ -3852,9 +3852,9 @@
               "kind": "Unique",
               "name": "UX_ResourceA_RefKey",
               "columns": [
-                "DocumentId",
                 "ResourceAId",
-                "StudentReference_StudentUniqueId"
+                "StudentReference_StudentUniqueId",
+                "DocumentId"
               ]
             },
             {
@@ -4052,9 +4052,9 @@
               "kind": "Unique",
               "name": "UX_ResourceB_RefKey",
               "columns": [
-                "DocumentId",
                 "ResourceBId",
-                "StudentReference_StudentUniqueId"
+                "StudentReference_StudentUniqueId",
+                "DocumentId"
               ]
             },
             {
@@ -4250,8 +4250,8 @@
               "kind": "Unique",
               "name": "UX_School_RefKey",
               "columns": [
-                "DocumentId",
-                "SchoolId"
+                "SchoolId",
+                "DocumentId"
               ]
             },
             {
@@ -4391,8 +4391,8 @@
               "kind": "Unique",
               "name": "UX_Student_RefKey",
               "columns": [
-                "DocumentId",
-                "StudentUniqueId"
+                "StudentUniqueId",
+                "DocumentId"
               ]
             },
             {

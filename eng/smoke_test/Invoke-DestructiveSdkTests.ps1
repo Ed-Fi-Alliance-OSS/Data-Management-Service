@@ -23,7 +23,12 @@ param(
 
   [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
   [string]
-  $SdkNamespace = "EdFi.DmsApi.TestSdk"
+  $SdkNamespace = "EdFi.DmsApi.TestSdk",
+
+  # Optional explicit OAuth token URL; without it the console resolves the token
+  # endpoint from the DMS discovery document
+  [string]
+  $OAuthUrl
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,6 +55,10 @@ $parameters = @{
   TestSet = "DestructiveSdk"
   SdkPath = $sdkDllPath
   SdkNamespace = $SdkNamespace
+}
+
+if ($OAuthUrl) {
+  $parameters.OAuthUrl = $OAuthUrl
 }
 
 Invoke-SmokeTestUtility @parameters

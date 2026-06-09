@@ -188,7 +188,9 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
         }
 
         return foreignKey.TargetColumns.Count == 1
-            && foreignKey.TargetColumns[0].Equals(RelationalNameConventions.DocumentIdColumnName);
+            && foreignKey.TargetColumns.Any(column =>
+                column.Equals(RelationalNameConventions.DocumentIdColumnName)
+            );
     }
 
     /// <summary>

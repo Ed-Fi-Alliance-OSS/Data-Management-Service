@@ -852,6 +852,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | 4255902001                 | Authorized PSI    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"} ] |
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "4255901001, 4255902001"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 32 Ensure client can not update a StudentSchoolAssociation to an unauthorized education organization hierarchy
              When a PUT request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}" with
                   """
@@ -868,6 +870,18 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'SchoolId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
 
         @relational-ci-shard-3
         @relational-backend
@@ -1286,6 +1300,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/courseTranscripts/{id}"
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 39 Ensure client can not create a courseTranscripts with out student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
@@ -1307,17 +1323,17 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                   {
-                  "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                  "type": "urn:ed-fi:api:security:authorization:",
+                  "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'EducationOrganizationId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                  "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
                   "title": "Authorization Denied",
                   "status": 403,
                   "validationErrors": {},
-                  "errors": [
-                    "No relationships have been established between the caller's education organization id claims ('5255901001') and the resource item's StudentUniqueId value."
-                  ]
+                  "errors": []
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 40 Ensure client can not update a courseTranscripts with out student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
@@ -1353,18 +1369,17 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                     }
                     }
                   """
-             Then it should respond with 403
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
-                      "title": "Authorization Denied",
-                      "status": 403,
+                      "detail": "Identifying values for the CourseTranscript resource cannot be changed. Delete and recreate the resource item instead.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                      "title": "Key Change Not Supported",
+                      "status": 400,
+                      "correlationId": null,
                       "validationErrors": {},
-                      "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('5255901001') and the resource item's StudentUniqueId value."
-                      ]
+                      "errors": []
                   }
                   """
 

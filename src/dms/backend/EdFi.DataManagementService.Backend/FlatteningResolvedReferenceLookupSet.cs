@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
@@ -13,6 +14,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 {
     private readonly DocumentReferenceBinding[] _documentReferenceBindings;
     private readonly OrdinalPathMap<ResolvedDocumentReference>?[] _documentReferenceMapsByBindingIndex;
+    private readonly OrdinalPathMap<bool>?[] _deferredMissingDocumentReferenceMapsByBindingIndex;
     private readonly Dictionary<string, IdentityBindingLookup>[] _identityBindingByColumnByBindingIndex;
     private readonly Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> _descriptorIdMapsByKey;
     private readonly Dictionary<string, QualifiedResourceName> _descriptorResourceByPath;
@@ -31,6 +33,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     private FlatteningResolvedReferenceLookupSet(
         DocumentReferenceBinding[] documentReferenceBindings,
         OrdinalPathMap<ResolvedDocumentReference>?[] documentReferenceMapsByBindingIndex,
+        OrdinalPathMap<bool>?[] deferredMissingDocumentReferenceMapsByBindingIndex,
         Dictionary<string, IdentityBindingLookup>[] identityBindingByColumnByBindingIndex,
         Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> descriptorIdMapsByKey,
         Dictionary<string, QualifiedResourceName> descriptorResourceByPath,
@@ -42,6 +45,9 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         _documentReferenceMapsByBindingIndex =
             documentReferenceMapsByBindingIndex
             ?? throw new ArgumentNullException(nameof(documentReferenceMapsByBindingIndex));
+        _deferredMissingDocumentReferenceMapsByBindingIndex =
+            deferredMissingDocumentReferenceMapsByBindingIndex
+            ?? throw new ArgumentNullException(nameof(deferredMissingDocumentReferenceMapsByBindingIndex));
         _identityBindingByColumnByBindingIndex =
             identityBindingByColumnByBindingIndex
             ?? throw new ArgumentNullException(nameof(identityBindingByColumnByBindingIndex));
@@ -54,7 +60,8 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 
     public static FlatteningResolvedReferenceLookupSet Create(
         ResourceWritePlan writePlan,
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence = false
     )
     {
         ArgumentNullException.ThrowIfNull(writePlan);
@@ -120,6 +127,14 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         return new(
             documentReferenceBindings,
             documentReferenceMapsByBindingIndex,
+            BuildDeferredMissingDocumentReferenceMapsByBindingIndex(
+                writePlan,
+                documentReferenceBindings,
+                documentBindingIndexByPath,
+                documentReferenceMapsByBindingIndex,
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence
+            ),
             BuildIdentityBindingByColumnByBindingIndex(documentReferenceBindings),
             descriptorIdMapsByKey,
             BuildDescriptorResourceByPath(writePlan),
@@ -196,6 +211,24 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     public long? GetDocumentId(int bindingIndex, ReadOnlySpan<int> ordinalPath)
     {
         return GetResolvedDocumentReference(bindingIndex, ordinalPath)?.DocumentId;
+    }
+
+    public bool IsDeferredMissingDocumentReference(int bindingIndex, ReadOnlySpan<int> ordinalPath)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(bindingIndex);
+
+        if (bindingIndex >= _deferredMissingDocumentReferenceMapsByBindingIndex.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(bindingIndex),
+                bindingIndex,
+                "Document-reference binding index is out of range."
+            );
+        }
+
+        var ordinalPathMap = _deferredMissingDocumentReferenceMapsByBindingIndex[bindingIndex];
+
+        return ordinalPathMap is not null && ordinalPathMap.TryGet(ordinalPath, out _);
     }
 
     public string? GetReferenceIdentityValue(
@@ -612,6 +645,57 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         }
 
         return identityBindingByColumnByBindingIndex;
+    }
+
+    private static OrdinalPathMap<bool>?[] BuildDeferredMissingDocumentReferenceMapsByBindingIndex(
+        ResourceWritePlan writePlan,
+        IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings,
+        IReadOnlyDictionary<string, int> documentBindingIndexByPath,
+        IReadOnlyList<OrdinalPathMap<ResolvedDocumentReference>?> documentReferenceMapsByBindingIndex,
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence
+    )
+    {
+        var deferredMissingMapsByBindingIndex = new OrdinalPathMap<bool>?[documentReferenceBindings.Count];
+
+        if (!allowMissingDocumentReferencesForPrecedence)
+        {
+            return deferredMissingMapsByBindingIndex;
+        }
+
+        foreach (
+            var failurePath in resolvedReferences
+                .InvalidDocumentReferences.Where(static failure =>
+                    failure.Reason is DocumentReferenceFailureReason.Missing
+                )
+                .Select(static failure => failure.Path)
+        )
+        {
+            var parsedPath = RelationalJsonPathSupport.ParseConcretePath(failurePath);
+
+            if (!documentBindingIndexByPath.TryGetValue(parsedPath.WildcardPath, out var bindingIndex))
+            {
+                throw new InvalidOperationException(
+                    $"Missing document-reference failure path '{failurePath.Value}' did not match any compiled document-reference binding for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}'."
+                );
+            }
+
+            if (
+                documentReferenceMapsByBindingIndex[bindingIndex] is { } resolvedMap
+                && resolvedMap.TryGet(parsedPath.OrdinalPath, out _)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Document-reference occurrence '{failurePath.Value}' was both successfully resolved and marked as a deferred missing reference for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}'."
+                );
+            }
+
+            var ordinalPathMap = deferredMissingMapsByBindingIndex[bindingIndex] ??=
+                new OrdinalPathMap<bool>();
+            ordinalPathMap.Add(parsedPath.OrdinalPath, true);
+        }
+
+        return deferredMissingMapsByBindingIndex;
     }
 
     private static Dictionary<string, QualifiedResourceName> BuildDescriptorResourceByPath(

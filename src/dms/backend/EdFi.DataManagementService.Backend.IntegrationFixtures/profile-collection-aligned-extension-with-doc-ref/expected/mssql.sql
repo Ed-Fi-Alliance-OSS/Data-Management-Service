@@ -475,7 +475,7 @@ CREATE TABLE [edfi].[Sponsor]
     [SponsorName] nvarchar(30) NOT NULL,
     CONSTRAINT [PK_Sponsor] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Sponsor_NK] UNIQUE ([SponsorName]),
-    CONSTRAINT [UX_Sponsor_RefKey] UNIQUE ([DocumentId], [SponsorName])
+    CONSTRAINT [UX_Sponsor_RefKey] UNIQUE ([SponsorName], [DocumentId])
 );
 
 IF OBJECT_ID(N'tracked_changes_edfi.ParentResource', N'U') IS NULL
@@ -539,8 +539,8 @@ IF NOT EXISTS (
 )
 ALTER TABLE [aligned].[ParentResourceExtensionParent]
 ADD CONSTRAINT [FK_ParentResourceExtensionParent_Sponsor_RefKey]
-FOREIGN KEY ([Sponsor_DocumentId], [Sponsor_SponsorName])
-REFERENCES [edfi].[Sponsor] ([DocumentId], [SponsorName])
+FOREIGN KEY ([Sponsor_SponsorName], [Sponsor_DocumentId])
+REFERENCES [edfi].[Sponsor] ([SponsorName], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -567,9 +567,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'aligned' AND t.name = N'ParentResourceExtensionParent' AND i.name = N'IX_ParentResourceExtensionParent_Sponsor_DocumentId_Sponsor_SponsorName'
+    WHERE s.name = N'aligned' AND t.name = N'ParentResourceExtensionParent' AND i.name = N'IX_ParentResourceExtensionParent_Sponsor_SponsorName_Sponsor_DocumentId'
 )
-CREATE INDEX [IX_ParentResourceExtensionParent_Sponsor_DocumentId_Sponsor_SponsorName] ON [aligned].[ParentResourceExtensionParent] ([Sponsor_DocumentId], [Sponsor_SponsorName]);
+CREATE INDEX [IX_ParentResourceExtensionParent_Sponsor_SponsorName_Sponsor_DocumentId] ON [aligned].[ParentResourceExtensionParent] ([Sponsor_SponsorName], [Sponsor_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

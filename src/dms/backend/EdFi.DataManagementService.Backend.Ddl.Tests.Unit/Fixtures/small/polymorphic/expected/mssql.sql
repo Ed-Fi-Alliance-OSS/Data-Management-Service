@@ -492,7 +492,7 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EducationOrganizationIdentity_NK] UNIQUE ([EducationOrganizationId]),
-    CONSTRAINT [UX_EducationOrganizationIdentity_RefKey] UNIQUE ([DocumentId], [EducationOrganizationId])
+    CONSTRAINT [UX_EducationOrganizationIdentity_RefKey] UNIQUE ([EducationOrganizationId], [DocumentId])
 );
 
 IF NOT EXISTS (

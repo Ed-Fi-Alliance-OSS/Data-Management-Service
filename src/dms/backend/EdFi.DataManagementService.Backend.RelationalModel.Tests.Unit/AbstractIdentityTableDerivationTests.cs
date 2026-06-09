@@ -115,7 +115,7 @@ public class Given_Abstract_Identity_Table_Derivation
         uniqueByName["UX_EducationOrganizationIdentity_RefKey"]
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "OrganizationName");
+            .Equal("EducationOrganizationId", "OrganizationName", "DocumentId");
     }
 
     /// <summary>

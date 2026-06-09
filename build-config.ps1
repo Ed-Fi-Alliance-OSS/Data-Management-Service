@@ -213,7 +213,7 @@ function RunTests {
             Invoke-Execute {
                 #Execution with coverage
                 # Threshold need to be defined
-                coverlet $($_) `
+                dotnet tool run coverlet -- $($_) `
                     --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo"`
                     --threshold $thresholdCoverage `
                     --threshold-type line `
@@ -356,7 +356,7 @@ function Invoke-TestExecution {
 }
 
 function Invoke-Coverage {
-    reportgenerator -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
+    dotnet tool run reportgenerator -- -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
 }
 
 function Invoke-BuildPackage {

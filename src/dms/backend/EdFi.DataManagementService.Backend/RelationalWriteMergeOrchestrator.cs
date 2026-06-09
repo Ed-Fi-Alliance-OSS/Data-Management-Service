@@ -32,13 +32,19 @@ internal sealed class RelationalWriteMergeOrchestrator(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetContext targetContext,
         RelationalWriteCurrentState? currentState,
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence = false
     )
     {
         if (request.ProfileWriteContext is null)
         {
             return new RelationalWriteMergeBoundary(
-                ResolveNoProfileMerge(request, currentState, resolvedReferences),
+                ResolveNoProfileMerge(
+                    request,
+                    currentState,
+                    resolvedReferences,
+                    allowMissingDocumentReferencesForPrecedence
+                ),
                 null
             );
         }
@@ -49,7 +55,8 @@ internal sealed class RelationalWriteMergeOrchestrator(
     private RelationalWriteMergeResult ResolveNoProfileMerge(
         RelationalWriteExecutorRequest request,
         RelationalWriteCurrentState? currentState,
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence
     )
     {
         var flattenedWriteSet = _writeFlattener.Flatten(
@@ -68,7 +75,8 @@ internal sealed class RelationalWriteMergeOrchestrator(
                 // distinctly. Enforce that invariant at flatten time so persistence never
                 // sees an ambiguous pair. The profile path enforces the equivalent
                 // invariant on Core-emitted address streams in ProfileWriteContractValidator.
-                validateStorageCollapsedCollectionIdentityUniqueness: true
+                validateStorageCollapsedCollectionIdentityUniqueness: true,
+                allowMissingDocumentReferencesForPrecedence: allowMissingDocumentReferencesForPrecedence
             )
         );
 

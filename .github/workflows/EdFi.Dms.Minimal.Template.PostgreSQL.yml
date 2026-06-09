@@ -12,6 +12,11 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      publish_package:
+        description: "Publish the built template package to the Azure Artifacts feed"
+        type: boolean
+        default: false
 
 env:
   STANDARD_VERSION: "5.2.0"
@@ -50,6 +55,22 @@ jobs:
             path: Ed-Fi-Data-Standard/
             ref: v${{ env.STANDARD_VERSION }} # Added v prefix to match the tag format
 
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve relational database name
+        run: |
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          $relationalDatabaseName = [string]$envValues["RELATIONAL_E2E_DATABASE_NAME"]
+          if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
+            throw "RELATIONAL_E2E_DATABASE_NAME must be set in .env.template.relational"
+          }
+          "RELATIONAL_DB_NAME=$relationalDatabaseName" | Out-File -FilePath $env:GITHUB_ENV -Append
+        working-directory: eng/docker-compose/
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
@@ -82,14 +103,41 @@ jobs:
 
       - name: Start DMS Docker
         run: |
-          $env:USE_API_SCHEMA_PATH="false"
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -enableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig -NoDataStore
         working-directory: eng/docker-compose/
+
+      - name: Provision relational database
+        run: |
+          ./provision-relational-e2e-database.ps1 -EnvironmentFile ./.env.template.relational -Configuration Release
+        working-directory: eng/docker-compose/
+
+      # DMS fails fatally at startup when the Configuration Service has no data stores,
+      # and the stack was started with -NoDataStore so no data store points at the main
+      # database. Register the single relational data store here and hand its id forward;
+      # the Configuration Service protects data store connection strings in API responses,
+      # so the id from registration is the only reliable way to select this data store later.
+      - name: Register relational data store
+        run: |
+          Import-Module ../Dms-Management.psm1 -Force
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
+          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          if (-not $dataStoreId) {
+            throw "Failed to register the relational data store."
+          }
+          "RELATIONAL_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
+        working-directory: eng/docker-compose/
+
+      - name: Restart DMS to load the provisioned relational schema
+        run: |
+          docker restart dms-local-dms-1
 
       - name: Wait for DMS to be ready
         run: |
-          $maxAttempts = 10
+          $maxAttempts = 30
           $attempt = 0
           $ready = $false
 
@@ -131,7 +179,15 @@ jobs:
                   -ConfigFilePath './MinimalTemplateSettings.psd1' `
                   -StandardVersion '${{ env.STANDARD_VERSION }}'`
                   -PackageVersion $packageVersion `
-                  -ApplicationName $uniqueAppName
+                  -ApplicationName $uniqueAppName `
+                  -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
+                  -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
+                  -DumpAllUserSchemas
+        working-directory: eng/DatabaseTemplates/
+
+      - name: Verify template package restore
+        run: |
+          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME
         working-directory: eng/DatabaseTemplates/
 
       - name: Upload Bulk Load Logs
@@ -248,6 +304,7 @@ jobs:
 
   publish-template-package:
     name: Publish Minimal Template Package
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
     needs:
       - build-template
       - generate-package-sbom

@@ -439,7 +439,7 @@ CREATE TABLE [edfi].[Program]
     [ProgramName] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_Program] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Program_NK] UNIQUE ([ProgramId], [ProgramName]),
-    CONSTRAINT [UX_Program_RefKey] UNIQUE ([DocumentId], [ProgramId], [ProgramName])
+    CONSTRAINT [UX_Program_RefKey] UNIQUE ([ProgramId], [ProgramName], [DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.School', N'U') IS NULL
@@ -521,8 +521,8 @@ IF NOT EXISTS (
 )
 ALTER TABLE [edfi].[SchoolProgram]
 ADD CONSTRAINT [FK_SchoolProgram_ProgramReference_RefKey]
-FOREIGN KEY ([ProgramReference_DocumentId], [ProgramReference_ProgramId], [ProgramReference_ProgramName])
-REFERENCES [edfi].[Program] ([DocumentId], [ProgramId], [ProgramName])
+FOREIGN KEY ([ProgramReference_ProgramId], [ProgramReference_ProgramName], [ProgramReference_DocumentId])
+REFERENCES [edfi].[Program] ([ProgramId], [ProgramName], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -557,9 +557,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'SchoolProgram' AND i.name = N'IX_SchoolProgram_ProgramReference_DocumentId_ProgramReference_ProgramId_ProgramReference_ProgramName'
+    WHERE s.name = N'edfi' AND t.name = N'SchoolProgram' AND i.name = N'IX_SchoolProgram_ProgramReference_ProgramId_ProgramReference_ProgramName_ProgramReference_DocumentId'
 )
-CREATE INDEX [IX_SchoolProgram_ProgramReference_DocumentId_ProgramReference_ProgramId_ProgramReference_ProgramName] ON [edfi].[SchoolProgram] ([ProgramReference_DocumentId], [ProgramReference_ProgramId], [ProgramReference_ProgramName]);
+CREATE INDEX [IX_SchoolProgram_ProgramReference_ProgramId_ProgramReference_ProgramName_ProgramReference_DocumentId] ON [edfi].[SchoolProgram] ([ProgramReference_ProgramId], [ProgramReference_ProgramName], [ProgramReference_DocumentId]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_Program_ReferentialIdentity]

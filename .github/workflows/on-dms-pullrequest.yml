@@ -159,11 +159,9 @@ jobs:
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
-      - name: Install Coverlet Reference
+      - name: Restore .NET tools
         if: success()
-        run: |
-          dotnet tool install --global coverlet.console
-          dotnet tool install --global dotnet-reportgenerator-globaltool
+        run: dotnet tool restore
 
       - name: Run Unit Tests
         run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}

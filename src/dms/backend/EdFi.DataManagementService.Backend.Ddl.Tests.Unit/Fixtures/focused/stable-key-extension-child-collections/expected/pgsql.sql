@@ -456,7 +456,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
     "ProgramName" varchar(20) NOT NULL,
     CONSTRAINT "PK_Program" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Program_NK" UNIQUE ("ProgramName"),
-    CONSTRAINT "UX_Program_RefKey" UNIQUE ("DocumentId", "ProgramName")
+    CONSTRAINT "UX_Program_RefKey" UNIQUE ("ProgramName", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."School"
@@ -679,8 +679,8 @@ BEGIN
     THEN
         ALTER TABLE "sample"."SchoolExtensionAddressSponsorReference"
         ADD CONSTRAINT "FK_SchoolExtensionAddressSponsorReference_Program_RefKey"
-        FOREIGN KEY ("Program_DocumentId", "Program_ProgramName")
-        REFERENCES "edfi"."Program" ("DocumentId", "ProgramName")
+        FOREIGN KEY ("Program_ProgramName", "Program_DocumentId")
+        REFERENCES "edfi"."Program" ("ProgramName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -745,7 +745,7 @@ CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPeriod_ParentCollectionItemId_School
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolExtensionAddressSponsorReference_BaseCollec_246d3bdfd0" ON "sample"."SchoolExtensionAddressSponsorReference" ("BaseCollectionItemId", "School_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SchoolExtensionAddressSponsorReference_Program_Do_1aadb68520" ON "sample"."SchoolExtensionAddressSponsorReference" ("Program_DocumentId", "Program_ProgramName");
+CREATE INDEX IF NOT EXISTS "IX_SchoolExtensionAddressSponsorReference_Program_Pr_21c7ea0af9" ON "sample"."SchoolExtensionAddressSponsorReference" ("Program_ProgramName", "Program_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolExtensionInterventionVisit_ParentCollection_03f54ece78" ON "sample"."SchoolExtensionInterventionVisit" ("ParentCollectionItemId", "School_DocumentId");
 

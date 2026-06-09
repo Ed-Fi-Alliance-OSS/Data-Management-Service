@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -29,7 +30,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         var rootScopeNode = GetRootScopeNode(flatteningInput.SelectedBody);
         var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
             writePlan,
-            flatteningInput.ResolvedReferences
+            flatteningInput.ResolvedReferences,
+            flatteningInput.AllowMissingDocumentReferencesForPrecedence
         );
         var rootDocumentIdValue = ResolveRootDocumentIdValue(flatteningInput.TargetContext);
         var traversalPlans = new TraversalPlans(
@@ -46,7 +48,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups,
                 parentKeyParts: [],
                 ordinal: 0,
-                ordinalPath: []
+                ordinalPath: [],
+                valueHasDeferredMissingReference: out _
             ),
             rootExtensionRows: MaterializeRootExtensionRows(
                 flatteningInput,
@@ -311,7 +314,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     resolvedReferenceLookups,
                     rootParentKeyParts,
                     ordinal: 0,
-                    ordinalPath: []
+                    ordinalPath: [],
+                    valueHasDeferredMissingReference: out _
                 ),
                 collectionCandidates: collectionCandidates,
                 hasSubmittedScopeData: hasSubmittedScopeData
@@ -370,11 +374,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             //
             // SemanticIdentityInOrder is built unconditionally because the profile merge
             // pipeline still consumes it on every candidate downstream of this method.
-            Dictionary<string, (int[] OrdinalPath, object?[] Values)>? presenceAwareTracker =
+            Dictionary<string, SemanticIdentityTrackerEntry>? presenceAwareTracker =
                 flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
                     ? null
                     : new(StringComparer.Ordinal);
-            Dictionary<object?[], (int[] OrdinalPath, object?[] Values)>? collapsedTracker =
+            Dictionary<object?[], SemanticIdentityTrackerEntry>? collapsedTracker =
                 flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
                     ? new(StorageCollapsedIdentityHelpers.ObjectArrayComparer)
                     : null;
@@ -395,19 +399,27 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     resolvedReferenceLookups,
                     parentKeyParts,
                     collectionScopeInstance.RequestOrder,
-                    ordinalPath
+                    ordinalPath,
+                    out var valueHasDeferredMissingReference
                 );
                 var semanticIdentityValues = MaterializeSemanticIdentityValues(
                     childPlan.TableWritePlan,
                     values
                 );
+                var hasDeferredMissingSemanticIdentityMember =
+                    collapsedTracker is not null
+                    && HasDeferredMissingSemanticIdentityMember(
+                        childPlan.TableWritePlan,
+                        semanticIdentityValues,
+                        valueHasDeferredMissingReference
+                    );
                 var semanticIdentityInOrder = MaterializeSemanticIdentityParts(
                     childPlan.TableWritePlan,
                     collectionScopeInstance.ScopeNode,
                     semanticIdentityValues
                 );
 
-                (int[] OrdinalPath, object?[] Values) firstSeen;
+                SemanticIdentityTrackerEntry? firstSeen;
                 bool isDuplicate;
                 string? presenceAwareKey = null;
                 if (collapsedTracker is not null)
@@ -422,22 +434,52 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
                 if (isDuplicate)
                 {
-                    throw CreateDuplicateSemanticIdentityException(
-                        childPlan.TableWritePlan,
-                        parentScopeCanonical,
-                        firstSeen.OrdinalPath,
-                        ordinalPath,
-                        firstSeen.Values
-                    );
+                    var matchedEntry =
+                        firstSeen
+                        ?? throw new InvalidOperationException(
+                            "Collection semantic identity tracker reported a duplicate without a matched entry."
+                        );
+
+                    if (
+                        !ShouldAllowDeferredMissingSemanticIdentityDuplicate(
+                            matchedEntry,
+                            hasDeferredMissingSemanticIdentityMember
+                        )
+                    )
+                    {
+                        throw CreateDuplicateSemanticIdentityException(
+                            childPlan.TableWritePlan,
+                            parentScopeCanonical,
+                            matchedEntry.OrdinalPath,
+                            ordinalPath,
+                            matchedEntry.Values
+                        );
+                    }
                 }
+
+                var trackerEntry = new SemanticIdentityTrackerEntry(
+                    ordinalPath,
+                    semanticIdentityValues,
+                    hasDeferredMissingSemanticIdentityMember
+                );
 
                 if (collapsedTracker is not null)
                 {
-                    collapsedTracker.Add(semanticIdentityValues, (ordinalPath, semanticIdentityValues));
+                    if (!isDuplicate)
+                    {
+                        collapsedTracker.Add(semanticIdentityValues, trackerEntry);
+                    }
+                    else if (
+                        firstSeen is { ContainsDeferredMissingSemanticIdentityMember: true }
+                        && !hasDeferredMissingSemanticIdentityMember
+                    )
+                    {
+                        collapsedTracker[semanticIdentityValues] = trackerEntry;
+                    }
                 }
                 else
                 {
-                    presenceAwareTracker!.Add(presenceAwareKey!, (ordinalPath, semanticIdentityValues));
+                    presenceAwareTracker!.Add(presenceAwareKey!, trackerEntry);
                 }
 
                 var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
@@ -560,7 +602,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         resolvedReferenceLookups,
                         parentKeyParts,
                         ordinal: 0,
-                        ordinalPath: parentOrdinalPath
+                        ordinalPath: parentOrdinalPath,
+                        valueHasDeferredMissingReference: out _
                     ),
                     childCollectionCandidates,
                     hasSubmittedScopeData: hasSubmittedScopeData
@@ -578,11 +621,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         IReadOnlyList<FlattenedWriteValue> parentKeyParts,
         int ordinal,
-        ReadOnlySpan<int> ordinalPath
+        ReadOnlySpan<int> ordinalPath,
+        out IReadOnlyList<bool> valueHasDeferredMissingReference
     )
     {
         FlattenedWriteValue[] values = new FlattenedWriteValue[tableWritePlan.ColumnBindings.Length];
         bool[] valueAssigned = new bool[tableWritePlan.ColumnBindings.Length];
+        bool[] deferredMissingReferenceByBinding = new bool[tableWritePlan.ColumnBindings.Length];
 
         for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
         {
@@ -599,7 +644,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups,
                 parentKeyParts,
                 ordinal,
-                ordinalPath
+                ordinalPath,
+                out deferredMissingReferenceByBinding[bindingIndex]
             );
             valueAssigned[bindingIndex] = true;
         }
@@ -610,11 +656,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             resolvedReferenceLookups,
             ordinalPath,
             values,
-            valueAssigned
+            valueAssigned,
+            deferredMissingReferenceByBinding,
+            flatteningInput.AllowMissingDocumentReferencesForPrecedence
         );
         ApplyCollectionKeyPreallocationValue(tableWritePlan, values, valueAssigned);
         EnsureAllBindingsAssigned(tableWritePlan, values, valueAssigned);
 
+        valueHasDeferredMissingReference = deferredMissingReferenceByBinding;
         return values;
     }
 
@@ -624,12 +673,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ReadOnlySpan<int> ordinalPath,
         FlattenedWriteValue[] values,
-        bool[] valueAssigned
+        bool[] valueAssigned,
+        bool[] valueHasDeferredMissingReference,
+        bool allowMissingDocumentReferencesForPrecedence
     )
     {
         foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
         {
-            var canonicalValue = EvaluateCanonicalValue(
+            var canonicalEvaluation = EvaluateCanonicalValue(
                 tableWritePlan,
                 keyUnificationPlan,
                 scopeNode,
@@ -640,21 +691,26 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             );
 
             values[keyUnificationPlan.CanonicalBindingIndex] = new FlattenedWriteValue.Literal(
-                canonicalValue
+                canonicalEvaluation.Value
             );
             valueAssigned[keyUnificationPlan.CanonicalBindingIndex] = true;
+            valueHasDeferredMissingReference[keyUnificationPlan.CanonicalBindingIndex] =
+                allowMissingDocumentReferencesForPrecedence
+                && canonicalEvaluation.IsDeferredMissingReferenceValue;
 
             Profile.ProfileKeyUnificationGuardrails.Validate(
                 tableWritePlan,
                 keyUnificationPlan,
-                canonicalValue,
+                canonicalEvaluation.Value,
                 values,
-                valueAssigned
+                valueAssigned,
+                allowNullCanonicalForDeferredMissingReference: allowMissingDocumentReferencesForPrecedence
+                    && canonicalEvaluation.IsDeferredMissingReferenceValue
             );
         }
     }
 
-    private static object? EvaluateCanonicalValue(
+    private static KeyUnificationCanonicalEvaluation EvaluateCanonicalValue(
         TableWritePlan tableWritePlan,
         KeyUnificationWritePlan keyUnificationPlan,
         JsonNode scopeNode,
@@ -666,6 +722,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         object? canonicalValue = null;
         KeyUnificationMemberWritePlan? firstPresentMember = null;
+        var hasDeferredMissingReferenceMember = false;
 
         foreach (var member in keyUnificationPlan.MembersInOrder)
         {
@@ -676,6 +733,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups,
                 ordinalPath
             );
+            hasDeferredMissingReferenceMember |= evaluation.IsAbsentBecauseDeferredMissingReference;
 
             if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceBindingIndex)
             {
@@ -712,7 +770,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
         }
 
-        return canonicalValue;
+        return new KeyUnificationCanonicalEvaluation(
+            canonicalValue,
+            canonicalValue is null && firstPresentMember is null && hasDeferredMissingReferenceMember
+        );
     }
 
     private static void EnsureAllBindingsAssigned(
@@ -749,9 +810,12 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         IReadOnlyList<FlattenedWriteValue> parentKeyParts,
         int ordinal,
-        ReadOnlySpan<int> ordinalPath
+        ReadOnlySpan<int> ordinalPath,
+        out bool valueHasDeferredMissingReference
     )
     {
+        valueHasDeferredMissingReference = false;
+
         return columnBinding.Source switch
         {
             WriteValueSource.DocumentId => ResolveRootDocumentIdValue(flatteningInput.TargetContext),
@@ -773,7 +837,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 referenceDerived,
                 scopeNode,
                 resolvedReferenceLookups,
-                ordinalPath
+                ordinalPath,
+                out valueHasDeferredMissingReference
             ),
             WriteValueSource.DocumentReference documentReference => ResolveDocumentReferenceValue(
                 flatteningInput,
@@ -782,7 +847,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 documentReference,
                 scopeNode,
                 resolvedReferenceLookups,
-                ordinalPath
+                ordinalPath,
+                out valueHasDeferredMissingReference
             ),
             WriteValueSource.DescriptorReference descriptorReference => ResolveDescriptorReferenceValue(
                 tableWritePlan,
@@ -841,9 +907,12 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         WriteValueSource.DocumentReference documentReference,
         JsonNode scopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ReadOnlySpan<int> ordinalPath
+        ReadOnlySpan<int> ordinalPath,
+        out bool valueHasDeferredMissingReference
     )
     {
+        valueHasDeferredMissingReference = false;
+
         var binding = GetDocumentReferenceBinding(flatteningInput.WritePlan, documentReference);
         var relativeReferencePath = GetRelativePathWithinScope(tableWritePlan, binding.ReferenceObjectPath);
 
@@ -860,6 +929,17 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         if (documentId is not null)
         {
             return new FlattenedWriteValue.Literal(documentId.Value);
+        }
+
+        if (
+            resolvedReferenceLookups.IsDeferredMissingDocumentReference(
+                documentReference.BindingIndex,
+                ordinalPath
+            )
+        )
+        {
+            valueHasDeferredMissingReference = true;
+            return new FlattenedWriteValue.Literal(null);
         }
 
         throw CreateMissingDocumentReferenceLookupException(
@@ -977,9 +1057,12 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         WriteValueSource.ReferenceDerived referenceDerived,
         JsonNode scopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ReadOnlySpan<int> ordinalPath
+        ReadOnlySpan<int> ordinalPath,
+        out bool valueHasDeferredMissingReference
     )
     {
+        valueHasDeferredMissingReference = false;
+
         if (
             !TryGetReferenceObjectNode(
                 tableWritePlan,
@@ -989,6 +1072,19 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             ) || referenceNode is null
         )
         {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        if (
+            resolvedReferenceLookups.GetDocumentId(referenceDerived.ReferenceSource.BindingIndex, ordinalPath)
+                is null
+            && resolvedReferenceLookups.IsDeferredMissingDocumentReference(
+                referenceDerived.ReferenceSource.BindingIndex,
+                ordinalPath
+            )
+        )
+        {
+            valueHasDeferredMissingReference = true;
             return new FlattenedWriteValue.Literal(null);
         }
 
@@ -1165,6 +1261,47 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         return semanticIdentityValues;
     }
+
+    private static bool HasDeferredMissingSemanticIdentityMember(
+        TableWritePlan tableWritePlan,
+        object?[] semanticIdentityValues,
+        IReadOnlyList<bool> valueHasDeferredMissingReference
+    )
+    {
+        var collectionMergePlan =
+            tableWritePlan.CollectionMergePlan
+            ?? throw new InvalidOperationException(
+                $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
+            );
+
+        for (
+            var semanticIdentityIndex = 0;
+            semanticIdentityIndex < collectionMergePlan.SemanticIdentityBindings.Length;
+            semanticIdentityIndex++
+        )
+        {
+            if (semanticIdentityValues[semanticIdentityIndex] is not null)
+            {
+                continue;
+            }
+
+            var bindingIndex = collectionMergePlan
+                .SemanticIdentityBindings[semanticIdentityIndex]
+                .BindingIndex;
+
+            if (valueHasDeferredMissingReference[bindingIndex])
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ShouldAllowDeferredMissingSemanticIdentityDuplicate(
+        SemanticIdentityTrackerEntry firstSeen,
+        bool hasDeferredMissingSemanticIdentityMember
+    ) => firstSeen.ContainsDeferredMissingSemanticIdentityMember || hasDeferredMissingSemanticIdentityMember;
 
     private static List<CollectionScopeInstance> EnumerateCollectionScopeInstances(
         JsonNode parentScopeNode,
@@ -1621,12 +1758,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return scalarType.Kind switch
         {
             ScalarKind.String => ReadRequiredJsonValue<string>(jsonValue, scalarType, conversionContext),
-            ScalarKind.Int32 => ReadRequiredJsonValue<int>(jsonValue, scalarType, conversionContext)
-                .ToString(CultureInfo.InvariantCulture),
-            ScalarKind.Int64 => ReadRequiredJsonValue<long>(jsonValue, scalarType, conversionContext)
-                .ToString(CultureInfo.InvariantCulture),
-            ScalarKind.Decimal => ReadRequiredJsonValue<decimal>(jsonValue, scalarType, conversionContext)
-                .ToString(CultureInfo.InvariantCulture),
+            ScalarKind.Int32 => ReadRequiredNumericLiteral<int>(jsonValue, scalarType, conversionContext),
+            ScalarKind.Int64 => ReadRequiredNumericLiteral<long>(jsonValue, scalarType, conversionContext),
+            ScalarKind.Decimal => ReadRequiredNumericLiteral<decimal>(
+                jsonValue,
+                scalarType,
+                conversionContext
+            ),
             ScalarKind.Boolean => ReadRequiredJsonValue<bool>(jsonValue, scalarType, conversionContext)
                 ? bool.TrueString.ToLowerInvariant()
                 : bool.FalseString.ToLowerInvariant(),
@@ -1662,6 +1800,37 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             conversionContext,
             scalarType,
             createInvalidLiteralReason(scalarLiteral)
+        );
+    }
+
+    private static string ReadRequiredNumericLiteral<T>(
+        JsonValue jsonValue,
+        RelationalScalarType scalarType,
+        RequestDerivedScalarConversionContext conversionContext
+    )
+        where T : notnull, IFormattable
+    {
+        // The in-process string-coercion middleware can replace string-encoded numerics with
+        // object-backed JsonValues (e.g. JsonValue.Create((long)2022) or a double/decimal backing).
+        // JsonValue.TryGetValue<T> does not convert across CLR backing types, so a Number whose
+        // backing type differs from T (a valid value for the column) would otherwise be rejected.
+        // When TryGetValue fails for a Number, hand the JSON text to the shared scalar literal
+        // parser, which applies the target-type numeric parsing and produces the same diagnostic
+        // for values that are genuinely out of shape for the column.
+        if (jsonValue.TryGetValue<T>(out var value))
+        {
+            return value.ToString(null, CultureInfo.InvariantCulture);
+        }
+
+        if (jsonValue.GetValueKind() == JsonValueKind.Number)
+        {
+            return jsonValue.ToJsonString();
+        }
+
+        throw CreateInvalidRequestDerivedScalarException(
+            conversionContext,
+            scalarType,
+            $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
         );
     }
 
@@ -1985,6 +2154,17 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         TableWritePlan TableWritePlan,
         ImmutableArray<JsonPathSegment> RelativeScopeSegments,
         bool NavigateFromRoot
+    );
+
+    private sealed record KeyUnificationCanonicalEvaluation(
+        object? Value,
+        bool IsDeferredMissingReferenceValue
+    );
+
+    private sealed record SemanticIdentityTrackerEntry(
+        int[] OrdinalPath,
+        object?[] Values,
+        bool ContainsDeferredMissingSemanticIdentityMember
     );
 
     private sealed record TraversalPlans(
