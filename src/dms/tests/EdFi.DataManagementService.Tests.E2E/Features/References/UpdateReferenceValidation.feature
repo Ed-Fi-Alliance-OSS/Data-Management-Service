@@ -82,7 +82,8 @@ Feature: Update Reference Validation
                   }
                   """
 
-        @API-112
+        @API-112 @relational-backend
+        @relational-ci-shard-4
         Scenario: 03 Ensure clients cannot update a resource using a wrong reference
             Given the system has these "Staffs" references
                   | staffUniqueId | firstName | lastSurname |
@@ -100,25 +101,29 @@ Feature: Update Reference Validation
 	                    }
                   }
                   """
-             Then it should respond with 409
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Unresolved Reference",
-                      "status": 409,
-                      "correlationId": null,
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request",
+                      "title": "Bad Request",
+                      "status": 400,
                       "validationErrors": {
                           "$.personReference": [
                               "The referenced Person item does not exist."
+                          ],
+                          "$.personReference.sourceSystemDescriptor": [
+                              "SourceSystemDescriptor value 'uri://ed-fi.org/sourcesystemdescriptor#district' does not exist."
                           ]
                       },
-                      "errors": []
+                      "errors": [],
+                      "correlationId": null
                   }
                   """
 
-        @API-113
+        @API-113 @relational-backend
+        @relational-ci-shard-4
         Scenario: 04 Ensure clients cannot update a resource that uses an invalid school year reference
             Given the system has these "graduationPlans" references
                   | graduationPlanTypeDescriptor                                                | educationOrganizationReference     | graduationSchoolYearTypeReference | totalRequiredCredits |

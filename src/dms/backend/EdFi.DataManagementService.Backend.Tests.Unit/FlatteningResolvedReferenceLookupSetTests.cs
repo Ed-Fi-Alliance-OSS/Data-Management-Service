@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -228,6 +229,125 @@ public class Given_FlatteningResolvedReferenceLookupSet
         _sut.GetDocumentId(2, [0, 0]).Should().Be(301L);
         _sut.GetDocumentId(2, [0, 1]).Should().Be(302L);
         _sut.GetDocumentId(2, [1, 0]).Should().Be(303L);
+    }
+
+    [Test]
+    public void It_does_not_mark_missing_document_reference_occurrences_when_opt_in_is_disabled()
+    {
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            _writePlan,
+            CreateResolvedReferenceSetWithDeferredMissingDocumentReferences()
+        );
+
+        lookupSet.IsDeferredMissingDocumentReference(0, []).Should().BeFalse();
+        lookupSet.IsDeferredMissingDocumentReference(1, [1]).Should().BeFalse();
+        lookupSet.IsDeferredMissingDocumentReference(2, [0, 1]).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_marks_only_resolver_missing_document_reference_occurrences_when_opted_in()
+    {
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            _writePlan,
+            CreateResolvedReferenceSetWithDeferredMissingDocumentReferences(),
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        lookupSet.IsDeferredMissingDocumentReference(0, []).Should().BeTrue();
+        lookupSet.IsDeferredMissingDocumentReference(1, [1]).Should().BeTrue();
+        lookupSet.IsDeferredMissingDocumentReference(2, [0, 1]).Should().BeTrue();
+        lookupSet.IsDeferredMissingDocumentReference(1, [0]).Should().BeFalse();
+        lookupSet.IsDeferredMissingDocumentReference(2, [0, 0]).Should().BeFalse();
+        lookupSet.IsDeferredMissingDocumentReference(2, [1, 0]).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_preserves_successful_document_reference_lookups_while_tracking_deferred_missing_occurrences()
+    {
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            _writePlan,
+            CreateResolvedReferenceSetWithDeferredMissingDocumentReferences(),
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        lookupSet.GetDocumentId(1, [0]).Should().Be(201L);
+        lookupSet.GetDocumentId(2, [1, 0]).Should().Be(303L);
+        lookupSet.GetDocumentId(1, [1]).Should().BeNull();
+        lookupSet.GetDocumentId(2, [0, 1]).Should().BeNull();
+    }
+
+    [Test]
+    public void It_rejects_document_reference_occurrences_that_are_both_successful_and_deferred_missing()
+    {
+        var resolvedReferences = new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            {
+                [new JsonPath("$.sections[0].schoolReference")] = CreateResolvedDocumentReference(
+                    _schoolResourceInfo,
+                    "$.sections[0].schoolReference",
+                    201L,
+                    ("$.schoolId", "255901")
+                ),
+            },
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences:
+            [
+                CreateDocumentReferenceFailure(
+                    "$.sections[0].schoolReference",
+                    DocumentReferenceFailureReason.Missing
+                ),
+            ],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
+        var act = () =>
+            FlatteningResolvedReferenceLookupSet.Create(
+                _writePlan,
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence: true
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Document-reference occurrence '$.sections[0].schoolReference' was both successfully resolved and marked as a deferred missing reference*"
+            );
+    }
+
+    [Test]
+    public void It_rejects_deferred_missing_document_reference_failures_that_do_not_match_compiled_bindings()
+    {
+        var resolvedReferences = new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences:
+            [
+                CreateDocumentReferenceFailure(
+                    "$.programs[0].schoolReference",
+                    DocumentReferenceFailureReason.Missing
+                ),
+            ],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
+        var act = () =>
+            FlatteningResolvedReferenceLookupSet.Create(
+                _writePlan,
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence: true
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Missing document-reference failure path '$.programs[0].schoolReference' did not match any compiled document-reference binding*"
+            );
     }
 
     [Test]
@@ -620,6 +740,52 @@ public class Given_FlatteningResolvedReferenceLookupSet
         );
     }
 
+    private static ResolvedReferenceSet CreateResolvedReferenceSetWithDeferredMissingDocumentReferences()
+    {
+        return new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            {
+                [new JsonPath("$.sections[0].schoolReference")] = CreateResolvedDocumentReference(
+                    _schoolResourceInfo,
+                    "$.sections[0].schoolReference",
+                    201L,
+                    ("$.schoolId", "255901"),
+                    (
+                        DocumentIdentity.DescriptorIdentityJsonPath.Value,
+                        "uri://ed-fi.org/schooltypedescriptor#elementary"
+                    )
+                ),
+                [new JsonPath("$.sections[1].sessions[0].schoolReference")] = CreateResolvedDocumentReference(
+                    _schoolResourceInfo,
+                    "$.sections[1].sessions[0].schoolReference",
+                    303L,
+                    ("$.schoolId", "255903")
+                ),
+            },
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences:
+            [
+                CreateDocumentReferenceFailure("$.schoolReference", DocumentReferenceFailureReason.Missing),
+                CreateDocumentReferenceFailure(
+                    "$.sections[1].schoolReference",
+                    DocumentReferenceFailureReason.Missing
+                ),
+                CreateDocumentReferenceFailure(
+                    "$.sections[0].sessions[1].schoolReference",
+                    DocumentReferenceFailureReason.Missing
+                ),
+                CreateDocumentReferenceFailure(
+                    "$.sections[0].sessions[0].schoolReference",
+                    DocumentReferenceFailureReason.IncompatibleTargetType
+                ),
+            ],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+    }
+
     private static ResolvedReferenceSet CreateResolvedReferenceSetWithIdentityCountDrift()
     {
         return new ResolvedReferenceSet(
@@ -764,6 +930,22 @@ public class Given_FlatteningResolvedReferenceLookupSet
             ),
             documentId,
             11
+        );
+    }
+
+    private static DocumentReferenceFailure CreateDocumentReferenceFailure(
+        string path,
+        DocumentReferenceFailureReason reason
+    )
+    {
+        return DocumentReferenceFailure.From(
+            new DocumentReference(
+                _schoolResourceInfo,
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255999")]),
+                new ReferentialId(Guid.NewGuid()),
+                new JsonPath(path)
+            ),
+            reason
         );
     }
 

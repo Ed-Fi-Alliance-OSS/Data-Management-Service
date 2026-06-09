@@ -71,11 +71,9 @@ jobs:
         id: build_step
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Install Coverlet Reference
+      - name: Restore .NET tools
         if: success()
-        run: |
-          dotnet tool install --global coverlet.console
-          dotnet tool install --global dotnet-reportgenerator-globaltool
+        run: dotnet tool restore
 
       - name: Run DMS Unit Tests
         id: unit_test_step

@@ -167,7 +167,13 @@ internal sealed class DefaultRelationalWriteExecutor(
                 .ResolveAsync(executionRequest.ReferenceResolutionRequest, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (resolvedReferences.HasFailures)
+            var hasMissingDocumentReferenceFailures = HasMissingDocumentReferenceFailures(resolvedReferences);
+
+            if (
+                HasDescriptorReferenceFailures(resolvedReferences)
+                || HasNonMissingDocumentReferenceFailures(resolvedReferences)
+                || (executionRequest.ProfileWriteContext is not null && hasMissingDocumentReferenceFailures)
+            )
             {
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return RelationalWriteExecutorResults.BuildReferenceFailureResult(
@@ -175,6 +181,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                     resolvedReferences
                 );
             }
+
+            var deferMissingDocumentReferenceFailures =
+                executionRequest.ProfileWriteContext is null && hasMissingDocumentReferenceFailures;
 
             if (
                 request.WritePrecondition is not WritePrecondition.IfMatch
@@ -215,7 +224,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 executionRequest,
                 targetContext,
                 currentState,
-                resolvedReferences
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence: deferMissingDocumentReferenceFailures
             );
 
             if (mergeBoundary.ImmediateResult is not null)
@@ -253,7 +263,13 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
-                .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                .ResolveAsync(
+                    executionRequest,
+                    mergeResult,
+                    writeSession,
+                    cancellationToken,
+                    forceStandaloneAuthorization: deferMissingDocumentReferenceFailures
+                )
                 .ConfigureAwait(false);
 
             if (proposedAuthorizationBoundary.ImmediateResult is not null)
@@ -280,6 +296,15 @@ internal sealed class DefaultRelationalWriteExecutor(
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return deferredPreconditionResult;
                 }
+            }
+
+            if (deferMissingDocumentReferenceFailures)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return RelationalWriteExecutorResults.BuildReferenceFailureResult(
+                    executionRequest.OperationKind,
+                    resolvedReferences
+                );
             }
 
             if (
@@ -410,4 +435,17 @@ internal sealed class DefaultRelationalWriteExecutor(
             throw;
         }
     }
+
+    private static bool HasDescriptorReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
+        resolvedReferences.InvalidDescriptorReferences.Count > 0;
+
+    private static bool HasNonMissingDocumentReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
+        resolvedReferences.InvalidDocumentReferences.Any(static failure =>
+            failure.Reason is not DocumentReferenceFailureReason.Missing
+        );
+
+    private static bool HasMissingDocumentReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
+        resolvedReferences.InvalidDocumentReferences.Any(static failure =>
+            failure.Reason is DocumentReferenceFailureReason.Missing
+        );
 }

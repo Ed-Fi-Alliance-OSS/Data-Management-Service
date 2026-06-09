@@ -543,7 +543,7 @@ function RunTests {
             if ($isLastTest) {
                 # Last test: generate final reports and check thresholds
                 Invoke-Execute {
-                    coverlet $($_) `
+                    dotnet tool run coverlet -- $($_) `
                         --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
                         --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
                         --threshold $thresholdCoverage `
@@ -558,7 +558,7 @@ function RunTests {
             else {
                 # Not the last test: just collect coverage without threshold check
                 Invoke-Execute {
-                    coverlet $($_) `
+                    dotnet tool run coverlet -- $($_) `
                         --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
                         --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
                         --format json `
@@ -1047,7 +1047,7 @@ function Invoke-TestExecution {
 }
 
 function Invoke-Coverage {
-    reportgenerator -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
+    dotnet tool run reportgenerator -- -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
 }
 
 function Invoke-BuildPackage {
