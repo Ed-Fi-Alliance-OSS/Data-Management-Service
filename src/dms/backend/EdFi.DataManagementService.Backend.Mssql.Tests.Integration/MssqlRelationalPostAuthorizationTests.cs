@@ -235,7 +235,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_keeps_reference_resolution_failure_distinct_from_authorization_denial()
+    public async Task It_returns_403_before_deferred_missing_reference_when_proposed_edorg_value_is_missing()
     {
         var seed = CreateRootChildSeed(
             "ffffffff-0000-0000-0000-000000000003",
@@ -247,8 +247,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
 
         var result = await PostRootChildAsync(seed);
 
-        var referenceFailure = result.Should().BeOfType<UpsertResult.UpsertFailureReference>().Subject;
-        referenceFailure.HasDocumentReferenceFailures.Should().BeTrue();
+        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
         await AssertNoCreateSideEffectsAsync(seed);
     }
 
@@ -436,7 +435,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_keeps_people_reference_resolution_failure_distinct_when_claims_are_present()
+    public async Task It_returns_403_before_deferred_people_missing_reference_when_proposed_value_is_missing()
     {
         var seed = CreateAuthorizationStudentAcademicRecordSeed(
             "cccccccc-0000-0000-0000-000000000205",
@@ -450,8 +449,11 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
 
         var result = await PostStudentAcademicRecordAsync(seed);
 
-        var referenceFailure = result.Should().BeOfType<UpsertResult.UpsertFailureReference>().Subject;
-        referenceFailure.HasDocumentReferenceFailures.Should().BeTrue();
+        AssertPeopleRelationshipDenied(
+            result,
+            RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
+            [ClaimEducationOrganizationId]
+        );
         await AssertNoPeopleCreateSideEffectsAsync(seed);
     }
 
