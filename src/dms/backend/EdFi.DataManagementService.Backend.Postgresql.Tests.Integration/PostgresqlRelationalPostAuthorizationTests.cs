@@ -244,6 +244,29 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
     }
 
     [Test]
+    public async Task It_returns_deferred_missing_reference_after_proposed_edorg_values_authorize()
+    {
+        var seed = CreateRootChildSeed(
+            "cccccccc-0000-0000-0000-000000000008",
+            108,
+            "authorized-with-missing-class-period",
+            100,
+            [new ClassPeriodReferenceSeed("Missing", 100)]
+        );
+
+        var result = await PostRootChildAsync(seed);
+
+        var referenceFailure = result.Should().BeOfType<UpsertResult.UpsertFailureReference>().Subject;
+        referenceFailure.InvalidDescriptorReferences.Should().BeEmpty();
+        referenceFailure
+            .InvalidDocumentReferences.Select(static failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(("$.classPeriods[0].classPeriodReference", DocumentReferenceFailureReason.Missing));
+        await AssertNoCreateSideEffectsAsync(seed);
+        _context.AssertPostCreateStandaloneRelationshipAuthorizationWithoutDocumentInsert();
+    }
+
+    [Test]
     public async Task It_authorizes_post_create_with_inverted_relationship_filtering()
     {
         var seed = CreateRootChildSeed(
