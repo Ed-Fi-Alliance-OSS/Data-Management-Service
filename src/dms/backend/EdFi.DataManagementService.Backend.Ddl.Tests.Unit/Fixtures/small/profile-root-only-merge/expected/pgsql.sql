@@ -617,14 +617,7 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."PrimarySchoolTypeDescriptor_DescriptorId_Present" IS DISTINCT FROM NEW."PrimarySchoolTypeDescriptor_DescriptorId_Present" OR OLD."PrimarySchoolTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."PrimarySchoolTypeDescriptor_Unified_DescriptorId" OR OLD."SecondarySchoolTypeDescriptor_DescriptorId_Present" IS DISTINCT FROM NEW."SecondarySchoolTypeDescriptor_DescriptorId_Present" OR OLD."StudentReference_DocumentId" IS DISTINCT FROM NEW."StudentReference_DocumentId" OR OLD."StudentReference_StudentUniqueId" IS DISTINCT FROM NEW."StudentReference_StudentUniqueId" OR OLD."DisplayName" IS DISTINCT FROM NEW."DisplayName" OR OLD."ProfileRootOnlyMergeItemId" IS DISTINCT FROM NEW."ProfileRootOnlyMergeItemId" OR OLD."ProfileScopeClearableText" IS DISTINCT FROM NEW."ProfileScopeClearableText" OR OLD."ProfileScopePreservedText" IS DISTINCT FROM NEW."ProfileScopePreservedText") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'INSERT' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
-        NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-    ELSIF TG_OP = 'UPDATE' THEN
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
@@ -683,14 +676,7 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'INSERT' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
-        NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-    ELSIF TG_OP = 'UPDATE' THEN
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"

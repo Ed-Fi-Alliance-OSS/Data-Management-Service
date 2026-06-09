@@ -122,6 +122,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         );
     }
 
+    private async Task<long> ReadMaxChangeVersionAsync()
+    {
+        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
+    }
+
     private sealed record StampPair(StampValues Document, StampValues Mirror);
 
     private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
@@ -130,6 +135,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     public async Task It_stamps_document_on_descriptor_value_change()
     {
         var seed = await SeedAsync();
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -140,10 +146,14 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("documentId", seed.DocumentId)
         );
 
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var after = await ReadStampPairAsync(seed.DocumentId);
         after.Mirror.Should().Be(after.Document);
         after.Document.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
         after.Document.ContentLastModifiedAt.Should().BeOnOrAfter(seed.ContentLastModifiedAt);
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(1L, "a single descriptor value change must allocate exactly one content stamp");
     }
 
     [Test]

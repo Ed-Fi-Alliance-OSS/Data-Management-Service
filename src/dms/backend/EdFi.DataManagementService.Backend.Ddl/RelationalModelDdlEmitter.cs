@@ -1086,24 +1086,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine("END IF;");
 
-        // Root-document INSERTs capture the dms.Document stamp and mirror the same values into NEW.
+        // Root-document INSERTs and changed UPDATEs capture the dms.Document stamp and mirror the same values into NEW.
         if (isRootDocumentStampingTrigger)
         {
-            writer.AppendLine("IF TG_OP = 'INSERT' THEN");
-            using (writer.Indent())
-            {
-                EmitPgsqlDocumentContentStampUpdate(
-                    writer,
-                    documentTable,
-                    sequenceName,
-                    keyColumn,
-                    mirrorStampTargetTable,
-                    "NEW",
-                    assignToNewMirrorColumns: true,
-                    updateMirrorTable: false
-                );
-            }
-            writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
+            writer.AppendLine("IF TG_OP IN ('INSERT', 'UPDATE') THEN");
             using (writer.Indent())
             {
                 EmitPgsqlDocumentContentStampUpdate(

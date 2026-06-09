@@ -889,23 +889,26 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_capture_root_insert_stamps_with_returning_and_assign_new_mirror_columns()
+    public void It_should_capture_root_insert_and_update_stamps_with_returning_and_assign_new_mirror_columns()
     {
-        var insertBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "TG_OP = 'INSERT'");
+        var stampBranch = ExtractPlpgsqlBlock(
+            GetRootStampFunctionBody(),
+            "IF TG_OP IN ('INSERT', 'UPDATE') THEN"
+        );
 
-        var returningStart = insertBranch.IndexOf(
+        var returningStart = stampBranch.IndexOf(
             "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
             StringComparison.Ordinal
         );
-        var intoStart = insertBranch.IndexOf(
+        var intoStart = stampBranch.IndexOf(
             "INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt",
             StringComparison.Ordinal
         );
-        var contentVersionAssignmentStart = insertBranch.IndexOf(
+        var contentVersionAssignmentStart = stampBranch.IndexOf(
             "NEW.\"ContentVersion\" := _stampedContentVersion;",
             StringComparison.Ordinal
         );
-        var contentLastModifiedAssignmentStart = insertBranch.IndexOf(
+        var contentLastModifiedAssignmentStart = stampBranch.IndexOf(
             "NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;",
             StringComparison.Ordinal
         );
@@ -914,35 +917,8 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         intoStart.Should().BeGreaterThan(returningStart);
         contentVersionAssignmentStart.Should().BeGreaterThan(intoStart);
         contentLastModifiedAssignmentStart.Should().BeGreaterThan(contentVersionAssignmentStart);
-    }
-
-    [Test]
-    public void It_should_capture_root_update_stamps_with_returning_and_assign_new_mirror_columns()
-    {
-        var updateBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "ELSIF TG_OP = 'UPDATE'");
-
-        var returningStart = updateBranch.IndexOf(
-            "RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"",
-            StringComparison.Ordinal
-        );
-        var intoStart = updateBranch.IndexOf(
-            "INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt",
-            StringComparison.Ordinal
-        );
-        var contentVersionAssignmentStart = updateBranch.IndexOf(
-            "NEW.\"ContentVersion\" := _stampedContentVersion;",
-            StringComparison.Ordinal
-        );
-        var contentLastModifiedAssignmentStart = updateBranch.IndexOf(
-            "NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;",
-            StringComparison.Ordinal
-        );
-
-        returningStart.Should().BeGreaterOrEqualTo(0);
-        intoStart.Should().BeGreaterThan(returningStart);
-        contentVersionAssignmentStart.Should().BeGreaterThan(intoStart);
-        contentLastModifiedAssignmentStart.Should().BeGreaterThan(contentVersionAssignmentStart);
-        updateBranch.Should().NotContain("UPDATE \"edfi\".\"School\" r");
+        stampBranch.Should().NotContain("UPDATE \"edfi\".\"School\" r");
+        stampBranch.Should().NotContain("ELSIF TG_OP = 'UPDATE'");
     }
 
     [Test]
@@ -983,14 +959,17 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     [Test]
     public void It_should_assign_captured_document_stamps_for_root_inserts_and_updates()
     {
-        var rootUpdateGuardIndex = _ddl.IndexOf("IF TG_OP = 'UPDATE' THEN", StringComparison.Ordinal);
+        var rootStampGuardIndex = _ddl.IndexOf(
+            "IF TG_OP IN ('INSERT', 'UPDATE') THEN",
+            StringComparison.Ordinal
+        );
         var rootContentStampIndex = _ddl.IndexOf(
             "WHERE \"DocumentId\" = NEW.\"DocumentId\";",
             StringComparison.Ordinal
         );
 
-        rootUpdateGuardIndex.Should().BeGreaterOrEqualTo(0);
-        rootContentStampIndex.Should().BeGreaterThan(rootUpdateGuardIndex);
+        rootStampGuardIndex.Should().BeGreaterOrEqualTo(0);
+        rootContentStampIndex.Should().BeGreaterThan(rootStampGuardIndex);
         _ddl.Should()
             .Contain(
                 "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
