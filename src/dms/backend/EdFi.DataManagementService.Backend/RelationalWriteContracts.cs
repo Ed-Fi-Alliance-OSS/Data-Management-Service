@@ -124,7 +124,8 @@ public sealed record FlatteningInput
         JsonNode selectedBody,
         ResolvedReferenceSet resolvedReferences,
         bool emitEmptyExtensionBuffers = false,
-        bool validateStorageCollapsedCollectionIdentityUniqueness = false
+        bool validateStorageCollapsedCollectionIdentityUniqueness = false,
+        bool allowMissingDocumentReferencesForPrecedence = false
     )
     {
         OperationKind = operationKind;
@@ -136,6 +137,7 @@ public sealed record FlatteningInput
         EmitEmptyExtensionBuffers = emitEmptyExtensionBuffers;
         ValidateStorageCollapsedCollectionIdentityUniqueness =
             validateStorageCollapsedCollectionIdentityUniqueness;
+        AllowMissingDocumentReferencesForPrecedence = allowMissingDocumentReferencesForPrecedence;
     }
 
     /// <summary>
@@ -189,6 +191,14 @@ public sealed record FlatteningInput
     /// validates the same invariant against Core-emitted address streams before flatten.
     /// </summary>
     public bool ValidateStorageCollapsedCollectionIdentityUniqueness { get; init; }
+
+    /// <summary>
+    /// When true, flattening may tolerate only resolver-produced missing document
+    /// references while building no-profile preflight rows for precedence evaluation.
+    /// The default remains fail-fast so ordinary flattening cannot fabricate missing
+    /// reference values.
+    /// </summary>
+    public bool AllowMissingDocumentReferencesForPrecedence { get; init; }
 }
 
 /// <summary>

@@ -224,7 +224,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 executionRequest,
                 targetContext,
                 currentState,
-                resolvedReferences
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence: deferMissingDocumentReferenceFailures
             );
 
             if (mergeBoundary.ImmediateResult is not null)

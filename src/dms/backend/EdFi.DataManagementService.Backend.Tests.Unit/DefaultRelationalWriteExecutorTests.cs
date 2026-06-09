@@ -167,6 +167,7 @@ public class Given_Default_Relational_Write_Executor
         _writeFlattener
             .CapturedInput.ResolvedReferences.SuccessfulDescriptorReferencesByPath.Keys.Should()
             .BeEquivalentTo([new JsonPath("$.schoolTypeDescriptor")]);
+        _writeFlattener.CapturedInput.AllowMissingDocumentReferencesForPrecedence.Should().BeFalse();
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
@@ -291,6 +292,8 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         _writeFlattener.FlattenCallCount.Should().Be(1);
+        _writeFlattener.CapturedInput.Should().NotBeNull();
+        _writeFlattener.CapturedInput!.AllowMissingDocumentReferencesForPrecedence.Should().BeTrue();
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);

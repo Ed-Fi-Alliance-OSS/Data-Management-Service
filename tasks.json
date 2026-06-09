@@ -34,7 +34,7 @@
       "Review DefaultRelationalWriteExecutor.cs to confirm the opt-in is tied only to the deferred missing-reference decision.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteContracts|FullyQualifiedName~DefaultRelationalWriteExecutor\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Exact missing-reference lookup",
