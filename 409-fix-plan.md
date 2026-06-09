@@ -45,6 +45,7 @@ In scope:
 - Keep non-missing document-reference failures, such as incompatible target type, on the current immediate path.
 - Keep profile writes on the current immediate reference-failure path for this change.
 - Allow no-profile merge/proposed-auth preflight to proceed when document references are missing.
+- Force proposed relationship authorization to execute before the deferred `409` return, including create-new POSTs that normally rely on inline Auth1 during insert.
 - Return the remembered missing document-reference failures as `409` only if no higher-precedence result occurs.
 - Preserve database FK mapping as a final race-condition fallback.
 - Add focused unit coverage.
@@ -81,7 +82,7 @@ resolve execution state/current state
 merge selected body with current state
 run immutable identity/key-change check
 run proposed namespace authorization
-run proposed relationship authorization
+run proposed relationship authorization, forcing standalone execution when persistence will be skipped
 run deferred If-Match precondition evaluation, when applicable
 
 if remembered missing document-reference failures exist:
@@ -96,7 +97,7 @@ on database FK/reference exception:
     map to unresolved reference as today
 ```
 
-The key behavior change is moving the missing document-reference `BuildReferenceFailureResult` until after proposed authorization and deferred `If-Match` evaluation.
+The key behavior change is moving the missing document-reference `BuildReferenceFailureResult` until after proposed authorization and deferred `If-Match` evaluation. Because the executor will not persist when missing document references are deferred, create-new POST relationship authorization cannot rely on the current insert-inline Auth1 path for these attempts.
 
 ## Implementation Details
 
@@ -167,16 +168,20 @@ This is the only part that needs careful implementation because the flattener cu
 
 Preferred implementation:
 
-- Add an explicit option to merge/flatten for this preflight case, for example:
-  - `RelationalWriteMergeOptions.AllowMissingDocumentReferenceValuesForPrecedenceCheck`, or
-  - a boolean on `FlatteningInput`, such as `AllowDeferredDocumentReferenceFailures`.
-- Use that option only when `hasDeferredMissingDocumentReferenceFailures` is true.
+- Add an explicit path-specific allowance to merge/flatten for this preflight case, for example:
+  - `RelationalWriteMergeOptions.DeferredMissingDocumentReferences`, or
+  - a nullable set on `FlatteningInput`, such as `DeferredMissingDocumentReferenceKeys`.
+- Use that allowance only when `hasDeferredMissingDocumentReferenceFailures` is true.
+- Build the allowance from `resolvedReferences.InvalidDocumentReferences` where `Reason` is `Missing`.
+- Key the allowance narrowly enough that the flattener can match the exact missing occurrence, for example by document-reference binding index plus ordinal path, or by the concrete reference path after parsing it back to wildcard path plus ordinal path.
 - In `RelationalWriteFlattener.ResolveDocumentReferenceValue`, if the reference object exists but no resolved document id is available:
-  - return `FlattenedWriteValue.Literal(null)` only when the explicit option is enabled;
+  - return `FlattenedWriteValue.Literal(null)` only when that exact binding/path occurrence is in the deferred-missing-reference allowance;
   - keep the existing exception in normal mode.
 - Apply the same rule for reference-derived document identity values if they are needed by a root value used for identity/proposed authorization:
-  - return `null` only under the explicit deferred-reference option;
+  - return `null` only when that exact reference-derived occurrence corresponds to an allowed deferred missing document reference;
   - keep current fail-fast behavior otherwise.
+
+Do not use a simple global boolean that allows any missing lookup to become `null`. The allowance must be tied to the actual `DocumentReferenceFailureReason.Missing` occurrences from the resolver so extractor, planner, or mapping bugs still fail fast.
 
 This makes the precedence path explicit and prevents unresolved-reference tolerance from leaking into normal persistence.
 
@@ -208,8 +213,13 @@ Leave proposed namespace authorization before proposed relationship authorizatio
 
 ```csharp
 var namespaceAuthorizationBoundary = await _proposedNamespaceAuthorizationOrchestrator.ResolveAsync(...);
-var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator.ResolveAsync(...);
+var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator.ResolveAsync(
+    ...,
+    forceStandaloneAuthorization: hasDeferredMissingDocumentReferenceFailures
+);
 ```
+
+The `forceStandaloneAuthorization` behavior is required for create-new POSTs. Today those writes skip the standalone proposed-auth query because Auth1 is combined with the insert command. When deferred missing document references are present, the executor must return before insert/persist, so inline Auth1 would never run. The simplest responsible change is to add an optional boolean to `ProposedRelationshipAuthorizationOrchestrator.ResolveAsync` and have `AuthorizeAsync` ignore `IsHandledByPostInlineAuth1(request)` when that boolean is true.
 
 Then run the existing deferred `If-Match` precondition block:
 
@@ -248,6 +258,8 @@ if (hasDeferredMissingDocumentReferenceFailures)
 
 This is what fixes the authorization precedence cases where current relational behavior returns `409` before the ODS-shaped `403`.
 
+For create-new POSTs, this means the authorization SQL is executed as preflight with the finalized proposed root row and the same failure mapper used by the existing proposed-auth path. It must not insert the document.
+
 The ordering also preserves deferred `If-Match` behavior: a stale deferred precondition must not be hidden by a remembered missing document reference.
 
 ### 7. Preserve Database FK Mapping
@@ -273,7 +285,8 @@ Required coverage:
 
 1. **Descriptor validation beats document-reference failure**
    - Arrange descriptor failure and document-reference failure.
-   - Assert result is `400`/reference validation shape, not document-only `409`.
+   - At the executor level, assert the result contains descriptor reference failures and is not a document-only reference failure.
+   - HTTP `400` versus `409` mapping belongs to Core handler coverage, because the executor returns backend result types.
 
 2. **Immutable identity beats missing document reference**
    - Existing-target write.
@@ -287,35 +300,45 @@ Required coverage:
    - Include missing document reference.
    - Assert relationship authorization failure, not reference failure.
 
-4. **Proposed namespace authorization beats missing document reference**
+4. **Create-new POST proposed relationship authorization still runs before deferred 409**
+   - Use a create-new POST path that normally relies on insert-inline Auth1.
+   - Include a missing document reference so persistence must be skipped.
+   - Assert standalone proposed authorization is executed and its failure beats the remembered reference failure.
+
+5. **Proposed namespace authorization beats missing document reference**
    - Proposed namespace fails.
    - Include missing document reference.
    - Assert namespace authorization failure, not reference failure.
 
-5. **Missing document reference returns 409 when no higher-precedence failure exists**
+6. **Missing document reference returns 409 when no higher-precedence failure exists**
    - No descriptor failures.
    - No identity changes.
    - Authorization passes or is not required.
    - Assert document-reference failure is returned after proposed authorization.
 
-6. **Deferred If-Match beats missing document reference**
+7. **Deferred If-Match beats missing document reference**
    - Existing-target write with deferred `If-Match` evaluation.
    - Include a missing document reference.
    - Assert the deferred precondition failure is returned before the remembered reference failure.
 
-7. **Incompatible document-reference target is not deferred**
+8. **Incompatible document-reference target is not deferred**
    - Arrange `DocumentReferenceFailureReason.IncompatibleTargetType`.
    - Assert the executor returns the current reference-failure result immediately.
 
-8. **Profile writes are not changed by this fix**
+9. **Profile writes are not changed by this fix**
    - Profile write with a missing document reference.
    - Assert the current immediate reference-failure path is preserved.
 
-9. **Normal missing document reference tolerance is not enabled accidentally**
-   - Exercise flattener/merge without the explicit deferred-reference option.
+10. **Normal missing document reference tolerance is not enabled accidentally**
+   - Exercise flattener/merge without the explicit deferred-reference allowance.
    - Assert the existing fail-fast behavior remains.
 
-10. **No persistence occurs when deferred missing document-reference failures exist**
+11. **Deferred-reference tolerance is path-specific**
+   - Arrange two document-reference occurrences where only one is in the deferred missing-reference allowance.
+   - Assert the allowed occurrence can materialize as `null` for precedence preflight.
+   - Assert the unallowed missing lookup still fails fast.
+
+12. **No persistence occurs when deferred missing document-reference failures exist**
    - Verify `PersistAsync` is not called when the executor returns the deferred reference result.
 
 ### E2E Tests
@@ -375,7 +398,7 @@ git diff --check
 
 ## Risks
 
-The main risk is making the write flattener too tolerant of missing references. The mitigation is to use an explicit deferred-document-reference option and assert normal mode still fails fast.
+The main risk is making the write flattener too tolerant of missing references. The mitigation is to use an explicit path-specific deferred-document-reference allowance and assert normal mode still fails fast.
 
 A second risk is proposed authorization using `null` values produced by unresolved references and returning `403` in cases where ODS would produce `409`. That is intentional only when authorization genuinely has enough information to deny the proposed values. Tests should include a plain missing-reference case to confirm `409` still wins when no higher-precedence denial exists.
 
@@ -383,13 +406,17 @@ Another risk is accidentally persisting a write with unresolved document referen
 
 A fourth risk is broadening this fix into profile-write behavior. Keep profile writes on the current immediate reference-failure path unless a separate product decision defines profile/reference precedence.
 
+A fifth risk is skipping proposed relationship authorization for create-new POSTs because the current path normally combines Auth1 with the insert. The deferred-reference path must force standalone proposed authorization before returning the remembered `409`.
+
 ## Acceptance Criteria
 
 - Descriptor-reference failures still produce early `400 Bad Request`.
 - Only missing document-reference failures are deferred; incompatible document-reference target failures keep current behavior.
 - Profile writes keep current immediate reference-failure behavior.
+- Deferred missing-reference tolerance is keyed to exact resolver-produced missing document-reference occurrences, not enabled globally.
 - Missing document-reference failures no longer beat immutable identity/key-change failures.
 - Missing document-reference failures no longer beat proposed namespace, relationship authorization, or deferred `If-Match` failures.
+- Create-new POST proposed relationship authorization runs before the deferred missing-reference return, even though normal successful POSTs may still use insert-inline Auth1.
 - Missing document-reference failures still produce `409 Unresolved Reference` when no higher-precedence failure exists.
 - Database FK failures after authorization still map to `409`.
 - The affected E2E scenarios are flipped with explicit expected bodies/statuses, not fallback assertions.
