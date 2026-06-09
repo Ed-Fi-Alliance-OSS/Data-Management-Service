@@ -1,0 +1,177 @@
+[
+  {
+    "category": "Core token_info boundary",
+    "description": "Introduce narrow token_info education organization lookup contracts and move GetTokenInfoHandler off direct IAuthorizationRepository usage for education organization response data.",
+    "acceptance-criteria": [
+      "Token_info-specific lookup contracts exist for default and relational education organization response rows, with the relational contract receiving the request MappingSet.",
+      "GetTokenInfoHandler selects the relational lookup when it is registered, otherwise selects the default lookup, and does not depend directly on IAuthorizationRepository.",
+      "The existing token_info response contract is preserved, including claim_set, education_organizations, namespace_prefixes, resources, services, and assigned profiles.",
+      "Tokens with no education organization claims return a 200 response with an empty education_organizations array without invoking an education organization lookup.",
+      "Normal resource authorization paths are not changed by this boundary split."
+    ],
+    "steps-to-verify": [
+      "Review GetTokenInfoHandler, ITokenInfoEducationOrganizationLookup, and IRelationalTokenInfoEducationOrganizationLookup to confirm token_info uses narrow lookup services for education organization rows.",
+      "Review the IAuthorizationRepository registration and confirm it remains available for legacy/non-relational authorization behavior.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetTokenInfoHandler\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Non-relational compatibility",
+    "description": "Add the default token_info lookup adapter that delegates to the existing IAuthorizationRepository.GetTokenInfoEducationOrganizations implementation.",
+    "acceptance-criteria": [
+      "The non-relational/default path returns the same TokenInfoEducationOrganization rows as the existing legacy repository method.",
+      "The adapter does not alter education organization IDs, names, discriminators, ancestor discriminators, or ancestor IDs.",
+      "Existing non-relational token_info behavior remains unchanged.",
+      "The adapter is registered only as the default token_info lookup and does not replace IAuthorizationRepository."
+    ],
+    "steps-to-verify": [
+      "Review the adapter implementation and service registration for the non-relational/default path.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~AuthorizationRepositoryTokenInfoEducationOrganizationLookup\"",
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~WebApplicationBuilderExtensions\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational SQL planning",
+    "description": "Build the cross-dialect relational token_info education organization SQL plan from the runtime mapping set.",
+    "acceptance-criteria": [
+      "The plan derives a concrete EducationOrganization projection from the mapping set's EducationOrganization abstract union members.",
+      "The projection selects DocumentId, EducationOrganizationId, NameOfInstitution, and relational discriminator from concrete relational root tables.",
+      "NameOfInstitution is resolved from concrete resource root scalar metadata rather than by expanding the abstract EducationOrganization view contract.",
+      "The plan uses auth.EducationOrganizationIdToEducationOrganizationId for reachable education organizations and ancestors.",
+      "The plan adds direct self rows for claimed education organization IDs that resolve to concrete education organization rows.",
+      "The plan never references dms.EducationOrganizationHierarchy or other legacy document-store-only hierarchy tables.",
+      "Empty claim lists, unresolved claimed IDs, and stale auth hierarchy tuples return no rows or omit only affected ancestor fields rather than failing token_info."
+    ],
+    "steps-to-verify": [
+      "Review the SQL compiler output for both PostgreSQL and SQL Server dialects.",
+      "Search the relational token_info implementation for dms.EducationOrganizationHierarchy and confirm it is not referenced.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationSqlCompiler\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL relational lookup",
+    "description": "Implement the PostgreSQL relational token_info education organization lookup service and parameter binding.",
+    "acceptance-criteria": [
+      "When relational PostgreSQL is active, the lookup executes the relational SQL plan against the request database connection.",
+      "Claimed education organization IDs are bound using PostgreSQL-safe parameters.",
+      "Rows are mapped to TokenInfoEducationOrganization with education organization ID, name of institution, discriminator, ancestor discriminator, and ancestor education organization ID.",
+      "The lookup returns an empty result for empty or fully unresolved claim lists without throwing.",
+      "The lookup depends on the relational auth table and concrete education organization tables, not legacy document-store hierarchy tables."
+    ],
+    "steps-to-verify": [
+      "Review the PostgreSQL lookup implementation and row reader.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~PostgresqlTokenInfoEducationOrganizationLookup\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlTokenInfoEducationOrganizationLookup\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server relational lookup",
+    "description": "Implement the SQL Server relational token_info education organization lookup service and parameter binding.",
+    "acceptance-criteria": [
+      "When relational SQL Server is active, the lookup executes the relational SQL plan against the request database connection.",
+      "Claimed education organization IDs are bound using SQL Server-safe parameterization.",
+      "Rows are mapped to TokenInfoEducationOrganization with the same projection contract as PostgreSQL.",
+      "The SQL Server implementation handles empty and fully unresolved claim lists without throwing.",
+      "Provider-backed SQL Server coverage executes the generated query against a real SQL Server database."
+    ],
+    "steps-to-verify": [
+      "Review the SQL Server lookup implementation and parameter binding.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~MssqlTokenInfoEducationOrganizationLookup\"",
+      "With ConnectionStrings__MssqlAdmin set to a running SQL Server, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~MssqlTokenInfoEducationOrganizationLookup\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational DI integration",
+    "description": "Register token_info lookup implementations according to datastore and AppSettings__UseRelationalBackend while preserving legacy authorization registrations.",
+    "acceptance-criteria": [
+      "When UseRelationalBackend is false, token_info uses the legacy adapter and no relational token_info lookup is selected.",
+      "When UseRelationalBackend is true with PostgreSQL, the PostgreSQL relational token_info lookup is available for GetTokenInfoHandler.",
+      "When UseRelationalBackend is true with SQL Server, the SQL Server relational token_info lookup is available for GetTokenInfoHandler.",
+      "The existing IAuthorizationRepository registration is not replaced by the relational token_info lookup.",
+      "The token_info path resolves the request MappingSet before invoking a relational lookup and stops before lookup when mapping-set resolution fails."
+    ],
+    "steps-to-verify": [
+      "Review WebApplicationBuilderExtensions and provider service collection extension registrations.",
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~WebApplicationBuilderExtensions\"",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~PipelineOrdering\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "Response formatting",
+    "description": "Format relational education organization discriminators and ancestor fields into the existing token_info response shape.",
+    "acceptance-criteria": [
+      "Standard Ed-Fi discriminators such as Ed-Fi:School render type values such as edfi.School.",
+      "Ancestor ID property names are derived from ResourceName and converted to the existing snake_case token_info names such as school_id and local_education_agency_id.",
+      "Extension or non-Ed-Fi project names resolve through ApiSchemaDocuments to projectEndpointName for type values.",
+      "Extension or non-Ed-Fi ancestor property names still derive from ResourceName, not projectEndpointName.",
+      "Unresolvable discriminator project names do not silently emit malformed token_info type values."
+    ],
+    "steps-to-verify": [
+      "Review GetTokenInfoHandler discriminator parsing and formatting helpers.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetTokenInfoHandler\"",
+      "Confirm focused unit coverage includes extension or non-Ed-Fi discriminator rendering with a synthetic schema."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Focused backend tests",
+    "description": "Add unit and provider integration coverage for relational token_info lookup edge cases and cross-dialect parity.",
+    "acceptance-criteria": [
+      "Unit tests prove SQL generation includes concrete education organization projection arms, auth.EducationOrganizationIdToEducationOrganizationId joins, direct claim rows, and no legacy hierarchy table references.",
+      "Unit tests cover empty claim lists, unresolved claimed education organization IDs, stale target rows, and missing ancestor projection rows.",
+      "PostgreSQL provider integration tests execute the relational lookup against real relational tables and auth data.",
+      "SQL Server provider integration tests execute the relational lookup against real relational tables and auth data.",
+      "Tests verify the same projection contract across PostgreSQL and SQL Server."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationSqlCompiler\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "With ConnectionStrings__MssqlAdmin set to a running SQL Server, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "DMS E2E coverage",
+    "description": "Use the existing token introspection E2E scenario as the PostgreSQL relational backend signal for the full endpoint path.",
+    "acceptance-criteria": [
+      "The existing happy-path token_info scenario is tagged with relational-backend and an appropriate relational CI shard tag.",
+      "The E2E scenario uses real CMS application and token wiring.",
+      "The E2E scenario validates the hierarchy-shaped education_organizations response with education organization ID, name, type, and ancestor fields.",
+      "The relational E2E run returns 200 and does not fail with PostgreSQL 42P01 for dms.EducationOrganizationHierarchy.",
+      "No duplicate relational-only happy-path E2E scenario is added for the same behavior."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Security/TokenIntrospection.feature for relational-backend tagging on scenario 01.",
+      "From the repository root, run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'",
+      "If the E2E run fails before issuing API requests, inspect the dms-local Docker logs and environment setup before treating it as a product failure."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Final validation",
+    "description": "Format and run the focused test suite needed to validate the token_info relational lookup story without broad unrelated refactoring.",
+    "acceptance-criteria": [
+      "All modified C# files are formatted with csharpier.",
+      "Focused unit tests for core handler behavior, service registration, SQL planning, and provider lookup wrappers pass.",
+      "PostgreSQL relational integration coverage passes.",
+      "SQL Server relational integration coverage passes when a SQL Server admin connection string is available.",
+      "The PostgreSQL relational E2E shard containing token_info passes or any environment-only failure is documented with Docker/runtime evidence."
+    ],
+    "steps-to-verify": [
+      "Run dotnet csharpier format src/dms",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetTokenInfoHandler|FullyQualifiedName~PipelineOrdering\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationSqlCompiler\"",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "With ConnectionStrings__MssqlAdmin set to a running SQL Server, run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~TokenInfoEducationOrganizationLookup\"",
+      "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'"
+    ],
+    "completed": false
+  }
+]
