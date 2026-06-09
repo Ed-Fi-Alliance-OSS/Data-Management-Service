@@ -147,21 +147,21 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     {
         AssertResponderChoiceForeignKey(
             "FK_SurveyResponse_SurveyResponderChoiceContact_RefKey",
-            ["SurveyResponderChoiceContact_DocumentId", "SurveyResponderChoiceContact_ContactUniqueId"],
+            ["SurveyResponderChoiceContact_ContactUniqueId", "SurveyResponderChoiceContact_DocumentId"],
             "Contact",
-            ["DocumentId", "ContactUniqueId"]
+            ["ContactUniqueId", "DocumentId"]
         );
         AssertResponderChoiceForeignKey(
             "FK_SurveyResponse_SurveyResponderChoiceStaff_RefKey",
-            ["SurveyResponderChoiceStaff_DocumentId", "SurveyResponderChoiceStaff_StaffUniqueId"],
+            ["SurveyResponderChoiceStaff_StaffUniqueId", "SurveyResponderChoiceStaff_DocumentId"],
             "Staff",
-            ["DocumentId", "StaffUniqueId"]
+            ["StaffUniqueId", "DocumentId"]
         );
         AssertResponderChoiceForeignKey(
             "FK_SurveyResponse_SurveyResponderChoiceStudent_RefKey",
-            ["SurveyResponderChoiceStudent_DocumentId", "SurveyResponderChoiceStudent_StudentUniqueId"],
+            ["SurveyResponderChoiceStudent_StudentUniqueId", "SurveyResponderChoiceStudent_DocumentId"],
             "Student",
-            ["DocumentId", "StudentUniqueId"]
+            ["StudentUniqueId", "DocumentId"]
         );
     }
 

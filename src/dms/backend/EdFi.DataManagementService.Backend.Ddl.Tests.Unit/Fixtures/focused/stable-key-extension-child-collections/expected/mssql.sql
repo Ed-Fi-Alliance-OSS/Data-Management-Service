@@ -422,7 +422,7 @@ CREATE TABLE [edfi].[Program]
     [ProgramName] nvarchar(20) NOT NULL,
     CONSTRAINT [PK_Program] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Program_NK] UNIQUE ([ProgramName]),
-    CONSTRAINT [UX_Program_RefKey] UNIQUE ([DocumentId], [ProgramName])
+    CONSTRAINT [UX_Program_RefKey] UNIQUE ([ProgramName], [DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.School', N'U') IS NULL
@@ -615,8 +615,8 @@ IF NOT EXISTS (
 )
 ALTER TABLE [sample].[SchoolExtensionAddressSponsorReference]
 ADD CONSTRAINT [FK_SchoolExtensionAddressSponsorReference_Program_RefKey]
-FOREIGN KEY ([Program_DocumentId], [Program_ProgramName])
-REFERENCES [edfi].[Program] ([DocumentId], [ProgramName])
+FOREIGN KEY ([Program_ProgramName], [Program_DocumentId])
+REFERENCES [edfi].[Program] ([ProgramName], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -689,9 +689,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'sample' AND t.name = N'SchoolExtensionAddressSponsorReference' AND i.name = N'IX_SchoolExtensionAddressSponsorReference_Program_DocumentId_Program_ProgramName'
+    WHERE s.name = N'sample' AND t.name = N'SchoolExtensionAddressSponsorReference' AND i.name = N'IX_SchoolExtensionAddressSponsorReference_Program_ProgramName_Program_DocumentId'
 )
-CREATE INDEX [IX_SchoolExtensionAddressSponsorReference_Program_DocumentId_Program_ProgramName] ON [sample].[SchoolExtensionAddressSponsorReference] ([Program_DocumentId], [Program_ProgramName]);
+CREATE INDEX [IX_SchoolExtensionAddressSponsorReference_Program_ProgramName_Program_DocumentId] ON [sample].[SchoolExtensionAddressSponsorReference] ([Program_ProgramName], [Program_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

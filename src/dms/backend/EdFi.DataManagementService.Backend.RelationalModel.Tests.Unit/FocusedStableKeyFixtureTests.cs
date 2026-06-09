@@ -19,7 +19,7 @@ public class Given_A_Focused_Stable_Key_Positive_Fixture_For_Extension_Child_Col
     [
         "edfi.SchoolAddressPeriod|ParentCollectionItemId|School_DocumentId",
         "sample.SchoolExtensionAddressSponsorReference|BaseCollectionItemId|School_DocumentId",
-        "sample.SchoolExtensionAddressSponsorReference|Program_DocumentId|Program_ProgramName",
+        "sample.SchoolExtensionAddressSponsorReference|Program_ProgramName|Program_DocumentId",
         "sample.SchoolExtensionInterventionVisit|ParentCollectionItemId|School_DocumentId",
     ];
 

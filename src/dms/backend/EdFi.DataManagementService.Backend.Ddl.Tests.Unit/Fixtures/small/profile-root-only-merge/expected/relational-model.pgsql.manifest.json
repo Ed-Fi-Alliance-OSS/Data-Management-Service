@@ -72,7 +72,7 @@
       ]
     },
     {
-      "name": "IX_ProfileRootOnlyMergeItem_StudentReference_Documen_443e258273",
+      "name": "IX_ProfileRootOnlyMergeItem_StudentReference_Student_706047d2af",
       "table": {
         "schema": "edfi",
         "name": "ProfileRootOnlyMergeItem"
@@ -80,8 +80,8 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
-        "StudentReference_DocumentId",
-        "StudentReference_StudentUniqueId"
+        "StudentReference_StudentUniqueId",
+        "StudentReference_DocumentId"
       ]
     },
     {
@@ -153,8 +153,8 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
-        "StudentUniqueId"
+        "StudentUniqueId",
+        "DocumentId"
       ]
     }
   ],
@@ -745,16 +745,16 @@
               "kind": "ForeignKey",
               "name": "FK_ProfileRootOnlyMergeItem_StudentReference_RefKey",
               "columns": [
-                "StudentReference_DocumentId",
-                "StudentReference_StudentUniqueId"
+                "StudentReference_StudentUniqueId",
+                "StudentReference_DocumentId"
               ],
               "target_table": {
                 "schema": "edfi",
                 "name": "Student"
               },
               "target_columns": [
-                "DocumentId",
-                "StudentUniqueId"
+                "StudentUniqueId",
+                "DocumentId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -977,8 +977,8 @@
               "kind": "Unique",
               "name": "UX_Student_RefKey",
               "columns": [
-                "DocumentId",
-                "StudentUniqueId"
+                "StudentUniqueId",
+                "DocumentId"
               ]
             },
             {

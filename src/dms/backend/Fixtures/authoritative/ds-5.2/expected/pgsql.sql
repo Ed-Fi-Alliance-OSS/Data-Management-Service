@@ -440,7 +440,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
     "WeekIdentifier" varchar(80) NOT NULL,
     CONSTRAINT "PK_AcademicWeek" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_AcademicWeek_NK" UNIQUE ("School_DocumentId", "WeekIdentifier"),
-    CONSTRAINT "UX_AcademicWeek_RefKey" UNIQUE ("DocumentId", "School_SchoolId", "WeekIdentifier"),
+    CONSTRAINT "UX_AcademicWeek_RefKey" UNIQUE ("School_SchoolId", "WeekIdentifier", "DocumentId"),
     CONSTRAINT "CK_AcademicWeek_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
 
@@ -494,7 +494,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
     "RevisionDate" date NULL,
     CONSTRAINT "PK_Assessment" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Assessment_NK" UNIQUE ("AssessmentIdentifier", "Namespace"),
-    CONSTRAINT "UX_Assessment_RefKey" UNIQUE ("DocumentId", "AssessmentIdentifier", "Namespace"),
+    CONSTRAINT "UX_Assessment_RefKey" UNIQUE ("AssessmentIdentifier", "Namespace", "DocumentId"),
     CONSTRAINT "CK_Assessment_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_Assessment_MandatingEducationOrganization_AllNone" CHECK (("MandatingEducationOrganization_DocumentId" IS NULL AND "MandatingEducationOrganization_EducationOrganizationId" IS NULL) OR ("MandatingEducationOrganization_DocumentId" IS NOT NULL AND "MandatingEducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
@@ -655,7 +655,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
     "AdministrationIdentifier" varchar(255) NOT NULL,
     CONSTRAINT "PK_AssessmentAdministration" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_AssessmentAdministration_NK" UNIQUE ("AdministrationIdentifier", "Assessment_DocumentId", "AssigningEducationOrganization_DocumentId"),
-    CONSTRAINT "UX_AssessmentAdministration_RefKey" UNIQUE ("DocumentId", "AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId"),
+    CONSTRAINT "UX_AssessmentAdministration_RefKey" UNIQUE ("AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_AssessmentAdministration_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL)),
     CONSTRAINT "CK_AssessmentAdministration_AssigningEducationOrgani_1b1cc259b6" CHECK (("AssigningEducationOrganization_DocumentId" IS NULL AND "AssigningEducationOrganization_EducationOrganizationId" IS NULL) OR ("AssigningEducationOrganization_DocumentId" IS NOT NULL AND "AssigningEducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
@@ -733,7 +733,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPart"
     "AssessmentBatteryPartName" varchar(65) NOT NULL,
     CONSTRAINT "PK_AssessmentBatteryPart" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_AssessmentBatteryPart_NK" UNIQUE ("AssessmentBatteryPartName", "Assessment_DocumentId"),
-    CONSTRAINT "UX_AssessmentBatteryPart_RefKey" UNIQUE ("DocumentId", "AssessmentBatteryPartName", "Assessment_AssessmentIdentifier", "Assessment_Namespace"),
+    CONSTRAINT "UX_AssessmentBatteryPart_RefKey" UNIQUE ("AssessmentBatteryPartName", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "DocumentId"),
     CONSTRAINT "CK_AssessmentBatteryPart_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL))
 );
 
@@ -769,7 +769,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
     "Nomenclature" varchar(100) NULL,
     CONSTRAINT "PK_AssessmentItem" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_AssessmentItem_NK" UNIQUE ("Assessment_DocumentId", "IdentificationCode"),
-    CONSTRAINT "UX_AssessmentItem_RefKey" UNIQUE ("DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "IdentificationCode"),
+    CONSTRAINT "UX_AssessmentItem_RefKey" UNIQUE ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "IdentificationCode", "DocumentId"),
     CONSTRAINT "CK_AssessmentItem_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL))
 );
 
@@ -846,7 +846,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_BalanceSheetDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_BalanceSheetDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_BalanceSheetDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_BalanceSheetDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimensionReportingTag"
@@ -926,7 +926,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
     "CalendarCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_Calendar" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Calendar_NK" UNIQUE ("CalendarCode", "School_DocumentId", "SchoolYear_DocumentId"),
-    CONSTRAINT "UX_Calendar_RefKey" UNIQUE ("DocumentId", "CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear"),
+    CONSTRAINT "UX_Calendar_RefKey" UNIQUE ("CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId"),
     CONSTRAINT "CK_Calendar_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_Calendar_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
@@ -954,7 +954,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
     "Date" date NOT NULL,
     CONSTRAINT "PK_CalendarDate" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_CalendarDate_NK" UNIQUE ("Calendar_DocumentId", "Date"),
-    CONSTRAINT "UX_CalendarDate_RefKey" UNIQUE ("DocumentId", "Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear", "Date"),
+    CONSTRAINT "UX_CalendarDate_RefKey" UNIQUE ("Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear", "Date", "DocumentId"),
     CONSTRAINT "CK_CalendarDate_Calendar_AllNone" CHECK (("Calendar_DocumentId" IS NULL AND "Calendar_CalendarCode" IS NULL AND "Calendar_SchoolId" IS NULL AND "Calendar_SchoolYear" IS NULL) OR ("Calendar_DocumentId" IS NOT NULL AND "Calendar_CalendarCode" IS NOT NULL AND "Calendar_SchoolId" IS NOT NULL AND "Calendar_SchoolYear" IS NOT NULL))
 );
 
@@ -1007,7 +1007,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
     "FiscalYear" integer GENERATED ALWAYS AS ("FiscalYear_Unified") STORED,
     CONSTRAINT "PK_ChartOfAccount" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ChartOfAccount_NK" UNIQUE ("AccountIdentifier", "EducationOrganization_DocumentId", "FiscalYear"),
-    CONSTRAINT "UX_ChartOfAccount_RefKey" UNIQUE ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified"),
+    CONSTRAINT "UX_ChartOfAccount_RefKey" UNIQUE ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId"),
     CONSTRAINT "CK_ChartOfAccount_BalanceSheetBalanceSheetDimension_AllNone" CHECK (("BalanceSheetBalanceSheetDimension_DocumentId" IS NULL AND "BalanceSheetBalanceSheetDimension_Code" IS NULL AND "BalanceSheetBalanceSheetDimension_FiscalYear" IS NULL) OR ("BalanceSheetBalanceSheetDimension_DocumentId" IS NOT NULL AND "BalanceSheetBalanceSheetDimension_Code" IS NOT NULL AND "BalanceSheetBalanceSheetDimension_FiscalYear" IS NOT NULL)),
     CONSTRAINT "CK_ChartOfAccount_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_ChartOfAccount_FunctionFunctionDimension_AllNone" CHECK (("FunctionFunctionDimension_DocumentId" IS NULL AND "FunctionFunctionDimension_Code" IS NULL AND "FunctionFunctionDimension_FiscalYear" IS NULL) OR ("FunctionFunctionDimension_DocumentId" IS NOT NULL AND "FunctionFunctionDimension_Code" IS NOT NULL AND "FunctionFunctionDimension_FiscalYear" IS NOT NULL)),
@@ -1042,7 +1042,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
     "OfficialAttendancePeriod" boolean NULL,
     CONSTRAINT "PK_ClassPeriod" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ClassPeriod_NK" UNIQUE ("ClassPeriodName", "School_DocumentId"),
-    CONSTRAINT "UX_ClassPeriod_RefKey" UNIQUE ("DocumentId", "ClassPeriodName", "School_SchoolId"),
+    CONSTRAINT "UX_ClassPeriod_RefKey" UNIQUE ("ClassPeriodName", "School_SchoolId", "DocumentId"),
     CONSTRAINT "CK_ClassPeriod_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
 
@@ -1072,7 +1072,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
     "CohortIdentifier" varchar(36) NOT NULL,
     CONSTRAINT "PK_Cohort" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Cohort_NK" UNIQUE ("CohortIdentifier", "EducationOrganization_DocumentId"),
-    CONSTRAINT "UX_Cohort_RefKey" UNIQUE ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId"),
+    CONSTRAINT "UX_Cohort_RefKey" UNIQUE ("CohortIdentifier", "EducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_Cohort_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -1103,7 +1103,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_CommunityOrganization" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_CommunityOrganization_NK" UNIQUE ("CommunityOrganizationId"),
-    CONSTRAINT "UX_CommunityOrganization_RefKey" UNIQUE ("DocumentId", "CommunityOrganizationId")
+    CONSTRAINT "UX_CommunityOrganization_RefKey" UNIQUE ("CommunityOrganizationId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddress"
@@ -1247,7 +1247,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_CommunityProvider" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_CommunityProvider_NK" UNIQUE ("CommunityProviderId"),
-    CONSTRAINT "UX_CommunityProvider_RefKey" UNIQUE ("DocumentId", "CommunityProviderId"),
+    CONSTRAINT "UX_CommunityProvider_RefKey" UNIQUE ("CommunityProviderId", "DocumentId"),
     CONSTRAINT "CK_CommunityProvider_CommunityOrganization_AllNone" CHECK (("CommunityOrganization_DocumentId" IS NULL AND "CommunityOrganization_CommunityOrganizationId" IS NULL) OR ("CommunityOrganization_DocumentId" IS NOT NULL AND "CommunityOrganization_CommunityOrganizationId" IS NOT NULL))
 );
 
@@ -1409,7 +1409,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
     "SuccessCriteria" varchar(150) NULL,
     CONSTRAINT "PK_CompetencyObjective" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_CompetencyObjective_NK" UNIQUE ("EducationOrganization_DocumentId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId"),
-    CONSTRAINT "UX_CompetencyObjective_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CompetencyObjective_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_CompetencyObjective_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -1436,7 +1436,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Contact"
     "PreferredLastSurname" varchar(75) NULL,
     CONSTRAINT "PK_Contact" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Contact_NK" UNIQUE ("ContactUniqueId"),
-    CONSTRAINT "UX_Contact_RefKey" UNIQUE ("DocumentId", "ContactUniqueId"),
+    CONSTRAINT "UX_Contact_RefKey" UNIQUE ("ContactUniqueId", "DocumentId"),
     CONSTRAINT "CK_Contact_Person_AllNone" CHECK (("Person_DocumentId" IS NULL AND "Person_PersonId" IS NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NULL) OR ("Person_DocumentId" IS NOT NULL AND "Person_PersonId" IS NOT NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -1610,7 +1610,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Course"
     "TimeRequiredForCompletion" integer NULL,
     CONSTRAINT "PK_Course" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Course_NK" UNIQUE ("CourseCode", "EducationOrganization_DocumentId"),
-    CONSTRAINT "UX_Course_RefKey" UNIQUE ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId"),
+    CONSTRAINT "UX_Course_RefKey" UNIQUE ("CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId"),
     CONSTRAINT "CK_Course_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -1705,7 +1705,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
     "LocalCourseTitle" varchar(60) NULL,
     CONSTRAINT "PK_CourseOffering" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_CourseOffering_NK" UNIQUE ("LocalCourseCode", "School_DocumentId", "Session_DocumentId"),
-    CONSTRAINT "UX_CourseOffering_RefKey" UNIQUE ("DocumentId", "LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName"),
+    CONSTRAINT "UX_CourseOffering_RefKey" UNIQUE ("LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "DocumentId"),
     CONSTRAINT "CK_CourseOffering_Course_AllNone" CHECK (("Course_DocumentId" IS NULL AND "Course_CourseCode" IS NULL AND "Course_EducationOrganizationId" IS NULL) OR ("Course_DocumentId" IS NOT NULL AND "Course_CourseCode" IS NOT NULL AND "Course_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_CourseOffering_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_CourseOffering_Session_AllNone" CHECK (("Session_DocumentId" IS NULL AND "Session_SchoolId" IS NULL AND "Session_SchoolYear" IS NULL AND "Session_SessionName" IS NULL) OR ("Session_DocumentId" IS NOT NULL AND "Session_SchoolId" IS NOT NULL AND "Session_SchoolYear" IS NOT NULL AND "Session_SessionName" IS NOT NULL))
@@ -1898,7 +1898,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Credential"
     "Namespace" varchar(255) NOT NULL,
     CONSTRAINT "PK_Credential" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Credential_NK" UNIQUE ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId"),
-    CONSTRAINT "UX_Credential_RefKey" UNIQUE ("DocumentId", "CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId")
+    CONSTRAINT "UX_Credential_RefKey" UNIQUE ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CredentialAcademicSubject"
@@ -1946,7 +1946,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
     "CrisisStartDate" date NULL,
     CONSTRAINT "PK_CrisisEvent" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_CrisisEvent_NK" UNIQUE ("CrisisEventName"),
-    CONSTRAINT "UX_CrisisEvent_RefKey" UNIQUE ("DocumentId", "CrisisEventName")
+    CONSTRAINT "UX_CrisisEvent_RefKey" UNIQUE ("CrisisEventName", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMapping"
@@ -2057,7 +2057,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
     "ReporterName" varchar(75) NULL,
     CONSTRAINT "PK_DisciplineIncident" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_DisciplineIncident_NK" UNIQUE ("IncidentIdentifier", "School_DocumentId"),
-    CONSTRAINT "UX_DisciplineIncident_RefKey" UNIQUE ("DocumentId", "IncidentIdentifier", "School_SchoolId"),
+    CONSTRAINT "UX_DisciplineIncident_RefKey" UNIQUE ("IncidentIdentifier", "School_SchoolId", "DocumentId"),
     CONSTRAINT "CK_DisciplineIncident_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
 
@@ -2122,7 +2122,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
     "Version" varchar(10) NULL,
     CONSTRAINT "PK_EducationContent" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationContent_NK" UNIQUE ("ContentIdentifier"),
-    CONSTRAINT "UX_EducationContent_RefKey" UNIQUE ("DocumentId", "ContentIdentifier"),
+    CONSTRAINT "UX_EducationContent_RefKey" UNIQUE ("ContentIdentifier", "DocumentId"),
     CONSTRAINT "CK_EducationContent_LearningResourceChoiceLearningRe_0e9435128b" CHECK (("LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" IS NULL AND "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" IS NULL) OR ("LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" IS NOT NULL AND "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" IS NOT NULL))
 );
 
@@ -2236,7 +2236,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_EducationOrganizationNetwork" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationNetwork_NK" UNIQUE ("EducationOrganizationNetworkId"),
-    CONSTRAINT "UX_EducationOrganizationNetwork_RefKey" UNIQUE ("DocumentId", "EducationOrganizationNetworkId")
+    CONSTRAINT "UX_EducationOrganizationNetwork_RefKey" UNIQUE ("EducationOrganizationNetworkId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddress"
@@ -2407,7 +2407,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_EducationServiceCenter" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationServiceCenter_NK" UNIQUE ("EducationServiceCenterId"),
-    CONSTRAINT "UX_EducationServiceCenter_RefKey" UNIQUE ("DocumentId", "EducationServiceCenterId"),
+    CONSTRAINT "UX_EducationServiceCenter_RefKey" UNIQUE ("EducationServiceCenterId", "DocumentId"),
     CONSTRAINT "CK_EducationServiceCenter_StateEducationAgency_AllNone" CHECK (("StateEducationAgency_DocumentId" IS NULL AND "StateEducationAgency_StateEducationAgencyId" IS NULL) OR ("StateEducationAgency_DocumentId" IS NOT NULL AND "StateEducationAgency_StateEducationAgencyId" IS NOT NULL))
 );
 
@@ -2583,7 +2583,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_FunctionDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_FunctionDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_FunctionDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_FunctionDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimensionReportingTag"
@@ -2607,7 +2607,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_FundDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_FundDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_FundDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_FundDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."FundDimensionReportingTag"
@@ -2651,7 +2651,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Grade"
     "NumericGradeEarned" numeric(9,2) NULL,
     CONSTRAINT "PK_Grade" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Grade_NK" UNIQUE ("GradeTypeDescriptor_DescriptorId", "GradingPeriodGradingPeriod_DocumentId", "StudentSectionAssociation_DocumentId"),
-    CONSTRAINT "UX_Grade_RefKey" UNIQUE ("DocumentId", "GradeTypeDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId"),
+    CONSTRAINT "UX_Grade_RefKey" UNIQUE ("GradeTypeDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_Grade_GradingPeriodGradingPeriod_AllNone" CHECK (("GradingPeriodGradingPeriod_DocumentId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriodGradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_Grade_StudentSectionAssociation_AllNone" CHECK (("StudentSectionAssociation_DocumentId" IS NULL AND "StudentSectionAssociation_BeginDate" IS NULL AND "StudentSectionAssociation_LocalCourseCode" IS NULL AND "StudentSectionAssociation_SchoolId" IS NULL AND "StudentSectionAssociation_SchoolYear" IS NULL AND "StudentSectionAssociation_SectionIdentifier" IS NULL AND "StudentSectionAssociation_SessionName" IS NULL AND "StudentSectionAssociation_StudentUniqueId" IS NULL) OR ("StudentSectionAssociation_DocumentId" IS NOT NULL AND "StudentSectionAssociation_BeginDate" IS NOT NULL AND "StudentSectionAssociation_LocalCourseCode" IS NOT NULL AND "StudentSectionAssociation_SchoolId" IS NOT NULL AND "StudentSectionAssociation_SchoolYear" IS NOT NULL AND "StudentSectionAssociation_SectionIdentifier" IS NOT NULL AND "StudentSectionAssociation_SessionName" IS NOT NULL AND "StudentSectionAssociation_StudentUniqueId" IS NOT NULL))
 );
@@ -2703,7 +2703,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
     "Title" varchar(100) NOT NULL,
     CONSTRAINT "PK_GradebookEntry" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_GradebookEntry_NK" UNIQUE ("GradebookEntryIdentifier", "Namespace"),
-    CONSTRAINT "UX_GradebookEntry_RefKey" UNIQUE ("DocumentId", "GradebookEntryIdentifier", "Namespace"),
+    CONSTRAINT "UX_GradebookEntry_RefKey" UNIQUE ("GradebookEntryIdentifier", "Namespace", "DocumentId"),
     CONSTRAINT "CK_GradebookEntry_GradingPeriod_AllNone" CHECK (("GradingPeriod_DocumentId" IS NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriod_SchoolId" IS NULL AND "GradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriod_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_GradebookEntry_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL))
 );
@@ -2738,7 +2738,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
     "TotalInstructionalDays" integer NOT NULL,
     CONSTRAINT "PK_GradingPeriod" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_GradingPeriod_NK" UNIQUE ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_DocumentId", "SchoolYear_DocumentId"),
-    CONSTRAINT "UX_GradingPeriod_RefKey" UNIQUE ("DocumentId", "GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear"),
+    CONSTRAINT "UX_GradingPeriod_RefKey" UNIQUE ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId"),
     CONSTRAINT "CK_GradingPeriod_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_GradingPeriod_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
@@ -2759,7 +2759,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
     "TotalRequiredCredits" numeric(9,3) NOT NULL,
     CONSTRAINT "PK_GraduationPlan" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_GraduationPlan_NK" UNIQUE ("EducationOrganization_DocumentId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_DocumentId"),
-    CONSTRAINT "UX_GraduationPlan_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear"),
+    CONSTRAINT "UX_GraduationPlan_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear", "DocumentId"),
     CONSTRAINT "CK_GraduationPlan_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_GraduationPlan_GraduationSchoolYear_AllNone" CHECK (("GraduationSchoolYear_DocumentId" IS NULL AND "GraduationSchoolYear_GraduationSchoolYear" IS NULL) OR ("GraduationSchoolYear_DocumentId" IS NOT NULL AND "GraduationSchoolYear_GraduationSchoolYear" IS NOT NULL))
 );
@@ -2876,7 +2876,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
     "Namespace" varchar(255) NULL,
     CONSTRAINT "PK_Intervention" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Intervention_NK" UNIQUE ("EducationOrganization_DocumentId", "InterventionIdentificationCode"),
-    CONSTRAINT "UX_Intervention_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode"),
+    CONSTRAINT "UX_Intervention_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode", "DocumentId"),
     CONSTRAINT "CK_Intervention_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -3013,7 +3013,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
     "Namespace" varchar(255) NULL,
     CONSTRAINT "PK_InterventionPrescription" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_InterventionPrescription_NK" UNIQUE ("EducationOrganization_DocumentId", "InterventionPrescriptionIdentificationCode"),
-    CONSTRAINT "UX_InterventionPrescription_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode"),
+    CONSTRAINT "UX_InterventionPrescription_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode", "DocumentId"),
     CONSTRAINT "CK_InterventionPrescription_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -3238,7 +3238,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
     "Uri" varchar(255) NULL,
     CONSTRAINT "PK_LearningStandard" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_LearningStandard_NK" UNIQUE ("LearningStandardId"),
-    CONSTRAINT "UX_LearningStandard_RefKey" UNIQUE ("DocumentId", "LearningStandardId"),
+    CONSTRAINT "UX_LearningStandard_RefKey" UNIQUE ("LearningStandardId", "DocumentId"),
     CONSTRAINT "CK_LearningStandard_MandatingEducationOrganization_AllNone" CHECK (("MandatingEducationOrganization_DocumentId" IS NULL AND "MandatingEducationOrganization_EducationOrganizationId" IS NULL) OR ("MandatingEducationOrganization_DocumentId" IS NOT NULL AND "MandatingEducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_LearningStandard_ParentLearningStandard_AllNone" CHECK (("ParentLearningStandard_DocumentId" IS NULL AND "ParentLearningStandard_LearningStandardId" IS NULL) OR ("ParentLearningStandard_DocumentId" IS NOT NULL AND "ParentLearningStandard_LearningStandardId" IS NOT NULL))
 );
@@ -3324,7 +3324,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
     "FiscalYear" integer GENERATED ALWAYS AS ("FiscalYear_Unified") STORED,
     CONSTRAINT "PK_LocalAccount" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_LocalAccount_NK" UNIQUE ("AccountIdentifier", "EducationOrganization_DocumentId", "FiscalYear"),
-    CONSTRAINT "UX_LocalAccount_RefKey" UNIQUE ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified"),
+    CONSTRAINT "UX_LocalAccount_RefKey" UNIQUE ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId"),
     CONSTRAINT "CK_LocalAccount_ChartOfAccountChartOfAccount_AllNone" CHECK (("ChartOfAccountChartOfAccount_DocumentId" IS NULL AND "ChartOfAccountChartOfAccount_AccountIdentifier" IS NULL AND "ChartOfAccountChartOfAccount_EducationOrganizationId" IS NULL AND "ChartOfAccountChartOfAccount_FiscalYear" IS NULL) OR ("ChartOfAccountChartOfAccount_DocumentId" IS NOT NULL AND "ChartOfAccountChartOfAccount_AccountIdentifier" IS NOT NULL AND "ChartOfAccountChartOfAccount_EducationOrganizationId" IS NOT NULL AND "ChartOfAccountChartOfAccount_FiscalYear" IS NOT NULL)),
     CONSTRAINT "CK_LocalAccount_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
@@ -3415,7 +3415,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_LocalEducationAgency_NK" UNIQUE ("LocalEducationAgencyId"),
-    CONSTRAINT "UX_LocalEducationAgency_RefKey" UNIQUE ("DocumentId", "LocalEducationAgencyId"),
+    CONSTRAINT "UX_LocalEducationAgency_RefKey" UNIQUE ("LocalEducationAgencyId", "DocumentId"),
     CONSTRAINT "CK_LocalEducationAgency_EducationServiceCenter_AllNone" CHECK (("EducationServiceCenter_DocumentId" IS NULL AND "EducationServiceCenter_EducationServiceCenterId" IS NULL) OR ("EducationServiceCenter_DocumentId" IS NOT NULL AND "EducationServiceCenter_EducationServiceCenterId" IS NOT NULL)),
     CONSTRAINT "CK_LocalEducationAgency_ParentLocalEducationAgency_AllNone" CHECK (("ParentLocalEducationAgency_DocumentId" IS NULL AND "ParentLocalEducationAgency_LocalEducationAgencyId" IS NULL) OR ("ParentLocalEducationAgency_DocumentId" IS NOT NULL AND "ParentLocalEducationAgency_LocalEducationAgencyId" IS NOT NULL)),
     CONSTRAINT "CK_LocalEducationAgency_StateEducationAgency_AllNone" CHECK (("StateEducationAgency_DocumentId" IS NULL AND "StateEducationAgency_StateEducationAgencyId" IS NULL) OR ("StateEducationAgency_DocumentId" IS NOT NULL AND "StateEducationAgency_StateEducationAgencyId" IS NOT NULL))
@@ -3626,7 +3626,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Location"
     "OptimalNumberOfSeats" integer NULL,
     CONSTRAINT "PK_Location" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Location_NK" UNIQUE ("ClassroomIdentificationCode", "School_DocumentId"),
-    CONSTRAINT "UX_Location_RefKey" UNIQUE ("DocumentId", "ClassroomIdentificationCode", "School_SchoolId"),
+    CONSTRAINT "UX_Location_RefKey" UNIQUE ("ClassroomIdentificationCode", "School_SchoolId", "DocumentId"),
     CONSTRAINT "CK_Location_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
 
@@ -3640,7 +3640,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_ObjectDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ObjectDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_ObjectDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_ObjectDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimensionReportingTag"
@@ -3676,7 +3676,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
     "PercentOfAssessment" numeric(5,4) NULL,
     CONSTRAINT "PK_ObjectiveAssessment" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ObjectiveAssessment_NK" UNIQUE ("Assessment_DocumentId", "IdentificationCode"),
-    CONSTRAINT "UX_ObjectiveAssessment_RefKey" UNIQUE ("DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode"),
+    CONSTRAINT "UX_ObjectiveAssessment_RefKey" UNIQUE ("AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode", "DocumentId"),
     CONSTRAINT "CK_ObjectiveAssessment_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL)),
     CONSTRAINT "CK_ObjectiveAssessment_ParentObjectiveAssessment_AllNone" CHECK (("ParentObjectiveAssessment_DocumentId" IS NULL AND "ParentObjectiveAssessment_AssessmentIdentifier" IS NULL AND "ParentObjectiveAssessment_Namespace" IS NULL AND "ParentObjectiveAssessment_IdentificationCode" IS NULL) OR ("ParentObjectiveAssessment_DocumentId" IS NOT NULL AND "ParentObjectiveAssessment_AssessmentIdentifier" IS NOT NULL AND "ParentObjectiveAssessment_Namespace" IS NOT NULL AND "ParentObjectiveAssessment_IdentificationCode" IS NOT NULL))
 );
@@ -3791,7 +3791,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_OperationalUnitDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_OperationalUnitDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_OperationalUnitDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_OperationalUnitDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimensionReportingTag"
@@ -3954,7 +3954,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
     "PersonId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Person_NK" UNIQUE ("PersonId", "SourceSystemDescriptor_DescriptorId"),
-    CONSTRAINT "UX_Person_RefKey" UNIQUE ("DocumentId", "PersonId", "SourceSystemDescriptor_DescriptorId")
+    CONSTRAINT "UX_Person_RefKey" UNIQUE ("PersonId", "SourceSystemDescriptor_DescriptorId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
@@ -3988,7 +3988,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_PostSecondaryInstitution" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_PostSecondaryInstitution_NK" UNIQUE ("PostSecondaryInstitutionId"),
-    CONSTRAINT "UX_PostSecondaryInstitution_RefKey" UNIQUE ("DocumentId", "PostSecondaryInstitutionId")
+    CONSTRAINT "UX_PostSecondaryInstitution_RefKey" UNIQUE ("PostSecondaryInstitutionId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddress"
@@ -4136,7 +4136,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
     "ProgramName" varchar(60) NOT NULL,
     CONSTRAINT "PK_Program" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Program_NK" UNIQUE ("EducationOrganization_DocumentId", "ProgramName", "ProgramTypeDescriptor_DescriptorId"),
-    CONSTRAINT "UX_Program_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_Program_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_Program_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL))
 );
 
@@ -4185,7 +4185,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_ProgramDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ProgramDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_ProgramDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_ProgramDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimensionReportingTag"
@@ -4216,7 +4216,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
     "ProgramEvaluationTitle" varchar(50) NOT NULL,
     CONSTRAINT "PK_ProgramEvaluation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ProgramEvaluation_NK" UNIQUE ("ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId"),
-    CONSTRAINT "UX_ProgramEvaluation_RefKey" UNIQUE ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ProgramEvaluation_RefKey" UNIQUE ("ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_ProgramEvaluation_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -4266,7 +4266,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
     "ProgramEvaluationElementTitle" varchar(50) NOT NULL,
     CONSTRAINT "PK_ProgramEvaluationElement" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ProgramEvaluationElement_NK" UNIQUE ("ProgramEvaluationElementTitle", "ProgramEvaluation_DocumentId"),
-    CONSTRAINT "UX_ProgramEvaluationElement_RefKey" UNIQUE ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId"),
+    CONSTRAINT "UX_ProgramEvaluationElement_RefKey" UNIQUE ("ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_ProgramEvaluationElement_ProgramEvaluationObjective_AllNone" CHECK (("ProgramEvaluationObjective_DocumentId" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" IS NULL AND "ProgramEvaluationObjective_ProgramEducationOrganizationId" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationTitle" IS NULL AND "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb" IS NULL AND "ProgramEvaluationObjective_ProgramName" IS NULL AND "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramEvaluationObjective_DocumentId" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEducationOrganizationId" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationTitle" IS NOT NULL AND "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb" IS NOT NULL AND "ProgramEvaluationObjective_ProgramName" IS NOT NULL AND "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId" IS NOT NULL)),
     CONSTRAINT "CK_ProgramEvaluationElement_ProgramEvaluation_AllNone" CHECK (("ProgramEvaluation_DocumentId" IS NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NULL AND "ProgramEvaluation_ProgramName" IS NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramEvaluation_DocumentId" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NOT NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NOT NULL AND "ProgramEvaluation_ProgramName" IS NOT NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
@@ -4303,7 +4303,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
     "ProgramEvaluationObjectiveTitle" varchar(50) NOT NULL,
     CONSTRAINT "PK_ProgramEvaluationObjective" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ProgramEvaluationObjective_NK" UNIQUE ("ProgramEvaluationObjectiveTitle", "ProgramEvaluation_DocumentId"),
-    CONSTRAINT "UX_ProgramEvaluationObjective_RefKey" UNIQUE ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ProgramEvaluationObjective_RefKey" UNIQUE ("ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_ProgramEvaluationObjective_ProgramEvaluation_AllNone" CHECK (("ProgramEvaluation_DocumentId" IS NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NULL AND "ProgramEvaluation_ProgramName" IS NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramEvaluation_DocumentId" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTitle" IS NOT NULL AND "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS NOT NULL AND "ProgramEvaluation_ProgramEducationOrganizationId" IS NOT NULL AND "ProgramEvaluation_ProgramName" IS NOT NULL AND "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -4330,7 +4330,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_ProjectDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ProjectDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_ProjectDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_ProjectDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimensionReportingTag"
@@ -4363,7 +4363,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
     "NumberOfDaysTardy" integer NULL,
     CONSTRAINT "PK_ReportCard" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_ReportCard_NK" UNIQUE ("EducationOrganization_DocumentId", "GradingPeriodGradingPeriod_DocumentId", "Student_DocumentId"),
-    CONSTRAINT "UX_ReportCard_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_ReportCard_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_ReportCard_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_ReportCard_GradingPeriodGradingPeriod_AllNone" CHECK (("GradingPeriodGradingPeriod_DocumentId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriodGradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_ReportCard_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -4500,7 +4500,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId"),
-    CONSTRAINT "UX_School_RefKey" UNIQUE ("DocumentId", "SchoolId"),
+    CONSTRAINT "UX_School_RefKey" UNIQUE ("SchoolId", "DocumentId"),
     CONSTRAINT "CK_School_CharterApprovalSchoolYear_AllNone" CHECK (("CharterApprovalSchoolYear_DocumentId" IS NULL AND "CharterApprovalSchoolYear_CharterApprovalSchoolYear" IS NULL) OR ("CharterApprovalSchoolYear_DocumentId" IS NOT NULL AND "CharterApprovalSchoolYear_CharterApprovalSchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_School_LocalEducationAgency_AllNone" CHECK (("LocalEducationAgency_DocumentId" IS NULL AND "LocalEducationAgency_LocalEducationAgencyId" IS NULL) OR ("LocalEducationAgency_DocumentId" IS NOT NULL AND "LocalEducationAgency_LocalEducationAgencyId" IS NOT NULL))
 );
@@ -4659,7 +4659,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
     "SchoolYearDescription" varchar(50) NOT NULL,
     CONSTRAINT "PK_SchoolYearType" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_SchoolYearType_NK" UNIQUE ("SchoolYear"),
-    CONSTRAINT "UX_SchoolYearType_RefKey" UNIQUE ("DocumentId", "SchoolYear")
+    CONSTRAINT "UX_SchoolYearType_RefKey" UNIQUE ("SchoolYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Section"
@@ -4694,7 +4694,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Section"
     "SequenceOfCourse" integer NULL,
     CONSTRAINT "PK_Section" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Section_NK" UNIQUE ("CourseOffering_DocumentId", "SectionIdentifier"),
-    CONSTRAINT "UX_Section_RefKey" UNIQUE ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier"),
+    CONSTRAINT "UX_Section_RefKey" UNIQUE ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId"),
     CONSTRAINT "CK_Section_CourseOffering_AllNone" CHECK (("CourseOffering_DocumentId" IS NULL AND "CourseOffering_LocalCourseCode" IS NULL AND "CourseOffering_SchoolReferenceSchoolId" IS NULL AND "CourseOffering_SessionReferenceSchoolId" IS NULL AND "CourseOffering_SchoolYear" IS NULL AND "CourseOffering_SessionName" IS NULL) OR ("CourseOffering_DocumentId" IS NOT NULL AND "CourseOffering_LocalCourseCode" IS NOT NULL AND "CourseOffering_SchoolReferenceSchoolId" IS NOT NULL AND "CourseOffering_SessionReferenceSchoolId" IS NOT NULL AND "CourseOffering_SchoolYear" IS NOT NULL AND "CourseOffering_SessionName" IS NOT NULL)),
     CONSTRAINT "CK_Section_LocationLocation_AllNone" CHECK (("LocationLocation_DocumentId" IS NULL AND "LocationLocation_ClassroomIdentificationCode" IS NULL AND "LocationLocation_SchoolId" IS NULL) OR ("LocationLocation_DocumentId" IS NOT NULL AND "LocationLocation_ClassroomIdentificationCode" IS NOT NULL AND "LocationLocation_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_Section_LocationSchool_AllNone" CHECK (("LocationSchool_DocumentId" IS NULL AND "LocationSchool_SchoolId" IS NULL) OR ("LocationSchool_DocumentId" IS NOT NULL AND "LocationSchool_SchoolId" IS NOT NULL))
@@ -4806,7 +4806,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Session"
     "TotalInstructionalDays" integer NOT NULL,
     CONSTRAINT "PK_Session" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Session_NK" UNIQUE ("School_DocumentId", "SchoolYear_DocumentId", "SessionName"),
-    CONSTRAINT "UX_Session_RefKey" UNIQUE ("DocumentId", "School_SchoolId", "SchoolYear_SchoolYear", "SessionName"),
+    CONSTRAINT "UX_Session_RefKey" UNIQUE ("School_SchoolId", "SchoolYear_SchoolYear", "SessionName", "DocumentId"),
     CONSTRAINT "CK_Session_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_Session_School_AllNone" CHECK (("School_DocumentId" IS NULL AND "School_SchoolId" IS NULL) OR ("School_DocumentId" IS NOT NULL AND "School_SchoolId" IS NOT NULL))
 );
@@ -4851,7 +4851,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SourceDimension"
     "FiscalYear" integer NOT NULL,
     CONSTRAINT "PK_SourceDimension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_SourceDimension_NK" UNIQUE ("Code", "FiscalYear"),
-    CONSTRAINT "UX_SourceDimension_RefKey" UNIQUE ("DocumentId", "Code", "FiscalYear")
+    CONSTRAINT "UX_SourceDimension_RefKey" UNIQUE ("Code", "FiscalYear", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SourceDimensionReportingTag"
@@ -4894,7 +4894,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Staff"
     "YearsOfPriorTeachingExperience" numeric(5,2) NULL,
     CONSTRAINT "PK_Staff" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Staff_NK" UNIQUE ("StaffUniqueId"),
-    CONSTRAINT "UX_Staff_RefKey" UNIQUE ("DocumentId", "StaffUniqueId"),
+    CONSTRAINT "UX_Staff_RefKey" UNIQUE ("StaffUniqueId", "DocumentId"),
     CONSTRAINT "CK_Staff_Person_AllNone" CHECK (("Person_DocumentId" IS NULL AND "Person_PersonId" IS NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NULL) OR ("Person_DocumentId" IS NOT NULL AND "Person_PersonId" IS NOT NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -5330,7 +5330,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociati
     "OfferDate" date NULL,
     CONSTRAINT "PK_StaffEducationOrganizationEmploymentAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StaffEducationOrganizationEmploymentAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_DocumentId"),
-    CONSTRAINT "UX_StaffEducationOrganizationEmploymentAssociation_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId"),
+    CONSTRAINT "UX_StaffEducationOrganizationEmploymentAssociation_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId", "DocumentId"),
     CONSTRAINT "CK_StaffEducationOrganizationEmploymentAssociation_C_f6eabb8a0f" CHECK (("Credential_DocumentId" IS NULL AND "Credential_CredentialIdentifier" IS NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NULL) OR ("Credential_DocumentId" IS NOT NULL AND "Credential_CredentialIdentifier" IS NOT NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NOT NULL)),
     CONSTRAINT "CK_StaffEducationOrganizationEmploymentAssociation_E_6a62d46147" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StaffEducationOrganizationEmploymentAssociation_S_db3e1dd4b2" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
@@ -5458,7 +5458,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_StateEducationAgency" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StateEducationAgency_NK" UNIQUE ("StateEducationAgencyId"),
-    CONSTRAINT "UX_StateEducationAgency_RefKey" UNIQUE ("DocumentId", "StateEducationAgencyId")
+    CONSTRAINT "UX_StateEducationAgency_RefKey" UNIQUE ("StateEducationAgencyId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAccountability"
@@ -5637,7 +5637,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId"),
-    CONSTRAINT "UX_Student_RefKey" UNIQUE ("DocumentId", "StudentUniqueId"),
+    CONSTRAINT "UX_Student_RefKey" UNIQUE ("StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_Student_Person_AllNone" CHECK (("Person_DocumentId" IS NULL AND "Person_PersonId" IS NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NULL) OR ("Person_DocumentId" IS NOT NULL AND "Person_PersonId" IS NOT NULL AND "Person_SourceSystemDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -5733,7 +5733,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
     "SessionEarnedCredits" numeric(9,3) NULL,
     CONSTRAINT "PK_StudentAcademicRecord" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentAcademicRecord_NK" UNIQUE ("EducationOrganization_DocumentId", "SchoolYear_DocumentId", "Student_DocumentId", "TermDescriptor_DescriptorId"),
-    CONSTRAINT "UX_StudentAcademicRecord_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "SchoolYear_SchoolYear", "Student_StudentUniqueId", "TermDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAcademicRecord_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "SchoolYear_SchoolYear", "Student_StudentUniqueId", "TermDescriptor_DescriptorId", "DocumentId"),
     CONSTRAINT "CK_StudentAcademicRecord_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentAcademicRecord_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_StudentAcademicRecord_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -5875,7 +5875,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
     "StudentAssessmentIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_StudentAssessment" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentAssessment_NK" UNIQUE ("Assessment_DocumentId", "StudentAssessmentIdentifier", "Student_DocumentId"),
-    CONSTRAINT "UX_StudentAssessment_RefKey" UNIQUE ("DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "StudentAssessmentIdentifier", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_StudentAssessment_RefKey" UNIQUE ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "StudentAssessmentIdentifier", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentAssessment_Assessment_AllNone" CHECK (("Assessment_DocumentId" IS NULL AND "Assessment_AssessmentIdentifier" IS NULL AND "Assessment_Namespace" IS NULL) OR ("Assessment_DocumentId" IS NOT NULL AND "Assessment_AssessmentIdentifier" IS NOT NULL AND "Assessment_Namespace" IS NOT NULL)),
     CONSTRAINT "CK_StudentAssessment_ReportedSchool_AllNone" CHECK (("ReportedSchool_DocumentId" IS NULL AND "ReportedSchool_SchoolId" IS NULL) OR ("ReportedSchool_DocumentId" IS NOT NULL AND "ReportedSchool_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_StudentAssessment_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
@@ -6039,7 +6039,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
     "PlatformTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentAssessmentRegistration" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentAssessmentRegistration_NK" UNIQUE ("AssessmentAdministration_DocumentId", "StudentEducationOrganizationAssociation_DocumentId"),
-    CONSTRAINT "UX_StudentAssessmentRegistration_RefKey" UNIQUE ("DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified"),
+    CONSTRAINT "UX_StudentAssessmentRegistration_RefKey" UNIQUE ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified", "DocumentId"),
     CONSTRAINT "CK_StudentAssessmentRegistration_AssessmentAdministr_768d8c93a1" CHECK (("AssessmentAdministration_DocumentId" IS NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NULL AND "AssessmentAdministration_Namespace" IS NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NULL) OR ("AssessmentAdministration_DocumentId" IS NOT NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NOT NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NOT NULL AND "AssessmentAdministration_Namespace" IS NOT NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentAssessmentRegistration_ReportingEducationO_6c530af4d2" CHECK (("ReportingEducationOrganization_DocumentId" IS NULL AND "ReportingEducationOrganization_EducationOrganizationId" IS NULL) OR ("ReportingEducationOrganization_DocumentId" IS NOT NULL AND "ReportingEducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentAssessmentRegistration_ScheduledStudentEdu_eaaa6f6c97" CHECK (("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea" IS NULL AND "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" IS NULL AND "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1" IS NULL) OR ("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea" IS NOT NULL AND "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" IS NOT NULL AND "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1" IS NOT NULL)),
@@ -6217,7 +6217,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
     "DiagnosticStatement" varchar(1024) NULL,
     CONSTRAINT "PK_StudentCompetencyObjective" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentCompetencyObjective_NK" UNIQUE ("GradingPeriodGradingPeriod_DocumentId", "ObjectiveCompetencyObjective_DocumentId", "Student_DocumentId"),
-    CONSTRAINT "UX_StudentCompetencyObjective_RefKey" UNIQUE ("DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_StudentCompetencyObjective_RefKey" UNIQUE ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentCompetencyObjective_GradingPeriodGradingPe_124c87b518" CHECK (("GradingPeriodGradingPeriod_DocumentId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriodGradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriodGradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriodGradingPeriod_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_StudentCompetencyObjective_ObjectiveCompetencyObj_bd4d994cb6" CHECK (("ObjectiveCompetencyObjective_DocumentId" IS NULL AND "ObjectiveCompetencyObjective_EducationOrganizationId" IS NULL AND "ObjectiveCompetencyObjective_Objective" IS NULL AND "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" IS NULL) OR ("ObjectiveCompetencyObjective_DocumentId" IS NOT NULL AND "ObjectiveCompetencyObjective_EducationOrganizationId" IS NOT NULL AND "ObjectiveCompetencyObjective_Objective" IS NOT NULL AND "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" IS NOT NULL)),
     CONSTRAINT "CK_StudentCompetencyObjective_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -6296,7 +6296,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
     "BehaviorDetailedDescription" varchar(1024) NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociation_NK" UNIQUE ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_DocumentId", "Student_DocumentId"),
-    CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociation_RefKey" UNIQUE ("DocumentId", "BehaviorDescriptor_DescriptorId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociation_RefKey" UNIQUE ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentDisciplineIncidentBehaviorAssociation_Disc_486f8a9d88" CHECK (("DisciplineIncident_DocumentId" IS NULL AND "DisciplineIncident_IncidentIdentifier" IS NULL AND "DisciplineIncident_SchoolId" IS NULL) OR ("DisciplineIncident_DocumentId" IS NOT NULL AND "DisciplineIncident_IncidentIdentifier" IS NOT NULL AND "DisciplineIncident_SchoolId" IS NOT NULL)),
     CONSTRAINT "CK_StudentDisciplineIncidentBehaviorAssociation_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
 );
@@ -6361,7 +6361,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssessmentAccommodation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodation_NK" UNIQUE ("EducationOrganization_DocumentId", "Student_DocumentId"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodation_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodation_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentEducationOrganizationAssessmentAccommodati_17bf3c1ee3" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentEducationOrganizationAssessmentAccommodati_509405a726" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
 );
@@ -6402,7 +6402,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
     "ProfileThumbnail" varchar(255) NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "Student_DocumentId"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociation_RefKey" UNIQUE ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociation_RefKey" UNIQUE ("EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentEducationOrganizationAssociation_Education_6df5c23bec" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentEducationOrganizationAssociation_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
 );
@@ -7295,7 +7295,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
     "TermCompletionIndicator" boolean NULL,
     CONSTRAINT "PK_StudentSchoolAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentSchoolAssociation_NK" UNIQUE ("EntryDate", "School_DocumentId", "Student_DocumentId"),
-    CONSTRAINT "UX_StudentSchoolAssociation_RefKey" UNIQUE ("DocumentId", "EntryDate", "SchoolId_Unified", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_StudentSchoolAssociation_RefKey" UNIQUE ("EntryDate", "SchoolId_Unified", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentSchoolAssociation_Calendar_AllNone" CHECK (("Calendar_DocumentId" IS NULL AND "Calendar_CalendarCode" IS NULL AND "Calendar_SchoolId" IS NULL AND "Calendar_SchoolYear" IS NULL) OR ("Calendar_DocumentId" IS NOT NULL AND "Calendar_CalendarCode" IS NOT NULL AND "Calendar_SchoolId" IS NOT NULL AND "Calendar_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_StudentSchoolAssociation_ClassOfSchoolYear_AllNone" CHECK (("ClassOfSchoolYear_DocumentId" IS NULL AND "ClassOfSchoolYear_ClassOfSchoolYear" IS NULL) OR ("ClassOfSchoolYear_DocumentId" IS NOT NULL AND "ClassOfSchoolYear_ClassOfSchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_StudentSchoolAssociation_GraduationPlan_AllNone" CHECK (("GraduationPlan_DocumentId" IS NULL AND "GraduationPlan_EducationOrganizationId" IS NULL AND "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" IS NULL AND "GraduationPlan_GraduationSchoolYear" IS NULL) OR ("GraduationPlan_DocumentId" IS NOT NULL AND "GraduationPlan_EducationOrganizationId" IS NOT NULL AND "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" IS NOT NULL AND "GraduationPlan_GraduationSchoolYear" IS NOT NULL)),
@@ -7483,7 +7483,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
     "TeacherStudentDataLinkExclusion" boolean NULL,
     CONSTRAINT "PK_StudentSectionAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentSectionAssociation_NK" UNIQUE ("BeginDate", "Section_DocumentId", "Student_DocumentId"),
-    CONSTRAINT "UX_StudentSectionAssociation_RefKey" UNIQUE ("DocumentId", "BeginDate", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SectionIdentifier", "Section_SessionName", "Student_StudentUniqueId"),
+    CONSTRAINT "UX_StudentSectionAssociation_RefKey" UNIQUE ("BeginDate", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SectionIdentifier", "Section_SessionName", "Student_StudentUniqueId", "DocumentId"),
     CONSTRAINT "CK_StudentSectionAssociation_DualCreditEducationOrga_a1d2845e68" CHECK (("DualCreditEducationOrganization_DocumentId" IS NULL AND "DualCreditEducationOrganization_EducationOrganizationId" IS NULL) OR ("DualCreditEducationOrganization_DocumentId" IS NOT NULL AND "DualCreditEducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentSectionAssociation_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL)),
     CONSTRAINT "CK_StudentSectionAssociation_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
@@ -7822,7 +7822,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Survey"
     "SurveyTitle" varchar(255) NOT NULL,
     CONSTRAINT "PK_Survey" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Survey_NK" UNIQUE ("Namespace", "SurveyIdentifier"),
-    CONSTRAINT "UX_Survey_RefKey" UNIQUE ("DocumentId", "Namespace", "SurveyIdentifier"),
+    CONSTRAINT "UX_Survey_RefKey" UNIQUE ("Namespace", "SurveyIdentifier", "DocumentId"),
     CONSTRAINT "CK_Survey_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_Survey_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_Survey_Session_AllNone" CHECK (("Session_DocumentId" IS NULL AND "Session_SchoolId" IS NULL AND "Session_SchoolYear" IS NULL AND "Session_SessionName" IS NULL) OR ("Session_DocumentId" IS NOT NULL AND "Session_SchoolId" IS NOT NULL AND "Session_SchoolYear" IS NOT NULL AND "Session_SessionName" IS NOT NULL))
@@ -7882,7 +7882,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
     "QuestionText" varchar(1024) NOT NULL,
     CONSTRAINT "PK_SurveyQuestion" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_SurveyQuestion_NK" UNIQUE ("QuestionCode", "Survey_DocumentId"),
-    CONSTRAINT "UX_SurveyQuestion_RefKey" UNIQUE ("DocumentId", "QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified"),
+    CONSTRAINT "UX_SurveyQuestion_RefKey" UNIQUE ("QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified", "DocumentId"),
     CONSTRAINT "CK_SurveyQuestion_SurveySection_AllNone" CHECK (("SurveySection_DocumentId" IS NULL AND "SurveySection_Namespace" IS NULL AND "SurveySection_SurveyIdentifier" IS NULL AND "SurveySection_SurveySectionTitle" IS NULL) OR ("SurveySection_DocumentId" IS NOT NULL AND "SurveySection_Namespace" IS NOT NULL AND "SurveySection_SurveyIdentifier" IS NOT NULL AND "SurveySection_SurveySectionTitle" IS NOT NULL)),
     CONSTRAINT "CK_SurveyQuestion_Survey_AllNone" CHECK (("Survey_DocumentId" IS NULL AND "Survey_Namespace" IS NULL AND "Survey_SurveyIdentifier" IS NULL) OR ("Survey_DocumentId" IS NOT NULL AND "Survey_Namespace" IS NOT NULL AND "Survey_SurveyIdentifier" IS NOT NULL))
 );
@@ -7987,7 +7987,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponse"
     "SurveyResponseIdentifier" varchar(60) NOT NULL,
     CONSTRAINT "PK_SurveyResponse" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_SurveyResponse_NK" UNIQUE ("Survey_DocumentId", "SurveyResponseIdentifier"),
-    CONSTRAINT "UX_SurveyResponse_RefKey" UNIQUE ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier"),
+    CONSTRAINT "UX_SurveyResponse_RefKey" UNIQUE ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier", "DocumentId"),
     CONSTRAINT "CK_SurveyResponse_SurveyResponderChoiceContact_AllNone" CHECK (("SurveyResponderChoiceContact_DocumentId" IS NULL AND "SurveyResponderChoiceContact_ContactUniqueId" IS NULL) OR ("SurveyResponderChoiceContact_DocumentId" IS NOT NULL AND "SurveyResponderChoiceContact_ContactUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_SurveyResponse_SurveyResponderChoiceStaff_AllNone" CHECK (("SurveyResponderChoiceStaff_DocumentId" IS NULL AND "SurveyResponderChoiceStaff_StaffUniqueId" IS NULL) OR ("SurveyResponderChoiceStaff_DocumentId" IS NOT NULL AND "SurveyResponderChoiceStaff_StaffUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_SurveyResponse_SurveyResponderChoiceStudent_AllNone" CHECK (("SurveyResponderChoiceStudent_DocumentId" IS NULL AND "SurveyResponderChoiceStudent_StudentUniqueId" IS NULL) OR ("SurveyResponderChoiceStudent_DocumentId" IS NOT NULL AND "SurveyResponderChoiceStudent_StudentUniqueId" IS NOT NULL)),
@@ -8050,7 +8050,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySection"
     "SurveySectionTitle" varchar(255) NOT NULL,
     CONSTRAINT "PK_SurveySection" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_SurveySection_NK" UNIQUE ("Survey_DocumentId", "SurveySectionTitle"),
-    CONSTRAINT "UX_SurveySection_RefKey" UNIQUE ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveySectionTitle"),
+    CONSTRAINT "UX_SurveySection_RefKey" UNIQUE ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveySectionTitle", "DocumentId"),
     CONSTRAINT "CK_SurveySection_Survey_AllNone" CHECK (("Survey_DocumentId" IS NULL AND "Survey_Namespace" IS NULL AND "Survey_SurveyIdentifier" IS NULL) OR ("Survey_DocumentId" IS NOT NULL AND "Survey_Namespace" IS NOT NULL AND "Survey_SurveyIdentifier" IS NOT NULL))
 );
 
@@ -8092,7 +8092,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponse"
     "SectionRating" numeric(9,3) NULL,
     CONSTRAINT "PK_SurveySectionResponse" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_SurveySectionResponse_NK" UNIQUE ("SurveyResponse_DocumentId", "SurveySection_DocumentId"),
-    CONSTRAINT "UX_SurveySectionResponse_RefKey" UNIQUE ("DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveySection_SurveySectionTitle"),
+    CONSTRAINT "UX_SurveySectionResponse_RefKey" UNIQUE ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveySection_SurveySectionTitle", "DocumentId"),
     CONSTRAINT "CK_SurveySectionResponse_SurveyResponse_AllNone" CHECK (("SurveyResponse_DocumentId" IS NULL AND "SurveyResponse_Namespace" IS NULL AND "SurveyResponse_SurveyIdentifier" IS NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NULL) OR ("SurveyResponse_DocumentId" IS NOT NULL AND "SurveyResponse_Namespace" IS NOT NULL AND "SurveyResponse_SurveyIdentifier" IS NOT NULL AND "SurveyResponse_SurveyResponseIdentifier" IS NOT NULL)),
     CONSTRAINT "CK_SurveySectionResponse_SurveySection_AllNone" CHECK (("SurveySection_DocumentId" IS NULL AND "SurveySection_Namespace" IS NULL AND "SurveySection_SurveyIdentifier" IS NULL AND "SurveySection_SurveySectionTitle" IS NULL) OR ("SurveySection_DocumentId" IS NOT NULL AND "SurveySection_Namespace" IS NOT NULL AND "SurveySection_SurveyIdentifier" IS NOT NULL AND "SurveySection_SurveySectionTitle" IS NOT NULL))
 );
@@ -10510,7 +10510,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationIdentity_NK" UNIQUE ("EducationOrganizationId"),
-    CONSTRAINT "UX_EducationOrganizationIdentity_RefKey" UNIQUE ("DocumentId", "EducationOrganizationId")
+    CONSTRAINT "UX_EducationOrganizationIdentity_RefKey" UNIQUE ("EducationOrganizationId", "DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."GeneralStudentProgramAssociationIdentity"
@@ -10525,7 +10525,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GeneralStudentProgramAssociationIdentity"
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_GeneralStudentProgramAssociationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_GeneralStudentProgramAssociationIdentity_NK" UNIQUE ("BeginDate", "EducationOrganizationReferenceEducationOrganizationId", "ProgramReferenceEducationOrganizationId", "ProgramReferenceProgramName", "ProgramReferenceProgramTypeDescriptor", "StudentReferenceStudentUniqueId"),
-    CONSTRAINT "UX_GeneralStudentProgramAssociationIdentity_RefKey" UNIQUE ("DocumentId", "BeginDate", "EducationOrganizationReferenceEducationOrganizationId", "ProgramReferenceEducationOrganizationId", "ProgramReferenceProgramName", "ProgramReferenceProgramTypeDescriptor", "StudentReferenceStudentUniqueId")
+    CONSTRAINT "UX_GeneralStudentProgramAssociationIdentity_RefKey" UNIQUE ("BeginDate", "EducationOrganizationReferenceEducationOrganizationId", "ProgramReferenceEducationOrganizationId", "ProgramReferenceProgramName", "ProgramReferenceProgramTypeDescriptor", "StudentReferenceStudentUniqueId", "DocumentId")
 );
 
 DO $$
@@ -10555,8 +10555,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AcademicWeek"
         ADD CONSTRAINT "FK_AcademicWeek_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -10589,8 +10589,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AccountabilityRating"
         ADD CONSTRAINT "FK_AccountabilityRating_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -10606,8 +10606,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AccountabilityRating"
         ADD CONSTRAINT "FK_AccountabilityRating_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_SchoolYear", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -10674,8 +10674,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Assessment"
         ADD CONSTRAINT "FK_Assessment_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -10691,8 +10691,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Assessment"
         ADD CONSTRAINT "FK_Assessment_MandatingEducationOrganization_RefKey"
-        FOREIGN KEY ("MandatingEducationOrganization_DocumentId", "MandatingEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("MandatingEducationOrganization_EducationOrganizationId", "MandatingEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11031,8 +11031,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AssessmentProgram"
         ADD CONSTRAINT "FK_AssessmentProgram_SectionOrProgramChoiceProgram_RefKey"
-        FOREIGN KEY ("SectionOrProgramChoiceProgram_DocumentId", "SectionOrProgramChoiceProgram_EducationOrganizationId", "SectionOrProgramChoiceProgram_ProgramName", "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("SectionOrProgramChoiceProgram_EducationOrganizationId", "SectionOrProgramChoiceProgram_ProgramName", "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce", "SectionOrProgramChoiceProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11116,8 +11116,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AssessmentSection"
         ADD CONSTRAINT "FK_AssessmentSection_SectionOrProgramChoiceSection_RefKey"
-        FOREIGN KEY ("SectionOrProgramChoiceSection_DocumentId", "SectionOrProgramChoiceSection_LocalCourseCode", "SectionOrProgramChoiceSection_SchoolId", "SectionOrProgramChoiceSection_SchoolYear", "SectionOrProgramChoiceSection_SessionName", "SectionOrProgramChoiceSection_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("SectionOrProgramChoiceSection_LocalCourseCode", "SectionOrProgramChoiceSection_SchoolId", "SectionOrProgramChoiceSection_SchoolYear", "SectionOrProgramChoiceSection_SessionName", "SectionOrProgramChoiceSection_SectionIdentifier", "SectionOrProgramChoiceSection_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11133,8 +11133,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AssessmentAdministration"
         ADD CONSTRAINT "FK_AssessmentAdministration_Assessment_RefKey"
-        FOREIGN KEY ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace")
-        REFERENCES "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "Namespace")
+        FOREIGN KEY ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId")
+        REFERENCES "edfi"."Assessment" ("AssessmentIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11144,14 +11144,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentAdministration_AssigningEducationOrgani_45c7fcd9f6'
+        WHERE conname = 'FK_AssessmentAdministration_AssigningEducationOrgani_894c9717c2'
         AND conrelid = to_regclass('"edfi"."AssessmentAdministration"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentAdministration"
-        ADD CONSTRAINT "FK_AssessmentAdministration_AssigningEducationOrgani_45c7fcd9f6"
-        FOREIGN KEY ("AssigningEducationOrganization_DocumentId", "AssigningEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_AssessmentAdministration_AssigningEducationOrgani_894c9717c2"
+        FOREIGN KEY ("AssigningEducationOrganization_EducationOrganizationId", "AssigningEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11178,14 +11178,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentAdministrationAssessmentBatteryPart_Ass_a9c1679c61'
+        WHERE conname = 'FK_AssessmentAdministrationAssessmentBatteryPart_Ass_6fc06ffca7'
         AND conrelid = to_regclass('"edfi"."AssessmentAdministrationAssessmentBatteryPart"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentAdministrationAssessmentBatteryPart"
-        ADD CONSTRAINT "FK_AssessmentAdministrationAssessmentBatteryPart_Ass_a9c1679c61"
-        FOREIGN KEY ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace")
-        REFERENCES "edfi"."AssessmentBatteryPart" ("DocumentId", "AssessmentBatteryPartName", "Assessment_AssessmentIdentifier", "Assessment_Namespace")
+        ADD CONSTRAINT "FK_AssessmentAdministrationAssessmentBatteryPart_Ass_6fc06ffca7"
+        FOREIGN KEY ("AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace", "AssessmentBatteryPart_DocumentId")
+        REFERENCES "edfi"."AssessmentBatteryPart" ("AssessmentBatteryPartName", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11229,14 +11229,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentAdministrationParticipation_AssessmentA_5e9b96380e'
+        WHERE conname = 'FK_AssessmentAdministrationParticipation_AssessmentA_7edad6223f'
         AND conrelid = to_regclass('"edfi"."AssessmentAdministrationParticipation"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentAdministrationParticipation"
-        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_AssessmentA_5e9b96380e"
-        FOREIGN KEY ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId")
-        REFERENCES "edfi"."AssessmentAdministration" ("DocumentId", "AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId")
+        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_AssessmentA_7edad6223f"
+        FOREIGN KEY ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_DocumentId")
+        REFERENCES "edfi"."AssessmentAdministration" ("AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11263,14 +11263,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentAdministrationParticipation_Participati_d72aa804ec'
+        WHERE conname = 'FK_AssessmentAdministrationParticipation_Participati_47afdc63b0'
         AND conrelid = to_regclass('"edfi"."AssessmentAdministrationParticipation"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentAdministrationParticipation"
-        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_Participati_d72aa804ec"
-        FOREIGN KEY ("ParticipatingEducationOrganization_DocumentId", "ParticipatingEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_Participati_47afdc63b0"
+        FOREIGN KEY ("ParticipatingEducationOrganization_EducationOrganizationId", "ParticipatingEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11280,14 +11280,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentAdministrationParticipationAdministrati_484c95bf7b'
+        WHERE conname = 'FK_AssessmentAdministrationParticipationAdministrati_49a377f89a'
         AND conrelid = to_regclass('"edfi"."AssessmentAdministrationParticipationAdministrationP_c63833eb57"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentAdministrationParticipationAdministrationP_c63833eb57"
-        ADD CONSTRAINT "FK_AssessmentAdministrationParticipationAdministrati_484c95bf7b"
-        FOREIGN KEY ("AdministrationPointOfContactEducationOrganization_DocumentId", "AdministrationPointOfContactEducationOrganization_Ed_205063b290")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_AssessmentAdministrationParticipationAdministrati_49a377f89a"
+        FOREIGN KEY ("AdministrationPointOfContactEducationOrganization_Ed_205063b290", "AdministrationPointOfContactEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11320,8 +11320,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AssessmentBatteryPart"
         ADD CONSTRAINT "FK_AssessmentBatteryPart_Assessment_RefKey"
-        FOREIGN KEY ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace")
-        REFERENCES "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "Namespace")
+        FOREIGN KEY ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId")
+        REFERENCES "edfi"."Assessment" ("AssessmentIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11365,14 +11365,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentBatteryPartObjectiveAssessment_Objectiv_fd0e53ef19'
+        WHERE conname = 'FK_AssessmentBatteryPartObjectiveAssessment_Objectiv_60058cc9c0'
         AND conrelid = to_regclass('"edfi"."AssessmentBatteryPartObjectiveAssessment"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentBatteryPartObjectiveAssessment"
-        ADD CONSTRAINT "FK_AssessmentBatteryPartObjectiveAssessment_Objectiv_fd0e53ef19"
-        FOREIGN KEY ("ObjectiveAssessment_DocumentId", "ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode")
-        REFERENCES "edfi"."ObjectiveAssessment" ("DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode")
+        ADD CONSTRAINT "FK_AssessmentBatteryPartObjectiveAssessment_Objectiv_60058cc9c0"
+        FOREIGN KEY ("ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode", "ObjectiveAssessment_DocumentId")
+        REFERENCES "edfi"."ObjectiveAssessment" ("AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11405,8 +11405,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AssessmentItem"
         ADD CONSTRAINT "FK_AssessmentItem_Assessment_RefKey"
-        FOREIGN KEY ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace")
-        REFERENCES "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "Namespace")
+        FOREIGN KEY ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId")
+        REFERENCES "edfi"."Assessment" ("AssessmentIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11456,8 +11456,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AssessmentItemLearningStandard"
         ADD CONSTRAINT "FK_AssessmentItemLearningStandard_LearningStandard_RefKey"
-        FOREIGN KEY ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        FOREIGN KEY ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11507,8 +11507,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."AssessmentScoreRangeLearningStandard"
         ADD CONSTRAINT "FK_AssessmentScoreRangeLearningStandard_Assessment_RefKey"
-        FOREIGN KEY ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified")
-        REFERENCES "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "Namespace")
+        FOREIGN KEY ("AssessmentIdentifier_Unified", "Namespace_Unified", "Assessment_DocumentId")
+        REFERENCES "edfi"."Assessment" ("AssessmentIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11535,14 +11535,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentScoreRangeLearningStandard_ObjectiveAss_1e02e62abc'
+        WHERE conname = 'FK_AssessmentScoreRangeLearningStandard_ObjectiveAss_bf1ffffec2'
         AND conrelid = to_regclass('"edfi"."AssessmentScoreRangeLearningStandard"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentScoreRangeLearningStandard"
-        ADD CONSTRAINT "FK_AssessmentScoreRangeLearningStandard_ObjectiveAss_1e02e62abc"
-        FOREIGN KEY ("ObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ObjectiveAssessment_IdentificationCode")
-        REFERENCES "edfi"."ObjectiveAssessment" ("DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode")
+        ADD CONSTRAINT "FK_AssessmentScoreRangeLearningStandard_ObjectiveAss_bf1ffffec2"
+        FOREIGN KEY ("AssessmentIdentifier_Unified", "Namespace_Unified", "ObjectiveAssessment_IdentificationCode", "ObjectiveAssessment_DocumentId")
+        REFERENCES "edfi"."ObjectiveAssessment" ("AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11552,14 +11552,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentScoreRangeLearningStandardLearningStand_3b05bc1a08'
+        WHERE conname = 'FK_AssessmentScoreRangeLearningStandardLearningStand_14ded7435c'
         AND conrelid = to_regclass('"edfi"."AssessmentScoreRangeLearningStandardLearningStandard"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentScoreRangeLearningStandardLearningStandard"
-        ADD CONSTRAINT "FK_AssessmentScoreRangeLearningStandardLearningStand_3b05bc1a08"
-        FOREIGN KEY ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        ADD CONSTRAINT "FK_AssessmentScoreRangeLearningStandardLearningStand_14ded7435c"
+        FOREIGN KEY ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11660,8 +11660,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."BellSchedule"
         ADD CONSTRAINT "FK_BellSchedule_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11694,8 +11694,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."BellScheduleClassPeriod"
         ADD CONSTRAINT "FK_BellScheduleClassPeriod_ClassPeriod_RefKey"
-        FOREIGN KEY ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId")
-        REFERENCES "edfi"."ClassPeriod" ("DocumentId", "ClassPeriodName", "School_SchoolId")
+        FOREIGN KEY ("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId")
+        REFERENCES "edfi"."ClassPeriod" ("ClassPeriodName", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -11796,8 +11796,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Calendar"
         ADD CONSTRAINT "FK_Calendar_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_SchoolYear", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11813,8 +11813,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Calendar"
         ADD CONSTRAINT "FK_Calendar_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11864,8 +11864,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CalendarDate"
         ADD CONSTRAINT "FK_CalendarDate_Calendar_RefKey"
-        FOREIGN KEY ("Calendar_DocumentId", "Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear")
-        REFERENCES "edfi"."Calendar" ("DocumentId", "CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear", "Calendar_DocumentId")
+        REFERENCES "edfi"."Calendar" ("CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11949,8 +11949,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_BalanceSheetBalanceSheetDimension_RefKey"
-        FOREIGN KEY ("BalanceSheetBalanceSheetDimension_DocumentId", "BalanceSheetBalanceSheetDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."BalanceSheetDimension" ("DocumentId", "Code", "FiscalYear")
+        FOREIGN KEY ("BalanceSheetBalanceSheetDimension_Code", "FiscalYear_Unified", "BalanceSheetBalanceSheetDimension_DocumentId")
+        REFERENCES "edfi"."BalanceSheetDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11983,8 +11983,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -12000,8 +12000,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_FunctionFunctionDimension_RefKey"
-        FOREIGN KEY ("FunctionFunctionDimension_DocumentId", "FunctionFunctionDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."FunctionDimension" ("DocumentId", "Code", "FiscalYear")
+        FOREIGN KEY ("FunctionFunctionDimension_Code", "FiscalYear_Unified", "FunctionFunctionDimension_DocumentId")
+        REFERENCES "edfi"."FunctionDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12017,8 +12017,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_FundFundDimension_RefKey"
-        FOREIGN KEY ("FundFundDimension_DocumentId", "FundFundDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."FundDimension" ("DocumentId", "Code", "FiscalYear")
+        FOREIGN KEY ("FundFundDimension_Code", "FiscalYear_Unified", "FundFundDimension_DocumentId")
+        REFERENCES "edfi"."FundDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12034,8 +12034,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_ObjectObjectDimension_RefKey"
-        FOREIGN KEY ("ObjectObjectDimension_DocumentId", "ObjectObjectDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."ObjectDimension" ("DocumentId", "Code", "FiscalYear")
+        FOREIGN KEY ("ObjectObjectDimension_Code", "FiscalYear_Unified", "ObjectObjectDimension_DocumentId")
+        REFERENCES "edfi"."ObjectDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12045,14 +12045,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ChartOfAccount_OperationalUnitOperationalUnitDime_36fa812955'
+        WHERE conname = 'FK_ChartOfAccount_OperationalUnitOperationalUnitDime_d822025b8f'
         AND conrelid = to_regclass('"edfi"."ChartOfAccount"')
     )
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
-        ADD CONSTRAINT "FK_ChartOfAccount_OperationalUnitOperationalUnitDime_36fa812955"
-        FOREIGN KEY ("OperationalUnitOperationalUnitDimension_DocumentId", "OperationalUnitOperationalUnitDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."OperationalUnitDimension" ("DocumentId", "Code", "FiscalYear")
+        ADD CONSTRAINT "FK_ChartOfAccount_OperationalUnitOperationalUnitDime_d822025b8f"
+        FOREIGN KEY ("OperationalUnitOperationalUnitDimension_Code", "FiscalYear_Unified", "OperationalUnitOperationalUnitDimension_DocumentId")
+        REFERENCES "edfi"."OperationalUnitDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12068,8 +12068,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_ProgramProgramDimension_RefKey"
-        FOREIGN KEY ("ProgramProgramDimension_DocumentId", "ProgramProgramDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."ProgramDimension" ("DocumentId", "Code", "FiscalYear")
+        FOREIGN KEY ("ProgramProgramDimension_Code", "FiscalYear_Unified", "ProgramProgramDimension_DocumentId")
+        REFERENCES "edfi"."ProgramDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12085,8 +12085,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_ProjectProjectDimension_RefKey"
-        FOREIGN KEY ("ProjectProjectDimension_DocumentId", "ProjectProjectDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."ProjectDimension" ("DocumentId", "Code", "FiscalYear")
+        FOREIGN KEY ("ProjectProjectDimension_Code", "FiscalYear_Unified", "ProjectProjectDimension_DocumentId")
+        REFERENCES "edfi"."ProjectDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12102,8 +12102,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_SourceSourceDimension_RefKey"
-        FOREIGN KEY ("SourceSourceDimension_DocumentId", "SourceSourceDimension_Code", "FiscalYear_Unified")
-        REFERENCES "edfi"."SourceDimension" ("DocumentId", "Code", "FiscalYear")
+        FOREIGN KEY ("SourceSourceDimension_Code", "FiscalYear_Unified", "SourceSourceDimension_DocumentId")
+        REFERENCES "edfi"."SourceDimension" ("Code", "FiscalYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12170,8 +12170,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ClassPeriod"
         ADD CONSTRAINT "FK_ClassPeriod_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12272,8 +12272,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Cohort"
         ADD CONSTRAINT "FK_Cohort_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -12323,8 +12323,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CohortProgram"
         ADD CONSTRAINT "FK_CohortProgram_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -12697,8 +12697,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CommunityProvider"
         ADD CONSTRAINT "FK_CommunityProvider_CommunityOrganization_RefKey"
-        FOREIGN KEY ("CommunityOrganization_DocumentId", "CommunityOrganization_CommunityOrganizationId")
-        REFERENCES "edfi"."CommunityOrganization" ("DocumentId", "CommunityOrganizationId")
+        FOREIGN KEY ("CommunityOrganization_CommunityOrganizationId", "CommunityOrganization_DocumentId")
+        REFERENCES "edfi"."CommunityOrganization" ("CommunityOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13122,8 +13122,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CommunityProviderLicense"
         ADD CONSTRAINT "FK_CommunityProviderLicense_CommunityProvider_RefKey"
-        FOREIGN KEY ("CommunityProvider_DocumentId", "CommunityProvider_CommunityProviderId")
-        REFERENCES "edfi"."CommunityProvider" ("DocumentId", "CommunityProviderId")
+        FOREIGN KEY ("CommunityProvider_CommunityProviderId", "CommunityProvider_DocumentId")
+        REFERENCES "edfi"."CommunityProvider" ("CommunityProviderId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13207,8 +13207,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CompetencyObjective"
         ADD CONSTRAINT "FK_CompetencyObjective_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -13275,8 +13275,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Contact"
         ADD CONSTRAINT "FK_Contact_Person_RefKey"
-        FOREIGN KEY ("Person_DocumentId", "Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId")
-        REFERENCES "edfi"."Person" ("DocumentId", "PersonId", "SourceSystemDescriptor_DescriptorId")
+        FOREIGN KEY ("Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId", "Person_DocumentId")
+        REFERENCES "edfi"."Person" ("PersonId", "SourceSystemDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13768,8 +13768,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Course"
         ADD CONSTRAINT "FK_Course_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -13938,8 +13938,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseLearningStandard"
         ADD CONSTRAINT "FK_CourseLearningStandard_LearningStandard_RefKey"
-        FOREIGN KEY ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        FOREIGN KEY ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14023,8 +14023,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseOffering"
         ADD CONSTRAINT "FK_CourseOffering_Course_RefKey"
-        FOREIGN KEY ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId")
-        REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
+        FOREIGN KEY ("Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId")
+        REFERENCES "edfi"."Course" ("CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -14057,8 +14057,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseOffering"
         ADD CONSTRAINT "FK_CourseOffering_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "SchoolId_Unified")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("SchoolId_Unified", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14074,8 +14074,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseOffering"
         ADD CONSTRAINT "FK_CourseOffering_Session_RefKey"
-        FOREIGN KEY ("Session_DocumentId", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName")
-        REFERENCES "edfi"."Session" ("DocumentId", "School_SchoolId", "SchoolYear_SchoolYear", "SessionName")
+        FOREIGN KEY ("SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "Session_DocumentId")
+        REFERENCES "edfi"."Session" ("School_SchoolId", "SchoolYear_SchoolYear", "SessionName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -14227,8 +14227,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_CourseCourse_RefKey"
-        FOREIGN KEY ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId")
-        REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
+        FOREIGN KEY ("CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId", "CourseCourse_DocumentId")
+        REFERENCES "edfi"."Course" ("CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -14295,8 +14295,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_ExternalEducationOrganization_RefKey"
-        FOREIGN KEY ("ExternalEducationOrganization_DocumentId", "ExternalEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("ExternalEducationOrganization_EducationOrganizationId", "ExternalEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -14329,8 +14329,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_ResponsibleTeacherStaff_RefKey"
-        FOREIGN KEY ("ResponsibleTeacherStaff_DocumentId", "ResponsibleTeacherStaff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("ResponsibleTeacherStaff_StaffUniqueId", "ResponsibleTeacherStaff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14346,8 +14346,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_StudentAcademicRecord_RefKey"
-        FOREIGN KEY ("StudentAcademicRecord_DocumentId", "StudentAcademicRecord_EducationOrganizationId", "StudentAcademicRecord_SchoolYear", "StudentAcademicRecord_StudentUniqueId", "StudentAcademicRecord_TermDescriptor_DescriptorId")
-        REFERENCES "edfi"."StudentAcademicRecord" ("DocumentId", "EducationOrganization_EducationOrganizationId", "SchoolYear_SchoolYear", "Student_StudentUniqueId", "TermDescriptor_DescriptorId")
+        FOREIGN KEY ("StudentAcademicRecord_EducationOrganizationId", "StudentAcademicRecord_SchoolYear", "StudentAcademicRecord_StudentUniqueId", "StudentAcademicRecord_TermDescriptor_DescriptorId", "StudentAcademicRecord_DocumentId")
+        REFERENCES "edfi"."StudentAcademicRecord" ("EducationOrganization_EducationOrganizationId", "SchoolYear_SchoolYear", "Student_StudentUniqueId", "TermDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -14482,8 +14482,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseTranscriptCourseProgram"
         ADD CONSTRAINT "FK_CourseTranscriptCourseProgram_CourseProgram_RefKey"
-        FOREIGN KEY ("CourseProgram_DocumentId", "CourseProgram_EducationOrganizationId", "CourseProgram_ProgramName", "CourseProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("CourseProgram_EducationOrganizationId", "CourseProgram_ProgramName", "CourseProgram_ProgramTypeDescriptor_DescriptorId", "CourseProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -14635,8 +14635,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CourseTranscriptSection"
         ADD CONSTRAINT "FK_CourseTranscriptSection_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -14924,8 +14924,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."DisciplineAction"
         ADD CONSTRAINT "FK_DisciplineAction_AssignmentSchool_RefKey"
-        FOREIGN KEY ("AssignmentSchool_DocumentId", "AssignmentSchool_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("AssignmentSchool_SchoolId", "AssignmentSchool_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14975,8 +14975,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."DisciplineAction"
         ADD CONSTRAINT "FK_DisciplineAction_ResponsibilitySchool_RefKey"
-        FOREIGN KEY ("ResponsibilitySchool_DocumentId", "ResponsibilitySchool_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("ResponsibilitySchool_SchoolId", "ResponsibilitySchool_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14992,8 +14992,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."DisciplineAction"
         ADD CONSTRAINT "FK_DisciplineAction_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15060,8 +15060,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."DisciplineActionStaff"
         ADD CONSTRAINT "FK_DisciplineActionStaff_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15088,6 +15088,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_DisciplineActionStudentDisciplineIncidentBehavior_76e135574b'
+        AND conrelid = to_regclass('"edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
+        ADD CONSTRAINT "FK_DisciplineActionStudentDisciplineIncidentBehavior_76e135574b"
+        FOREIGN KEY ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId", "StudentDisciplineIncidentBehaviorAssociation_DocumentId")
+        REFERENCES "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "Student_StudentUniqueId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_DisciplineActionStudentDisciplineIncidentBehavior_caf13ed112'
         AND conrelid = to_regclass('"edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"')
     )
@@ -15097,23 +15114,6 @@ BEGIN
         FOREIGN KEY ("DisciplineAction_DocumentId")
         REFERENCES "edfi"."DisciplineAction" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DisciplineActionStudentDisciplineIncidentBehavior_eef781542b'
-        AND conrelid = to_regclass('"edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
-        ADD CONSTRAINT "FK_DisciplineActionStudentDisciplineIncidentBehavior_eef781542b"
-        FOREIGN KEY ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId")
-        REFERENCES "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DocumentId", "BehaviorDescriptor_DescriptorId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "Student_StudentUniqueId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -15179,8 +15179,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."DisciplineIncident"
         ADD CONSTRAINT "FK_DisciplineIncident_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15360,14 +15360,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationContent_LearningResourceChoiceLearningRe_0dd9631746'
+        WHERE conname = 'FK_EducationContent_LearningResourceChoiceLearningRe_c0fc0a62c8'
         AND conrelid = to_regclass('"edfi"."EducationContent"')
     )
     THEN
         ALTER TABLE "edfi"."EducationContent"
-        ADD CONSTRAINT "FK_EducationContent_LearningResourceChoiceLearningRe_0dd9631746"
-        FOREIGN KEY ("LearningResourceChoiceLearningResourceLearningStanda_5916be65e2", "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        ADD CONSTRAINT "FK_EducationContent_LearningResourceChoiceLearningRe_c0fc0a62c8"
+        FOREIGN KEY ("LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0", "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15462,14 +15462,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationContentDerivativeSourceEducationContent__9b49552d0a'
+        WHERE conname = 'FK_EducationContentDerivativeSourceEducationContent__c050632108'
         AND conrelid = to_regclass('"edfi"."EducationContentDerivativeSourceEducationContent"')
     )
     THEN
         ALTER TABLE "edfi"."EducationContentDerivativeSourceEducationContent"
-        ADD CONSTRAINT "FK_EducationContentDerivativeSourceEducationContent__9b49552d0a"
-        FOREIGN KEY ("DerivativeSourceEducationContent_DocumentId", "DerivativeSourceEducationContent_ContentIdentifier")
-        REFERENCES "edfi"."EducationContent" ("DocumentId", "ContentIdentifier")
+        ADD CONSTRAINT "FK_EducationContentDerivativeSourceEducationContent__c050632108"
+        FOREIGN KEY ("DerivativeSourceEducationContent_ContentIdentifier", "DerivativeSourceEducationContent_DocumentId")
+        REFERENCES "edfi"."EducationContent" ("ContentIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15564,14 +15564,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_90a0ad8bfa'
+        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_5600685afa'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_90a0ad8bfa"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_5600685afa"
+        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28", "InterventionPrescriptionInterventionPrescription_DocumentId")
+        REFERENCES "edfi"."InterventionPrescription" ("EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -15581,14 +15581,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_9445aa8112'
+        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_832757e496'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_9445aa8112"
-        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
-        REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
+        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_832757e496"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -16006,14 +16006,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkAssociation_Education_78a6d27311'
+        WHERE conname = 'FK_EducationOrganizationNetworkAssociation_Education_42e921abdd'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkAssociation_Education_78a6d27311"
-        FOREIGN KEY ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationNetwork_EducationOrganizationNetworkId")
-        REFERENCES "edfi"."EducationOrganizationNetwork" ("DocumentId", "EducationOrganizationNetworkId")
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkAssociation_Education_42e921abdd"
+        FOREIGN KEY ("EducationOrganizationNetwork_EducationOrganizationNetworkId", "EducationOrganizationNetwork_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationNetwork" ("EducationOrganizationNetworkId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16023,14 +16023,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkAssociation_MemberEdu_b37d57210a'
+        WHERE conname = 'FK_EducationOrganizationNetworkAssociation_MemberEdu_98d6deb0fe'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkAssociation_MemberEdu_b37d57210a"
-        FOREIGN KEY ("MemberEducationOrganization_DocumentId", "MemberEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkAssociation_MemberEdu_98d6deb0fe"
+        FOREIGN KEY ("MemberEducationOrganization_EducationOrganizationId", "MemberEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -16057,14 +16057,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationPeerAssociation_EducationOrg_c6d4bf6113'
+        WHERE conname = 'FK_EducationOrganizationPeerAssociation_EducationOrg_f85a0a6d77'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationPeerAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationPeerAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationPeerAssociation_EducationOrg_c6d4bf6113"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_EducationOrganizationPeerAssociation_EducationOrg_f85a0a6d77"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -16074,14 +16074,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationPeerAssociation_PeerEducatio_d7a7ef50e2'
+        WHERE conname = 'FK_EducationOrganizationPeerAssociation_PeerEducatio_9b7ed787a4'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationPeerAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationPeerAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationPeerAssociation_PeerEducatio_d7a7ef50e2"
-        FOREIGN KEY ("PeerEducationOrganization_DocumentId", "PeerEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_EducationOrganizationPeerAssociation_PeerEducatio_9b7ed787a4"
+        FOREIGN KEY ("PeerEducationOrganization_EducationOrganizationId", "PeerEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -16131,8 +16131,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."EducationServiceCenter"
         ADD CONSTRAINT "FK_EducationServiceCenter_StateEducationAgency_RefKey"
-        FOREIGN KEY ("StateEducationAgency_DocumentId", "StateEducationAgency_StateEducationAgencyId")
-        REFERENCES "edfi"."StateEducationAgency" ("DocumentId", "StateEducationAgencyId")
+        FOREIGN KEY ("StateEducationAgency_StateEducationAgencyId", "StateEducationAgency_DocumentId")
+        REFERENCES "edfi"."StateEducationAgency" ("StateEducationAgencyId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16556,8 +16556,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."EvaluationRubricDimension"
         ADD CONSTRAINT "FK_EvaluationRubricDimension_ProgramEvaluationElement_RefKey"
-        FOREIGN KEY ("ProgramEvaluationElement_DocumentId", "ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
+        FOREIGN KEY ("ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluationElement_DocumentId")
+        REFERENCES "edfi"."ProgramEvaluationElement" ("ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -16590,8 +16590,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."FeederSchoolAssociation"
         ADD CONSTRAINT "FK_FeederSchoolAssociation_FeederSchool_RefKey"
-        FOREIGN KEY ("FeederSchool_DocumentId", "FeederSchool_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("FeederSchool_SchoolId", "FeederSchool_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16607,8 +16607,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."FeederSchoolAssociation"
         ADD CONSTRAINT "FK_FeederSchoolAssociation_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16777,8 +16777,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Grade"
         ADD CONSTRAINT "FK_Grade_GradingPeriodGradingPeriod_RefKey"
-        FOREIGN KEY ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified")
-        REFERENCES "edfi"."GradingPeriod" ("DocumentId", "GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "GradingPeriodGradingPeriod_DocumentId")
+        REFERENCES "edfi"."GradingPeriod" ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16811,8 +16811,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Grade"
         ADD CONSTRAINT "FK_Grade_StudentSectionAssociation_RefKey"
-        FOREIGN KEY ("StudentSectionAssociation_DocumentId", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId")
-        REFERENCES "edfi"."StudentSectionAssociation" ("DocumentId", "BeginDate", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SectionIdentifier", "Section_SessionName", "Student_StudentUniqueId")
+        FOREIGN KEY ("StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId", "StudentSectionAssociation_DocumentId")
+        REFERENCES "edfi"."StudentSectionAssociation" ("BeginDate", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SectionIdentifier", "Section_SessionName", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -16839,14 +16839,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GradeLearningStandardGrade_LearningStandardGradeL_c3962d5e3a'
+        WHERE conname = 'FK_GradeLearningStandardGrade_LearningStandardGradeL_5b5c3a1624'
         AND conrelid = to_regclass('"edfi"."GradeLearningStandardGrade"')
     )
     THEN
         ALTER TABLE "edfi"."GradeLearningStandardGrade"
-        ADD CONSTRAINT "FK_GradeLearningStandardGrade_LearningStandardGradeL_c3962d5e3a"
-        FOREIGN KEY ("LearningStandardGradeLearningStandard_DocumentId", "LearningStandardGradeLearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        ADD CONSTRAINT "FK_GradeLearningStandardGrade_LearningStandardGradeL_5b5c3a1624"
+        FOREIGN KEY ("LearningStandardGradeLearningStandard_LearningStandardId", "LearningStandardGradeLearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16930,8 +16930,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GradebookEntry"
         ADD CONSTRAINT "FK_GradebookEntry_GradingPeriod_RefKey"
-        FOREIGN KEY ("GradingPeriod_DocumentId", "GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified")
-        REFERENCES "edfi"."GradingPeriod" ("DocumentId", "GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "GradingPeriod_DocumentId")
+        REFERENCES "edfi"."GradingPeriod" ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16947,8 +16947,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GradebookEntry"
         ADD CONSTRAINT "FK_GradebookEntry_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -16981,8 +16981,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GradebookEntryLearningStandard"
         ADD CONSTRAINT "FK_GradebookEntryLearningStandard_LearningStandard_RefKey"
-        FOREIGN KEY ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        FOREIGN KEY ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17032,8 +17032,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GradingPeriod"
         ADD CONSTRAINT "FK_GradingPeriod_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_SchoolYear", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17049,8 +17049,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GradingPeriod"
         ADD CONSTRAINT "FK_GradingPeriod_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17083,8 +17083,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GraduationPlan"
         ADD CONSTRAINT "FK_GraduationPlan_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -17117,8 +17117,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GraduationPlan"
         ADD CONSTRAINT "FK_GraduationPlan_GraduationSchoolYear_RefKey"
-        FOREIGN KEY ("GraduationSchoolYear_DocumentId", "GraduationSchoolYear_GraduationSchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("GraduationSchoolYear_GraduationSchoolYear", "GraduationSchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17366,14 +17366,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanRequiredAssessment_RequiredAssessme_ca7e9b7fa3'
+        WHERE conname = 'FK_GraduationPlanRequiredAssessment_RequiredAssessme_f0c2af0d23'
         AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessment"')
     )
     THEN
         ALTER TABLE "edfi"."GraduationPlanRequiredAssessment"
-        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_RequiredAssessme_ca7e9b7fa3"
-        FOREIGN KEY ("RequiredAssessmentAssessment_DocumentId", "RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace")
-        REFERENCES "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "Namespace")
+        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_RequiredAssessme_f0c2af0d23"
+        FOREIGN KEY ("RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace", "RequiredAssessmentAssessment_DocumentId")
+        REFERENCES "edfi"."Assessment" ("AssessmentIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17389,8 +17389,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."GraduationPlanCreditsByCoursCours"
         ADD CONSTRAINT "FK_GraduationPlanCreditsByCoursCours_CourseCourse_RefKey"
-        FOREIGN KEY ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId")
-        REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
+        FOREIGN KEY ("CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId", "CourseCourse_DocumentId")
+        REFERENCES "edfi"."Course" ("CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -17508,8 +17508,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Intervention"
         ADD CONSTRAINT "FK_Intervention_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -17638,14 +17638,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionEducationContent_EducationContentSour_d08073f67a'
+        WHERE conname = 'FK_InterventionEducationContent_EducationContentSour_5337dd52cd'
         AND conrelid = to_regclass('"edfi"."InterventionEducationContent"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionEducationContent"
-        ADD CONSTRAINT "FK_InterventionEducationContent_EducationContentSour_d08073f67a"
-        FOREIGN KEY ("EducationContentSourceEducationContent_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier")
-        REFERENCES "edfi"."EducationContent" ("DocumentId", "ContentIdentifier")
+        ADD CONSTRAINT "FK_InterventionEducationContent_EducationContentSour_5337dd52cd"
+        FOREIGN KEY ("EducationContentSourceEducationContent_ContentIdentifier", "EducationContentSourceEducationContent_DocumentId")
+        REFERENCES "edfi"."EducationContent" ("ContentIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17689,14 +17689,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionInterventionPrescription_Intervention_0d4b603fcc'
+        WHERE conname = 'FK_InterventionInterventionPrescription_Intervention_a67a67bf9d'
         AND conrelid = to_regclass('"edfi"."InterventionInterventionPrescription"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionInterventionPrescription"
-        ADD CONSTRAINT "FK_InterventionInterventionPrescription_Intervention_0d4b603fcc"
-        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
-        REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
+        ADD CONSTRAINT "FK_InterventionInterventionPrescription_Intervention_a67a67bf9d"
+        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28", "InterventionPrescriptionInterventionPrescription_DocumentId")
+        REFERENCES "edfi"."InterventionPrescription" ("EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -17797,8 +17797,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."InterventionStaff"
         ADD CONSTRAINT "FK_InterventionStaff_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17865,8 +17865,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."InterventionPrescription"
         ADD CONSTRAINT "FK_InterventionPrescription_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -17995,14 +17995,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionPrescriptionEducationContent_Educatio_db2e3cab85'
+        WHERE conname = 'FK_InterventionPrescriptionEducationContent_Educatio_051bacd51f'
         AND conrelid = to_regclass('"edfi"."InterventionPrescriptionEducationContent"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionPrescriptionEducationContent"
-        ADD CONSTRAINT "FK_InterventionPrescriptionEducationContent_Educatio_db2e3cab85"
-        FOREIGN KEY ("EducationContentSourceEducationContent_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier")
-        REFERENCES "edfi"."EducationContent" ("DocumentId", "ContentIdentifier")
+        ADD CONSTRAINT "FK_InterventionPrescriptionEducationContent_Educatio_051bacd51f"
+        FOREIGN KEY ("EducationContentSourceEducationContent_ContentIdentifier", "EducationContentSourceEducationContent_DocumentId")
+        REFERENCES "edfi"."EducationContent" ("ContentIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18137,8 +18137,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."InterventionStudy"
         ADD CONSTRAINT "FK_InterventionStudy_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18165,14 +18165,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudy_InterventionPrescriptionInterve_210def5eef'
+        WHERE conname = 'FK_InterventionStudy_InterventionPrescriptionInterve_5cb23225ca'
         AND conrelid = to_regclass('"edfi"."InterventionStudy"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudy"
-        ADD CONSTRAINT "FK_InterventionStudy_InterventionPrescriptionInterve_210def5eef"
-        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
-        REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
+        ADD CONSTRAINT "FK_InterventionStudy_InterventionPrescriptionInterve_5cb23225ca"
+        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28", "InterventionPrescriptionInterventionPrescription_DocumentId")
+        REFERENCES "edfi"."InterventionPrescription" ("EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18250,14 +18250,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudyEducationContent_EducationConten_5e36881dd8'
+        WHERE conname = 'FK_InterventionStudyEducationContent_EducationConten_9b93d8a819'
         AND conrelid = to_regclass('"edfi"."InterventionStudyEducationContent"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudyEducationContent"
-        ADD CONSTRAINT "FK_InterventionStudyEducationContent_EducationConten_5e36881dd8"
-        FOREIGN KEY ("EducationContentSourceEducationContent_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier")
-        REFERENCES "edfi"."EducationContent" ("DocumentId", "ContentIdentifier")
+        ADD CONSTRAINT "FK_InterventionStudyEducationContent_EducationConten_9b93d8a819"
+        FOREIGN KEY ("EducationContentSourceEducationContent_ContentIdentifier", "EducationContentSourceEducationContent_DocumentId")
+        REFERENCES "edfi"."EducationContent" ("ContentIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18545,8 +18545,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LearningStandard"
         ADD CONSTRAINT "FK_LearningStandard_MandatingEducationOrganization_RefKey"
-        FOREIGN KEY ("MandatingEducationOrganization_DocumentId", "MandatingEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("MandatingEducationOrganization_EducationOrganizationId", "MandatingEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18562,8 +18562,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LearningStandard"
         ADD CONSTRAINT "FK_LearningStandard_ParentLearningStandard_RefKey"
-        FOREIGN KEY ("ParentLearningStandard_DocumentId", "ParentLearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        FOREIGN KEY ("ParentLearningStandard_LearningStandardId", "ParentLearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18709,14 +18709,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LearningStandardEquivalenceAssociation_SourceLear_aa05436e3a'
+        WHERE conname = 'FK_LearningStandardEquivalenceAssociation_SourceLear_cbd7093295'
         AND conrelid = to_regclass('"edfi"."LearningStandardEquivalenceAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."LearningStandardEquivalenceAssociation"
-        ADD CONSTRAINT "FK_LearningStandardEquivalenceAssociation_SourceLear_aa05436e3a"
-        FOREIGN KEY ("SourceLearningStandard_DocumentId", "SourceLearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        ADD CONSTRAINT "FK_LearningStandardEquivalenceAssociation_SourceLear_cbd7093295"
+        FOREIGN KEY ("SourceLearningStandard_LearningStandardId", "SourceLearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18726,14 +18726,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LearningStandardEquivalenceAssociation_TargetLear_9cf9b5a47c'
+        WHERE conname = 'FK_LearningStandardEquivalenceAssociation_TargetLear_e90eeda472'
         AND conrelid = to_regclass('"edfi"."LearningStandardEquivalenceAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."LearningStandardEquivalenceAssociation"
-        ADD CONSTRAINT "FK_LearningStandardEquivalenceAssociation_TargetLear_9cf9b5a47c"
-        FOREIGN KEY ("TargetLearningStandard_DocumentId", "TargetLearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        ADD CONSTRAINT "FK_LearningStandardEquivalenceAssociation_TargetLear_e90eeda472"
+        FOREIGN KEY ("TargetLearningStandard_LearningStandardId", "TargetLearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18749,8 +18749,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalAccount"
         ADD CONSTRAINT "FK_LocalAccount_ChartOfAccountChartOfAccount_RefKey"
-        FOREIGN KEY ("ChartOfAccountChartOfAccount_DocumentId", "ChartOfAccountChartOfAccount_AccountIdentifier", "ChartOfAccountChartOfAccount_EducationOrganizationId", "FiscalYear_Unified")
-        REFERENCES "edfi"."ChartOfAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
+        FOREIGN KEY ("ChartOfAccountChartOfAccount_AccountIdentifier", "ChartOfAccountChartOfAccount_EducationOrganizationId", "FiscalYear_Unified", "ChartOfAccountChartOfAccount_DocumentId")
+        REFERENCES "edfi"."ChartOfAccount" ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18783,8 +18783,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalAccount"
         ADD CONSTRAINT "FK_LocalAccount_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18868,8 +18868,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalActual"
         ADD CONSTRAINT "FK_LocalActual_LocalAccount_RefKey"
-        FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
-        REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
+        FOREIGN KEY ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId")
+        REFERENCES "edfi"."LocalAccount" ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18919,8 +18919,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalBudget"
         ADD CONSTRAINT "FK_LocalBudget_LocalAccount_RefKey"
-        FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
-        REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
+        FOREIGN KEY ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId")
+        REFERENCES "edfi"."LocalAccount" ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18970,8 +18970,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalContractedStaff"
         ADD CONSTRAINT "FK_LocalContractedStaff_LocalAccount_RefKey"
-        FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
-        REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
+        FOREIGN KEY ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId")
+        REFERENCES "edfi"."LocalAccount" ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -18987,8 +18987,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalContractedStaff"
         ADD CONSTRAINT "FK_LocalContractedStaff_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19038,8 +19038,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalEducationAgency"
         ADD CONSTRAINT "FK_LocalEducationAgency_EducationServiceCenter_RefKey"
-        FOREIGN KEY ("EducationServiceCenter_DocumentId", "EducationServiceCenter_EducationServiceCenterId")
-        REFERENCES "edfi"."EducationServiceCenter" ("DocumentId", "EducationServiceCenterId")
+        FOREIGN KEY ("EducationServiceCenter_EducationServiceCenterId", "EducationServiceCenter_DocumentId")
+        REFERENCES "edfi"."EducationServiceCenter" ("EducationServiceCenterId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19089,8 +19089,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalEducationAgency"
         ADD CONSTRAINT "FK_LocalEducationAgency_ParentLocalEducationAgency_RefKey"
-        FOREIGN KEY ("ParentLocalEducationAgency_DocumentId", "ParentLocalEducationAgency_LocalEducationAgencyId")
-        REFERENCES "edfi"."LocalEducationAgency" ("DocumentId", "LocalEducationAgencyId")
+        FOREIGN KEY ("ParentLocalEducationAgency_LocalEducationAgencyId", "ParentLocalEducationAgency_DocumentId")
+        REFERENCES "edfi"."LocalEducationAgency" ("LocalEducationAgencyId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19106,8 +19106,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalEducationAgency"
         ADD CONSTRAINT "FK_LocalEducationAgency_StateEducationAgency_RefKey"
-        FOREIGN KEY ("StateEducationAgency_DocumentId", "StateEducationAgency_StateEducationAgencyId")
-        REFERENCES "edfi"."StateEducationAgency" ("DocumentId", "StateEducationAgencyId")
+        FOREIGN KEY ("StateEducationAgency_StateEducationAgencyId", "StateEducationAgency_DocumentId")
+        REFERENCES "edfi"."StateEducationAgency" ("StateEducationAgencyId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19151,14 +19151,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyAccountability_LocalEducation_e6b0e53e14'
+        WHERE conname = 'FK_LocalEducationAgencyAccountability_LocalEducation_6e06072099'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyAccountability"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyAccountability"
-        ADD CONSTRAINT "FK_LocalEducationAgencyAccountability_LocalEducation_e6b0e53e14"
-        FOREIGN KEY ("LocalEducationAgencyAccountabilitySchoolYear_DocumentId", "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        ADD CONSTRAINT "FK_LocalEducationAgencyAccountability_LocalEducation_6e06072099"
+        FOREIGN KEY ("LocalEducationAgencyAccountabilitySchoolYear_SchoolYear", "LocalEducationAgencyAccountabilitySchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19565,8 +19565,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalEncumbrance"
         ADD CONSTRAINT "FK_LocalEncumbrance_LocalAccount_RefKey"
-        FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
-        REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
+        FOREIGN KEY ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId")
+        REFERENCES "edfi"."LocalAccount" ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -19616,8 +19616,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalPayroll"
         ADD CONSTRAINT "FK_LocalPayroll_LocalAccount_RefKey"
-        FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
-        REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
+        FOREIGN KEY ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId")
+        REFERENCES "edfi"."LocalAccount" ("AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -19633,8 +19633,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."LocalPayroll"
         ADD CONSTRAINT "FK_LocalPayroll_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19667,8 +19667,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Location"
         ADD CONSTRAINT "FK_Location_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19752,8 +19752,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ObjectiveAssessment"
         ADD CONSTRAINT "FK_ObjectiveAssessment_Assessment_RefKey"
-        FOREIGN KEY ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified")
-        REFERENCES "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "Namespace")
+        FOREIGN KEY ("AssessmentIdentifier_Unified", "Namespace_Unified", "Assessment_DocumentId")
+        REFERENCES "edfi"."Assessment" ("AssessmentIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19786,8 +19786,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ObjectiveAssessment"
         ADD CONSTRAINT "FK_ObjectiveAssessment_ParentObjectiveAssessment_RefKey"
-        FOREIGN KEY ("ParentObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ParentObjectiveAssessment_IdentificationCode")
-        REFERENCES "edfi"."ObjectiveAssessment" ("DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode")
+        FOREIGN KEY ("AssessmentIdentifier_Unified", "Namespace_Unified", "ParentObjectiveAssessment_IdentificationCode", "ParentObjectiveAssessment_DocumentId")
+        REFERENCES "edfi"."ObjectiveAssessment" ("AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19797,14 +19797,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ObjectiveAssessmentAssessmentItem_AssessmentItemA_63b8203567'
+        WHERE conname = 'FK_ObjectiveAssessmentAssessmentItem_AssessmentItemA_11048f0573'
         AND conrelid = to_regclass('"edfi"."ObjectiveAssessmentAssessmentItem"')
     )
     THEN
         ALTER TABLE "edfi"."ObjectiveAssessmentAssessmentItem"
-        ADD CONSTRAINT "FK_ObjectiveAssessmentAssessmentItem_AssessmentItemA_63b8203567"
-        FOREIGN KEY ("AssessmentItemAssessmentItem_DocumentId", "AssessmentItemAssessmentItem_AssessmentIdentifier", "AssessmentItemAssessmentItem_Namespace", "AssessmentItemAssessmentItem_IdentificationCode")
-        REFERENCES "edfi"."AssessmentItem" ("DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "IdentificationCode")
+        ADD CONSTRAINT "FK_ObjectiveAssessmentAssessmentItem_AssessmentItemA_11048f0573"
+        FOREIGN KEY ("AssessmentItemAssessmentItem_AssessmentIdentifier", "AssessmentItemAssessmentItem_Namespace", "AssessmentItemAssessmentItem_IdentificationCode", "AssessmentItemAssessmentItem_DocumentId")
+        REFERENCES "edfi"."AssessmentItem" ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "IdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19837,8 +19837,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ObjectiveAssessmentLearningStandard"
         ADD CONSTRAINT "FK_ObjectiveAssessmentLearningStandard_LearningStandard_RefKey"
-        FOREIGN KEY ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        FOREIGN KEY ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20007,8 +20007,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."OpenStaffPosition"
         ADD CONSTRAINT "FK_OpenStaffPosition_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -20262,8 +20262,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."OrganizationDepartment"
         ADD CONSTRAINT "FK_OrganizationDepartment_ParentEducationOrganization_RefKey"
-        FOREIGN KEY ("ParentEducationOrganization_DocumentId", "ParentEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("ParentEducationOrganization_EducationOrganizationId", "ParentEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -20670,8 +20670,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."PostSecondaryEvent"
         ADD CONSTRAINT "FK_PostSecondaryEvent_PostSecondaryInstitution_RefKey"
-        FOREIGN KEY ("PostSecondaryInstitution_DocumentId", "PostSecondaryInstitution_PostSecondaryInstitutionId")
-        REFERENCES "edfi"."PostSecondaryInstitution" ("DocumentId", "PostSecondaryInstitutionId")
+        FOREIGN KEY ("PostSecondaryInstitution_PostSecondaryInstitutionId", "PostSecondaryInstitution_DocumentId")
+        REFERENCES "edfi"."PostSecondaryInstitution" ("PostSecondaryInstitutionId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20687,8 +20687,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."PostSecondaryEvent"
         ADD CONSTRAINT "FK_PostSecondaryEvent_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21146,8 +21146,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Program"
         ADD CONSTRAINT "FK_Program_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -21214,8 +21214,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ProgramLearningStandard"
         ADD CONSTRAINT "FK_ProgramLearningStandard_LearningStandard_RefKey"
-        FOREIGN KEY ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId")
-        REFERENCES "edfi"."LearningStandard" ("DocumentId", "LearningStandardId")
+        FOREIGN KEY ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId")
+        REFERENCES "edfi"."LearningStandard" ("LearningStandardId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21401,8 +21401,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ProgramEvaluation"
         ADD CONSTRAINT "FK_ProgramEvaluation_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -21469,8 +21469,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationElement"
         ADD CONSTRAINT "FK_ProgramEvaluationElement_ProgramEvaluationObjective_RefKey"
-        FOREIGN KEY ("ProgramEvaluationObjective_DocumentId", "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
-        REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "ProgramEvaluationObjective_DocumentId")
+        REFERENCES "edfi"."ProgramEvaluationObjective" ("ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -21520,8 +21520,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationElement"
         ADD CONSTRAINT "FK_ProgramEvaluationElement_ProgramEvaluation_RefKey"
-        FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramEducationOrganizationId_Unified", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
-        REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramEducationOrganizationId_Unified", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "ProgramEvaluation_DocumentId")
+        REFERENCES "edfi"."ProgramEvaluation" ("ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -21656,8 +21656,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationObjective"
         ADD CONSTRAINT "FK_ProgramEvaluationObjective_ProgramEvaluation_RefKey"
-        FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluation_DocumentId")
+        REFERENCES "edfi"."ProgramEvaluation" ("ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -21775,8 +21775,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ReportCard"
         ADD CONSTRAINT "FK_ReportCard_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -21809,8 +21809,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ReportCard"
         ADD CONSTRAINT "FK_ReportCard_GradingPeriodGradingPeriod_RefKey"
-        FOREIGN KEY ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear")
-        REFERENCES "edfi"."GradingPeriod" ("DocumentId", "GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "GradingPeriodGradingPeriod_DocumentId")
+        REFERENCES "edfi"."GradingPeriod" ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21826,8 +21826,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ReportCard"
         ADD CONSTRAINT "FK_ReportCard_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21911,8 +21911,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ReportCardGrade"
         ADD CONSTRAINT "FK_ReportCardGrade_Grade_RefKey"
-        FOREIGN KEY ("Grade_DocumentId", "Grade_GradeTypeDescriptor_DescriptorId", "Grade_GradingPeriodDescriptor_DescriptorId", "Grade_GradingPeriodName", "SchoolId_Unified", "Grade_GradingPeriodSchoolYear", "Grade_BeginDate", "Grade_LocalCourseCode", "Grade_SectionIdentifier", "Grade_SessionName", "Grade_StudentUniqueId")
-        REFERENCES "edfi"."Grade" ("DocumentId", "GradeTypeDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId")
+        FOREIGN KEY ("Grade_GradeTypeDescriptor_DescriptorId", "Grade_GradingPeriodDescriptor_DescriptorId", "Grade_GradingPeriodName", "SchoolId_Unified", "Grade_GradingPeriodSchoolYear", "Grade_BeginDate", "Grade_LocalCourseCode", "Grade_SectionIdentifier", "Grade_SessionName", "Grade_StudentUniqueId", "Grade_DocumentId")
+        REFERENCES "edfi"."Grade" ("GradeTypeDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -21956,6 +21956,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_3a4b095d95'
+        AND conrelid = to_regclass('"edfi"."ReportCardStudentCompetencyObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."ReportCardStudentCompetencyObjective"
+        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_3a4b095d95"
+        FOREIGN KEY ("StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId", "StudentCompetencyObjective_DocumentId")
+        REFERENCES "edfi"."StudentCompetencyObjective" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "Student_StudentUniqueId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_54f65e8b4c'
         AND conrelid = to_regclass('"edfi"."ReportCardStudentCompetencyObjective"')
     )
@@ -21966,23 +21983,6 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_9eb1b82f70'
-        AND conrelid = to_regclass('"edfi"."ReportCardStudentCompetencyObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."ReportCardStudentCompetencyObjective"
-        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_9eb1b82f70"
-        FOREIGN KEY ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId")
-        REFERENCES "edfi"."StudentCompetencyObjective" ("DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "Student_StudentUniqueId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -22013,8 +22013,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."RestraintEvent"
         ADD CONSTRAINT "FK_RestraintEvent_DisciplineIncident_RefKey"
-        FOREIGN KEY ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "SchoolId_Unified")
-        REFERENCES "edfi"."DisciplineIncident" ("DocumentId", "IncidentIdentifier", "School_SchoolId")
+        FOREIGN KEY ("DisciplineIncident_IncidentIdentifier", "SchoolId_Unified", "DisciplineIncident_DocumentId")
+        REFERENCES "edfi"."DisciplineIncident" ("IncidentIdentifier", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22064,8 +22064,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."RestraintEvent"
         ADD CONSTRAINT "FK_RestraintEvent_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "SchoolId_Unified")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("SchoolId_Unified", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22081,8 +22081,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."RestraintEvent"
         ADD CONSTRAINT "FK_RestraintEvent_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22115,8 +22115,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."RestraintEventProgram"
         ADD CONSTRAINT "FK_RestraintEventProgram_Program_RefKey"
-        FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -22217,8 +22217,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_CharterApprovalSchoolYear_RefKey"
-        FOREIGN KEY ("CharterApprovalSchoolYear_DocumentId", "CharterApprovalSchoolYear_CharterApprovalSchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("CharterApprovalSchoolYear_CharterApprovalSchoolYear", "CharterApprovalSchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22285,8 +22285,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_LocalEducationAgency_RefKey"
-        FOREIGN KEY ("LocalEducationAgency_DocumentId", "LocalEducationAgency_LocalEducationAgencyId")
-        REFERENCES "edfi"."LocalEducationAgency" ("DocumentId", "LocalEducationAgencyId")
+        FOREIGN KEY ("LocalEducationAgency_LocalEducationAgencyId", "LocalEducationAgency_DocumentId")
+        REFERENCES "edfi"."LocalEducationAgency" ("LocalEducationAgencyId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22795,8 +22795,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_CourseOffering_RefKey"
-        FOREIGN KEY ("CourseOffering_DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName")
-        REFERENCES "edfi"."CourseOffering" ("DocumentId", "LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName")
+        FOREIGN KEY ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "CourseOffering_DocumentId")
+        REFERENCES "edfi"."CourseOffering" ("LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -22863,8 +22863,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_LocationLocation_RefKey"
-        FOREIGN KEY ("LocationLocation_DocumentId", "LocationLocation_ClassroomIdentificationCode", "SchoolId_U35501e03_Unified")
-        REFERENCES "edfi"."Location" ("DocumentId", "ClassroomIdentificationCode", "School_SchoolId")
+        FOREIGN KEY ("LocationLocation_ClassroomIdentificationCode", "SchoolId_U35501e03_Unified", "LocationLocation_DocumentId")
+        REFERENCES "edfi"."Location" ("ClassroomIdentificationCode", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -22880,8 +22880,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_LocationSchool_RefKey"
-        FOREIGN KEY ("LocationSchool_DocumentId", "SchoolId_U35501e03_Unified")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("SchoolId_U35501e03_Unified", "LocationSchool_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22982,8 +22982,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SectionClassPeriod"
         ADD CONSTRAINT "FK_SectionClassPeriod_ClassPeriod_RefKey"
-        FOREIGN KEY ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId")
-        REFERENCES "edfi"."ClassPeriod" ("DocumentId", "ClassPeriodName", "School_SchoolId")
+        FOREIGN KEY ("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId")
+        REFERENCES "edfi"."ClassPeriod" ("ClassPeriodName", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -23101,8 +23101,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SectionProgram"
         ADD CONSTRAINT "FK_SectionProgram_Program_RefKey"
-        FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -23135,8 +23135,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SectionAttendanceTakenEvent"
         ADD CONSTRAINT "FK_SectionAttendanceTakenEvent_CalendarDate_RefKey"
-        FOREIGN KEY ("CalendarDate_DocumentId", "CalendarDate_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "CalendarDate_Date")
-        REFERENCES "edfi"."CalendarDate" ("DocumentId", "Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear", "Date")
+        FOREIGN KEY ("CalendarDate_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "CalendarDate_Date", "CalendarDate_DocumentId")
+        REFERENCES "edfi"."CalendarDate" ("Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear", "Date", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23169,8 +23169,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SectionAttendanceTakenEvent"
         ADD CONSTRAINT "FK_SectionAttendanceTakenEvent_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -23186,8 +23186,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SectionAttendanceTakenEvent"
         ADD CONSTRAINT "FK_SectionAttendanceTakenEvent_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23220,8 +23220,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Session"
         ADD CONSTRAINT "FK_Session_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_SchoolYear", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23237,8 +23237,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Session"
         ADD CONSTRAINT "FK_Session_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "School_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("School_SchoolId", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23271,8 +23271,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SessionAcademicWeek"
         ADD CONSTRAINT "FK_SessionAcademicWeek_AcademicWeek_RefKey"
-        FOREIGN KEY ("AcademicWeek_DocumentId", "AcademicWeek_SchoolId", "AcademicWeek_WeekIdentifier")
-        REFERENCES "edfi"."AcademicWeek" ("DocumentId", "School_SchoolId", "WeekIdentifier")
+        FOREIGN KEY ("AcademicWeek_SchoolId", "AcademicWeek_WeekIdentifier", "AcademicWeek_DocumentId")
+        REFERENCES "edfi"."AcademicWeek" ("School_SchoolId", "WeekIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23322,8 +23322,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SessionGradingPeriod"
         ADD CONSTRAINT "FK_SessionGradingPeriod_GradingPeriod_RefKey"
-        FOREIGN KEY ("GradingPeriod_DocumentId", "GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "GradingPeriod_SchoolId", "GradingPeriod_SchoolYear")
-        REFERENCES "edfi"."GradingPeriod" ("DocumentId", "GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "GradingPeriod_SchoolId", "GradingPeriod_SchoolYear", "GradingPeriod_DocumentId")
+        REFERENCES "edfi"."GradingPeriod" ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23458,8 +23458,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Staff"
         ADD CONSTRAINT "FK_Staff_Person_RefKey"
-        FOREIGN KEY ("Person_DocumentId", "Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId")
-        REFERENCES "edfi"."Person" ("DocumentId", "PersonId", "SourceSystemDescriptor_DescriptorId")
+        FOREIGN KEY ("Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId", "Person_DocumentId")
+        REFERENCES "edfi"."Person" ("PersonId", "SourceSystemDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23611,8 +23611,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffCredential"
         ADD CONSTRAINT "FK_StaffCredential_Credential_RefKey"
-        FOREIGN KEY ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "edfi"."Credential" ("DocumentId", "CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId")
+        FOREIGN KEY ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId")
+        REFERENCES "edfi"."Credential" ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24257,8 +24257,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffAbsenceEvent"
         ADD CONSTRAINT "FK_StaffAbsenceEvent_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24274,8 +24274,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffCohortAssociation"
         ADD CONSTRAINT "FK_StaffCohortAssociation_Cohort_RefKey"
-        FOREIGN KEY ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId")
-        REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
+        FOREIGN KEY ("Cohort_CohortIdentifier", "Cohort_EducationOrganizationId", "Cohort_DocumentId")
+        REFERENCES "edfi"."Cohort" ("CohortIdentifier", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -24308,8 +24308,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffCohortAssociation"
         ADD CONSTRAINT "FK_StaffCohortAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24325,8 +24325,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffDisciplineIncidentAssociation"
         ADD CONSTRAINT "FK_StaffDisciplineIncidentAssociation_DisciplineIncident_RefKey"
-        FOREIGN KEY ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId")
-        REFERENCES "edfi"."DisciplineIncident" ("DocumentId", "IncidentIdentifier", "School_SchoolId")
+        FOREIGN KEY ("DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "DisciplineIncident_DocumentId")
+        REFERENCES "edfi"."DisciplineIncident" ("IncidentIdentifier", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24359,8 +24359,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffDisciplineIncidentAssociation"
         ADD CONSTRAINT "FK_StaffDisciplineIncidentAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24404,14 +24404,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_C_28379780a8'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_C_402047043c'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_C_28379780a8"
-        FOREIGN KEY ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "edfi"."Credential" ("DocumentId", "CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_C_402047043c"
+        FOREIGN KEY ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId")
+        REFERENCES "edfi"."Credential" ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24455,14 +24455,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_3eff5631df'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_07ab50dbda'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_3eff5631df"
-        FOREIGN KEY ("EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b", "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de", "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56", "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337", "StaffUniqueId_Unified")
-        REFERENCES "edfi"."StaffEducationOrganizationEmploymentAssociation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_07ab50dbda"
+        FOREIGN KEY ("EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de", "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56", "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337", "StaffUniqueId_Unified", "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b")
+        REFERENCES "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -24489,14 +24489,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_c7c362d814'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_e7ce860ec2'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_c7c362d814"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_e7ce860ec2"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -24529,8 +24529,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
         ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "StaffUniqueId_Unified")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("StaffUniqueId_Unified", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24625,14 +24625,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Educ_da12d7703d'
+        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Educ_f570b18bbc'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationContactAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Educ_da12d7703d"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Educ_f570b18bbc"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -24648,8 +24648,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociation"
         ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24727,14 +24727,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_C_a163c04b8a'
+        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_C_5fe29380c4'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_C_a163c04b8a"
-        FOREIGN KEY ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "edfi"."Credential" ("DocumentId", "CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_C_5fe29380c4"
+        FOREIGN KEY ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId")
+        REFERENCES "edfi"."Credential" ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24761,23 +24761,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_E_516cae767d'
-        AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_E_516cae767d"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_E_c0a3f93ccd'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
     )
@@ -24788,6 +24771,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_E_d6dac927fb'
+        AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_E_d6dac927fb"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24835,8 +24835,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
         ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24886,8 +24886,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffLeave"
         ADD CONSTRAINT "FK_StaffLeave_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24937,8 +24937,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffProgramAssociation"
         ADD CONSTRAINT "FK_StaffProgramAssociation_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -24954,8 +24954,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffProgramAssociation"
         ADD CONSTRAINT "FK_StaffProgramAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24971,8 +24971,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffSchoolAssociation"
         ADD CONSTRAINT "FK_StaffSchoolAssociation_Calendar_RefKey"
-        FOREIGN KEY ("Calendar_DocumentId", "Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified")
-        REFERENCES "edfi"."Calendar" ("DocumentId", "CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "Calendar_DocumentId")
+        REFERENCES "edfi"."Calendar" ("CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25022,8 +25022,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffSchoolAssociation"
         ADD CONSTRAINT "FK_StaffSchoolAssociation_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_Unified")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_Unified", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25039,8 +25039,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffSchoolAssociation"
         ADD CONSTRAINT "FK_StaffSchoolAssociation_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "SchoolId_Unified")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("SchoolId_Unified", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25056,8 +25056,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffSchoolAssociation"
         ADD CONSTRAINT "FK_StaffSchoolAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25175,8 +25175,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffSectionAssociation"
         ADD CONSTRAINT "FK_StaffSectionAssociation_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -25192,8 +25192,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffSectionAssociation"
         ADD CONSTRAINT "FK_StaffSectionAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25254,14 +25254,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StateEducationAgencyAccountability_StateEducation_20dc1332ba'
+        WHERE conname = 'FK_StateEducationAgencyAccountability_StateEducation_ef90be4e12'
         AND conrelid = to_regclass('"edfi"."StateEducationAgencyAccountability"')
     )
     THEN
         ALTER TABLE "edfi"."StateEducationAgencyAccountability"
-        ADD CONSTRAINT "FK_StateEducationAgencyAccountability_StateEducation_20dc1332ba"
-        FOREIGN KEY ("StateEducationAgencyAccountabilitySchoolYear_DocumentId", "StateEducationAgencyAccountabilitySchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        ADD CONSTRAINT "FK_StateEducationAgencyAccountability_StateEducation_ef90be4e12"
+        FOREIGN KEY ("StateEducationAgencyAccountabilitySchoolYear_SchoolYear", "StateEducationAgencyAccountabilitySchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25702,8 +25702,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Student"
         ADD CONSTRAINT "FK_Student_Person_RefKey"
-        FOREIGN KEY ("Person_DocumentId", "Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId")
-        REFERENCES "edfi"."Person" ("DocumentId", "PersonId", "SourceSystemDescriptor_DescriptorId")
+        FOREIGN KEY ("Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId", "Person_DocumentId")
+        REFERENCES "edfi"."Person" ("PersonId", "SourceSystemDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25991,8 +25991,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecord"
         ADD CONSTRAINT "FK_StudentAcademicRecord_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -26008,8 +26008,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecord"
         ADD CONSTRAINT "FK_StudentAcademicRecord_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_SchoolYear", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26059,8 +26059,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecord"
         ADD CONSTRAINT "FK_StudentAcademicRecord_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26314,8 +26314,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecordReportCard"
         ADD CONSTRAINT "FK_StudentAcademicRecordReportCard_ReportCard_RefKey"
-        FOREIGN KEY ("ReportCard_DocumentId", "ReportCard_EducationOrganizationId", "ReportCard_GradingPeriodDescriptor_DescriptorId", "ReportCard_GradingPeriodName", "ReportCard_GradingPeriodSchoolId", "ReportCard_GradingPeriodSchoolYear", "ReportCard_StudentUniqueId")
-        REFERENCES "edfi"."ReportCard" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "Student_StudentUniqueId")
+        FOREIGN KEY ("ReportCard_EducationOrganizationId", "ReportCard_GradingPeriodDescriptor_DescriptorId", "ReportCard_GradingPeriodName", "ReportCard_GradingPeriodSchoolId", "ReportCard_GradingPeriodSchoolYear", "ReportCard_StudentUniqueId", "ReportCard_DocumentId")
+        REFERENCES "edfi"."ReportCard" ("EducationOrganization_EducationOrganizationId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -26382,8 +26382,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_Assessment_RefKey"
-        FOREIGN KEY ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace")
-        REFERENCES "edfi"."Assessment" ("DocumentId", "AssessmentIdentifier", "Namespace")
+        FOREIGN KEY ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId")
+        REFERENCES "edfi"."Assessment" ("AssessmentIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26484,8 +26484,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_ReportedSchool_RefKey"
-        FOREIGN KEY ("ReportedSchool_DocumentId", "ReportedSchool_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("ReportedSchool_SchoolId", "ReportedSchool_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26518,8 +26518,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_SchoolYear", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26535,8 +26535,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26648,14 +26648,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentItem_StudentAssessmentItemAssess_7aaec8ed83'
+        WHERE conname = 'FK_StudentAssessmentItem_StudentAssessmentItemAssess_3a240a6b28'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentItem"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentItem"
-        ADD CONSTRAINT "FK_StudentAssessmentItem_StudentAssessmentItemAssess_7aaec8ed83"
-        FOREIGN KEY ("StudentAssessmentItemAssessmentItem_DocumentId", "StudentAssessmentItemAssessmentItem_AssessmentIdentifier", "StudentAssessmentItemAssessmentItem_Namespace", "StudentAssessmentItemAssessmentItem_IdentificationCode")
-        REFERENCES "edfi"."AssessmentItem" ("DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "IdentificationCode")
+        ADD CONSTRAINT "FK_StudentAssessmentItem_StudentAssessmentItemAssess_3a240a6b28"
+        FOREIGN KEY ("StudentAssessmentItemAssessmentItem_AssessmentIdentifier", "StudentAssessmentItemAssessmentItem_Namespace", "StudentAssessmentItemAssessmentItem_IdentificationCode", "StudentAssessmentItemAssessmentItem_DocumentId")
+        REFERENCES "edfi"."AssessmentItem" ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "IdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26767,14 +26767,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessment_Stude_e9b1cf0383'
+        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessment_Stude_6e8c738347'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessment"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessment"
-        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessment_Stude_e9b1cf0383"
-        FOREIGN KEY ("StudentObjectiveAssessmentObjectiveAssessment_DocumentId", "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7", "StudentObjectiveAssessmentObjectiveAssessment_Namespace", "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919")
-        REFERENCES "edfi"."ObjectiveAssessment" ("DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode")
+        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessment_Stude_6e8c738347"
+        FOREIGN KEY ("StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7", "StudentObjectiveAssessmentObjectiveAssessment_Namespace", "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919", "StudentObjectiveAssessmentObjectiveAssessment_DocumentId")
+        REFERENCES "edfi"."ObjectiveAssessment" ("AssessmentIdentifier_Unified", "Namespace_Unified", "IdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26903,14 +26903,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_5e9cd84182'
+        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_8b4d92d712'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_5e9cd84182"
-        FOREIGN KEY ("StudentAssessment_DocumentId", "StudentAssessment_AssessmentIdentifier", "StudentAssessment_Namespace", "StudentAssessment_StudentAssessmentIdentifier", "StudentAssessment_StudentUniqueId")
-        REFERENCES "edfi"."StudentAssessment" ("DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "StudentAssessmentIdentifier", "Student_StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_8b4d92d712"
+        FOREIGN KEY ("StudentAssessment_AssessmentIdentifier", "StudentAssessment_Namespace", "StudentAssessment_StudentAssessmentIdentifier", "StudentAssessment_StudentUniqueId", "StudentAssessment_DocumentId")
+        REFERENCES "edfi"."StudentAssessment" ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "StudentAssessmentIdentifier", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26937,16 +26937,33 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_aaa36c39fc'
+        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_c9873778a0'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_aaa36c39fc"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_c9873778a0"
+        FOREIGN KEY ("SchoolYear_SchoolYear", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_e311e8c0dc'
+        AND conrelid = to_regclass('"edfi"."StudentAssessmentEducationOrganizationAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentAssessmentEducationOrganizationAssociation"
+        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_e311e8c0dc"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -26971,31 +26988,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_f7a06c140a'
-        AND conrelid = to_regclass('"edfi"."StudentAssessmentEducationOrganizationAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentAssessmentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_f7a06c140a"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f'
+        WHERE conname = 'FK_StudentAssessmentRegistration_AssessmentAdministr_c2d449e41f'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f"
-        FOREIGN KEY ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId")
-        REFERENCES "edfi"."AssessmentAdministration" ("DocumentId", "AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_AssessmentAdministr_c2d449e41f"
+        FOREIGN KEY ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_DocumentId")
+        REFERENCES "edfi"."AssessmentAdministration" ("AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27056,14 +27056,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_ReportingEducationO_e4fb973c7d'
+        WHERE conname = 'FK_StudentAssessmentRegistration_ReportingEducationO_7703b554cc'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ReportingEducationO_e4fb973c7d"
-        FOREIGN KEY ("ReportingEducationOrganization_DocumentId", "ReportingEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ReportingEducationO_7703b554cc"
+        FOREIGN KEY ("ReportingEducationOrganization_EducationOrganizationId", "ReportingEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27073,14 +27073,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663'
+        WHERE conname = 'FK_StudentAssessmentRegistration_ScheduledStudentEdu_8e9d06c99e'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663"
-        FOREIGN KEY ("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea", "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c", "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1")
-        REFERENCES "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ScheduledStudentEdu_8e9d06c99e"
+        FOREIGN KEY ("ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c", "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1", "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea")
+        REFERENCES "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27090,14 +27090,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20'
+        WHERE conname = 'FK_StudentAssessmentRegistration_StudentEducationOrg_a3dee2ba52'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20"
-        FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentEducationOrg_a3dee2ba52"
+        FOREIGN KEY ("StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27107,14 +27107,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_StudentSchoolAssoci_92e3e47c30'
+        WHERE conname = 'FK_StudentAssessmentRegistration_StudentSchoolAssoci_990edf033f'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentSchoolAssoci_92e3e47c30"
-        FOREIGN KEY ("StudentSchoolAssociation_DocumentId", "StudentSchoolAssociation_EntryDate", "StudentSchoolAssociation_SchoolId", "StudentUniqueId_Unified")
-        REFERENCES "edfi"."StudentSchoolAssociation" ("DocumentId", "EntryDate", "SchoolId_Unified", "Student_StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentSchoolAssoci_990edf033f"
+        FOREIGN KEY ("StudentSchoolAssociation_EntryDate", "StudentSchoolAssociation_SchoolId", "StudentUniqueId_Unified", "StudentSchoolAssociation_DocumentId")
+        REFERENCES "edfi"."StudentSchoolAssociation" ("EntryDate", "SchoolId_Unified", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27124,14 +27124,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_TestingEducationOrg_c0b3cd4d24'
+        WHERE conname = 'FK_StudentAssessmentRegistration_TestingEducationOrg_c300f3bb4a'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_TestingEducationOrg_c0b3cd4d24"
-        FOREIGN KEY ("TestingEducationOrganization_DocumentId", "TestingEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_TestingEducationOrg_c300f3bb4a"
+        FOREIGN KEY ("TestingEducationOrganization_EducationOrganizationId", "TestingEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27192,14 +27192,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_395fcf3464'
+        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_7b9cf2de6a'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistrationBatteryPartAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_395fcf3464"
-        FOREIGN KEY ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentIdentifier_Unified", "Namespace_Unified")
-        REFERENCES "edfi"."AssessmentBatteryPart" ("DocumentId", "AssessmentBatteryPartName", "Assessment_AssessmentIdentifier", "Assessment_Namespace")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_7b9cf2de6a"
+        FOREIGN KEY ("AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentIdentifier_Unified", "Namespace_Unified", "AssessmentBatteryPart_DocumentId")
+        REFERENCES "edfi"."AssessmentBatteryPart" ("AssessmentBatteryPartName", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27209,14 +27209,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_dd37ce8ecc'
+        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_f395e37c14'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistrationBatteryPartAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_dd37ce8ecc"
-        FOREIGN KEY ("StudentAssessmentRegistration_DocumentId", "StudentAssessmentRegistration_AdministrationIdentifier", "AssessmentIdentifier_Unified", "StudentAssessmentRegistration_AssigningEducationOrganizationId", "Namespace_Unified", "StudentAssessmentRegistration_EducationOrganizationId", "StudentAssessmentRegistration_StudentUniqueId")
-        REFERENCES "edfi"."StudentAssessmentRegistration" ("DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified")
+        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_f395e37c14"
+        FOREIGN KEY ("StudentAssessmentRegistration_AdministrationIdentifier", "AssessmentIdentifier_Unified", "StudentAssessmentRegistration_AssigningEducationOrganizationId", "Namespace_Unified", "StudentAssessmentRegistration_EducationOrganizationId", "StudentAssessmentRegistration_StudentUniqueId", "StudentAssessmentRegistration_DocumentId")
+        REFERENCES "edfi"."StudentAssessmentRegistration" ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27300,8 +27300,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCTEProgramAssociation"
         ADD CONSTRAINT "FK_StudentCTEProgramAssociation_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27334,8 +27334,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCTEProgramAssociation"
         ADD CONSTRAINT "FK_StudentCTEProgramAssociation_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27368,8 +27368,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCTEProgramAssociation"
         ADD CONSTRAINT "FK_StudentCTEProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27470,8 +27470,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCohortAssociation"
         ADD CONSTRAINT "FK_StudentCohortAssociation_Cohort_RefKey"
-        FOREIGN KEY ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId")
-        REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
+        FOREIGN KEY ("Cohort_CohortIdentifier", "Cohort_EducationOrganizationId", "Cohort_DocumentId")
+        REFERENCES "edfi"."Cohort" ("CohortIdentifier", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27504,8 +27504,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCohortAssociation"
         ADD CONSTRAINT "FK_StudentCohortAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27521,8 +27521,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCohortAssociationSection"
         ADD CONSTRAINT "FK_StudentCohortAssociationSection_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27606,8 +27606,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCompetencyObjective"
         ADD CONSTRAINT "FK_StudentCompetencyObjective_GradingPeriodGradingPeriod_RefKey"
-        FOREIGN KEY ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear")
-        REFERENCES "edfi"."GradingPeriod" ("DocumentId", "GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "GradingPeriodGradingPeriod_DocumentId")
+        REFERENCES "edfi"."GradingPeriod" ("GradingPeriodDescriptor_DescriptorId", "GradingPeriodName", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27617,14 +27617,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1aeb67ed41'
+        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1f284cbf21'
         AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCompetencyObjective"
-        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1aeb67ed41"
-        FOREIGN KEY ("ObjectiveCompetencyObjective_DocumentId", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
-        REFERENCES "edfi"."CompetencyObjective" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1f284cbf21"
+        FOREIGN KEY ("ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "ObjectiveCompetencyObjective_DocumentId")
+        REFERENCES "edfi"."CompetencyObjective" ("EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27657,27 +27657,10 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentCompetencyObjective"
         ADD CONSTRAINT "FK_StudentCompetencyObjective_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjectiveGeneralStudentProgramAs_1e75d4453c'
-        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_1e75d4453c"
-        FOREIGN KEY ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e")
-        REFERENCES "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganizationReferenceEducationOrganizationId", "ProgramReferenceEducationOrganizationId", "ProgramReferenceProgramName", "ProgramReferenceProgramTypeDescriptor", "StudentReferenceStudentUniqueId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27695,6 +27678,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentCompetencyObjectiveGeneralStudentProgramAs_6055a42561'
+        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"
+        ADD CONSTRAINT "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_6055a42561"
+        FOREIGN KEY ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829")
+        REFERENCES "edfi"."GeneralStudentProgramAssociationIdentity" ("BeginDate", "EducationOrganizationReferenceEducationOrganizationId", "ProgramReferenceEducationOrganizationId", "ProgramReferenceProgramName", "ProgramReferenceProgramTypeDescriptor", "StudentReferenceStudentUniqueId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27736,14 +27736,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjectiveStudentSectionAssociati_bad46de9f8'
+        WHERE conname = 'FK_StudentCompetencyObjectiveStudentSectionAssociati_fbe7c45842'
         AND conrelid = to_regclass('"edfi"."StudentCompetencyObjectiveStudentSectionAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCompetencyObjectiveStudentSectionAssociation"
-        ADD CONSTRAINT "FK_StudentCompetencyObjectiveStudentSectionAssociati_bad46de9f8"
-        FOREIGN KEY ("StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6")
-        REFERENCES "edfi"."StudentSectionAssociation" ("DocumentId", "BeginDate", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SectionIdentifier", "Section_SessionName", "Student_StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentCompetencyObjectiveStudentSectionAssociati_fbe7c45842"
+        FOREIGN KEY ("StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0")
+        REFERENCES "edfi"."StudentSectionAssociation" ("BeginDate", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SectionIdentifier", "Section_SessionName", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -27759,8 +27759,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentContactAssociation"
         ADD CONSTRAINT "FK_StudentContactAssociation_Contact_RefKey"
-        FOREIGN KEY ("Contact_DocumentId", "Contact_ContactUniqueId")
-        REFERENCES "edfi"."Contact" ("DocumentId", "ContactUniqueId")
+        FOREIGN KEY ("Contact_ContactUniqueId", "Contact_DocumentId")
+        REFERENCES "edfi"."Contact" ("ContactUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27810,8 +27810,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentContactAssociation"
         ADD CONSTRAINT "FK_StudentContactAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27838,14 +27838,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociation_Disc_617fe93a02'
+        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociation_Disc_cece355935'
         AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentBehaviorAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentDisciplineIncidentBehaviorAssociation"
-        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociation_Disc_617fe93a02"
-        FOREIGN KEY ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId")
-        REFERENCES "edfi"."DisciplineIncident" ("DocumentId", "IncidentIdentifier", "School_SchoolId")
+        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociation_Disc_cece355935"
+        FOREIGN KEY ("DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "DisciplineIncident_DocumentId")
+        REFERENCES "edfi"."DisciplineIncident" ("IncidentIdentifier", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27878,8 +27878,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentDisciplineIncidentBehaviorAssociation"
         ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27957,14 +27957,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentDisciplineIncidentNonOffenderAssociation_D_7175d84e68'
+        WHERE conname = 'FK_StudentDisciplineIncidentNonOffenderAssociation_D_f348a1cbe1'
         AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentNonOffenderAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
-        ADD CONSTRAINT "FK_StudentDisciplineIncidentNonOffenderAssociation_D_7175d84e68"
-        FOREIGN KEY ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId")
-        REFERENCES "edfi"."DisciplineIncident" ("DocumentId", "IncidentIdentifier", "School_SchoolId")
+        ADD CONSTRAINT "FK_StudentDisciplineIncidentNonOffenderAssociation_D_f348a1cbe1"
+        FOREIGN KEY ("DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "DisciplineIncident_DocumentId")
+        REFERENCES "edfi"."DisciplineIncident" ("IncidentIdentifier", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27991,14 +27991,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentDisciplineIncidentNonOffenderAssociation_S_1501a86fbf'
+        WHERE conname = 'FK_StudentDisciplineIncidentNonOffenderAssociation_S_1547a03023'
         AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentNonOffenderAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
-        ADD CONSTRAINT "FK_StudentDisciplineIncidentNonOffenderAssociation_S_1501a86fbf"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentDisciplineIncidentNonOffenderAssociation_S_1547a03023"
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28042,14 +28042,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssessmentAccommodati_5288339dd2'
+        WHERE conname = 'FK_StudentEducationOrganizationAssessmentAccommodati_13bdc3ef14'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssessmentAccommodation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssessmentAccommodation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssessmentAccommodati_5288339dd2"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssessmentAccommodati_13bdc3ef14"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -28059,14 +28059,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssessmentAccommodati_55bdd86399'
+        WHERE conname = 'FK_StudentEducationOrganizationAssessmentAccommodati_dccdd375bc'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssessmentAccommodation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssessmentAccommodation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssessmentAccommodati_55bdd86399"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssessmentAccommodati_dccdd375bc"
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28161,14 +28161,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_Education_f5913947cf'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_Education_a35924ab4b'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_Education_f5913947cf"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_Education_a35924ab4b"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -28303,8 +28303,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
         ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28433,6 +28433,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationCohortYear_2f5860f9a6'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationCohortYear"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationCohortYear"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationCohortYear_2f5860f9a6"
+        FOREIGN KEY ("CohortYearSchoolYear_SchoolYear", "CohortYearSchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentEducationOrganizationAssociationCohortYear_60cf457c61'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationCohortYear"')
     )
@@ -28476,23 +28493,6 @@ BEGIN
         FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId")
         REFERENCES "edfi"."StudentEducationOrganizationAssociation" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationCohortYear_dae04ae1bc'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationCohortYear"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationCohortYear"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationCohortYear_dae04ae1bc"
-        FOREIGN KEY ("CohortYearSchoolYear_DocumentId", "CohortYearSchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -28552,23 +28552,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisplacedS_062ff699c0'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisplacedStudent"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisplacedStudent"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisplacedS_062ff699c0"
-        FOREIGN KEY ("DisplacedStudentCrisisEvent_DocumentId", "DisplacedStudentCrisisEvent_CrisisEventName")
-        REFERENCES "edfi"."CrisisEvent" ("DocumentId", "CrisisEventName")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentEducationOrganizationAssociationDisplacedS_0abcfce97a'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisplacedStudent"')
     )
@@ -28594,6 +28577,23 @@ BEGIN
         ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisplacedS_80ca6c1fa7"
         FOREIGN KEY ("DisplacedStudentStatusDescriptor_DescriptorId")
         REFERENCES "dms"."Descriptor" ("DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisplacedS_e4967e7673'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisplacedStudent"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisplacedStudent"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisplacedS_e4967e7673"
+        FOREIGN KEY ("DisplacedStudentCrisisEvent_CrisisEventName", "DisplacedStudentCrisisEvent_DocumentId")
+        REFERENCES "edfi"."CrisisEvent" ("CrisisEventName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29028,31 +29028,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_4316f74d2f'
+        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_7da953a3d2'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationResponsibilityAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationResponsibilityAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_4316f74d2f"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_45d40c7c36'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationResponsibilityAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationResponsibilityAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_45d40c7c36"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_7da953a3d2"
+        FOREIGN KEY ("ResponsibilityDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29062,14 +29045,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_7da953a3d2'
+        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_969ad3d2a8'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationResponsibilityAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationResponsibilityAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_7da953a3d2"
-        FOREIGN KEY ("ResponsibilityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_969ad3d2a8"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_b5a746a045'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationResponsibilityAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationResponsibilityAssociation"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_b5a746a045"
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29153,8 +29153,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentGradebookEntry"
         ADD CONSTRAINT "FK_StudentGradebookEntry_GradebookEntry_RefKey"
-        FOREIGN KEY ("GradebookEntry_DocumentId", "GradebookEntry_GradebookEntryIdentifier", "GradebookEntry_Namespace")
-        REFERENCES "edfi"."GradebookEntry" ("DocumentId", "GradebookEntryIdentifier", "Namespace")
+        FOREIGN KEY ("GradebookEntry_GradebookEntryIdentifier", "GradebookEntry_Namespace", "GradebookEntry_DocumentId")
+        REFERENCES "edfi"."GradebookEntry" ("GradebookEntryIdentifier", "Namespace", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29170,8 +29170,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentGradebookEntry"
         ADD CONSTRAINT "FK_StudentGradebookEntry_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29221,8 +29221,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentHealth"
         ADD CONSTRAINT "FK_StudentHealth_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29255,8 +29255,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentHealth"
         ADD CONSTRAINT "FK_StudentHealth_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29368,14 +29368,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentHomelessProgramAssociation_EducationOrgani_f101f9c624'
+        WHERE conname = 'FK_StudentHomelessProgramAssociation_EducationOrgani_c8d1672cf0'
         AND conrelid = to_regclass('"edfi"."StudentHomelessProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentHomelessProgramAssociation"
-        ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_EducationOrgani_f101f9c624"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_EducationOrgani_c8d1672cf0"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29408,8 +29408,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentHomelessProgramAssociation"
         ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29459,8 +29459,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentHomelessProgramAssociation"
         ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29544,8 +29544,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentInterventionAssociation"
         ADD CONSTRAINT "FK_StudentInterventionAssociation_CohortCohort_RefKey"
-        FOREIGN KEY ("CohortCohort_DocumentId", "CohortCohort_CohortIdentifier", "CohortCohort_EducationOrganizationId")
-        REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
+        FOREIGN KEY ("CohortCohort_CohortIdentifier", "CohortCohort_EducationOrganizationId", "CohortCohort_DocumentId")
+        REFERENCES "edfi"."Cohort" ("CohortIdentifier", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29578,8 +29578,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentInterventionAssociation"
         ADD CONSTRAINT "FK_StudentInterventionAssociation_Intervention_RefKey"
-        FOREIGN KEY ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode")
-        REFERENCES "edfi"."Intervention" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode")
+        FOREIGN KEY ("Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode", "Intervention_DocumentId")
+        REFERENCES "edfi"."Intervention" ("EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29595,8 +29595,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentInterventionAssociation"
         ADD CONSTRAINT "FK_StudentInterventionAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29748,8 +29748,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentInterventionAttendanceEvent"
         ADD CONSTRAINT "FK_StudentInterventionAttendanceEvent_Intervention_RefKey"
-        FOREIGN KEY ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode")
-        REFERENCES "edfi"."Intervention" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode")
+        FOREIGN KEY ("Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode", "Intervention_DocumentId")
+        REFERENCES "edfi"."Intervention" ("EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29765,8 +29765,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentInterventionAttendanceEvent"
         ADD CONSTRAINT "FK_StudentInterventionAttendanceEvent_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29793,14 +29793,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Educ_d03acbab29'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Educ_c460d09c04'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociation"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Educ_d03acbab29"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Educ_c460d09c04"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29827,14 +29827,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_61702cbb4e'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_d5a8c8f838'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociation"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_61702cbb4e"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_d5a8c8f838"
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -29867,8 +29867,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociation"
         ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29886,23 +29886,6 @@ BEGIN
         ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_137fa1e00e"
         FOREIGN KEY ("MonitoredDescriptor_DescriptorId")
         REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_2a1e763418'
-        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_2a1e763418"
-        FOREIGN KEY ("EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId", "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29954,6 +29937,23 @@ BEGIN
         ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_9afaaa6d47"
         FOREIGN KEY ("ProficiencyDescriptor_DescriptorId")
         REFERENCES "dms"."Descriptor" ("DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_e364dc2955'
+        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_e364dc2955"
+        FOREIGN KEY ("EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear", "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30082,14 +30082,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Educati_9893a4a2cc'
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Educati_04ae28fe0e'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Educati_9893a4a2cc"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Educati_04ae28fe0e"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30099,14 +30099,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_99eaa8bb8e'
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_41e7b15778'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_99eaa8bb8e"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_41e7b15778"
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30156,8 +30156,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
         ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30252,14 +30252,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Ed_dff8be9d87'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Ed_45d482ef42'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Ed_dff8be9d87"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Ed_45d482ef42"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30320,14 +30320,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_13ff63b237'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_6590d1af01'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_13ff63b237"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_6590d1af01"
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30371,14 +30371,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_St_2ce7f6af5a'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_St_fde0043875'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_St_2ce7f6af5a"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_St_fde0043875"
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30479,8 +30479,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramAssociation"
         ADD CONSTRAINT "FK_StudentProgramAssociation_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30513,8 +30513,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramAssociation"
         ADD CONSTRAINT "FK_StudentProgramAssociation_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30547,8 +30547,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramAssociation"
         ADD CONSTRAINT "FK_StudentProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30666,8 +30666,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramAttendanceEvent"
         ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30717,8 +30717,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramAttendanceEvent"
         ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30734,8 +30734,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramAttendanceEvent"
         ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30768,8 +30768,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluation"
         ADD CONSTRAINT "FK_StudentProgramEvaluation_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30836,8 +30836,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluation"
         ADD CONSTRAINT "FK_StudentProgramEvaluation_ProgramEvaluation_RefKey"
-        FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluation_DocumentId")
+        REFERENCES "edfi"."ProgramEvaluation" ("ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -30853,8 +30853,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluation"
         ADD CONSTRAINT "FK_StudentProgramEvaluation_StaffEvaluatorStaff_RefKey"
-        FOREIGN KEY ("StaffEvaluatorStaff_DocumentId", "StaffEvaluatorStaff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("StaffEvaluatorStaff_StaffUniqueId", "StaffEvaluatorStaff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30870,8 +30870,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluation"
         ADD CONSTRAINT "FK_StudentProgramEvaluation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30966,23 +30966,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__c12ce01a26'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__c12ce01a26"
-        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_DocumentId", "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466")
-        REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__c8ab36a265'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
     )
@@ -30993,6 +30976,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__d3060fd00b'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__d3060fd00b"
+        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466", "StudentEvaluationElementProgramEvaluationElement_DocumentId")
+        REFERENCES "edfi"."ProgramEvaluationElement" ("ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -31068,6 +31068,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_3d3a2f7dcd'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_3d3a2f7dcd"
+        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76", "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId")
+        REFERENCES "edfi"."ProgramEvaluationObjective" ("ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_4f3ae0ef74'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
@@ -31102,31 +31119,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_f069d7b435'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_f069d7b435"
-        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76")
-        REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSchoolAssociation_Calendar_RefKey'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_Calendar_RefKey"
-        FOREIGN KEY ("Calendar_DocumentId", "Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified")
-        REFERENCES "edfi"."Calendar" ("DocumentId", "CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear")
+        FOREIGN KEY ("Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "Calendar_DocumentId")
+        REFERENCES "edfi"."Calendar" ("CalendarCode", "School_SchoolId", "SchoolYear_SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31142,8 +31142,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_ClassOfSchoolYear_RefKey"
-        FOREIGN KEY ("ClassOfSchoolYear_DocumentId", "ClassOfSchoolYear_ClassOfSchoolYear")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("ClassOfSchoolYear_ClassOfSchoolYear", "ClassOfSchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31278,8 +31278,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_GraduationPlan_RefKey"
-        FOREIGN KEY ("GraduationPlan_DocumentId", "GraduationPlan_EducationOrganizationId", "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId", "GraduationPlan_GraduationSchoolYear")
-        REFERENCES "edfi"."GraduationPlan" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear")
+        FOREIGN KEY ("GraduationPlan_EducationOrganizationId", "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId", "GraduationPlan_GraduationSchoolYear", "GraduationPlan_DocumentId")
+        REFERENCES "edfi"."GraduationPlan" ("EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -31312,8 +31312,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_NextYearSchool_RefKey"
-        FOREIGN KEY ("NextYearSchool_DocumentId", "NextYearSchool_SchoolId")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("NextYearSchool_SchoolId", "NextYearSchool_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31363,8 +31363,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_Unified")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_Unified", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31380,8 +31380,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "SchoolId_Unified")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("SchoolId_Unified", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31397,8 +31397,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31442,14 +31442,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238'
+        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_f0c6dd48eb'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociationAlternativeGraduationPlan"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
-        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238"
-        FOREIGN KEY ("AlternativeGraduationPlan_DocumentId", "AlternativeGraduationPlan_EducationOrganizationId", "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181", "AlternativeGraduationPlan_GraduationSchoolYear")
-        REFERENCES "edfi"."GraduationPlan" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear")
+        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_f0c6dd48eb"
+        FOREIGN KEY ("AlternativeGraduationPlan_EducationOrganizationId", "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181", "AlternativeGraduationPlan_GraduationSchoolYear", "AlternativeGraduationPlan_DocumentId")
+        REFERENCES "edfi"."GraduationPlan" ("EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -31550,8 +31550,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAttendanceEvent"
         ADD CONSTRAINT "FK_StudentSchoolAttendanceEvent_School_RefKey"
-        FOREIGN KEY ("School_DocumentId", "SchoolId_Unified")
-        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        FOREIGN KEY ("SchoolId_Unified", "School_DocumentId")
+        REFERENCES "edfi"."School" ("SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31567,8 +31567,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAttendanceEvent"
         ADD CONSTRAINT "FK_StudentSchoolAttendanceEvent_Session_RefKey"
-        FOREIGN KEY ("Session_DocumentId", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName")
-        REFERENCES "edfi"."Session" ("DocumentId", "School_SchoolId", "SchoolYear_SchoolYear", "SessionName")
+        FOREIGN KEY ("SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "Session_DocumentId")
+        REFERENCES "edfi"."Session" ("School_SchoolId", "SchoolYear_SchoolYear", "SessionName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -31584,8 +31584,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolAttendanceEvent"
         ADD CONSTRAINT "FK_StudentSchoolAttendanceEvent_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31612,14 +31612,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Educat_051a87b6d2'
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Educat_c7f85653a2'
         AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Educat_051a87b6d2"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Educat_c7f85653a2"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_0eda615043'
+        AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_0eda615043"
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -31639,23 +31656,6 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_e3763708df'
-        AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_e3763708df"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -31686,8 +31686,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
         ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31782,14 +31782,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSection504ProgramAssociation_EducationOrga_53e736f04d'
+        WHERE conname = 'FK_StudentSection504ProgramAssociation_EducationOrga_f56069c23a'
         AND conrelid = to_regclass('"edfi"."StudentSection504ProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSection504ProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_EducationOrga_53e736f04d"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_EducationOrga_f56069c23a"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -31822,8 +31822,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSection504ProgramAssociation"
         ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -31873,8 +31873,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSection504ProgramAssociation"
         ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31952,14 +31952,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSectionAssociation_DualCreditEducationOrga_c1a63cca77'
+        WHERE conname = 'FK_StudentSectionAssociation_DualCreditEducationOrga_5d3ceb52c8'
         AND conrelid = to_regclass('"edfi"."StudentSectionAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSectionAssociation"
-        ADD CONSTRAINT "FK_StudentSectionAssociation_DualCreditEducationOrga_c1a63cca77"
-        FOREIGN KEY ("DualCreditEducationOrganization_DocumentId", "DualCreditEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentSectionAssociation_DualCreditEducationOrga_5d3ceb52c8"
+        FOREIGN KEY ("DualCreditEducationOrganization_EducationOrganizationId", "DualCreditEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32026,8 +32026,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSectionAssociation"
         ADD CONSTRAINT "FK_StudentSectionAssociation_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32043,8 +32043,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSectionAssociation"
         ADD CONSTRAINT "FK_StudentSectionAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32077,8 +32077,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSectionAssociationProgram"
         ADD CONSTRAINT "FK_StudentSectionAssociationProgram_Program_RefKey"
-        FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32162,8 +32162,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSectionAttendanceEvent"
         ADD CONSTRAINT "FK_StudentSectionAttendanceEvent_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32179,8 +32179,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSectionAttendanceEvent"
         ADD CONSTRAINT "FK_StudentSectionAttendanceEvent_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32196,8 +32196,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSectionAttendanceEventClassPeriod"
         ADD CONSTRAINT "FK_StudentSectionAttendanceEventClassPeriod_ClassPeriod_RefKey"
-        FOREIGN KEY ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId")
-        REFERENCES "edfi"."ClassPeriod" ("DocumentId", "ClassPeriodName", "School_SchoolId")
+        FOREIGN KEY ("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId")
+        REFERENCES "edfi"."ClassPeriod" ("ClassPeriodName", "School_SchoolId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32241,14 +32241,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Educati_cb28712d6b'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Educati_cf557b11b0'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Educati_cb28712d6b"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Educati_cf557b11b0"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32275,14 +32275,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_e8254097c1'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_8fe80bd0b7'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_e8254097c1"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_8fe80bd0b7"
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32349,8 +32349,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
         ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32445,6 +32445,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationServiceP_70098bbff6'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationServiceProvider"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationServiceProvider"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationServiceP_70098bbff6"
+        FOREIGN KEY ("ServiceProviderStaff_StaffUniqueId", "ServiceProviderStaff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSpecialEducationProgramAssociationServiceP_7a344941a1'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationServiceProvider"')
     )
@@ -32454,23 +32471,6 @@ BEGIN
         FOREIGN KEY ("StudentSpecialEducationProgramAssociation_DocumentId")
         REFERENCES "edfi"."StudentSpecialEducationProgramAssociation" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationServiceP_a1e4b411af'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationServiceProvider"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationServiceProvider"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationServiceP_a1e4b411af"
-        FOREIGN KEY ("ServiceProviderStaff_DocumentId", "ServiceProviderStaff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -32547,6 +32547,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationSpecialE_2478bb00b9'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationSpecialE_2478bb00b9"
+        FOREIGN KEY ("SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3", "SpecialEducationProgramServiceServiceProviderStaff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSpecialEducationProgramAssociationSpecialE_6a294f85cb'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"')
     )
@@ -32564,33 +32581,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationSpecialE_7bd56bed16'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationSpecialE_7bd56bed16"
-        FOREIGN KEY ("SpecialEducationProgramServiceServiceProviderStaff_DocumentId", "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_19f08999cb'
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_2733183bf3'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_19f08999cb"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_2733183bf3"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -32615,14 +32615,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_5405a07f9c'
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_6facaae4bb'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_5405a07f9c"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_6facaae4bb"
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32666,6 +32666,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_baeccdb5c1'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_baeccdb5c1"
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_be69720654'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
@@ -32676,23 +32693,6 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_c9584da1f6'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_c9584da1f6"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -32751,14 +32751,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTitleIPartAProgramAssociation_EducationOrg_24c9a548f3'
+        WHERE conname = 'FK_StudentTitleIPartAProgramAssociation_EducationOrg_2b694bc6d0'
         AND conrelid = to_regclass('"edfi"."StudentTitleIPartAProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociation"
-        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_EducationOrg_24c9a548f3"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_EducationOrg_2b694bc6d0"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32791,8 +32791,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociation"
         ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_ProgramProgram_RefKey"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -32825,8 +32825,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociation"
         ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32961,8 +32961,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StudentTransportation"
         ADD CONSTRAINT "FK_StudentTransportation_Student_RefKey"
-        FOREIGN KEY ("Student_DocumentId", "Student_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32972,14 +32972,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTransportation_TransportationEducationOrga_2f6b080242'
+        WHERE conname = 'FK_StudentTransportation_TransportationEducationOrga_63bdb193bd'
         AND conrelid = to_regclass('"edfi"."StudentTransportation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTransportation"
-        ADD CONSTRAINT "FK_StudentTransportation_TransportationEducationOrga_2f6b080242"
-        FOREIGN KEY ("TransportationEducationOrganization_DocumentId", "TransportationEducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        ADD CONSTRAINT "FK_StudentTransportation_TransportationEducationOrga_63bdb193bd"
+        FOREIGN KEY ("TransportationEducationOrganization_EducationOrganizationId", "TransportationEducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -33114,8 +33114,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Survey"
         ADD CONSTRAINT "FK_Survey_EducationOrganization_RefKey"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -33131,8 +33131,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Survey"
         ADD CONSTRAINT "FK_Survey_SchoolYear_RefKey"
-        FOREIGN KEY ("SchoolYear_DocumentId", "SchoolYear_Unified")
-        REFERENCES "edfi"."SchoolYearType" ("DocumentId", "SchoolYear")
+        FOREIGN KEY ("SchoolYear_Unified", "SchoolYear_DocumentId")
+        REFERENCES "edfi"."SchoolYearType" ("SchoolYear", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33148,8 +33148,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."Survey"
         ADD CONSTRAINT "FK_Survey_Session_RefKey"
-        FOREIGN KEY ("Session_DocumentId", "Session_SchoolId", "SchoolYear_Unified", "Session_SessionName")
-        REFERENCES "edfi"."Session" ("DocumentId", "School_SchoolId", "SchoolYear_SchoolYear", "SessionName")
+        FOREIGN KEY ("Session_SchoolId", "SchoolYear_Unified", "Session_SessionName", "Session_DocumentId")
+        REFERENCES "edfi"."Session" ("School_SchoolId", "SchoolYear_SchoolYear", "SessionName", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -33182,8 +33182,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyCourseAssociation"
         ADD CONSTRAINT "FK_SurveyCourseAssociation_Course_RefKey"
-        FOREIGN KEY ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId")
-        REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
+        FOREIGN KEY ("Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId")
+        REFERENCES "edfi"."Course" ("CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -33216,8 +33216,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyCourseAssociation"
         ADD CONSTRAINT "FK_SurveyCourseAssociation_Survey_RefKey"
-        FOREIGN KEY ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier")
-        REFERENCES "edfi"."Survey" ("DocumentId", "Namespace", "SurveyIdentifier")
+        FOREIGN KEY ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId")
+        REFERENCES "edfi"."Survey" ("Namespace", "SurveyIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33267,8 +33267,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyProgramAssociation"
         ADD CONSTRAINT "FK_SurveyProgramAssociation_Program_RefKey"
-        FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        FOREIGN KEY ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId")
+        REFERENCES "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -33284,8 +33284,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyProgramAssociation"
         ADD CONSTRAINT "FK_SurveyProgramAssociation_Survey_RefKey"
-        FOREIGN KEY ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier")
-        REFERENCES "edfi"."Survey" ("DocumentId", "Namespace", "SurveyIdentifier")
+        FOREIGN KEY ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId")
+        REFERENCES "edfi"."Survey" ("Namespace", "SurveyIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33335,8 +33335,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyQuestion"
         ADD CONSTRAINT "FK_SurveyQuestion_SurveySection_RefKey"
-        FOREIGN KEY ("SurveySection_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle")
-        REFERENCES "edfi"."SurveySection" ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveySectionTitle")
+        FOREIGN KEY ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle", "SurveySection_DocumentId")
+        REFERENCES "edfi"."SurveySection" ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveySectionTitle", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33352,8 +33352,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyQuestion"
         ADD CONSTRAINT "FK_SurveyQuestion_Survey_RefKey"
-        FOREIGN KEY ("Survey_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified")
-        REFERENCES "edfi"."Survey" ("DocumentId", "Namespace", "SurveyIdentifier")
+        FOREIGN KEY ("Namespace_Unified", "SurveyIdentifier_Unified", "Survey_DocumentId")
+        REFERENCES "edfi"."Survey" ("Namespace", "SurveyIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33420,8 +33420,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyQuestionResponse"
         ADD CONSTRAINT "FK_SurveyQuestionResponse_SurveyQuestion_RefKey"
-        FOREIGN KEY ("SurveyQuestion_DocumentId", "SurveyQuestion_QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified")
-        REFERENCES "edfi"."SurveyQuestion" ("DocumentId", "QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified")
+        FOREIGN KEY ("SurveyQuestion_QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyQuestion_DocumentId")
+        REFERENCES "edfi"."SurveyQuestion" ("QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33437,8 +33437,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyQuestionResponse"
         ADD CONSTRAINT "FK_SurveyQuestionResponse_SurveyResponse_RefKey"
-        FOREIGN KEY ("SurveyResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier")
-        REFERENCES "edfi"."SurveyResponse" ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier")
+        FOREIGN KEY ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId")
+        REFERENCES "edfi"."SurveyResponse" ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33505,8 +33505,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyResponse"
         ADD CONSTRAINT "FK_SurveyResponse_SurveyResponderChoiceContact_RefKey"
-        FOREIGN KEY ("SurveyResponderChoiceContact_DocumentId", "SurveyResponderChoiceContact_ContactUniqueId")
-        REFERENCES "edfi"."Contact" ("DocumentId", "ContactUniqueId")
+        FOREIGN KEY ("SurveyResponderChoiceContact_ContactUniqueId", "SurveyResponderChoiceContact_DocumentId")
+        REFERENCES "edfi"."Contact" ("ContactUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33522,8 +33522,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyResponse"
         ADD CONSTRAINT "FK_SurveyResponse_SurveyResponderChoiceStaff_RefKey"
-        FOREIGN KEY ("SurveyResponderChoiceStaff_DocumentId", "SurveyResponderChoiceStaff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("SurveyResponderChoiceStaff_StaffUniqueId", "SurveyResponderChoiceStaff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33539,8 +33539,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyResponse"
         ADD CONSTRAINT "FK_SurveyResponse_SurveyResponderChoiceStudent_RefKey"
-        FOREIGN KEY ("SurveyResponderChoiceStudent_DocumentId", "SurveyResponderChoiceStudent_StudentUniqueId")
-        REFERENCES "edfi"."Student" ("DocumentId", "StudentUniqueId")
+        FOREIGN KEY ("SurveyResponderChoiceStudent_StudentUniqueId", "SurveyResponderChoiceStudent_DocumentId")
+        REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33556,8 +33556,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyResponse"
         ADD CONSTRAINT "FK_SurveyResponse_Survey_RefKey"
-        FOREIGN KEY ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier")
-        REFERENCES "edfi"."Survey" ("DocumentId", "Namespace", "SurveyIdentifier")
+        FOREIGN KEY ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId")
+        REFERENCES "edfi"."Survey" ("Namespace", "SurveyIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33601,14 +33601,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SurveyResponseEducationOrganizationTargetAssociat_41a897786a'
+        WHERE conname = 'FK_SurveyResponseEducationOrganizationTargetAssociat_2e761a82a7'
         AND conrelid = to_regclass('"edfi"."SurveyResponseEducationOrganizationTargetAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
-        ADD CONSTRAINT "FK_SurveyResponseEducationOrganizationTargetAssociat_41a897786a"
-        FOREIGN KEY ("SurveyResponse_DocumentId", "SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier")
-        REFERENCES "edfi"."SurveyResponse" ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier")
+        ADD CONSTRAINT "FK_SurveyResponseEducationOrganizationTargetAssociat_2e761a82a7"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_SurveyResponseEducationOrganizationTargetAssociat_44e25c94c6'
+        AND conrelid = to_regclass('"edfi"."SurveyResponseEducationOrganizationTargetAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
+        ADD CONSTRAINT "FK_SurveyResponseEducationOrganizationTargetAssociat_44e25c94c6"
+        FOREIGN KEY ("SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId")
+        REFERENCES "edfi"."SurveyResponse" ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33628,23 +33645,6 @@ BEGIN
         REFERENCES "dms"."Document" ("DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SurveyResponseEducationOrganizationTargetAssociat_e7a07764d0'
-        AND conrelid = to_regclass('"edfi"."SurveyResponseEducationOrganizationTargetAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
-        ADD CONSTRAINT "FK_SurveyResponseEducationOrganizationTargetAssociat_e7a07764d0"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33675,8 +33675,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyResponseStaffTargetAssociation"
         ADD CONSTRAINT "FK_SurveyResponseStaffTargetAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33692,8 +33692,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveyResponseStaffTargetAssociation"
         ADD CONSTRAINT "FK_SurveyResponseStaffTargetAssociation_SurveyResponse_RefKey"
-        FOREIGN KEY ("SurveyResponse_DocumentId", "SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier")
-        REFERENCES "edfi"."SurveyResponse" ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier")
+        FOREIGN KEY ("SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId")
+        REFERENCES "edfi"."SurveyResponse" ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33726,8 +33726,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveySection"
         ADD CONSTRAINT "FK_SurveySection_Survey_RefKey"
-        FOREIGN KEY ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier")
-        REFERENCES "edfi"."Survey" ("DocumentId", "Namespace", "SurveyIdentifier")
+        FOREIGN KEY ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId")
+        REFERENCES "edfi"."Survey" ("Namespace", "SurveyIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33760,8 +33760,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveySectionAssociation"
         ADD CONSTRAINT "FK_SurveySectionAssociation_Section_RefKey"
-        FOREIGN KEY ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier")
-        REFERENCES "edfi"."Section" ("DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier")
+        FOREIGN KEY ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId")
+        REFERENCES "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "SectionIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE CASCADE;
     END IF;
@@ -33777,8 +33777,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveySectionAssociation"
         ADD CONSTRAINT "FK_SurveySectionAssociation_Survey_RefKey"
-        FOREIGN KEY ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier")
-        REFERENCES "edfi"."Survey" ("DocumentId", "Namespace", "SurveyIdentifier")
+        FOREIGN KEY ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId")
+        REFERENCES "edfi"."Survey" ("Namespace", "SurveyIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33811,8 +33811,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveySectionResponse"
         ADD CONSTRAINT "FK_SurveySectionResponse_SurveyResponse_RefKey"
-        FOREIGN KEY ("SurveyResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier")
-        REFERENCES "edfi"."SurveyResponse" ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier")
+        FOREIGN KEY ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId")
+        REFERENCES "edfi"."SurveyResponse" ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveyResponseIdentifier", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33828,10 +33828,27 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveySectionResponse"
         ADD CONSTRAINT "FK_SurveySectionResponse_SurveySection_RefKey"
-        FOREIGN KEY ("SurveySection_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle")
-        REFERENCES "edfi"."SurveySection" ("DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier", "SurveySectionTitle")
+        FOREIGN KEY ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle", "SurveySection_DocumentId")
+        REFERENCES "edfi"."SurveySection" ("Survey_Namespace", "Survey_SurveyIdentifier", "SurveySectionTitle", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_SurveySectionResponseEducationOrganizationTargetA_04e77e8b68'
+        AND conrelid = to_regclass('"edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
+        ADD CONSTRAINT "FK_SurveySectionResponseEducationOrganizationTargetA_04e77e8b68"
+        FOREIGN KEY ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("EducationOrganizationId", "DocumentId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33856,31 +33873,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SurveySectionResponseEducationOrganizationTargetA_ab304c1dcc'
+        WHERE conname = 'FK_SurveySectionResponseEducationOrganizationTargetA_a6940cfb51'
         AND conrelid = to_regclass('"edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
-        ADD CONSTRAINT "FK_SurveySectionResponseEducationOrganizationTargetA_ab304c1dcc"
-        FOREIGN KEY ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId")
-        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId")
-        ON DELETE NO ACTION
-        ON UPDATE CASCADE;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SurveySectionResponseEducationOrganizationTargetA_d52808d4b5'
-        AND conrelid = to_regclass('"edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
-        ADD CONSTRAINT "FK_SurveySectionResponseEducationOrganizationTargetA_d52808d4b5"
-        FOREIGN KEY ("SurveySectionResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle")
-        REFERENCES "edfi"."SurveySectionResponse" ("DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveySection_SurveySectionTitle")
+        ADD CONSTRAINT "FK_SurveySectionResponseEducationOrganizationTargetA_a6940cfb51"
+        FOREIGN KEY ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle", "SurveySectionResponse_DocumentId")
+        REFERENCES "edfi"."SurveySectionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveySection_SurveySectionTitle", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33913,8 +33913,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SurveySectionResponseStaffTargetAssociation"
         ADD CONSTRAINT "FK_SurveySectionResponseStaffTargetAssociation_Staff_RefKey"
-        FOREIGN KEY ("Staff_DocumentId", "Staff_StaffUniqueId")
-        REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
+        FOREIGN KEY ("Staff_StaffUniqueId", "Staff_DocumentId")
+        REFERENCES "edfi"."Staff" ("StaffUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33924,14 +33924,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SurveySectionResponseStaffTargetAssociation_Surve_dbf7f4a817'
+        WHERE conname = 'FK_SurveySectionResponseStaffTargetAssociation_Surve_e32ca04565'
         AND conrelid = to_regclass('"edfi"."SurveySectionResponseStaffTargetAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."SurveySectionResponseStaffTargetAssociation"
-        ADD CONSTRAINT "FK_SurveySectionResponseStaffTargetAssociation_Surve_dbf7f4a817"
-        FOREIGN KEY ("SurveySectionResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle")
-        REFERENCES "edfi"."SurveySectionResponse" ("DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveySection_SurveySectionTitle")
+        ADD CONSTRAINT "FK_SurveySectionResponseStaffTargetAssociation_Surve_e32ca04565"
+        FOREIGN KEY ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle", "SurveySectionResponse_DocumentId")
+        REFERENCES "edfi"."SurveySectionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveySection_SurveySectionTitle", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33979,17 +33979,15 @@ CREATE INDEX IF NOT EXISTS "IX_Descriptor_Namespace_Auth" ON "dms"."Descriptor" 
 
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_ContentVersion" ON "edfi"."AcademicWeek" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_DocumentId_School_SchoolId" ON "edfi"."AcademicWeek" ("School_DocumentId", "School_SchoolId");
-
-CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_SchoolId_Auth" ON "edfi"."AcademicWeek" ("School_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_SchoolId_School_DocumentId" ON "edfi"."AcademicWeek" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_ContentVersion" ON "edfi"."AccountabilityRating" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Docume_948ccf647c" ON "edfi"."AccountabilityRating" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Educat_dd1ab833cb" ON "edfi"."AccountabilityRating" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Educat_f537a18855" ON "edfi"."AccountabilityRating" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_SchoolYear_DocumentId_School_18e0450be9" ON "edfi"."AccountabilityRating" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_SchoolYear_SchoolYear_School_656d8ea2ab" ON "edfi"."AccountabilityRating" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_AssessmentCategoryDescriptor_DescriptorId" ON "edfi"."Assessment" ("AssessmentCategoryDescriptor_DescriptorId");
 
@@ -33997,45 +33995,45 @@ CREATE INDEX IF NOT EXISTS "IX_Assessment_ContentStandardPublicationStatusDescri
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_ContentVersion" ON "edfi"."Assessment" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Assessment_EducationOrganization_DocumentId_Educa_2a8c4d7686" ON "edfi"."Assessment" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_Assessment_EducationOrganization_EducationOrganiz_b72944ca3f" ON "edfi"."Assessment" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Assessment_MandatingEducationOrganization_Documen_b1e1c8338e" ON "edfi"."Assessment" ("MandatingEducationOrganization_DocumentId", "MandatingEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_Assessment_MandatingEducationOrganization_Educati_84da15171d" ON "edfi"."Assessment" ("MandatingEducationOrganization_EducationOrganizationId", "MandatingEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Assessment_Namespace_Auth" ON "edfi"."Assessment" ("Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAcademicSubject_AcademicSubjectDescript_df1d6c899a" ON "edfi"."AssessmentAcademicSubject" ("AcademicSubjectDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_Assessment_DocumentId_As_4aaa865d9c" ON "edfi"."AssessmentAdministration" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_Assessment_AssessmentIde_e9d3dd989d" ON "edfi"."AssessmentAdministration" ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_Assessment_Namespace_Auth" ON "edfi"."AssessmentAdministration" ("Assessment_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_AssigningEducationOrgani_740e019634" ON "edfi"."AssessmentAdministration" ("AssigningEducationOrganization_DocumentId", "AssigningEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_AssigningEducationOrgani_e65873ed3d" ON "edfi"."AssessmentAdministration" ("AssigningEducationOrganization_EducationOrganizationId", "AssigningEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_ContentVersion" ON "edfi"."AssessmentAdministration" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_2f81256ce2" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace", "AssessmentBatteryPart_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_6a08acacdc" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_eb3b6a414e" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_1a1a632f27" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_be9dd67666" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_ebc64f959a" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_ContentVersion" ON "edfi"."AssessmentAdministrationParticipation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_Participati_ea634484fb" ON "edfi"."AssessmentAdministrationParticipation" ("ParticipatingEducationOrganization_DocumentId", "ParticipatingEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_Participati_2e0d5b4318" ON "edfi"."AssessmentAdministrationParticipation" ("ParticipatingEducationOrganization_EducationOrganizationId", "ParticipatingEducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipationAdministrati_cdf0107d62" ON "edfi"."AssessmentAdministrationParticipationAdministrationP_c63833eb57" ("AdministrationPointOfContactEducationOrganization_DocumentId", "AdministrationPointOfContactEducationOrganization_Ed_205063b290");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipationAdministrati_66505f028d" ON "edfi"."AssessmentAdministrationParticipationAdministrationP_c63833eb57" ("AdministrationPointOfContactEducationOrganization_Ed_205063b290", "AdministrationPointOfContactEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAssessedGradeLevel_GradeLevelDescriptor_d1a448c768" ON "edfi"."AssessmentAssessedGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_DocumentId_Asses_8c70afe1cb" ON "edfi"."AssessmentBatteryPart" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_AssessmentIdenti_98fd6c4418" ON "edfi"."AssessmentBatteryPart" ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_Namespace_Auth" ON "edfi"."AssessmentBatteryPart" ("Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_ContentVersion" ON "edfi"."AssessmentBatteryPart" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_7aa71ac21f" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_DocumentId", "ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_5d59d3ea25" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode", "ObjectiveAssessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_a3c7942e7c" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_Namespace");
 
@@ -34043,13 +34041,13 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentIdentificationCode_AssessmentIdentifica
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_AssessmentItemCategoryDescriptor_DescriptorId" ON "edfi"."AssessmentItem" ("AssessmentItemCategoryDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_DocumentId_Assessment_A_842a748556" ON "edfi"."AssessmentItem" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_AssessmentIdentifier_As_87042b59ff" ON "edfi"."AssessmentItem" ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_Assessment_Namespace_Auth" ON "edfi"."AssessmentItem" ("Assessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentItem_ContentVersion" ON "edfi"."AssessmentItem" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentItemLearningStandard_LearningStandard_D_c452f3d7ad" ON "edfi"."AssessmentItemLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentItemLearningStandard_LearningStandard_L_d508ef6769" ON "edfi"."AssessmentItemLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentLanguage_LanguageDescriptor_DescriptorId" ON "edfi"."AssessmentLanguage" ("LanguageDescriptor_DescriptorId");
 
@@ -34063,7 +34061,7 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentPeriod_AssessmentPeriodDescriptor_Descr
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentPlatformType_PlatformTypeDescriptor_DescriptorId" ON "edfi"."AssessmentPlatformType" ("PlatformTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentProgram_SectionOrProgramChoiceProgram_D_b22cdd0793" ON "edfi"."AssessmentProgram" ("SectionOrProgramChoiceProgram_DocumentId", "SectionOrProgramChoiceProgram_EducationOrganizationId", "SectionOrProgramChoiceProgram_ProgramName", "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentProgram_SectionOrProgramChoiceProgram_E_16f29d7ede" ON "edfi"."AssessmentProgram" ("SectionOrProgramChoiceProgram_EducationOrganizationId", "SectionOrProgramChoiceProgram_ProgramName", "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce", "SectionOrProgramChoiceProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentProgram_SectionOrProgramChoiceProgram_P_2816d5af66" ON "edfi"."AssessmentProgram" ("SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce");
 
@@ -34071,19 +34069,19 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentScore_AssessmentReportingMethodDescript
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScore_ResultDatatypeTypeDescriptor_DescriptorId" ON "edfi"."AssessmentScore" ("ResultDatatypeTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_AssessmentRe_d9b1cc5e85" ON "edfi"."AssessmentScoreRangeLearningStandard" ("AssessmentReportingMethodDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_AssessmentId_2802f617c0" ON "edfi"."AssessmentScoreRangeLearningStandard" ("AssessmentIdentifier_Unified", "Namespace_Unified", "Assessment_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_Assessment_D_6670461100" ON "edfi"."AssessmentScoreRangeLearningStandard" ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_AssessmentId_d3157ca562" ON "edfi"."AssessmentScoreRangeLearningStandard" ("AssessmentIdentifier_Unified", "Namespace_Unified", "ObjectiveAssessment_IdentificationCode", "ObjectiveAssessment_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_AssessmentRe_d9b1cc5e85" ON "edfi"."AssessmentScoreRangeLearningStandard" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_ContentVersion" ON "edfi"."AssessmentScoreRangeLearningStandard" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_Namespace_Unified_Auth" ON "edfi"."AssessmentScoreRangeLearningStandard" ("Namespace_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandard_ObjectiveAss_7be51e2999" ON "edfi"."AssessmentScoreRangeLearningStandard" ("ObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ObjectiveAssessment_IdentificationCode");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandardLearningStand_f87334cd35" ON "edfi"."AssessmentScoreRangeLearningStandardLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentScoreRangeLearningStandardLearningStand_d563784bff" ON "edfi"."AssessmentScoreRangeLearningStandardLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
-
-CREATE INDEX IF NOT EXISTS "IX_AssessmentSection_SectionOrProgramChoiceSection_D_40be3cec4c" ON "edfi"."AssessmentSection" ("SectionOrProgramChoiceSection_DocumentId", "SectionOrProgramChoiceSection_LocalCourseCode", "SectionOrProgramChoiceSection_SchoolId", "SectionOrProgramChoiceSection_SchoolYear", "SectionOrProgramChoiceSection_SessionName", "SectionOrProgramChoiceSection_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_AssessmentSection_SectionOrProgramChoiceSection_L_1ba8e4cb27" ON "edfi"."AssessmentSection" ("SectionOrProgramChoiceSection_LocalCourseCode", "SectionOrProgramChoiceSection_SchoolId", "SectionOrProgramChoiceSection_SchoolYear", "SectionOrProgramChoiceSection_SessionName", "SectionOrProgramChoiceSection_SectionIdentifier", "SectionOrProgramChoiceSection_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimension_ContentVersion" ON "edfi"."BalanceSheetDimension" ("ContentVersion");
 
@@ -34091,11 +34089,11 @@ CREATE INDEX IF NOT EXISTS "IX_BalanceSheetDimensionReportingTag_ReportingTagDes
 
 CREATE INDEX IF NOT EXISTS "IX_BellSchedule_ContentVersion" ON "edfi"."BellSchedule" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_BellSchedule_School_DocumentId_School_SchoolId" ON "edfi"."BellSchedule" ("School_DocumentId", "School_SchoolId");
-
 CREATE INDEX IF NOT EXISTS "IX_BellSchedule_School_SchoolId_Auth" ON "edfi"."BellSchedule" ("School_SchoolId");
 
-CREATE INDEX IF NOT EXISTS "IX_BellScheduleClassPeriod_ClassPeriod_DocumentId_Cl_5e988a8315" ON "edfi"."BellScheduleClassPeriod" ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_BellSchedule_School_SchoolId_School_DocumentId" ON "edfi"."BellSchedule" ("School_SchoolId", "School_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_BellScheduleClassPeriod_ClassPeriod_ClassPeriodNa_1f6800d1a3" ON "edfi"."BellScheduleClassPeriod" ("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_BellScheduleGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."BellScheduleGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
@@ -34103,13 +34101,13 @@ CREATE INDEX IF NOT EXISTS "IX_Calendar_CalendarTypeDescriptor_DescriptorId" ON 
 
 CREATE INDEX IF NOT EXISTS "IX_Calendar_ContentVersion" ON "edfi"."Calendar" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Calendar_SchoolYear_DocumentId_SchoolYear_SchoolYear" ON "edfi"."Calendar" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
-
-CREATE INDEX IF NOT EXISTS "IX_Calendar_School_DocumentId_School_SchoolId" ON "edfi"."Calendar" ("School_DocumentId", "School_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_Calendar_SchoolYear_SchoolYear_SchoolYear_DocumentId" ON "edfi"."Calendar" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Calendar_School_SchoolId_Auth" ON "edfi"."Calendar" ("School_SchoolId");
 
-CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_DocumentId_Calendar_Calenda_4c064e49f6" ON "edfi"."CalendarDate" ("Calendar_DocumentId", "Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_Calendar_School_SchoolId_School_DocumentId" ON "edfi"."Calendar" ("School_SchoolId", "School_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_CalendarCode_Calendar_Schoo_0586e6e2ce" ON "edfi"."CalendarDate" ("Calendar_CalendarCode", "Calendar_SchoolId", "Calendar_SchoolYear", "Calendar_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CalendarDate_Calendar_SchoolId_Auth" ON "edfi"."CalendarDate" ("Calendar_SchoolId");
 
@@ -34121,35 +34119,35 @@ CREATE INDEX IF NOT EXISTS "IX_CalendarGradeLevel_GradeLevelDescriptor_Descripto
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_AccountTypeDescriptor_DescriptorId" ON "edfi"."ChartOfAccount" ("AccountTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_BalanceSheetBalanceSheetDimension__77028b2a34" ON "edfi"."ChartOfAccount" ("BalanceSheetBalanceSheetDimension_DocumentId", "BalanceSheetBalanceSheetDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_BalanceSheetBalanceSheetDimension__c233c68f59" ON "edfi"."ChartOfAccount" ("BalanceSheetBalanceSheetDimension_Code", "FiscalYear_Unified", "BalanceSheetBalanceSheetDimension_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ContentVersion" ON "edfi"."ChartOfAccount" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_EducationOrganization_DocumentId_E_6fdf282990" ON "edfi"."ChartOfAccount" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_EducationOrganization_EducationOrg_1df8d3a1a1" ON "edfi"."ChartOfAccount" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_EducationOrganization_EducationOrg_76ed18ffae" ON "edfi"."ChartOfAccount" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_FunctionFunctionDimension_Document_eef47fa2c8" ON "edfi"."ChartOfAccount" ("FunctionFunctionDimension_DocumentId", "FunctionFunctionDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_FunctionFunctionDimension_Code_Fis_a5c734962b" ON "edfi"."ChartOfAccount" ("FunctionFunctionDimension_Code", "FiscalYear_Unified", "FunctionFunctionDimension_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_FundFundDimension_DocumentId_FundF_262d3fa057" ON "edfi"."ChartOfAccount" ("FundFundDimension_DocumentId", "FundFundDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_FundFundDimension_Code_FiscalYear__a042543a2e" ON "edfi"."ChartOfAccount" ("FundFundDimension_Code", "FiscalYear_Unified", "FundFundDimension_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ObjectObjectDimension_DocumentId_O_87d4ede3e4" ON "edfi"."ChartOfAccount" ("ObjectObjectDimension_DocumentId", "ObjectObjectDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ObjectObjectDimension_Code_FiscalY_0bc0e00cf4" ON "edfi"."ChartOfAccount" ("ObjectObjectDimension_Code", "FiscalYear_Unified", "ObjectObjectDimension_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_OperationalUnitOperationalUnitDime_2efd995016" ON "edfi"."ChartOfAccount" ("OperationalUnitOperationalUnitDimension_DocumentId", "OperationalUnitOperationalUnitDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_OperationalUnitOperationalUnitDime_7970bf36fa" ON "edfi"."ChartOfAccount" ("OperationalUnitOperationalUnitDimension_Code", "FiscalYear_Unified", "OperationalUnitOperationalUnitDimension_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ProgramProgramDimension_DocumentId_cdac350ae1" ON "edfi"."ChartOfAccount" ("ProgramProgramDimension_DocumentId", "ProgramProgramDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ProgramProgramDimension_Code_Fisca_b70b568be3" ON "edfi"."ChartOfAccount" ("ProgramProgramDimension_Code", "FiscalYear_Unified", "ProgramProgramDimension_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ProjectProjectDimension_DocumentId_44514bb8da" ON "edfi"."ChartOfAccount" ("ProjectProjectDimension_DocumentId", "ProjectProjectDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_ProjectProjectDimension_Code_Fisca_26b3f774bc" ON "edfi"."ChartOfAccount" ("ProjectProjectDimension_Code", "FiscalYear_Unified", "ProjectProjectDimension_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_SourceSourceDimension_DocumentId_S_1fa3477f2f" ON "edfi"."ChartOfAccount" ("SourceSourceDimension_DocumentId", "SourceSourceDimension_Code", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ChartOfAccount_SourceSourceDimension_Code_FiscalY_9c07ddabcc" ON "edfi"."ChartOfAccount" ("SourceSourceDimension_Code", "FiscalYear_Unified", "SourceSourceDimension_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ChartOfAccountReportingTag_ReportingTagDescriptor_4887981369" ON "edfi"."ChartOfAccountReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_ContentVersion" ON "edfi"."ClassPeriod" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_DocumentId_School_SchoolId" ON "edfi"."ClassPeriod" ("School_DocumentId", "School_SchoolId");
-
 CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_SchoolId_Auth" ON "edfi"."ClassPeriod" ("School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_ClassPeriod_School_SchoolId_School_DocumentId" ON "edfi"."ClassPeriod" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_AcademicSubjectDescriptor_DescriptorId" ON "edfi"."Cohort" ("AcademicSubjectDescriptor_DescriptorId");
 
@@ -34159,11 +34157,11 @@ CREATE INDEX IF NOT EXISTS "IX_Cohort_CohortTypeDescriptor_DescriptorId" ON "edf
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_ContentVersion" ON "edfi"."Cohort" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_DocumentId_Education_ba449af31d" ON "edfi"."Cohort" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_EducationOrganizatio_b15b3f31e6" ON "edfi"."Cohort" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Cohort_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Cohort" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_DocumentId_ProgramPr_8646255645" ON "edfi"."CohortProgram" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_EducationOrganizatio_32f1f73774" ON "edfi"."CohortProgram" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CohortProgram_ProgramProgram_ProgramTypeDescripto_e0981001db" ON "edfi"."CohortProgram" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -34197,7 +34195,7 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInternationalAddress_Address
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInternationalAddress_Country_2e04d851f0" ON "edfi"."CommunityOrganizationInternationalAddress" ("CountryDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_CommunityOrganization_DocumentI_6439e110f4" ON "edfi"."CommunityProvider" ("CommunityOrganization_DocumentId", "CommunityOrganization_CommunityOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_CommunityOrganization_Community_b8bc431183" ON "edfi"."CommunityProvider" ("CommunityOrganization_CommunityOrganizationId", "CommunityOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProvider_ContentVersion" ON "edfi"."CommunityProvider" ("ContentVersion");
 
@@ -34235,9 +34233,9 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderInternationalAddress_AddressType
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderInternationalAddress_CountryDesc_251c80d4ea" ON "edfi"."CommunityProviderInternationalAddress" ("CountryDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Commun_9423a8e741" ON "edfi"."CommunityProviderLicense" ("CommunityProvider_CommunityProviderId");
+CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Commun_743d01c355" ON "edfi"."CommunityProviderLicense" ("CommunityProvider_CommunityProviderId", "CommunityProvider_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Docume_951744ac2d" ON "edfi"."CommunityProviderLicense" ("CommunityProvider_DocumentId", "CommunityProvider_CommunityProviderId");
+CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_CommunityProvider_Commun_9423a8e741" ON "edfi"."CommunityProviderLicense" ("CommunityProvider_CommunityProviderId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_ContentVersion" ON "edfi"."CommunityProviderLicense" ("ContentVersion");
 
@@ -34247,9 +34245,7 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderLicense_LicenseTypeDescriptor_De
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_ContentVersion" ON "edfi"."CompetencyObjective" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Documen_48a1eb7053" ON "edfi"."CompetencyObjective" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Educati_a28fdc9a3d" ON "edfi"."CompetencyObjective" ("EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_EducationOrganization_Educati_6e0bfa585a" ON "edfi"."CompetencyObjective" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CompetencyObjective_ObjectiveGradeLevelDescriptor_73996cb9eb" ON "edfi"."CompetencyObjective" ("ObjectiveGradeLevelDescriptor_DescriptorId");
 
@@ -34257,7 +34253,7 @@ CREATE INDEX IF NOT EXISTS "IX_Contact_ContentVersion" ON "edfi"."Contact" ("Con
 
 CREATE INDEX IF NOT EXISTS "IX_Contact_HighestCompletedLevelOfEducationDescripto_6ea90ad0b5" ON "edfi"."Contact" ("HighestCompletedLevelOfEducationDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_Contact_Person_DocumentId_Person_PersonId_Person__e86502dbdc" ON "edfi"."Contact" ("Person_DocumentId", "Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_Contact_Person_PersonId_Person_SourceSystemDescri_92a616eb86" ON "edfi"."Contact" ("Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId", "Person_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Contact_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Contact" ("Person_SourceSystemDescriptor_DescriptorId");
 
@@ -34301,7 +34297,7 @@ CREATE INDEX IF NOT EXISTS "IX_Course_CourseDefinedByDescriptor_DescriptorId" ON
 
 CREATE INDEX IF NOT EXISTS "IX_Course_CourseGPAApplicabilityDescriptor_DescriptorId" ON "edfi"."Course" ("CourseGPAApplicabilityDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_Course_EducationOrganization_DocumentId_Education_9577d6193a" ON "edfi"."Course" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_Course_EducationOrganization_EducationOrganizatio_af622fa9ad" ON "edfi"."Course" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Course_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Course" ("EducationOrganization_EducationOrganizationId");
 
@@ -34315,7 +34311,7 @@ CREATE INDEX IF NOT EXISTS "IX_CourseCompetencyLevel_CompetencyLevelDescriptor_D
 
 CREATE INDEX IF NOT EXISTS "IX_CourseIdentificationCode_CourseIdentificationSyst_5600fbeabb" ON "edfi"."CourseIdentificationCode" ("CourseIdentificationSystemDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseLearningStandard_LearningStandard_DocumentI_a7c0fd7a36" ON "edfi"."CourseLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_CourseLearningStandard_LearningStandard_LearningS_9781a22d51" ON "edfi"."CourseLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseLevelCharacteristic_CourseLevelCharacterist_7e8f297f1f" ON "edfi"."CourseLevelCharacteristic" ("CourseLevelCharacteristicDescriptor_DescriptorId");
 
@@ -34323,13 +34319,13 @@ CREATE INDEX IF NOT EXISTS "IX_CourseOfferedGradeLevel_GradeLevelDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_ContentVersion" ON "edfi"."CourseOffering" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseOffering_Course_DocumentId_Course_CourseCod_641d77edbe" ON "edfi"."CourseOffering" ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_CourseOffering_Course_CourseCode_Course_Education_a873b036cc" ON "edfi"."CourseOffering" ("Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOffering_SchoolId_Unified_Auth" ON "edfi"."CourseOffering" ("SchoolId_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseOffering_School_DocumentId_SchoolId_Unified" ON "edfi"."CourseOffering" ("School_DocumentId", "SchoolId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_CourseOffering_SchoolId_Unified_School_DocumentId" ON "edfi"."CourseOffering" ("SchoolId_Unified", "School_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseOffering_Session_DocumentId_SchoolId_Unifie_471dc353b9" ON "edfi"."CourseOffering" ("Session_DocumentId", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName");
+CREATE INDEX IF NOT EXISTS "IX_CourseOffering_SchoolId_Unified_Session_SchoolYea_974592f228" ON "edfi"."CourseOffering" ("SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "Session_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseOfferingCourseLevelCharacteristic_CourseLev_90d71889fb" ON "edfi"."CourseOfferingCourseLevelCharacteristic" ("CourseLevelCharacteristicDescriptor_DescriptorId");
 
@@ -34341,21 +34337,21 @@ CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_AttemptedCreditTypeDescriptor_De
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ContentVersion" ON "edfi"."CourseTranscript" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_CourseCourse_DocumentId_CourseCo_e5bd6cced5" ON "edfi"."CourseTranscript" ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_CourseCourse_CourseCode_CourseCo_ea46a01e41" ON "edfi"."CourseTranscript" ("CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId", "CourseCourse_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_CourseRepeatCodeDescriptor_DescriptorId" ON "edfi"."CourseTranscript" ("CourseRepeatCodeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_EarnedCreditTypeDescriptor_DescriptorId" ON "edfi"."CourseTranscript" ("EarnedCreditTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ExternalEducationOrganization_Do_7d5d9f1fc9" ON "edfi"."CourseTranscript" ("ExternalEducationOrganization_DocumentId", "ExternalEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ExternalEducationOrganization_Ed_a536a5acb9" ON "edfi"."CourseTranscript" ("ExternalEducationOrganization_EducationOrganizationId", "ExternalEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_MethodCreditEarnedDescriptor_DescriptorId" ON "edfi"."CourseTranscript" ("MethodCreditEarnedDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ResponsibleTeacherStaff_Document_6c00a8de01" ON "edfi"."CourseTranscript" ("ResponsibleTeacherStaff_DocumentId", "ResponsibleTeacherStaff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_ResponsibleTeacherStaff_StaffUni_9b8143aec0" ON "edfi"."CourseTranscript" ("ResponsibleTeacherStaff_StaffUniqueId", "ResponsibleTeacherStaff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_StudentAcademicRecord_DocumentId_Auth" ON "edfi"."CourseTranscript" ("StudentAcademicRecord_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_StudentAcademicRecord_DocumentId_f9f08f1d40" ON "edfi"."CourseTranscript" ("StudentAcademicRecord_DocumentId", "StudentAcademicRecord_EducationOrganizationId", "StudentAcademicRecord_SchoolYear", "StudentAcademicRecord_StudentUniqueId", "StudentAcademicRecord_TermDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_StudentAcademicRecord_EducationO_787ae4cf1c" ON "edfi"."CourseTranscript" ("StudentAcademicRecord_EducationOrganizationId", "StudentAcademicRecord_SchoolYear", "StudentAcademicRecord_StudentUniqueId", "StudentAcademicRecord_TermDescriptor_DescriptorId", "StudentAcademicRecord_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscript_StudentAcademicRecord_EducationO_c3bb8568d0" ON "edfi"."CourseTranscript" ("StudentAcademicRecord_EducationOrganizationId");
 
@@ -34367,7 +34363,7 @@ CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptAcademicSubject_AcademicSubjectDe
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptAlternativeCourseIdentificationCo_3ab400157b" ON "edfi"."CourseTranscriptAlternativeCourseIdentificationCode" ("CourseIdentificationSystemDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptCourseProgram_CourseProgram_Docum_fac70eaf40" ON "edfi"."CourseTranscriptCourseProgram" ("CourseProgram_DocumentId", "CourseProgram_EducationOrganizationId", "CourseProgram_ProgramName", "CourseProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptCourseProgram_CourseProgram_Educa_ff6f57a8f6" ON "edfi"."CourseTranscriptCourseProgram" ("CourseProgram_EducationOrganizationId", "CourseProgram_ProgramName", "CourseProgram_ProgramTypeDescriptor_DescriptorId", "CourseProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptCourseProgram_CourseProgram_Progr_951898d274" ON "edfi"."CourseTranscriptCourseProgram" ("CourseProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -34377,7 +34373,7 @@ CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptEarnedAdditionalCredits_Additiona
 
 CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptPartialCourseTranscriptAwards_Met_7869fb7b9d" ON "edfi"."CourseTranscriptPartialCourseTranscriptAwards" ("MethodCreditEarnedDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptSection_Section_DocumentId_Sectio_4c34e3a935" ON "edfi"."CourseTranscriptSection" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_CourseTranscriptSection_Section_LocalCourseCode_S_d1e7f60323" ON "edfi"."CourseTranscriptSection" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Credential_ContentVersion" ON "edfi"."Credential" ("ContentVersion");
 
@@ -34407,27 +34403,25 @@ CREATE INDEX IF NOT EXISTS "IX_DescriptorMapping_Namespace_Auth" ON "edfi"."Desc
 
 CREATE INDEX IF NOT EXISTS "IX_DescriptorMappingModelEntity_ModelEntityDescripto_40c48e26fb" ON "edfi"."DescriptorMappingModelEntity" ("ModelEntityDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_AssignmentSchool_DocumentId_Assi_94d4c1f5f0" ON "edfi"."DisciplineAction" ("AssignmentSchool_DocumentId", "AssignmentSchool_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_AssignmentSchool_SchoolId_Assign_5b3cc56fc5" ON "edfi"."DisciplineAction" ("AssignmentSchool_SchoolId", "AssignmentSchool_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ContentVersion" ON "edfi"."DisciplineAction" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_DisciplineActionLengthDifference_9e7f788653" ON "edfi"."DisciplineAction" ("DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ResponsibilitySchool_DocumentId__362a469587" ON "edfi"."DisciplineAction" ("ResponsibilitySchool_DocumentId", "ResponsibilitySchool_SchoolId");
-
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ResponsibilitySchool_SchoolId_Auth" ON "edfi"."DisciplineAction" ("ResponsibilitySchool_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_ResponsibilitySchool_SchoolId_Re_7c693a6374" ON "edfi"."DisciplineAction" ("ResponsibilitySchool_SchoolId", "ResponsibilitySchool_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_Student_DocumentId_Auth" ON "edfi"."DisciplineAction" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_Student_DocumentId_Student_StudentUniqueId" ON "edfi"."DisciplineAction" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_DisciplineAction_Student_StudentUniqueId_Student_DocumentId" ON "edfi"."DisciplineAction" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineActionDiscipline_DisciplineDescriptor_DescriptorId" ON "edfi"."DisciplineActionDiscipline" ("DisciplineDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStaff_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."DisciplineActionStaff" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStaff_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."DisciplineActionStaff" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStudentDisciplineIncidentBehavior_2329cf8ea4" ON "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation" ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId");
-
-CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStudentDisciplineIncidentBehavior_ee3a8f3770" ON "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation" ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b");
+CREATE INDEX IF NOT EXISTS "IX_DisciplineActionStudentDisciplineIncidentBehavior_bc780ecadc" ON "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation" ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId", "StudentDisciplineIncidentBehaviorAssociation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_ContentVersion" ON "edfi"."DisciplineIncident" ("ContentVersion");
 
@@ -34435,9 +34429,9 @@ CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_IncidentLocationDescriptor_Des
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_ReporterDescriptionDescriptor__1e1979bf42" ON "edfi"."DisciplineIncident" ("ReporterDescriptionDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_School_DocumentId_School_SchoolId" ON "edfi"."DisciplineIncident" ("School_DocumentId", "School_SchoolId");
-
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_School_SchoolId_Auth" ON "edfi"."DisciplineIncident" ("School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_DisciplineIncident_School_SchoolId_School_DocumentId" ON "edfi"."DisciplineIncident" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_DisciplineIncidentBehavior_BehaviorDescriptor_DescriptorId" ON "edfi"."DisciplineIncidentBehavior" ("BehaviorDescriptor_DescriptorId");
 
@@ -34453,7 +34447,7 @@ CREATE INDEX IF NOT EXISTS "IX_EducationContent_CostRateDescriptor_DescriptorId"
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_InteractivityStyleDescriptor_DescriptorId" ON "edfi"."EducationContent" ("InteractivityStyleDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationContent_LearningResourceChoiceLearningRe_bf3a14a786" ON "edfi"."EducationContent" ("LearningResourceChoiceLearningResourceLearningStanda_5916be65e2", "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0");
+CREATE INDEX IF NOT EXISTS "IX_EducationContent_LearningResourceChoiceLearningRe_8b0d0e277e" ON "edfi"."EducationContent" ("LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0", "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContent_Namespace_Auth" ON "edfi"."EducationContent" ("Namespace");
 
@@ -34461,13 +34455,13 @@ CREATE INDEX IF NOT EXISTS "IX_EducationContentAppropriateGradeLevel_GradeLevelD
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContentAppropriateSex_SexDescriptor_DescriptorId" ON "edfi"."EducationContentAppropriateSex" ("SexDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationContentDerivativeSourceEducationContent__9526be0188" ON "edfi"."EducationContentDerivativeSourceEducationContent" ("DerivativeSourceEducationContent_DocumentId", "DerivativeSourceEducationContent_ContentIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_EducationContentDerivativeSourceEducationContent__5c0cca6465" ON "edfi"."EducationContentDerivativeSourceEducationContent" ("DerivativeSourceEducationContent_ContentIdentifier", "DerivativeSourceEducationContent_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationContentLanguage_LanguageDescriptor_DescriptorId" ON "edfi"."EducationContentLanguage" ("LanguageDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_025d47e1a3" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28");
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_813d97b08c" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_cb05f8d72c" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_d148fc92bd" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28", "InterventionPrescriptionInterventionPrescription_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationInterventionPrescriptionAsso_d23e7089b6" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation" ("EducationOrganization_EducationOrganizationId");
 
@@ -34489,11 +34483,11 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddressPeriod_ParentC
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_ContentVersion" ON "edfi"."EducationOrganizationNetworkAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_2f301c8099" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationNetwork_EducationOrganizationNetworkId");
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_226e756ed2" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_EducationOrganizationNetworkId", "EducationOrganizationNetwork_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_7a7bfc749d" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_EducationOrganizationNetworkId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_MemberEdu_de04a516ed" ON "edfi"."EducationOrganizationNetworkAssociation" ("MemberEducationOrganization_DocumentId", "MemberEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_MemberEdu_5a201defd9" ON "edfi"."EducationOrganizationNetworkAssociation" ("MemberEducationOrganization_EducationOrganizationId", "MemberEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkCategory_EducationOrg_829913b6ef" ON "edfi"."EducationOrganizationNetworkCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
@@ -34517,15 +34511,15 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_ContentVersi
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_3eda9f3368" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_7fd60fd311" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_EducationOrg_57fb1f9ac8" ON "edfi"."EducationOrganizationPeerAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_PeerEducatio_ae8db528b6" ON "edfi"."EducationOrganizationPeerAssociation" ("PeerEducationOrganization_DocumentId", "PeerEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationPeerAssociation_PeerEducatio_8e87e68b21" ON "edfi"."EducationOrganizationPeerAssociation" ("PeerEducationOrganization_EducationOrganizationId", "PeerEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_ContentVersion" ON "edfi"."EducationServiceCenter" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_OperationalStatusDescripto_dc50e6e0cc" ON "edfi"."EducationServiceCenter" ("OperationalStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_StateEducationAgency_Docum_d74e47d96a" ON "edfi"."EducationServiceCenter" ("StateEducationAgency_DocumentId", "StateEducationAgency_StateEducationAgencyId");
+CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenter_StateEducationAgency_State_578f2b4aeb" ON "edfi"."EducationServiceCenter" ("StateEducationAgency_StateEducationAgencyId", "StateEducationAgency_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterAddress_AddressTypeDescript_b9d3313f56" ON "edfi"."EducationServiceCenterAddress" ("AddressTypeDescriptor_DescriptorId");
 
@@ -34557,11 +34551,11 @@ CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ContentVersion" ON "edf
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_EvaluationRubricRatingL_b9dfdd7a3d" ON "edfi"."EvaluationRubricDimension" ("EvaluationRubricRatingLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_5fb0559117" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluationElement_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_6ba2152d07" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706");
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_797ef3458f" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramEducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_a965d4c4ad" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_DocumentId", "ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen_cf4094afb0" ON "edfi"."EvaluationRubricDimension" ("ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId");
 
@@ -34569,11 +34563,11 @@ CREATE INDEX IF NOT EXISTS "IX_EvaluationRubricDimension_ProgramEvaluationElemen
 
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_ContentVersion" ON "edfi"."FeederSchoolAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_FeederSchool_DocumentId_F_4d61bd08fc" ON "edfi"."FeederSchoolAssociation" ("FeederSchool_DocumentId", "FeederSchool_SchoolId");
-
-CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_DocumentId_School_SchoolId" ON "edfi"."FeederSchoolAssociation" ("School_DocumentId", "School_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_FeederSchool_SchoolId_Fee_9abcd64702" ON "edfi"."FeederSchoolAssociation" ("FeederSchool_SchoolId", "FeederSchool_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_SchoolId_Auth" ON "edfi"."FeederSchoolAssociation" ("School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_FeederSchoolAssociation_School_SchoolId_School_DocumentId" ON "edfi"."FeederSchoolAssociation" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_FunctionDimension_ContentVersion" ON "edfi"."FunctionDimension" ("ContentVersion");
 
@@ -34585,19 +34579,17 @@ CREATE INDEX IF NOT EXISTS "IX_FundDimensionReportingTag_ReportingTagDescriptor_
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_ContentVersion" ON "edfi"."Grade" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Grade_GradingPeriodGradingPeriod_DocumentId_Gradi_05c399db25" ON "edfi"."Grade" ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified");
-
-CREATE INDEX IF NOT EXISTS "IX_Grade_GradingPeriodGradingPeriod_GradingPeriodDes_e1dff03b07" ON "edfi"."Grade" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_Grade_GradingPeriodGradingPeriod_GradingPeriodDes_040f0a871b" ON "edfi"."Grade" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "GradingPeriodGradingPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_PerformanceBaseConversionDescriptor_DescriptorId" ON "edfi"."Grade" ("PerformanceBaseConversionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Grade_SchoolId_Unified_Auth" ON "edfi"."Grade" ("SchoolId_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_Grade_StudentSectionAssociation_BeginDate_Student_a1d53b4728" ON "edfi"."Grade" ("StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId", "StudentSectionAssociation_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_Grade_StudentSectionAssociation_DocumentId_Auth" ON "edfi"."Grade" ("StudentSectionAssociation_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Grade_StudentSectionAssociation_DocumentId_Studen_eb5c081b9d" ON "edfi"."Grade" ("StudentSectionAssociation_DocumentId", "StudentSectionAssociation_BeginDate", "StudentSectionAssociation_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "StudentSectionAssociation_SectionIdentifier", "StudentSectionAssociation_SessionName", "StudentSectionAssociation_StudentUniqueId");
-
-CREATE INDEX IF NOT EXISTS "IX_GradeLearningStandardGrade_LearningStandardGradeL_038808a68f" ON "edfi"."GradeLearningStandardGrade" ("LearningStandardGradeLearningStandard_DocumentId", "LearningStandardGradeLearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_GradeLearningStandardGrade_LearningStandardGradeL_baba69e833" ON "edfi"."GradeLearningStandardGrade" ("LearningStandardGradeLearningStandard_LearningStandardId", "LearningStandardGradeLearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradeLearningStandardGrade_PerformanceBaseConvers_692aa5d2ba" ON "edfi"."GradeLearningStandardGrade" ("PerformanceBaseConversionDescriptor_DescriptorId");
 
@@ -34605,33 +34597,29 @@ CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_ContentVersion" ON "edfi"."Gradebo
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradebookEntryTypeDescriptor_DescriptorId" ON "edfi"."GradebookEntry" ("GradebookEntryTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradingPeriod_DocumentId_GradingPe_fab4126bc1" ON "edfi"."GradebookEntry" ("GradingPeriod_DocumentId", "GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified");
-
-CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradingPeriod_GradingPeriodDescrip_e23413549c" ON "edfi"."GradebookEntry" ("GradingPeriod_GradingPeriodDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_GradingPeriod_GradingPeriodDescrip_367b02b8b0" ON "edfi"."GradebookEntry" ("GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "SchoolId_Unified", "SchoolYear_Unified", "GradingPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_Namespace_Auth" ON "edfi"."GradebookEntry" ("Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_Section_DocumentId_Section_LocalCo_134838dd12" ON "edfi"."GradebookEntry" ("Section_DocumentId", "Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_GradebookEntry_Section_LocalCourseCode_SchoolId_U_b4e74bc891" ON "edfi"."GradebookEntry" ("Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_GradebookEntryLearningStandard_LearningStandard_D_c894497c5d" ON "edfi"."GradebookEntryLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_GradebookEntryLearningStandard_LearningStandard_L_c41a95970a" ON "edfi"."GradebookEntryLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_ContentVersion" ON "edfi"."GradingPeriod" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_SchoolYear_DocumentId_SchoolYear_SchoolYear" ON "edfi"."GradingPeriod" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
-
-CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_DocumentId_School_SchoolId" ON "edfi"."GradingPeriod" ("School_DocumentId", "School_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_SchoolYear_SchoolYear_SchoolYear_DocumentId" ON "edfi"."GradingPeriod" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_SchoolId_Auth" ON "edfi"."GradingPeriod" ("School_SchoolId");
 
+CREATE INDEX IF NOT EXISTS "IX_GradingPeriod_School_SchoolId_School_DocumentId" ON "edfi"."GradingPeriod" ("School_SchoolId", "School_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_ContentVersion" ON "edfi"."GraduationPlan" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_EducationOrganization_DocumentId_E_c2d8f843e2" ON "edfi"."GraduationPlan" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_EducationOrganization_EducationOrg_d48d791679" ON "edfi"."GraduationPlan" ("EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_EducationOrganization_EducationOrg_95c1a905ae" ON "edfi"."GraduationPlan" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" ON "edfi"."GraduationPlan" ("GraduationPlanTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_GraduationSchoolYear_DocumentId_Gr_f9b15b7bbf" ON "edfi"."GraduationPlan" ("GraduationSchoolYear_DocumentId", "GraduationSchoolYear_GraduationSchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_GraduationSchoolYear_GraduationSch_0a551b4a9e" ON "edfi"."GraduationPlan" ("GraduationSchoolYear_GraduationSchoolYear", "GraduationSchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlan_TotalRequiredCreditTypeDescriptor__70b6ceca96" ON "edfi"."GraduationPlan" ("TotalRequiredCreditTypeDescriptor_DescriptorId");
 
@@ -34639,7 +34627,7 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCours_CreditTypeDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCours_WhenTakenGradeLevelD_394ecaf8ee" ON "edfi"."GraduationPlanCreditsByCours" ("WhenTakenGradeLevelDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCoursCours_CourseCourse_Do_e4b419eea1" ON "edfi"."GraduationPlanCreditsByCoursCours" ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCoursCours_CourseCourse_Co_9a66dfd43c" ON "edfi"."GraduationPlanCreditsByCoursCours" ("CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId", "CourseCourse_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCoursCours_ParentCollectio_3ca0b1bd77" ON "edfi"."GraduationPlanCreditsByCoursCours" ("ParentCollectionItemId", "GraduationPlan_DocumentId");
 
@@ -34657,7 +34645,7 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_PerformanceLevel
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_PerformanceLevel_c87331079c" ON "edfi"."GraduationPlanRequiredAssessment" ("PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_70adae54f9" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_DocumentId", "RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_7d666843e2" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace", "RequiredAssessmentAssessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_8a46212213" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_Namespace");
 
@@ -34671,9 +34659,7 @@ CREATE INDEX IF NOT EXISTS "IX_Intervention_ContentVersion" ON "edfi"."Intervent
 
 CREATE INDEX IF NOT EXISTS "IX_Intervention_DeliveryMethodDescriptor_DescriptorId" ON "edfi"."Intervention" ("DeliveryMethodDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_Intervention_EducationOrganization_DocumentId_Edu_7a3f88dfbc" ON "edfi"."Intervention" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_Intervention_EducationOrganization_EducationOrgan_89fb84a3d9" ON "edfi"."Intervention" ("EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_Intervention_EducationOrganization_EducationOrgan_8393f9138f" ON "edfi"."Intervention" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Intervention_InterventionClassDescriptor_DescriptorId" ON "edfi"."Intervention" ("InterventionClassDescriptor_DescriptorId");
 
@@ -34683,9 +34669,9 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionAppropriateSex_SexDescriptor_Descript
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionDiagnos_DiagnosisDescriptor_DescriptorId" ON "edfi"."InterventionDiagnos" ("DiagnosisDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionEducationContent_EducationContentSour_0dc061e93b" ON "edfi"."InterventionEducationContent" ("EducationContentSourceEducationContent_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_InterventionEducationContent_EducationContentSour_cb44a4ccb5" ON "edfi"."InterventionEducationContent" ("EducationContentSourceEducationContent_ContentIdentifier", "EducationContentSourceEducationContent_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionInterventionPrescription_Intervention_32cecac585" ON "edfi"."InterventionInterventionPrescription" ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28");
+CREATE INDEX IF NOT EXISTS "IX_InterventionInterventionPrescription_Intervention_465b245ac8" ON "edfi"."InterventionInterventionPrescription" ("InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28", "InterventionPrescriptionInterventionPrescription_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPopulationServed_PopulationServedDesc_3c90c865e3" ON "edfi"."InterventionPopulationServed" ("PopulationServedDescriptor_DescriptorId");
 
@@ -34693,9 +34679,7 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_ContentVersion" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_DeliveryMethodDescriptor_dea82e8205" ON "edfi"."InterventionPrescription" ("DeliveryMethodDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_EducationOrganization_Do_0fbaa8a390" ON "edfi"."InterventionPrescription" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_EducationOrganization_Ed_b79c5307d5" ON "edfi"."InterventionPrescription" ("EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_EducationOrganization_Ed_71f81814ab" ON "edfi"."InterventionPrescription" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescription_InterventionClassDescrip_e229101475" ON "edfi"."InterventionPrescription" ("InterventionClassDescriptor_DescriptorId");
 
@@ -34705,29 +34689,29 @@ CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionAppropriateSex_SexDescrip
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionDiagnos_DiagnosisDescript_a22160f0b9" ON "edfi"."InterventionPrescriptionDiagnos" ("DiagnosisDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionEducationContent_Educatio_acb5b3be9c" ON "edfi"."InterventionPrescriptionEducationContent" ("EducationContentSourceEducationContent_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionEducationContent_Educatio_80832ecf84" ON "edfi"."InterventionPrescriptionEducationContent" ("EducationContentSourceEducationContent_ContentIdentifier", "EducationContentSourceEducationContent_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionPrescriptionPopulationServed_Populati_fe46988cfd" ON "edfi"."InterventionPrescriptionPopulationServed" ("PopulationServedDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionStaff_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."InterventionStaff" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_InterventionStaff_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."InterventionStaff" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_ContentVersion" ON "edfi"."InterventionStudy" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_DeliveryMethodDescriptor_DescriptorId" ON "edfi"."InterventionStudy" ("DeliveryMethodDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_EducationOrganization_DocumentI_0e5d2fde48" ON "edfi"."InterventionStudy" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_EducationOrganization_Education_2d419ed6a7" ON "edfi"."InterventionStudy" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_EducationOrganization_Education_9f5353493e" ON "edfi"."InterventionStudy" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_InterventionClassDescriptor_DescriptorId" ON "edfi"."InterventionStudy" ("InterventionClassDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_InterventionPrescriptionInterve_2f7c0302d6" ON "edfi"."InterventionStudy" ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28");
+CREATE INDEX IF NOT EXISTS "IX_InterventionStudy_InterventionPrescriptionInterve_526dfeeb6f" ON "edfi"."InterventionStudy" ("InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28", "InterventionPrescriptionInterventionPrescription_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudyAppropriateGradeLevel_GradeLevel_72171e1513" ON "edfi"."InterventionStudyAppropriateGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudyAppropriateSex_SexDescriptor_DescriptorId" ON "edfi"."InterventionStudyAppropriateSex" ("SexDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_InterventionStudyEducationContent_EducationConten_6c9d13276c" ON "edfi"."InterventionStudyEducationContent" ("EducationContentSourceEducationContent_DocumentId", "EducationContentSourceEducationContent_ContentIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_InterventionStudyEducationContent_EducationConten_9e4caab024" ON "edfi"."InterventionStudyEducationContent" ("EducationContentSourceEducationContent_ContentIdentifier", "EducationContentSourceEducationContent_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_InterventionStudyInterventionEffectiveness_Diagno_20c058f89f" ON "edfi"."InterventionStudyInterventionEffectiveness" ("DiagnosisDescriptor_DescriptorId");
 
@@ -34749,11 +34733,11 @@ CREATE INDEX IF NOT EXISTS "IX_LearningStandard_LearningStandardCategoryDescript
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_LearningStandardScopeDescriptor__91a8efe8f7" ON "edfi"."LearningStandard" ("LearningStandardScopeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LearningStandard_MandatingEducationOrganization_D_43d05b1f07" ON "edfi"."LearningStandard" ("MandatingEducationOrganization_DocumentId", "MandatingEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_LearningStandard_MandatingEducationOrganization_E_d05b6702b9" ON "edfi"."LearningStandard" ("MandatingEducationOrganization_EducationOrganizationId", "MandatingEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandard_Namespace_Auth" ON "edfi"."LearningStandard" ("Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ParentLearningStandard_DocumentI_f8fe09ee92" ON "edfi"."LearningStandard" ("ParentLearningStandard_DocumentId", "ParentLearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_LearningStandard_ParentLearningStandard_LearningS_2270763e3d" ON "edfi"."LearningStandard" ("ParentLearningStandard_LearningStandardId", "ParentLearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardAcademicSubject_AcademicSubjectDe_d763d1c41a" ON "edfi"."LearningStandardAcademicSubject" ("AcademicSubjectDescriptor_DescriptorId");
 
@@ -34761,19 +34745,19 @@ CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_ContentVer
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_LearningSt_dfff6c8d02" ON "edfi"."LearningStandardEquivalenceAssociation" ("LearningStandardEquivalenceStrengthDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_SourceLear_2d9d604a28" ON "edfi"."LearningStandardEquivalenceAssociation" ("SourceLearningStandard_DocumentId", "SourceLearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_SourceLear_f7961d6d60" ON "edfi"."LearningStandardEquivalenceAssociation" ("SourceLearningStandard_LearningStandardId", "SourceLearningStandard_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_TargetLear_0f081ac291" ON "edfi"."LearningStandardEquivalenceAssociation" ("TargetLearningStandard_DocumentId", "TargetLearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_LearningStandardEquivalenceAssociation_TargetLear_468e307088" ON "edfi"."LearningStandardEquivalenceAssociation" ("TargetLearningStandard_LearningStandardId", "TargetLearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LearningStandardGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."LearningStandardGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ChartOfAccountChartOfAccount_Documen_101e8d676f" ON "edfi"."LocalAccount" ("ChartOfAccountChartOfAccount_DocumentId", "ChartOfAccountChartOfAccount_AccountIdentifier", "ChartOfAccountChartOfAccount_EducationOrganizationId", "FiscalYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ChartOfAccountChartOfAccount_Account_da43e80ecc" ON "edfi"."LocalAccount" ("ChartOfAccountChartOfAccount_AccountIdentifier", "ChartOfAccountChartOfAccount_EducationOrganizationId", "FiscalYear_Unified", "ChartOfAccountChartOfAccount_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_ContentVersion" ON "edfi"."LocalAccount" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_DocumentId_Edu_7b240f9edd" ON "edfi"."LocalAccount" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_EducationOrgan_8d61178531" ON "edfi"."LocalAccount" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalAccount_EducationOrganization_EducationOrgan_b7d3637739" ON "edfi"."LocalAccount" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalAccountReportingTag_ReportingTagDescriptor_DescriptorId" ON "edfi"."LocalAccountReportingTag" ("ReportingTagDescriptor_DescriptorId");
 
@@ -34781,7 +34765,7 @@ CREATE INDEX IF NOT EXISTS "IX_LocalActual_ContentVersion" ON "edfi"."LocalActua
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalActual" ("FinancialCollectionDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_DocumentId_LocalAccount__6188290e54" ON "edfi"."LocalActual" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
+CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_AccountIdentifier_LocalA_aac8009a9f" ON "edfi"."LocalActual" ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalActual_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalActual" ("LocalAccount_EducationOrganizationId");
 
@@ -34789,7 +34773,7 @@ CREATE INDEX IF NOT EXISTS "IX_LocalBudget_ContentVersion" ON "edfi"."LocalBudge
 
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalBudget" ("FinancialCollectionDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_DocumentId_LocalAccount__abe7a4425d" ON "edfi"."LocalBudget" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
+CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_AccountIdentifier_LocalA_1305cf33df" ON "edfi"."LocalBudget" ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalBudget_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalBudget" ("LocalAccount_EducationOrganizationId");
 
@@ -34797,31 +34781,31 @@ CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_ContentVersion" ON "edfi"."L
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_FinancialCollectionDescripto_76ed6e7e39" ON "edfi"."LocalContractedStaff" ("FinancialCollectionDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_LocalAccount_DocumentId_Loca_e91b51bc3c" ON "edfi"."LocalContractedStaff" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
+CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_LocalAccount_AccountIdentifi_8bfd7b2a2f" ON "edfi"."LocalContractedStaff" ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_LocalAccount_EducationOrgani_e507d57d78" ON "edfi"."LocalContractedStaff" ("LocalAccount_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_Staff_DocumentId_Auth" ON "edfi"."LocalContractedStaff" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."LocalContractedStaff" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_LocalContractedStaff_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."LocalContractedStaff" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_CharterStatusDescriptor_DescriptorId" ON "edfi"."LocalEducationAgency" ("CharterStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ContentVersion" ON "edfi"."LocalEducationAgency" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_EducationServiceCenter_Docum_7437dee437" ON "edfi"."LocalEducationAgency" ("EducationServiceCenter_DocumentId", "EducationServiceCenter_EducationServiceCenterId");
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_EducationServiceCenter_Educa_ffa5cbefb4" ON "edfi"."LocalEducationAgency" ("EducationServiceCenter_EducationServiceCenterId", "EducationServiceCenter_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_LocalEducationAgencyCategory_e084f218f5" ON "edfi"."LocalEducationAgency" ("LocalEducationAgencyCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_OperationalStatusDescriptor__4905976e1c" ON "edfi"."LocalEducationAgency" ("OperationalStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ParentLocalEducationAgency_D_0ce0bdf1bd" ON "edfi"."LocalEducationAgency" ("ParentLocalEducationAgency_DocumentId", "ParentLocalEducationAgency_LocalEducationAgencyId");
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ParentLocalEducationAgency_L_6d56afcd7e" ON "edfi"."LocalEducationAgency" ("ParentLocalEducationAgency_LocalEducationAgencyId", "ParentLocalEducationAgency_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_StateEducationAgency_Documen_957abd287f" ON "edfi"."LocalEducationAgency" ("StateEducationAgency_DocumentId", "StateEducationAgency_StateEducationAgencyId");
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_StateEducationAgency_StateEd_61f9f0aeb7" ON "edfi"."LocalEducationAgency" ("StateEducationAgency_StateEducationAgencyId", "StateEducationAgency_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyAccountability_GunFreeSchools_7a87a1f206" ON "edfi"."LocalEducationAgencyAccountability" ("GunFreeSchoolsActReportingStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyAccountability_LocalEducation_5cee53e27f" ON "edfi"."LocalEducationAgencyAccountability" ("LocalEducationAgencyAccountabilitySchoolYear_DocumentId", "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyAccountability_LocalEducation_2b6d6c6eef" ON "edfi"."LocalEducationAgencyAccountability" ("LocalEducationAgencyAccountabilitySchoolYear_SchoolYear", "LocalEducationAgencyAccountabilitySchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyAccountability_SchoolChoiceIm_3133fa469e" ON "edfi"."LocalEducationAgencyAccountability" ("SchoolChoiceImplementStatusDescriptor_DescriptorId");
 
@@ -34855,7 +34839,7 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_ContentVersion" ON "edfi"."Local
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalEncumbrance" ("FinancialCollectionDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_DocumentId_LocalAcc_c1aff8f74e" ON "edfi"."LocalEncumbrance" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
+CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_AccountIdentifier_L_ecc99e94e9" ON "edfi"."LocalEncumbrance" ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEncumbrance_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalEncumbrance" ("LocalAccount_EducationOrganizationId");
 
@@ -34863,19 +34847,19 @@ CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_ContentVersion" ON "edfi"."LocalPayr
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_FinancialCollectionDescriptor_DescriptorId" ON "edfi"."LocalPayroll" ("FinancialCollectionDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_LocalAccount_DocumentId_LocalAccount_118a685824" ON "edfi"."LocalPayroll" ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear");
+CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_LocalAccount_AccountIdentifier_Local_5d04aff567" ON "edfi"."LocalPayroll" ("LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear", "LocalAccount_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_LocalAccount_EducationOrganizationId_Auth" ON "edfi"."LocalPayroll" ("LocalAccount_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_Staff_DocumentId_Auth" ON "edfi"."LocalPayroll" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."LocalPayroll" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_LocalPayroll_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."LocalPayroll" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Location_ContentVersion" ON "edfi"."Location" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Location_School_DocumentId_School_SchoolId" ON "edfi"."Location" ("School_DocumentId", "School_SchoolId");
-
 CREATE INDEX IF NOT EXISTS "IX_Location_School_SchoolId_Auth" ON "edfi"."Location" ("School_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_Location_School_SchoolId_School_DocumentId" ON "edfi"."Location" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectDimension_ContentVersion" ON "edfi"."ObjectDimension" ("ContentVersion");
 
@@ -34883,19 +34867,19 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectDimensionReportingTag_ReportingTagDescripto
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AcademicSubjectDescriptor_DescriptorId" ON "edfi"."ObjectiveAssessment" ("AcademicSubjectDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Assessment_DocumentId_Assessm_c6ab434586" ON "edfi"."ObjectiveAssessment" ("Assessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified");
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AssessmentIdentifier_Unified__5bec623583" ON "edfi"."ObjectiveAssessment" ("AssessmentIdentifier_Unified", "Namespace_Unified", "ParentObjectiveAssessment_IdentificationCode", "ParentObjectiveAssessment_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AssessmentIdentifier_Unified__9d98161ea2" ON "edfi"."ObjectiveAssessment" ("AssessmentIdentifier_Unified", "Namespace_Unified", "Assessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_ContentVersion" ON "edfi"."ObjectiveAssessment" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Namespace_Unified_Auth" ON "edfi"."ObjectiveAssessment" ("Namespace_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_ParentObjectiveAssessment_Doc_e13dce6b30" ON "edfi"."ObjectiveAssessment" ("ParentObjectiveAssessment_DocumentId", "AssessmentIdentifier_Unified", "Namespace_Unified", "ParentObjectiveAssessment_IdentificationCode");
-
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_2f06e55896" ON "edfi"."ObjectiveAssessmentAssessmentItem" ("AssessmentItemAssessmentItem_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_426e438585" ON "edfi"."ObjectiveAssessmentAssessmentItem" ("AssessmentItemAssessmentItem_DocumentId", "AssessmentItemAssessmentItem_AssessmentIdentifier", "AssessmentItemAssessmentItem_Namespace", "AssessmentItemAssessmentItem_IdentificationCode");
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_44c119b160" ON "edfi"."ObjectiveAssessmentAssessmentItem" ("AssessmentItemAssessmentItem_AssessmentIdentifier", "AssessmentItemAssessmentItem_Namespace", "AssessmentItemAssessmentItem_IdentificationCode", "AssessmentItemAssessmentItem_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentLearningStandard_LearningStand_4e41e01387" ON "edfi"."ObjectiveAssessmentLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentLearningStandard_LearningStand_9e043ed84a" ON "edfi"."ObjectiveAssessmentLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentPerformanceLevel_AssessmentRep_d9de7a142e" ON "edfi"."ObjectiveAssessmentPerformanceLevel" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
@@ -34909,9 +34893,9 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentScore_ResultDatatypeTypeDescri
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_ContentVersion" ON "edfi"."OpenStaffPosition" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_DocumentI_8fad36d297" ON "edfi"."OpenStaffPosition" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_Education_36b4b22ff8" ON "edfi"."OpenStaffPosition" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EducationOrganization_Education_eaaa372ab2" ON "edfi"."OpenStaffPosition" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_OpenStaffPosition_EmploymentStatusDescriptor_DescriptorId" ON "edfi"."OpenStaffPosition" ("EmploymentStatusDescriptor_DescriptorId");
 
@@ -34935,7 +34919,7 @@ CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ContentVersion" ON "edfi".
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_OperationalStatusDescripto_d9b294e2d3" ON "edfi"."OrganizationDepartment" ("OperationalStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ParentEducationOrganizatio_7e7cc3b2f3" ON "edfi"."OrganizationDepartment" ("ParentEducationOrganization_DocumentId", "ParentEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ParentEducationOrganizatio_63ceca55a9" ON "edfi"."OrganizationDepartment" ("ParentEducationOrganization_EducationOrganizationId", "ParentEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartment_ParentEducationOrganizatio_9129ec32b0" ON "edfi"."OrganizationDepartment" ("ParentEducationOrganization_EducationOrganizationId");
 
@@ -34973,11 +34957,11 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_ContentVersion" ON "edfi"."Pos
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_PostSecondaryEventCategoryDesc_e674e7d53f" ON "edfi"."PostSecondaryEvent" ("PostSecondaryEventCategoryDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_PostSecondaryInstitution_Docum_535969967c" ON "edfi"."PostSecondaryEvent" ("PostSecondaryInstitution_DocumentId", "PostSecondaryInstitution_PostSecondaryInstitutionId");
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_PostSecondaryInstitution_PostS_3f8068d6c5" ON "edfi"."PostSecondaryEvent" ("PostSecondaryInstitution_PostSecondaryInstitutionId", "PostSecondaryInstitution_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_Student_DocumentId_Auth" ON "edfi"."PostSecondaryEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_Student_DocumentId_Student_Stu_000e544a9f" ON "edfi"."PostSecondaryEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryEvent_Student_StudentUniqueId_Studen_13a01dfa79" ON "edfi"."PostSecondaryEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitution_AdministrativeFundingCon_00a0c3d7a3" ON "edfi"."PostSecondaryInstitution" ("AdministrativeFundingControlDescriptor_DescriptorId");
 
@@ -35017,9 +35001,7 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionMediumOfInstruction_Mediu
 
 CREATE INDEX IF NOT EXISTS "IX_Program_ContentVersion" ON "edfi"."Program" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_DocumentId_Educatio_38e40120fe" ON "edfi"."Program" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_EducationOrganizationId_Auth" ON "edfi"."Program" ("EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_Program_EducationOrganization_EducationOrganizati_c73e683cad" ON "edfi"."Program" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Program_ProgramTypeDescriptor_DescriptorId" ON "edfi"."Program" ("ProgramTypeDescriptor_DescriptorId");
 
@@ -35033,9 +35015,9 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ContentVersion" ON "edfi"."Prog
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramEvaluationTypeDescriptor_86cf40c548" ON "edfi"."ProgramEvaluation" ("ProgramEvaluationTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_DocumentId_Progr_2365a338bd" ON "edfi"."ProgramEvaluation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
-
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_EducationOrganiz_10ea1f2b12" ON "edfi"."ProgramEvaluation" ("ProgramProgram_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_EducationOrganiz_d8be76f82f" ON "edfi"."ProgramEvaluation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluation_ProgramProgram_ProgramTypeDescr_16081c538e" ON "edfi"."ProgramEvaluation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -35043,13 +35025,11 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ContentVersion" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEducationOrganiza_4723285757" ON "edfi"."ProgramEvaluationElement" ("ProgramEducationOrganizationId_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_ce71a74398" ON "edfi"."ProgramEvaluationElement" ("ProgramEvaluationObjective_DocumentId", "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_553fc16312" ON "edfi"."ProgramEvaluationElement" ("ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "ProgramEvaluationObjective_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEvaluationPeriodD_4f026fa474" ON "edfi"."ProgramEvaluationElement" ("ProgramEvaluationPeriodDescriptor_Unified_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEvaluationPeriodD_5c14efcf1b" ON "edfi"."ProgramEvaluationElement" ("ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramEducationOrganizationId_Unified", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId", "ProgramEvaluation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEvaluationTypeDes_e18c4d5559" ON "edfi"."ProgramEvaluationElement" ("ProgramEvaluationTypeDescriptor_Unified_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramEvaluation_Docume_3327e2faf9" ON "edfi"."ProgramEvaluationElement" ("ProgramEvaluation_DocumentId", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramEducationOrganizationId_Unified", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationElement_ProgramTypeDescriptor_Un_cb949dfd3b" ON "edfi"."ProgramEvaluationElement" ("ProgramTypeDescriptor_Unified_DescriptorId");
 
@@ -35059,11 +35039,9 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationLevel_RatingLevelDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ContentVersion" ON "edfi"."ProgramEvaluationObjective" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Docu_c20b8f0419" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId");
-
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_43d0a0b880" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_8586459e15" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e");
+CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_b57b2d1caa" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog_bbf3d7ab70" ON "edfi"."ProgramEvaluationObjective" ("ProgramEvaluation_ProgramEducationOrganizationId");
 
@@ -35071,7 +35049,7 @@ CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjective_ProgramEvaluation_Prog
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramEvaluationObjectiveProgramEvaluationLevel__fd9999ff79" ON "edfi"."ProgramEvaluationObjectiveProgramEvaluationLevel" ("RatingLevelDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_ProgramLearningStandard_LearningStandard_Document_1cbcaeda96" ON "edfi"."ProgramLearningStandard" ("LearningStandard_DocumentId", "LearningStandard_LearningStandardId");
+CREATE INDEX IF NOT EXISTS "IX_ProgramLearningStandard_LearningStandard_Learning_32f4e38f2c" ON "edfi"."ProgramLearningStandard" ("LearningStandard_LearningStandardId", "LearningStandard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ProgramSponsor_ProgramSponsorDescriptor_DescriptorId" ON "edfi"."ProgramSponsor" ("ProgramSponsorDescriptor_DescriptorId");
 
@@ -35081,47 +35059,39 @@ CREATE INDEX IF NOT EXISTS "IX_ProjectDimensionReportingTag_ReportingTagDescript
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCard_ContentVersion" ON "edfi"."ReportCard" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_ReportCard_EducationOrganization_DocumentId_Educa_ab5c49cad0" ON "edfi"."ReportCard" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_ReportCard_EducationOrganization_EducationOrganiz_31c899dab0" ON "edfi"."ReportCard" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ReportCard_EducationOrganization_EducationOrganiz_4385b3212f" ON "edfi"."ReportCard" ("EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_ReportCard_GradingPeriodGradingPeriod_DocumentId__8f263cc2a3" ON "edfi"."ReportCard" ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear");
-
-CREATE INDEX IF NOT EXISTS "IX_ReportCard_GradingPeriodGradingPeriod_GradingPeri_134fd86bd1" ON "edfi"."ReportCard" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_ReportCard_GradingPeriodGradingPeriod_GradingPeri_9ea2b31217" ON "edfi"."ReportCard" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "GradingPeriodGradingPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCard_Student_DocumentId_Auth" ON "edfi"."ReportCard" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ReportCard_Student_DocumentId_Student_StudentUniqueId" ON "edfi"."ReportCard" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_ReportCard_Student_StudentUniqueId_Student_DocumentId" ON "edfi"."ReportCard" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_ReportCardGrade_Grade_DocumentId_Grade_GradeTypeD_f2eb38e041" ON "edfi"."ReportCardGrade" ("Grade_DocumentId", "Grade_GradeTypeDescriptor_DescriptorId", "Grade_GradingPeriodDescriptor_DescriptorId", "Grade_GradingPeriodName", "SchoolId_Unified", "Grade_GradingPeriodSchoolYear", "Grade_BeginDate", "Grade_LocalCourseCode", "Grade_SectionIdentifier", "Grade_SessionName", "Grade_StudentUniqueId");
-
-CREATE INDEX IF NOT EXISTS "IX_ReportCardGrade_Grade_GradeTypeDescriptor_DescriptorId" ON "edfi"."ReportCardGrade" ("Grade_GradeTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_ReportCardGrade_Grade_GradeTypeDescriptor_Descrip_b5515dff2c" ON "edfi"."ReportCardGrade" ("Grade_GradeTypeDescriptor_DescriptorId", "Grade_GradingPeriodDescriptor_DescriptorId", "Grade_GradingPeriodName", "SchoolId_Unified", "Grade_GradingPeriodSchoolYear", "Grade_BeginDate", "Grade_LocalCourseCode", "Grade_SectionIdentifier", "Grade_SessionName", "Grade_StudentUniqueId", "Grade_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCardGrade_Grade_GradingPeriodDescriptor_DescriptorId" ON "edfi"."ReportCardGrade" ("Grade_GradingPeriodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCardGradePointAverage_GradePointAverageType_7a1ee2e3e8" ON "edfi"."ReportCardGradePointAverage" ("GradePointAverageTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe_3d6d0553f4" ON "edfi"."ReportCardStudentCompetencyObjective" ("StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe_3ef6954948" ON "edfi"."ReportCardStudentCompetencyObjective" ("StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId", "StudentCompetencyObjective_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe_ad05459c4b" ON "edfi"."ReportCardStudentCompetencyObjective" ("StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d");
 
-CREATE INDEX IF NOT EXISTS "IX_ReportCardStudentCompetencyObjective_StudentCompe_f272bf933b" ON "edfi"."ReportCardStudentCompetencyObjective" ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_ContentVersion" ON "edfi"."RestraintEvent" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_DisciplineIncident_DocumentId_Disc_efed62b7ac" ON "edfi"."RestraintEvent" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "SchoolId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_DisciplineIncident_IncidentIdentif_2759348d12" ON "edfi"."RestraintEvent" ("DisciplineIncident_IncidentIdentifier", "SchoolId_Unified", "DisciplineIncident_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_EducationalEnvironmentDescriptor_DescriptorId" ON "edfi"."RestraintEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_SchoolId_Unified_Auth" ON "edfi"."RestraintEvent" ("SchoolId_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_School_DocumentId_SchoolId_Unified" ON "edfi"."RestraintEvent" ("School_DocumentId", "SchoolId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_SchoolId_Unified_School_DocumentId" ON "edfi"."RestraintEvent" ("SchoolId_Unified", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_Student_DocumentId_Auth" ON "edfi"."RestraintEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_Student_DocumentId_Student_StudentUniqueId" ON "edfi"."RestraintEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_RestraintEvent_Student_StudentUniqueId_Student_DocumentId" ON "edfi"."RestraintEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_RestraintEventProgram_Program_DocumentId_Program__0e021f6f9e" ON "edfi"."RestraintEventProgram" ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_RestraintEventProgram_Program_EducationOrganizati_568b448fdd" ON "edfi"."RestraintEventProgram" ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_RestraintEventProgram_Program_ProgramTypeDescript_27bbc55f76" ON "edfi"."RestraintEventProgram" ("Program_ProgramTypeDescriptor_DescriptorId");
 
@@ -35131,7 +35101,7 @@ CREATE INDEX IF NOT EXISTS "IX_School_AdministrativeFundingControlDescriptor_Des
 
 CREATE INDEX IF NOT EXISTS "IX_School_CharterApprovalAgencyTypeDescriptor_DescriptorId" ON "edfi"."School" ("CharterApprovalAgencyTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_School_CharterApprovalSchoolYear_DocumentId_Chart_8878b20f6c" ON "edfi"."School" ("CharterApprovalSchoolYear_DocumentId", "CharterApprovalSchoolYear_CharterApprovalSchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_School_CharterApprovalSchoolYear_CharterApprovalS_7e773ec295" ON "edfi"."School" ("CharterApprovalSchoolYear_CharterApprovalSchoolYear", "CharterApprovalSchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_CharterStatusDescriptor_DescriptorId" ON "edfi"."School" ("CharterStatusDescriptor_DescriptorId");
 
@@ -35139,7 +35109,7 @@ CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("Conte
 
 CREATE INDEX IF NOT EXISTS "IX_School_InternetAccessDescriptor_DescriptorId" ON "edfi"."School" ("InternetAccessDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_School_LocalEducationAgency_DocumentId_LocalEduca_e63ff06832" ON "edfi"."School" ("LocalEducationAgency_DocumentId", "LocalEducationAgency_LocalEducationAgencyId");
+CREATE INDEX IF NOT EXISTS "IX_School_LocalEducationAgency_LocalEducationAgencyI_9af032fa27" ON "edfi"."School" ("LocalEducationAgency_LocalEducationAgencyId", "LocalEducationAgency_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_MagnetSpecialProgramEmphasisSchoolDescript_02634d319d" ON "edfi"."School" ("MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId");
 
@@ -35185,61 +35155,57 @@ CREATE INDEX IF NOT EXISTS "IX_Section_AvailableCreditTypeDescriptor_DescriptorI
 
 CREATE INDEX IF NOT EXISTS "IX_Section_ContentVersion" ON "edfi"."Section" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Section_CourseOffering_DocumentId_CourseOffering__8f086abe11" ON "edfi"."Section" ("CourseOffering_DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName");
+CREATE INDEX IF NOT EXISTS "IX_Section_CourseOffering_LocalCourseCode_SchoolId_U_1e931bf166" ON "edfi"."Section" ("CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName", "CourseOffering_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_EducationalEnvironmentDescriptor_DescriptorId" ON "edfi"."Section" ("EducationalEnvironmentDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_InstructionLanguageDescriptor_DescriptorId" ON "edfi"."Section" ("InstructionLanguageDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_Section_LocationLocation_DocumentId_LocationLocat_121f7333ea" ON "edfi"."Section" ("LocationLocation_DocumentId", "LocationLocation_ClassroomIdentificationCode", "SchoolId_U35501e03_Unified");
-
-CREATE INDEX IF NOT EXISTS "IX_Section_LocationSchool_DocumentId_SchoolId_U35501e03_Unified" ON "edfi"."Section" ("LocationSchool_DocumentId", "SchoolId_U35501e03_Unified");
+CREATE INDEX IF NOT EXISTS "IX_Section_LocationLocation_ClassroomIdentificationC_80497bf795" ON "edfi"."Section" ("LocationLocation_ClassroomIdentificationCode", "SchoolId_U35501e03_Unified", "LocationLocation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_MediumOfInstructionDescriptor_DescriptorId" ON "edfi"."Section" ("MediumOfInstructionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_PopulationServedDescriptor_DescriptorId" ON "edfi"."Section" ("PopulationServedDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_Section_SchoolId_U35501e03_Unified_LocationSchool_DocumentId" ON "edfi"."Section" ("SchoolId_U35501e03_Unified", "LocationSchool_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_Section_SchoolId_Unified_Auth" ON "edfi"."Section" ("SchoolId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_Section_SectionTypeDescriptor_DescriptorId" ON "edfi"."Section" ("SectionTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_CalendarDate_Document_d2f3bac1c1" ON "edfi"."SectionAttendanceTakenEvent" ("CalendarDate_DocumentId", "CalendarDate_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "CalendarDate_Date");
+CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_CalendarDate_Calendar_1550ae2379" ON "edfi"."SectionAttendanceTakenEvent" ("CalendarDate_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "CalendarDate_Date", "CalendarDate_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_ContentVersion" ON "edfi"."SectionAttendanceTakenEvent" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_SchoolId_Unified_Auth" ON "edfi"."SectionAttendanceTakenEvent" ("SchoolId_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_Section_DocumentId_Se_4b118d84e8" ON "edfi"."SectionAttendanceTakenEvent" ("Section_DocumentId", "Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_Section_LocalCourseCo_58e450d99a" ON "edfi"."SectionAttendanceTakenEvent" ("Section_LocalCourseCode", "SchoolId_Unified", "SchoolYear_Unified", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_Staff_DocumentId_Staf_54a9f05519" ON "edfi"."SectionAttendanceTakenEvent" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_SectionAttendanceTakenEvent_Staff_StaffUniqueId_S_0f91927eb7" ON "edfi"."SectionAttendanceTakenEvent" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionCharacteristic_SectionCharacteristicDescri_1e2304bae2" ON "edfi"."SectionCharacteristic" ("SectionCharacteristicDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_SectionClassPeriod_ClassPeriod_DocumentId_ClassPe_fb5a7a06c6" ON "edfi"."SectionClassPeriod" ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_SectionClassPeriod_ClassPeriod_ClassPeriodName_Cl_efe7115da7" ON "edfi"."SectionClassPeriod" ("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionCourseLevelCharacteristic_CourseLevelChara_86e9cc15b2" ON "edfi"."SectionCourseLevelCharacteristic" ("CourseLevelCharacteristicDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionOfferedGradeLevel_GradeLevelDescriptor_DescriptorId" ON "edfi"."SectionOfferedGradeLevel" ("GradeLevelDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_SectionProgram_Program_DocumentId_Program_Educati_4d2c2ae9b5" ON "edfi"."SectionProgram" ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_SectionProgram_Program_EducationOrganizationId_Pr_0c0a4fe723" ON "edfi"."SectionProgram" ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SectionProgram_Program_ProgramTypeDescriptor_DescriptorId" ON "edfi"."SectionProgram" ("Program_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_Session_ContentVersion" ON "edfi"."Session" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Session_SchoolYear_DocumentId_SchoolYear_SchoolYear" ON "edfi"."Session" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_Session_SchoolYear_SchoolYear_SchoolYear_DocumentId" ON "edfi"."Session" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Session_School_DocumentId_School_SchoolId" ON "edfi"."Session" ("School_DocumentId", "School_SchoolId");
-
-CREATE INDEX IF NOT EXISTS "IX_Session_School_SchoolId_Auth" ON "edfi"."Session" ("School_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_Session_School_SchoolId_School_DocumentId" ON "edfi"."Session" ("School_SchoolId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Session_TermDescriptor_DescriptorId" ON "edfi"."Session" ("TermDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_SessionAcademicWeek_AcademicWeek_DocumentId_Acade_5a73fb1c38" ON "edfi"."SessionAcademicWeek" ("AcademicWeek_DocumentId", "AcademicWeek_SchoolId", "AcademicWeek_WeekIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_SessionAcademicWeek_AcademicWeek_SchoolId_Academi_a0f7fb0a06" ON "edfi"."SessionAcademicWeek" ("AcademicWeek_SchoolId", "AcademicWeek_WeekIdentifier", "AcademicWeek_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SessionGradingPeriod_GradingPeriod_DocumentId_Gra_80a829ca54" ON "edfi"."SessionGradingPeriod" ("GradingPeriod_DocumentId", "GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "GradingPeriod_SchoolId", "GradingPeriod_SchoolYear");
-
-CREATE INDEX IF NOT EXISTS "IX_SessionGradingPeriod_GradingPeriod_GradingPeriodD_63aba1616b" ON "edfi"."SessionGradingPeriod" ("GradingPeriod_GradingPeriodDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_SessionGradingPeriod_GradingPeriod_GradingPeriodD_ed0c7ae352" ON "edfi"."SessionGradingPeriod" ("GradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriod_GradingPeriodName", "GradingPeriod_SchoolId", "GradingPeriod_SchoolYear", "GradingPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SourceDimension_ContentVersion" ON "edfi"."SourceDimension" ("ContentVersion");
 
@@ -35251,7 +35217,7 @@ CREATE INDEX IF NOT EXISTS "IX_Staff_ContentVersion" ON "edfi"."Staff" ("Content
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_HighestCompletedLevelOfEducationDescriptor__484b34eed2" ON "edfi"."Staff" ("HighestCompletedLevelOfEducationDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_Staff_Person_DocumentId_Person_PersonId_Person_So_2d5e72607f" ON "edfi"."Staff" ("Person_DocumentId", "Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_Staff_Person_PersonId_Person_SourceSystemDescript_5dc475c6a9" ON "edfi"."Staff" ("Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId", "Person_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Staff_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Staff" ("Person_SourceSystemDescriptor_DescriptorId");
 
@@ -35261,7 +35227,7 @@ CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_ContentVersion" ON "edfi"."Staf
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_Staff_DocumentId_Auth" ON "edfi"."StaffAbsenceEvent" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffAbsenceEvent" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffAbsenceEvent_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."StaffAbsenceEvent" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAddress_AddressTypeDescriptor_DescriptorId" ON "edfi"."StaffAddress" ("AddressTypeDescriptor_DescriptorId");
 
@@ -35273,7 +35239,7 @@ CREATE INDEX IF NOT EXISTS "IX_StaffAddressPeriod_ParentCollectionItemId_Staff_D
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDes_feaf40f85c" ON "edfi"."StaffAncestryEthnicOrigin" ("AncestryEthnicOriginDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_DocumentId_Cohort_C_46f1fe651b" ON "edfi"."StaffCohortAssociation" ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_CohortIdentifier_Co_90a3c4a29b" ON "edfi"."StaffCohortAssociation" ("Cohort_CohortIdentifier", "Cohort_EducationOrganizationId", "Cohort_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Cohort_EducationOrganizationId_Auth" ON "edfi"."StaffCohortAssociation" ("Cohort_EducationOrganizationId");
 
@@ -35281,9 +35247,9 @@ CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_ContentVersion" ON "edfi".
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_DocumentId_Auth" ON "edfi"."StaffCohortAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffCohortAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffCohortAssociation_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."StaffCohortAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_DocumentId_Credential__065939da61" ON "edfi"."StaffCredential" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_CredentialIdentifier_C_ff921a7692" ON "edfi"."StaffCredential" ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffCredential_Credential_StateOfIssueStateAbbre_f0c3524f11" ON "edfi"."StaffCredential" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
@@ -35291,11 +35257,11 @@ CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_ContentVersion
 
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_DisciplineInci_33bd5cd4d2" ON "edfi"."StaffDisciplineIncidentAssociation" ("DisciplineIncident_SchoolId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_DisciplineInci_b608da0363" ON "edfi"."StaffDisciplineIncidentAssociation" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_DisciplineInci_f018747bfe" ON "edfi"."StaffDisciplineIncidentAssociation" ("DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "DisciplineIncident_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_Staff_DocumentId_Auth" ON "edfi"."StaffDisciplineIncidentAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_Staff_Document_d31c2e22ab" ON "edfi"."StaffDisciplineIncidentAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociation_Staff_StaffUni_0aec36fb15" ON "edfi"."StaffDisciplineIncidentAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffDisciplineIncidentAssociationDisciplineIncid_53415fc03f" ON "edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
 
@@ -35303,21 +35269,21 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_498ab48fba" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_6ad7c207bc" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_ab257a90d1" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_C_e4dd64df40" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_abf5c491f7" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_cac11f84c8" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b", "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de", "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56", "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337", "StaffUniqueId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_c38b768b13" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_dc5ebb2136" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EducationOrganization_EducationOrganizationId") INCLUDE ("Staff_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_E_e6fdbc5063" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de", "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56", "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337", "StaffUniqueId_Unified", "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_S_0da39e4a2a" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("StaffUniqueId_Unified", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_S_7def40d4bb" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_S_c293315cea" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("StaffClassificationDescriptor_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationAssignmentAssociation_S_da9b0896bd" ON "edfi"."StaffEducationOrganizationAssignmentAssociation" ("Staff_DocumentId", "StaffUniqueId_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Addr_064f056db6" ON "edfi"."StaffEducationOrganizationContactAssociation" ("AddressLocaleDescriptor_DescriptorId");
 
@@ -35329,31 +35295,31 @@ CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Cont
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_ContentVersion" ON "edfi"."StaffEducationOrganizationContactAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_3da2c15194" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_ac57af64ae" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Educ_d6cec125db" ON "edfi"."StaffEducationOrganizationContactAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Staf_3d6c0a7690" ON "edfi"."StaffEducationOrganizationContactAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Staf_ab39cd8e0e" ON "edfi"."StaffEducationOrganizationContactAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociation_Staf_e45c1dfb00" ON "edfi"."StaffEducationOrganizationContactAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationContactAssociationTelep_38c9ca72f5" ON "edfi"."StaffEducationOrganizationContactAssociationTelephone" ("TelephoneNumberTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_15132b4b8e" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_4466800958" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_8988bf7c94" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_C_f6b201891e" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Credential_DocumentId", "Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_E_8a848ed5c1" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_E_291c0fef12" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_E_96136cdc3a" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EducationOrganization_EducationOrganizationId") INCLUDE ("Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_E_b87dafad72" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("EmploymentStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_S_29d59cba51" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("SeparationDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_S_17390a0785" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_S_9d6eabb83c" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_S_29d59cba51" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("SeparationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffEducationOrganizationEmploymentAssociation_S_b4797870c0" ON "edfi"."StaffEducationOrganizationEmploymentAssociation" ("SeparationReasonDescriptor_DescriptorId");
 
@@ -35385,7 +35351,7 @@ CREATE INDEX IF NOT EXISTS "IX_StaffLeave_StaffLeaveEventCategoryDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_Staff_DocumentId_Auth" ON "edfi"."StaffLeave" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffLeave_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffLeave" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffLeave_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."StaffLeave" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffOtherName_OtherNameTypeDescriptor_DescriptorId" ON "edfi"."StaffOtherName" ("OtherNameTypeDescriptor_DescriptorId");
 
@@ -35397,13 +35363,13 @@ CREATE INDEX IF NOT EXISTS "IX_StaffPersonalIdentificationDocument_PersonalInfor
 
 CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ContentVersion" ON "edfi"."StaffProgramAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ProgramProgram_DocumentId_da3311369f" ON "edfi"."StaffProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ProgramProgram_EducationO_3a595541d2" ON "edfi"."StaffProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_ProgramProgram_ProgramTyp_b956a1b6b4" ON "edfi"."StaffProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_Staff_DocumentId_Auth" ON "edfi"."StaffProgramAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffProgramAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffProgramAssociation_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."StaffProgramAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffRace_RaceDescriptor_DescriptorId" ON "edfi"."StaffRace" ("RaceDescriptor_DescriptorId");
 
@@ -35411,19 +35377,19 @@ CREATE INDEX IF NOT EXISTS "IX_StaffRecognition_AchievementCategoryDescriptor_De
 
 CREATE INDEX IF NOT EXISTS "IX_StaffRecognition_RecognitionTypeDescriptor_DescriptorId" ON "edfi"."StaffRecognition" ("RecognitionTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Calendar_DocumentId_Calend_7eb92b25de" ON "edfi"."StaffSchoolAssociation" ("Calendar_DocumentId", "Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Calendar_CalendarCode_Scho_0ef44e7a76" ON "edfi"."StaffSchoolAssociation" ("Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "Calendar_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_ContentVersion" ON "edfi"."StaffSchoolAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolId_Unified_Auth" ON "edfi"."StaffSchoolAssociation" ("SchoolId_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolYear_DocumentId_Scho_f08589e459" ON "edfi"."StaffSchoolAssociation" ("SchoolYear_DocumentId", "SchoolYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolId_Unified_School_DocumentId" ON "edfi"."StaffSchoolAssociation" ("SchoolId_Unified", "School_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_School_DocumentId_SchoolId_Unified" ON "edfi"."StaffSchoolAssociation" ("School_DocumentId", "SchoolId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_SchoolYear_Unified_SchoolY_3bd2536ffc" ON "edfi"."StaffSchoolAssociation" ("SchoolYear_Unified", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Staff_DocumentId_Auth" ON "edfi"."StaffSchoolAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffSchoolAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociation_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."StaffSchoolAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSchoolAssociationAcademicSubject_AcademicSub_a48630892f" ON "edfi"."StaffSchoolAssociationAcademicSubject" ("AcademicSubjectDescriptor_DescriptorId");
 
@@ -35433,13 +35399,13 @@ CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_ClassroomPositionDescript
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_ContentVersion" ON "edfi"."StaffSectionAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_DocumentId_Sectio_ff7a9f1383" ON "edfi"."StaffSectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_LocalCourseCode_S_2909ffaba7" ON "edfi"."StaffSectionAssociation" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Section_SchoolId_Auth" ON "edfi"."StaffSectionAssociation" ("Section_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Staff_DocumentId_Auth" ON "edfi"."StaffSectionAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffSectionAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StaffSectionAssociation_Staff_StaffUniqueId_Staff_DocumentId" ON "edfi"."StaffSectionAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffTelephone_TelephoneNumberTypeDescriptor_DescriptorId" ON "edfi"."StaffTelephone" ("TelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -35451,7 +35417,7 @@ CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_ContentVersion" ON "edfi"."S
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgency_OperationalStatusDescriptor__773cf45140" ON "edfi"."StateEducationAgency" ("OperationalStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyAccountability_StateEducation_f25ce2c01d" ON "edfi"."StateEducationAgencyAccountability" ("StateEducationAgencyAccountabilitySchoolYear_DocumentId", "StateEducationAgencyAccountabilitySchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyAccountability_StateEducation_ce6fe9ee0f" ON "edfi"."StateEducationAgencyAccountability" ("StateEducationAgencyAccountabilitySchoolYear_SchoolYear", "StateEducationAgencyAccountabilitySchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyAddress_AddressTypeDescriptor_2e84327df6" ON "edfi"."StateEducationAgencyAddress" ("AddressTypeDescriptor_DescriptorId");
 
@@ -35489,7 +35455,7 @@ CREATE INDEX IF NOT EXISTS "IX_Student_CitizenshipStatusDescriptor_DescriptorId"
 
 CREATE INDEX IF NOT EXISTS "IX_Student_ContentVersion" ON "edfi"."Student" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Student_Person_DocumentId_Person_PersonId_Person__d4a6890c8d" ON "edfi"."Student" ("Person_DocumentId", "Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_Student_Person_PersonId_Person_SourceSystemDescri_90a32608d7" ON "edfi"."Student" ("Person_PersonId", "Person_SourceSystemDescriptor_DescriptorId", "Person_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Student_Person_SourceSystemDescriptor_DescriptorId" ON "edfi"."Student" ("Person_SourceSystemDescriptor_DescriptorId");
 
@@ -35499,11 +35465,9 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_CumulativeAttemptedCreditTy
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_CumulativeEarnedCreditTypeD_15dd3e941b" ON "edfi"."StudentAcademicRecord" ("CumulativeEarnedCreditTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_EducationOrganization_Docum_1db885c0bc" ON "edfi"."StudentAcademicRecord" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_EducationOrganization_Educa_56073e6e9d" ON "edfi"."StudentAcademicRecord" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_EducationOrganization_Educa_525d72c0aa" ON "edfi"."StudentAcademicRecord" ("EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_SchoolYear_DocumentId_Schoo_9101ee872a" ON "edfi"."StudentAcademicRecord" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_SchoolYear_SchoolYear_Schoo_a889941ff1" ON "edfi"."StudentAcademicRecord" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_SessionAttemptedCreditTypeD_33630c11d3" ON "edfi"."StudentAcademicRecord" ("SessionAttemptedCreditTypeDescriptor_DescriptorId");
 
@@ -35511,7 +35475,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_SessionEarnedCreditTypeDesc
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_Student_DocumentId_Auth" ON "edfi"."StudentAcademicRecord" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_Student_DocumentId_Student__77c28fce0a" ON "edfi"."StudentAcademicRecord" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_Student_StudentUniqueId_Stu_96b80b3dbc" ON "edfi"."StudentAcademicRecord" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecord_TermDescriptor_DescriptorId" ON "edfi"."StudentAcademicRecord" ("TermDescriptor_DescriptorId");
 
@@ -35531,7 +35495,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecordRecognition_AchievementCateg
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecordRecognition_RecognitionTypeD_db88cd32f2" ON "edfi"."StudentAcademicRecordRecognition" ("RecognitionTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecordReportCard_ReportCard_Docume_cac15635f5" ON "edfi"."StudentAcademicRecordReportCard" ("ReportCard_DocumentId", "ReportCard_EducationOrganizationId", "ReportCard_GradingPeriodDescriptor_DescriptorId", "ReportCard_GradingPeriodName", "ReportCard_GradingPeriodSchoolId", "ReportCard_GradingPeriodSchoolYear", "ReportCard_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecordReportCard_ReportCard_Educat_0bbda36925" ON "edfi"."StudentAcademicRecordReportCard" ("ReportCard_EducationOrganizationId", "ReportCard_GradingPeriodDescriptor_DescriptorId", "ReportCard_GradingPeriodName", "ReportCard_GradingPeriodSchoolId", "ReportCard_GradingPeriodSchoolYear", "ReportCard_StudentUniqueId", "ReportCard_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAcademicRecordReportCard_ReportCard_Gradin_ae89854415" ON "edfi"."StudentAcademicRecordReportCard" ("ReportCard_GradingPeriodDescriptor_DescriptorId");
 
@@ -35539,7 +35503,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_AdministrationEnvironmentDescri
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_AdministrationLanguageDescripto_64a58f4e0b" ON "edfi"."StudentAssessment" ("AdministrationLanguageDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_DocumentId_Assessmen_189366fd1a" ON "edfi"."StudentAssessment" ("Assessment_DocumentId", "Assessment_AssessmentIdentifier", "Assessment_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_AssessmentIdentifier_809abc2a0e" ON "edfi"."StudentAssessment" ("Assessment_AssessmentIdentifier", "Assessment_Namespace", "Assessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Assessment_Namespace_Auth" ON "edfi"."StudentAssessment" ("Assessment_Namespace");
 
@@ -35553,25 +35517,27 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_PlatformTypeDescriptor_Descript
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ReasonNotTestedDescriptor_DescriptorId" ON "edfi"."StudentAssessment" ("ReasonNotTestedDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ReportedSchool_DocumentId_Repor_f8a5651901" ON "edfi"."StudentAssessment" ("ReportedSchool_DocumentId", "ReportedSchool_SchoolId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ReportedSchool_SchoolId_Auth" ON "edfi"."StudentAssessment" ("ReportedSchool_SchoolId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_ReportedSchool_SchoolId_Reporte_97145d8d08" ON "edfi"."StudentAssessment" ("ReportedSchool_SchoolId", "ReportedSchool_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_RetestIndicatorDescriptor_DescriptorId" ON "edfi"."StudentAssessment" ("RetestIndicatorDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_SchoolYear_DocumentId_SchoolYea_1a4b0d470c" ON "edfi"."StudentAssessment" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_SchoolYear_SchoolYear_SchoolYea_9e0b4d727f" ON "edfi"."StudentAssessment" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Student_DocumentId_Auth" ON "edfi"."StudentAssessment" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Student_DocumentId_Student_StudentUniqueId" ON "edfi"."StudentAssessment" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_Student_StudentUniqueId_Student_DocumentId" ON "edfi"."StudentAssessment" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessment_WhenAssessedGradeLevelDescripto_c79d849ba2" ON "edfi"."StudentAssessment" ("WhenAssessedGradeLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentAccommodation_AccommodationDescr_33630d9394" ON "edfi"."StudentAssessmentAccommodation" ("AccommodationDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_1eb07f3ff4" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("SchoolYear_DocumentId", "SchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_0c8a236f6b" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_4de18bac1b" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_613b80a337" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_AssessmentIdentifier", "StudentAssessment_Namespace", "StudentAssessment_StudentAssessmentIdentifier", "StudentAssessment_StudentUniqueId", "StudentAssessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_72df16a4d4" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_DocumentId") INCLUDE ("DocumentId");
 
@@ -35579,9 +35545,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_9c99996727" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_e3ece8a4e8" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("StudentAssessment_DocumentId", "StudentAssessment_AssessmentIdentifier", "StudentAssessment_Namespace", "StudentAssessment_StudentAssessmentIdentifier", "StudentAssessment_StudentUniqueId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_ff780f8d42" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentEducationOrganizationAssociation_cda9ff5801" ON "edfi"."StudentAssessmentEducationOrganizationAssociation" ("SchoolYear_SchoolYear", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_AssessmentItemResultDescrip_37c68219ba" ON "edfi"."StudentAssessmentItem" ("AssessmentItemResultDescriptor_DescriptorId");
 
@@ -35589,7 +35553,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_ResponseIndicatorDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_StudentAssessmentItemAssess_849300e440" ON "edfi"."StudentAssessmentItem" ("StudentAssessmentItemAssessmentItem_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_StudentAssessmentItemAssess_fbd3512e86" ON "edfi"."StudentAssessmentItem" ("StudentAssessmentItemAssessmentItem_DocumentId", "StudentAssessmentItemAssessmentItem_AssessmentIdentifier", "StudentAssessmentItemAssessmentItem_Namespace", "StudentAssessmentItemAssessmentItem_IdentificationCode");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_StudentAssessmentItemAssess_a9250caf4a" ON "edfi"."StudentAssessmentItem" ("StudentAssessmentItemAssessmentItem_AssessmentIdentifier", "StudentAssessmentItemAssessmentItem_Namespace", "StudentAssessmentItemAssessmentItem_IdentificationCode", "StudentAssessmentItemAssessmentItem_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentPerformanceLevel_AssessmentRepor_96f5ad07fb" ON "edfi"."StudentAssessmentPerformanceLevel" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
@@ -35597,7 +35561,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentPerformanceLevel_PerformanceLeve
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentAdministr_4c2e64d9e7" ON "edfi"."StudentAssessmentRegistration" ("AssessmentAdministration_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentAdministr_bfeaf322e9" ON "edfi"."StudentAssessmentRegistration" ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentAdministr_4d41f73772" ON "edfi"."StudentAssessmentRegistration" ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_AssessmentGradeLeve_1aa8eac80e" ON "edfi"."StudentAssessmentRegistration" ("AssessmentGradeLevelDescriptor_DescriptorId");
 
@@ -35605,31 +35569,31 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ContentVersion" ON 
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_PlatformTypeDescrip_cd62a7c323" ON "edfi"."StudentAssessmentRegistration" ("PlatformTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ReportingEducationO_e8544f247d" ON "edfi"."StudentAssessmentRegistration" ("ReportingEducationOrganization_DocumentId", "ReportingEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ReportingEducationO_e9ac51921f" ON "edfi"."StudentAssessmentRegistration" ("ReportingEducationOrganization_EducationOrganizationId", "ReportingEducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ScheduledStudentEdu_5a48441bdd" ON "edfi"."StudentAssessmentRegistration" ("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea", "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c", "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentEducationOrg_3e71d86255" ON "edfi"."StudentAssessmentRegistration" ("StudentEducationOrganizationAssociation_DocumentId", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_ScheduledStudentEdu_4f6688dd75" ON "edfi"."StudentAssessmentRegistration" ("ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c", "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1", "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentEducationOrg_68c6b3c00f" ON "edfi"."StudentAssessmentRegistration" ("StudentEducationOrganizationAssociation_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentEducationOrg_adec07241b" ON "edfi"."StudentAssessmentRegistration" ("StudentEducationOrganizationAssociation_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentSchoolAssoci_d2b9233f53" ON "edfi"."StudentAssessmentRegistration" ("StudentSchoolAssociation_DocumentId", "StudentSchoolAssociation_EntryDate", "StudentSchoolAssociation_SchoolId", "StudentUniqueId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentEducationOrg_beb26986d3" ON "edfi"."StudentAssessmentRegistration" ("StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified", "StudentEducationOrganizationAssociation_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_TestingEducationOrg_3e3544bd26" ON "edfi"."StudentAssessmentRegistration" ("TestingEducationOrganization_DocumentId", "TestingEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_StudentSchoolAssoci_dbc12942de" ON "edfi"."StudentAssessmentRegistration" ("StudentSchoolAssociation_EntryDate", "StudentSchoolAssociation_SchoolId", "StudentUniqueId_Unified", "StudentSchoolAssociation_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistration_TestingEducationOrg_47abb94d20" ON "edfi"."StudentAssessmentRegistration" ("TestingEducationOrganization_EducationOrganizationId", "TestingEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationAssessmentAccommodat_f949d07c01" ON "edfi"."StudentAssessmentRegistrationAssessmentAccommodation" ("AccommodationDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_1d06a25070" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_4bf1b0c9d6" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentIdentifier_Unified", "Namespace_Unified", "AssessmentBatteryPart_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_4dee150dd7" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("StudentAssessmentRegistration_AdministrationIdentifier", "AssessmentIdentifier_Unified", "StudentAssessmentRegistration_AssigningEducationOrganizationId", "Namespace_Unified", "StudentAssessmentRegistration_EducationOrganizationId", "StudentAssessmentRegistration_StudentUniqueId", "StudentAssessmentRegistration_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_61638c0cce" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("StudentAssessmentRegistration_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_6b002a2866" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("StudentAssessmentRegistration_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_b3f96da127" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("AssessmentBatteryPart_DocumentId", "AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentIdentifier_Unified", "Namespace_Unified");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_b5f5cdbceb" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("StudentAssessmentRegistration_DocumentId", "StudentAssessmentRegistration_AdministrationIdentifier", "AssessmentIdentifier_Unified", "StudentAssessmentRegistration_AssigningEducationOrganizationId", "Namespace_Unified", "StudentAssessmentRegistration_EducationOrganizationId", "StudentAssessmentRegistration_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati_dc158ce025" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation" ("Namespace_Unified");
 
@@ -35641,7 +35605,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentScoreResult_ResultDatatypeTypeDe
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessment_Stude_1c600fbf33" ON "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentObjectiveAssessmentObjectiveAssessment_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessment_Stude_230d3bb4b4" ON "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentObjectiveAssessmentObjectiveAssessment_DocumentId", "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7", "StudentObjectiveAssessmentObjectiveAssessment_Namespace", "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919");
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessment_Stude_81f75a4e4d" ON "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7", "StudentObjectiveAssessmentObjectiveAssessment_Namespace", "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919", "StudentObjectiveAssessmentObjectiveAssessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentPerfor_016d796321" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
@@ -35659,9 +35623,9 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ContentVersion" ON "
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_414d23dc2f" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_49d2cfb257" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_6cd3973113" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ProgramProgram_Docum_1bd0f5fca6" ON "edfi"."StudentCTEProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ProgramProgram_Educa_6a268af143" ON "edfi"."StudentCTEProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ProgramProgram_Progr_4e915222b0" ON "edfi"."StudentCTEProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -35669,7 +35633,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_ReasonExitedDescript
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_Student_DocumentId_Auth" ON "edfi"."StudentCTEProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_Student_DocumentId_S_2f56994014" ON "edfi"."StudentCTEProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_Student_StudentUniqu_cdf984537d" ON "edfi"."StudentCTEProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_TechnicalSkillsAsses_9cb0853690" ON "edfi"."StudentCTEProgramAssociation" ("TechnicalSkillsAssessmentDescriptor_DescriptorId");
 
@@ -35677,7 +35641,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociationCteProgramService_Cte
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociationProgramParticipationS_8cc94e691b" ON "edfi"."StudentCTEProgramAssociationProgramParticipationStatus" ("ParticipationStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_DocumentId_Cohort_583209882d" ON "edfi"."StudentCohortAssociation" ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_CohortIdentifier__8a5a6ed75e" ON "edfi"."StudentCohortAssociation" ("Cohort_CohortIdentifier", "Cohort_EducationOrganizationId", "Cohort_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Cohort_EducationOrganizationId_Auth" ON "edfi"."StudentCohortAssociation" ("Cohort_EducationOrganizationId");
 
@@ -35685,35 +35649,33 @@ CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_ContentVersion" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_DocumentId_Auth" ON "edfi"."StudentCohortAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_DocumentId_Stude_ac5657b500" ON "edfi"."StudentCohortAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociation_Student_StudentUniqueId__911c47d365" ON "edfi"."StudentCohortAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociationSection_Section_DocumentI_55619c3e6f" ON "edfi"."StudentCohortAssociationSection" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_StudentCohortAssociationSection_Section_LocalCour_a71f61e48d" ON "edfi"."StudentCohortAssociationSection" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_CompetencyLevelDescrip_660dc38c15" ON "edfi"."StudentCompetencyObjective" ("CompetencyLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_ContentVersion" ON "edfi"."StudentCompetencyObjective" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_GradingPeriodGradingPe_227e4a740c" ON "edfi"."StudentCompetencyObjective" ("GradingPeriodGradingPeriod_DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_GradingPeriodGradingPe_6011f3b881" ON "edfi"."StudentCompetencyObjective" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_GradingPeriodGradingPe_05081eb695" ON "edfi"."StudentCompetencyObjective" ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "GradingPeriodGradingPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_ObjectiveCompetencyObj_0a6b80830e" ON "edfi"."StudentCompetencyObjective" ("ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_ObjectiveCompetencyObj_c646018654" ON "edfi"."StudentCompetencyObjective" ("ObjectiveCompetencyObjective_DocumentId", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e");
+CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_ObjectiveCompetencyObj_4e9d8b44da" ON "edfi"."StudentCompetencyObjective" ("ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "ObjectiveCompetencyObjective_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_Student_DocumentId_Auth" ON "edfi"."StudentCompetencyObjective" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_Student_DocumentId_Stu_d6d229d279" ON "edfi"."StudentCompetencyObjective" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjective_Student_StudentUniqueI_712e1738cd" ON "edfi"."StudentCompetencyObjective" ("Student_StudentUniqueId", "Student_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjectiveGeneralStudentProgramAs_0e9cfd7fdf" ON "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation" ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjectiveGeneralStudentProgramAs_8e76d386e9" ON "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation" ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjectiveGeneralStudentProgramAs_c3dcb8d41a" ON "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation" ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e");
+CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjectiveStudentSectionAssociati_df2d64cb56" ON "edfi"."StudentCompetencyObjectiveStudentSectionAssociation" ("StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentCompetencyObjectiveStudentSectionAssociati_29e9bae400" ON "edfi"."StudentCompetencyObjectiveStudentSectionAssociation" ("StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6");
+CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Contact_ContactUniqueId_adb851cd18" ON "edfi"."StudentContactAssociation" ("Contact_ContactUniqueId", "Contact_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Contact_DocumentId_Auth" ON "edfi"."StudentContactAssociation" ("Contact_DocumentId") INCLUDE ("DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Contact_DocumentId_Cont_80fcc64232" ON "edfi"."StudentContactAssociation" ("Contact_DocumentId", "Contact_ContactUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_ContentVersion" ON "edfi"."StudentContactAssociation" ("ContentVersion");
 
@@ -35721,17 +35683,17 @@ CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_RelationDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Auth" ON "edfi"."StudentContactAssociation" ("Student_DocumentId") INCLUDE ("Contact_DocumentId", "DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_DocumentId_Stud_838ffe753b" ON "edfi"."StudentContactAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentContactAssociation_Student_StudentUniqueId_c3f46f648c" ON "edfi"."StudentContactAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_ContentVersion" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_b4c3146661" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DisciplineIncident_SchoolId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_df0294c827" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Disc_fe37f52ca3" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "DisciplineIncident_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Stud_07116c0500" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Stud_531aeb4495" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociation_Stud_6423013980" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociationDisci_b27920c969" ON "edfi"."StudentDisciplineIncidentBehaviorAssociationDiscipli_ae6a215eae" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
 
@@ -35739,23 +35701,21 @@ CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentBehaviorAssociationWeapo
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_C_d84252cf33" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_D_5daa5ded4d" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DisciplineIncident_DocumentId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_D_3ac01dab79" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "DisciplineIncident_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_D_d657c697fd" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DisciplineIncident_SchoolId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_S_6ad903f070" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_S_76909ea208" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociation_S_93a0576cb0" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentDisciplineIncidentNonOffenderAssociationDi_abe6193ff3" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d" ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_5b35b66543" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_0621c82311" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("Student_StudentUniqueId", "Student_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_2cd43dc8f2" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_880dfa419d" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("ContentVersion");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_91f6cca983" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_93f786eb06" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssessmentAccommodati_b38d5d4184" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
@@ -35765,9 +35725,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_BarrierTo
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_ContentVersion" ON "edfi"."StudentEducationOrganizationAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Education_00fd67d573" ON "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Education_e2967b88a9" ON "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Education_f59717589b" ON "edfi"."StudentEducationOrganizationAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_InternetA_ceffe61329" ON "edfi"."StudentEducationOrganizationAssociation" ("InternetAccessTypeInResidenceDescriptor_DescriptorId");
 
@@ -35783,9 +35741,9 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_PrimaryLe
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_SexDescri_75ac0c88c0" ON "edfi"."StudentEducationOrganizationAssociation" ("SexDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Student_D_9b660d8571" ON "edfi"."StudentEducationOrganizationAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Student_D_a016d9d735" ON "edfi"."StudentEducationOrganizationAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Student_S_ae89721ecd" ON "edfi"."StudentEducationOrganizationAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociation_Supporter_4346cb2af3" ON "edfi"."StudentEducationOrganizationAssociation" ("SupporterMilitaryConnectionDescriptor_DescriptorId");
 
@@ -35801,9 +35759,9 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationAncestryEt
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationCohortYear_9029471523" ON "edfi"."StudentEducationOrganizationAssociationCohortYear" ("CohortYearTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationCohortYear_aba676ce99" ON "edfi"."StudentEducationOrganizationAssociationCohortYear" ("CohortYearSchoolYear_DocumentId", "CohortYearSchoolYear_SchoolYear");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationCohortYear_acd929e1df" ON "edfi"."StudentEducationOrganizationAssociationCohortYear" ("TermDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationCohortYear_c1c1ed75f2" ON "edfi"."StudentEducationOrganizationAssociationCohortYear" ("CohortYearSchoolYear_SchoolYear", "CohortYearSchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisability_74174d18a6" ON "edfi"."StudentEducationOrganizationAssociationDisability" ("DisabilityDescriptor_DescriptorId");
 
@@ -35815,7 +35773,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisability
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisplacedS_0b0523a172" ON "edfi"."StudentEducationOrganizationAssociationDisplacedStudent" ("DisplacedStudentStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisplacedS_61b3223270" ON "edfi"."StudentEducationOrganizationAssociationDisplacedStudent" ("DisplacedStudentCrisisEvent_DocumentId", "DisplacedStudentCrisisEvent_CrisisEventName");
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisplacedS_f5bf0c5211" ON "edfi"."StudentEducationOrganizationAssociationDisplacedStudent" ("DisplacedStudentCrisisEvent_CrisisEventName", "DisplacedStudentCrisisEvent_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationElectronic_c5476e9987" ON "edfi"."StudentEducationOrganizationAssociationElectronicMail" ("ElectronicMailTypeDescriptor_DescriptorId");
 
@@ -35843,11 +35801,11 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationTelephone_
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationTribalAffi_7235cc13d7" ON "edfi"."StudentEducationOrganizationAssociationTribalAffiliation" ("TribalAffiliationDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_6ee6a1d738" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_7893f93197" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_da830f781f" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_87b9b50f3e" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_c6d47de85a" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationResponsibilityAssocia_e48f0f455f" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation" ("ContentVersion");
 
@@ -35861,27 +35819,27 @@ CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_CompetencyLevelDescriptor_D
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_ContentVersion" ON "edfi"."StudentGradebookEntry" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_GradebookEntry_DocumentId_G_58df77578a" ON "edfi"."StudentGradebookEntry" ("GradebookEntry_DocumentId", "GradebookEntry_GradebookEntryIdentifier", "GradebookEntry_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_GradebookEntry_GradebookEnt_fdd9a4facc" ON "edfi"."StudentGradebookEntry" ("GradebookEntry_GradebookEntryIdentifier", "GradebookEntry_Namespace", "GradebookEntry_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_GradebookEntry_Namespace_Auth" ON "edfi"."StudentGradebookEntry" ("GradebookEntry_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_Student_DocumentId_Auth" ON "edfi"."StudentGradebookEntry" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_Student_DocumentId_Student__0e098f5049" ON "edfi"."StudentGradebookEntry" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_Student_StudentUniqueId_Stu_e99dfcebdb" ON "edfi"."StudentGradebookEntry" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentGradebookEntry_SubmissionStatusDescriptor__1eea51a13a" ON "edfi"."StudentGradebookEntry" ("SubmissionStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_ContentVersion" ON "edfi"."StudentHealth" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentHealth_EducationOrganization_DocumentId_Ed_9e64691577" ON "edfi"."StudentHealth" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_EducationOrganization_EducationOrga_01ecd04719" ON "edfi"."StudentHealth" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHealth_EducationOrganization_EducationOrga_0d34bd59cb" ON "edfi"."StudentHealth" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_NonMedicalImmunizationExemptionDesc_5b6791cb47" ON "edfi"."StudentHealth" ("NonMedicalImmunizationExemptionDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_Student_DocumentId_Auth" ON "edfi"."StudentHealth" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentHealth_Student_DocumentId_Student_StudentUniqueId" ON "edfi"."StudentHealth" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentHealth_Student_StudentUniqueId_Student_DocumentId" ON "edfi"."StudentHealth" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealthAdditionalImmunizationDate_ParentCol_55c7491026" ON "edfi"."StudentHealthAdditionalImmunizationDate" ("ParentCollectionItemId", "StudentHealth_DocumentId");
 
@@ -35891,21 +35849,21 @@ CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunizationDate_ParentColle
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_ContentVersion" ON "edfi"."StudentHomelessProgramAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_7b484c73c2" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_2047d9eebb" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_a1a781f908" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_7b484c73c2" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_HomelessPrimary_fd8155bfbb" ON "edfi"."StudentHomelessProgramAssociation" ("HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_ProgramProgram__14071d2d65" ON "edfi"."StudentHomelessProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_ProgramProgram__da6b9720e1" ON "edfi"."StudentHomelessProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_ProgramProgram__447884a0ee" ON "edfi"."StudentHomelessProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_ReasonExitedDes_4eacf383dc" ON "edfi"."StudentHomelessProgramAssociation" ("ReasonExitedDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_Student_Documen_f627b434df" ON "edfi"."StudentHomelessProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_Student_DocumentId_Auth" ON "edfi"."StudentHomelessProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_Student_Student_d3623e729a" ON "edfi"."StudentHomelessProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociationHomelessProgramS_63debb5a02" ON "edfi"."StudentHomelessProgramAssociationHomelessProgramService" ("HomelessProgramServiceDescriptor_DescriptorId");
 
@@ -35917,17 +35875,17 @@ CREATE INDEX IF NOT EXISTS "IX_StudentIdentificationDocument_IssuerCountryDescri
 
 CREATE INDEX IF NOT EXISTS "IX_StudentIdentificationDocument_PersonalInformation_4ff2f10beb" ON "edfi"."StudentIdentificationDocument" ("PersonalInformationVerificationDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_CohortCohort_Docum_6fc3359d87" ON "edfi"."StudentInterventionAssociation" ("CohortCohort_DocumentId", "CohortCohort_CohortIdentifier", "CohortCohort_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_CohortCohort_Cohor_dcebc1b96e" ON "edfi"."StudentInterventionAssociation" ("CohortCohort_CohortIdentifier", "CohortCohort_EducationOrganizationId", "CohortCohort_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_ContentVersion" ON "edfi"."StudentInterventionAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Docum_1dff4f206a" ON "edfi"."StudentInterventionAssociation" ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Educa_24864c0613" ON "edfi"."StudentInterventionAssociation" ("Intervention_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Student_DocumentId_03933b8db3" ON "edfi"."StudentInterventionAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Intervention_Educa_843bfbff49" ON "edfi"."StudentInterventionAssociation" ("Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode", "Intervention_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Student_DocumentId_Auth" ON "edfi"."StudentInterventionAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociation_Student_StudentUni_2cdac8949b" ON "edfi"."StudentInterventionAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAssociationInterventionEffecti_521e3ebcf9" ON "edfi"."StudentInterventionAssociationInterventionEffectiveness" ("InterventionEffectivenessRatingDescriptor_DescriptorId");
 
@@ -35941,29 +35899,29 @@ CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_ContentVersion
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_EducationalEnv_2ae994b350" ON "edfi"."StudentInterventionAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_D_99fe7b332d" ON "edfi"."StudentInterventionAttendanceEvent" ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode");
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_E_6d4301989e" ON "edfi"."StudentInterventionAttendanceEvent" ("Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode", "Intervention_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Intervention_E_f84c5d258a" ON "edfi"."StudentInterventionAttendanceEvent" ("Intervention_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_Docume_ddfabea06d" ON "edfi"."StudentInterventionAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_DocumentId_Auth" ON "edfi"."StudentInterventionAttendanceEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentInterventionAttendanceEvent_Student_Studen_d5a97cb905" ON "edfi"."StudentInterventionAttendanceEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_ContentVersion" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Educ_578ee18605" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Educ_bd67e2f5a6" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Prog_7fb9aa5f18" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Educ_cf1b0fcbdf" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Prog_f39468dcf5" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Prog_6ae3c6c4ff" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Prog_7fb9aa5f18" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Reas_adc1dab39c" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("ReasonExitedDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Stud_1c1365390c" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Stud_a76d90f2a4" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociation_Stud_7f9741044d" ON "edfi"."StudentLanguageInstructionProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationEngli_071427e347" ON "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d" ("ProgressDescriptor_DescriptorId");
 
@@ -35971,7 +35929,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationEngli
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationEngli_5f3c806c59" ON "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d" ("ParticipationDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationEngli_72bcf174e3" ON "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d" ("EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId", "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationEngli_9a1588bd7d" ON "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d" ("EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear", "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentLanguageInstructionProgramAssociationEngli_9a8205f1c2" ON "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d" ("ProficiencyDescriptor_DescriptorId");
 
@@ -35983,19 +35941,19 @@ CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Content
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Continu_8fc5e83374" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ContinuationOfServicesReasonDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_872cca59fd" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_6878a0d7bc" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Educati_ad9da3e674" ON "edfi"."StudentMigrantEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Program_c904b1f991" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Program_2ced7d27df" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Program_e1c8e2d37f" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Program_c904b1f991" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_ReasonE_6fbfcf2bd6" ON "edfi"."StudentMigrantEducationProgramAssociation" ("ReasonExitedDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Student_3cf16c68ca" ON "edfi"."StudentMigrantEducationProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Student_6f2f917b97" ON "edfi"."StudentMigrantEducationProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociation_Student_b4974dcefa" ON "edfi"."StudentMigrantEducationProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentMigrantEducationProgramAssociationMigrantE_9114a69b02" ON "edfi"."StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a" ("MigrantEducationProgramServiceDescriptor_DescriptorId");
 
@@ -36005,7 +35963,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Co
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_5772886723" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_f26f0e6e3b" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ed_82b64d225d" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_El_6242b08d9f" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("ElaProgressLevelDescriptor_DescriptorId");
 
@@ -36013,7 +35971,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ma
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Ne_a632ebaed1" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("NeglectedOrDelinquentProgramDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Pr_05fc9714e8" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Pr_38e87fe9d4" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Pr_44c2f34a5c" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -36021,7 +35979,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_Re
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_St_37bac91626" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_St_5478fe61fc" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociation_St_ce8b7636fa" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentNeglectedOrDelinquentProgramAssociationNeg_e7c76d6788" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociationNeglec_5202518bb9" ("NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId");
 
@@ -36037,11 +35995,11 @@ CREATE INDEX IF NOT EXISTS "IX_StudentPersonalIdentificationDocument_PersonalInf
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ContentVersion" ON "edfi"."StudentProgramAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_D_d08148dfb7" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_E_68167ca6f9" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ProgramProgram_Document_937d6d2006" ON "edfi"."StudentProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_EducationOrganization_E_a021f06b61" ON "edfi"."StudentProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ProgramProgram_Educatio_fd21525299" ON "edfi"."StudentProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ProgramProgram_ProgramT_09327c6e35" ON "edfi"."StudentProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -36049,7 +36007,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_ReasonExitedDescriptor_
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_Student_DocumentId_Auth" ON "edfi"."StudentProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_Student_DocumentId_Stud_2010231e7a" ON "edfi"."StudentProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociation_Student_StudentUniqueId_a702172366" ON "edfi"."StudentProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociationProgramParticipationStat_72d1f13696" ON "edfi"."StudentProgramAssociationProgramParticipationStatus" ("ParticipationStatusDescriptor_DescriptorId");
 
@@ -36057,37 +36015,35 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramAssociationService_ServiceDescripto
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_ContentVersion" ON "edfi"."StudentProgramAttendanceEvent" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_2f244ad2e5" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_9b81579ba6" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationOrganizati_a0d9b2fa4b" ON "edfi"."StudentProgramAttendanceEvent" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_EducationalEnvironm_d0758c2f91" ON "edfi"."StudentProgramAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_ProgramProgram_Docu_f794b17c72" ON "edfi"."StudentProgramAttendanceEvent" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_ProgramProgram_Educ_0c027bf73a" ON "edfi"."StudentProgramAttendanceEvent" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_ProgramProgram_Prog_1ac8e22477" ON "edfi"."StudentProgramAttendanceEvent" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_Student_DocumentId_Auth" ON "edfi"."StudentProgramAttendanceEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_Student_DocumentId__0faa72a618" ON "edfi"."StudentProgramAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramAttendanceEvent_Student_StudentUniq_563f568861" ON "edfi"."StudentProgramAttendanceEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ContentVersion" ON "edfi"."StudentProgramEvaluation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_EducationOrganization_Do_03ada97b2b" ON "edfi"."StudentProgramEvaluation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_EducationOrganization_Ed_09f92ae049" ON "edfi"."StudentProgramEvaluation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ProgramEvaluation_Docume_e273b77671" ON "edfi"."StudentProgramEvaluation" ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ProgramEvaluation_Progra_63e69c36c5" ON "edfi"."StudentProgramEvaluation" ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ProgramEvaluation_Progra_6c761de4fe" ON "edfi"."StudentProgramEvaluation" ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId", "ProgramEvaluation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ProgramEvaluation_Progra_b1da7d47e8" ON "edfi"."StudentProgramEvaluation" ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_ProgramEvaluation_Progra_f979681e8e" ON "edfi"."StudentProgramEvaluation" ("ProgramEvaluation_ProgramTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_StaffEvaluatorStaff_Docu_a49b2375fc" ON "edfi"."StudentProgramEvaluation" ("StaffEvaluatorStaff_DocumentId", "StaffEvaluatorStaff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_StaffEvaluatorStaff_Staf_7c2208fb63" ON "edfi"."StudentProgramEvaluation" ("StaffEvaluatorStaff_StaffUniqueId", "StaffEvaluatorStaff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_Student_DocumentId_Auth" ON "edfi"."StudentProgramEvaluation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_Student_DocumentId_Stude_8e4d4be1ad" ON "edfi"."StudentProgramEvaluation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_Student_StudentUniqueId__cea0b91cd0" ON "edfi"."StudentProgramEvaluation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluation_SummaryEvaluationRatingL_456a70baa8" ON "edfi"."StudentProgramEvaluation" ("SummaryEvaluationRatingLevelDescriptor_DescriptorId");
 
@@ -36095,7 +36051,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationElement_
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationElement__291705f374" ON "edfi"."StudentProgramEvaluationStudentEvaluationElement" ("StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationElement__76b72d7814" ON "edfi"."StudentProgramEvaluationStudentEvaluationElement" ("StudentEvaluationElementProgramEvaluationElement_DocumentId", "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466");
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationElement__2f7f147313" ON "edfi"."StudentProgramEvaluationStudentEvaluationElement" ("StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466", "StudentEvaluationElementProgramEvaluationElement_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationElement__accc1f5de7" ON "edfi"."StudentProgramEvaluationStudentEvaluationElement" ("StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178");
 
@@ -36103,17 +36059,17 @@ CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationElement_
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationObjectiv_325b5e3b79" ON "edfi"."StudentProgramEvaluationStudentEvaluationObjective" ("StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationObjectiv_47c56649aa" ON "edfi"."StudentProgramEvaluationStudentEvaluationObjective" ("StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76", "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationObjectiv_49569b7dbf" ON "edfi"."StudentProgramEvaluationStudentEvaluationObjective" ("StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationObjectiv_51c9d9086f" ON "edfi"."StudentProgramEvaluationStudentEvaluationObjective" ("StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationObjectiv_8795a07a81" ON "edfi"."StudentProgramEvaluationStudentEvaluationObjective" ("EvaluationObjectiveRatingLevelDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentProgramEvaluationStudentEvaluationObjectiv_901d141c17" ON "edfi"."StudentProgramEvaluationStudentEvaluationObjective" ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_Calendar_CalendarCode_Sc_81fe34eb38" ON "edfi"."StudentSchoolAssociation" ("Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified", "Calendar_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_Calendar_DocumentId_Cale_5c13d94c06" ON "edfi"."StudentSchoolAssociation" ("Calendar_DocumentId", "Calendar_CalendarCode", "SchoolId_Unified", "SchoolYear_Unified");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ClassOfSchoolYear_Docume_83bdfbb2b1" ON "edfi"."StudentSchoolAssociation" ("ClassOfSchoolYear_DocumentId", "ClassOfSchoolYear_ClassOfSchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ClassOfSchoolYear_ClassO_bc07040ecd" ON "edfi"."StudentSchoolAssociation" ("ClassOfSchoolYear_ClassOfSchoolYear", "ClassOfSchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ContentVersion" ON "edfi"."StudentSchoolAssociation" ("ContentVersion");
 
@@ -36127,13 +36083,13 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_EntryTypeDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ExitWithdrawTypeDescript_4e1bac5bcd" ON "edfi"."StudentSchoolAssociation" ("ExitWithdrawTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_GraduationPlan_DocumentI_3a3a2155ab" ON "edfi"."StudentSchoolAssociation" ("GraduationPlan_DocumentId", "GraduationPlan_EducationOrganizationId", "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId", "GraduationPlan_GraduationSchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_GraduationPlan_Education_0caf843343" ON "edfi"."StudentSchoolAssociation" ("GraduationPlan_EducationOrganizationId", "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId", "GraduationPlan_GraduationSchoolYear", "GraduationPlan_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_GraduationPlan_Graduatio_94ee483924" ON "edfi"."StudentSchoolAssociation" ("GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_NextYearGradeLevelDescri_47f184a243" ON "edfi"."StudentSchoolAssociation" ("NextYearGradeLevelDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_NextYearSchool_DocumentI_3a3675e9f8" ON "edfi"."StudentSchoolAssociation" ("NextYearSchool_DocumentId", "NextYearSchool_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_NextYearSchool_SchoolId__3a0f2f690a" ON "edfi"."StudentSchoolAssociation" ("NextYearSchool_SchoolId", "NextYearSchool_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_ResidencyStatusDescripto_5700a17a33" ON "edfi"."StudentSchoolAssociation" ("ResidencyStatusDescriptor_DescriptorId");
 
@@ -36141,15 +36097,15 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolChoiceBasisDescrip
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolId_Unified_Auth" ON "edfi"."StudentSchoolAssociation" ("SchoolId_Unified") INCLUDE ("Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolYear_DocumentId_Sc_8da6286496" ON "edfi"."StudentSchoolAssociation" ("SchoolYear_DocumentId", "SchoolYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolId_Unified_School_DocumentId" ON "edfi"."StudentSchoolAssociation" ("SchoolId_Unified", "School_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_School_DocumentId_SchoolId_Unified" ON "edfi"."StudentSchoolAssociation" ("School_DocumentId", "SchoolId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolYear_Unified_Schoo_5f71dd8749" ON "edfi"."StudentSchoolAssociation" ("SchoolYear_Unified", "SchoolYear_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_Student_DocumentId_Auth" ON "edfi"."StudentSchoolAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_Student_DocumentId_Stude_304a56412a" ON "edfi"."StudentSchoolAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_Student_StudentUniqueId__a72db5c61b" ON "edfi"."StudentSchoolAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociationAlternativeGraduationPlan_0b574bcd43" ON "edfi"."StudentSchoolAssociationAlternativeGraduationPlan" ("AlternativeGraduationPlan_DocumentId", "AlternativeGraduationPlan_EducationOrganizationId", "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181", "AlternativeGraduationPlan_GraduationSchoolYear");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociationAlternativeGraduationPlan_78d0911516" ON "edfi"."StudentSchoolAssociationAlternativeGraduationPlan" ("AlternativeGraduationPlan_EducationOrganizationId", "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181", "AlternativeGraduationPlan_GraduationSchoolYear", "AlternativeGraduationPlan_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociationAlternativeGraduationPlan_f98099f2dd" ON "edfi"."StudentSchoolAssociationAlternativeGraduationPlan" ("AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181");
 
@@ -36161,29 +36117,29 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_EducationalEnvironme
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Auth" ON "edfi"."StudentSchoolAttendanceEvent" ("SchoolId_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_School_DocumentId_Sc_4eb7cf3d94" ON "edfi"."StudentSchoolAttendanceEvent" ("School_DocumentId", "SchoolId_Unified");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Sch_64b8adfa66" ON "edfi"."StudentSchoolAttendanceEvent" ("SchoolId_Unified", "School_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Session_DocumentId_S_f5e0a6d70e" ON "edfi"."StudentSchoolAttendanceEvent" ("Session_DocumentId", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_SchoolId_Unified_Ses_016c67e80a" ON "edfi"."StudentSchoolAttendanceEvent" ("SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "Session_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_DocumentId_Auth" ON "edfi"."StudentSchoolAttendanceEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_DocumentId_S_9fa22ee653" ON "edfi"."StudentSchoolAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAttendanceEvent_Student_StudentUniqu_932fdceacc" ON "edfi"."StudentSchoolAttendanceEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_ContentVersion" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Educat_5ae4197f95" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Educat_82136641ed" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Educat_a879581a75" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Progra_2a343147e8" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Progra_4e22fc9a5c" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Progra_4fcc7e7113" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Reason_46d5f7014c" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("ReasonExitedDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Studen_331f33570f" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Studen_922419929b" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociation_Studen_d5fa99f215" ON "edfi"."StudentSchoolFoodServiceProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationProgram_ed9fa94eb3" ON "edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47" ("ParticipationStatusDescriptor_DescriptorId");
 
@@ -36191,21 +36147,21 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSchoolFoodServiceProgramAssociationSchoolF
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ContentVersion" ON "edfi"."StudentSection504ProgramAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_EducationOrga_81d39b2484" ON "edfi"."StudentSection504ProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_EducationOrga_5f7d2a6663" ON "edfi"."StudentSection504ProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_EducationOrga_dceab2e224" ON "edfi"."StudentSection504ProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ProgramProgra_aa30c8f9c4" ON "edfi"."StudentSection504ProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ProgramProgra_370eaee93c" ON "edfi"."StudentSection504ProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ProgramProgra_d9737aa034" ON "edfi"."StudentSection504ProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ProgramProgra_aa30c8f9c4" ON "edfi"."StudentSection504ProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_ReasonExitedD_15cddbf432" ON "edfi"."StudentSection504ProgramAssociation" ("ReasonExitedDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_Section504Dis_a7be2a51c5" ON "edfi"."StudentSection504ProgramAssociation" ("Section504DisabilityDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_Student_Docum_b65a6c16ed" ON "edfi"."StudentSection504ProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_Student_DocumentId_Auth" ON "edfi"."StudentSection504ProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociation_Student_Stude_041aca4d6d" ON "edfi"."StudentSection504ProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSection504ProgramAssociationProgramPartici_85fcbb084f" ON "edfi"."StudentSection504ProgramAssociationProgramParticipationStatus" ("ParticipationStatusDescriptor_DescriptorId");
 
@@ -36213,7 +36169,7 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_AttemptStatusDescriptor
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_ContentVersion" ON "edfi"."StudentSectionAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditEducationOrga_48f44494f0" ON "edfi"."StudentSectionAssociation" ("DualCreditEducationOrganization_DocumentId", "DualCreditEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditEducationOrga_704572a803" ON "edfi"."StudentSectionAssociation" ("DualCreditEducationOrganization_EducationOrganizationId", "DualCreditEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditInstitutionDe_bc1a30fea4" ON "edfi"."StudentSectionAssociation" ("DualCreditInstitutionDescriptor_DescriptorId");
 
@@ -36221,15 +36177,15 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_DualCreditTypeDescripto
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_RepeatIdentifierDescrip_680bb8ee3b" ON "edfi"."StudentSectionAssociation" ("RepeatIdentifierDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Section_DocumentId_Sect_ca2850b86a" ON "edfi"."StudentSectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Section_LocalCourseCode_836e64d24b" ON "edfi"."StudentSectionAssociation" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Section_SchoolId_Auth" ON "edfi"."StudentSectionAssociation" ("Section_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Student_DocumentId_Auth" ON "edfi"."StudentSectionAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Student_DocumentId_Stud_814a8ced21" ON "edfi"."StudentSectionAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociation_Student_StudentUniqueId_2d0a1526f3" ON "edfi"."StudentSectionAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociationProgram_Program_Document_eae7e34fc8" ON "edfi"."StudentSectionAssociationProgram" ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociationProgram_Program_Educatio_5dd57abb1f" ON "edfi"."StudentSectionAssociationProgram" ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAssociationProgram_Program_ProgramT_7330bf8f2c" ON "edfi"."StudentSectionAssociationProgram" ("Program_ProgramTypeDescriptor_DescriptorId");
 
@@ -36237,23 +36193,23 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_ContentVersion" ON 
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_EducationalEnvironm_9584d3d9fc" ON "edfi"."StudentSectionAttendanceEvent" ("EducationalEnvironmentDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Section_DocumentId__f1a12b7e67" ON "edfi"."StudentSectionAttendanceEvent" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Section_LocalCourse_60167725fa" ON "edfi"."StudentSectionAttendanceEvent" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Section_SchoolId_Auth" ON "edfi"."StudentSectionAttendanceEvent" ("Section_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Student_DocumentId_Auth" ON "edfi"."StudentSectionAttendanceEvent" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Student_DocumentId__6aa7c55c2a" ON "edfi"."StudentSectionAttendanceEvent" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEvent_Student_StudentUniq_38208282e6" ON "edfi"."StudentSectionAttendanceEvent" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEventClassPeriod_ClassPer_afbf2ce0ff" ON "edfi"."StudentSectionAttendanceEventClassPeriod" ("ClassPeriod_DocumentId", "ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSectionAttendanceEventClassPeriod_ClassPer_88f6eab26a" ON "edfi"."StudentSectionAttendanceEventClassPeriod" ("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_ContentVersion" ON "edfi"."StudentSpecialEducationProgramAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Educati_1ca44c4444" ON "edfi"."StudentSpecialEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Educati_c4719f9152" ON "edfi"."StudentSpecialEducationProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Educati_488438902d" ON "edfi"."StudentSpecialEducationProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Program_a6c6174336" ON "edfi"."StudentSpecialEducationProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Program_7775dbb13f" ON "edfi"."StudentSpecialEducationProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Program_d0dbdd1439" ON "edfi"."StudentSpecialEducationProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
@@ -36263,9 +36219,9 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Special
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Special_aadb9dc03a" ON "edfi"."StudentSpecialEducationProgramAssociation" ("SpecialEducationExitReasonDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Student_cdac280ebc" ON "edfi"."StudentSpecialEducationProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Student_227a6153c6" ON "edfi"."StudentSpecialEducationProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Student_ec8754abd5" ON "edfi"."StudentSpecialEducationProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociation_Student_cdac280ebc" ON "edfi"."StudentSpecialEducationProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationDisabili_5214dc93cf" ON "edfi"."StudentSpecialEducationProgramAssociationDisability" ("DisabilityDeterminationSourceTypeDescriptor_DescriptorId");
 
@@ -36277,21 +36233,19 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationDisabili
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationProgramP_ce9710977a" ON "edfi"."StudentSpecialEducationProgramAssociationProgramPart_63017127ef" ("ParticipationStatusDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationServiceP_11c1ea70ee" ON "edfi"."StudentSpecialEducationProgramAssociationServiceProvider" ("ServiceProviderStaff_DocumentId", "ServiceProviderStaff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationServiceP_993d117b9d" ON "edfi"."StudentSpecialEducationProgramAssociationServiceProvider" ("ServiceProviderStaff_StaffUniqueId", "ServiceProviderStaff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationSpecialE_2d80214f4c" ON "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd" ("ParentCollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationSpecialE_97abf2be71" ON "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd" ("SpecialEducationProgramServiceServiceProviderStaff_DocumentId", "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationSpecialE_fc61a77aa5" ON "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd" ("SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3", "SpecialEducationProgramServiceServiceProviderStaff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationSpecialE_a9a3f20f1f" ON "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b" ("SpecialEducationProgramServiceDescriptor_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_193cfedd18" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_1a2e99bfde" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EligibilityEvaluationTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_295f59b75d" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_3d0b75dc49" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_2ff6d94b8f" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_738d5c87ea" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EvaluationDelayReasonDescriptor_DescriptorId");
 
@@ -36299,29 +36253,31 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_938243b5f7" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_b6ffda8fb7" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_bcdcc5d691" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("IdeaPartDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_e4821b650a" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_e19ac0ca59" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_ecdbc6ce85" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_e4821b650a" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramEligibilityAssociat_f2af1e91cd" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation" ("EligibilityDelayReasonDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_ContentVersion" ON "edfi"."StudentTitleIPartAProgramAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_EducationOrg_003342ed88" ON "edfi"."StudentTitleIPartAProgramAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_EducationOrg_07a40d1c98" ON "edfi"."StudentTitleIPartAProgramAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_EducationOrg_8870364955" ON "edfi"."StudentTitleIPartAProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_ProgramProgr_2b8ed7a21f" ON "edfi"."StudentTitleIPartAProgramAssociation" ("ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "ProgramProgram_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_ProgramProgr_a485e0f89b" ON "edfi"."StudentTitleIPartAProgramAssociation" ("ProgramProgram_ProgramTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_ProgramProgr_d88b38a7f5" ON "edfi"."StudentTitleIPartAProgramAssociation" ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_ReasonExited_2e2d84e967" ON "edfi"."StudentTitleIPartAProgramAssociation" ("ReasonExitedDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_Student_Docu_671aaa4548" ON "edfi"."StudentTitleIPartAProgramAssociation" ("Student_DocumentId", "Student_StudentUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_Student_DocumentId_Auth" ON "edfi"."StudentTitleIPartAProgramAssociation" ("Student_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_Student_Stud_071ab12c5f" ON "edfi"."StudentTitleIPartAProgramAssociation" ("Student_StudentUniqueId", "Student_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTitleIPartAProgramAssociation_TitleIPartAP_693d5d8ceb" ON "edfi"."StudentTitleIPartAProgramAssociation" ("TitleIPartAParticipantDescriptor_DescriptorId");
 
@@ -36335,9 +36291,9 @@ CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_StudentBusDetailsBusRouteDe
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_Student_DocumentId_Auth" ON "edfi"."StudentTransportation" ("Student_DocumentId") INCLUDE ("DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_Student_DocumentId_Student__1f7fdfd607" ON "edfi"."StudentTransportation" ("Student_DocumentId", "Student_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_Student_StudentUniqueId_Stu_f7bc9d6b8d" ON "edfi"."StudentTransportation" ("Student_StudentUniqueId", "Student_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_TransportationEducationOrga_f3a26f9e7e" ON "edfi"."StudentTransportation" ("TransportationEducationOrganization_DocumentId", "TransportationEducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_TransportationEducationOrga_6c7e6843a1" ON "edfi"."StudentTransportation" ("TransportationEducationOrganization_EducationOrganizationId", "TransportationEducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentTransportation_TransportationPublicExpense_3451712fe1" ON "edfi"."StudentTransportation" ("TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652");
 
@@ -36351,131 +36307,125 @@ CREATE INDEX IF NOT EXISTS "IX_StudentVisa_VisaDescriptor_DescriptorId" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_ContentVersion" ON "edfi"."Survey" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_Survey_EducationOrganization_DocumentId_Education_4250a3f2a6" ON "edfi"."Survey" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_Survey_EducationOrganization_EducationOrganizatio_43bc586855" ON "edfi"."Survey" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Survey_SchoolYear_DocumentId_SchoolYear_Unified" ON "edfi"."Survey" ("SchoolYear_DocumentId", "SchoolYear_Unified");
+CREATE INDEX IF NOT EXISTS "IX_Survey_SchoolYear_Unified_SchoolYear_DocumentId" ON "edfi"."Survey" ("SchoolYear_Unified", "SchoolYear_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Survey_Session_DocumentId_Session_SchoolId_School_c370ef80b8" ON "edfi"."Survey" ("Session_DocumentId", "Session_SchoolId", "SchoolYear_Unified", "Session_SessionName");
+CREATE INDEX IF NOT EXISTS "IX_Survey_Session_SchoolId_SchoolYear_Unified_Sessio_631bc45be9" ON "edfi"."Survey" ("Session_SchoolId", "SchoolYear_Unified", "Session_SessionName", "Session_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_Survey_SurveyCategoryDescriptor_DescriptorId" ON "edfi"."Survey" ("SurveyCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_ContentVersion" ON "edfi"."SurveyCourseAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_DocumentId_Course__3c5614bf79" ON "edfi"."SurveyCourseAssociation" ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_CourseCode_Course__eaee8918fe" ON "edfi"."SurveyCourseAssociation" ("Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Course_EducationOrganizationId_Auth" ON "edfi"."SurveyCourseAssociation" ("Course_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_DocumentId_Survey__8e8a2bf8db" ON "edfi"."SurveyCourseAssociation" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
-
 CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_Namespace_Auth" ON "edfi"."SurveyCourseAssociation" ("Survey_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyCourseAssociation_Survey_Namespace_Survey_S_116c509643" ON "edfi"."SurveyCourseAssociation" ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_ContentVersion" ON "edfi"."SurveyProgramAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_DocumentId_Progr_eab44214ed" ON "edfi"."SurveyProgramAssociation" ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId");
-
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_EducationOrganiz_24093b3ee8" ON "edfi"."SurveyProgramAssociation" ("Program_EducationOrganizationId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_EducationOrganiz_b6e31a8e2e" ON "edfi"."SurveyProgramAssociation" ("Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Program_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Program_ProgramTypeDescr_073a0f790d" ON "edfi"."SurveyProgramAssociation" ("Program_ProgramTypeDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_DocumentId_Survey_735d35a673" ON "edfi"."SurveyProgramAssociation" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
-
 CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_Namespace_Auth" ON "edfi"."SurveyProgramAssociation" ("Survey_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyProgramAssociation_Survey_Namespace_Survey__c34afa2947" ON "edfi"."SurveyProgramAssociation" ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_ContentVersion" ON "edfi"."SurveyQuestion" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Namespace_Unified_Auth" ON "edfi"."SurveyQuestion" ("Namespace_Unified");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Namespace_Unified_SurveyIdentifier_19721b5319" ON "edfi"."SurveyQuestion" ("Namespace_Unified", "SurveyIdentifier_Unified", "Survey_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Namespace_Unified_SurveyIdentifier_3a0bd5c1d8" ON "edfi"."SurveyQuestion" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle", "SurveySection_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_QuestionFormDescriptor_DescriptorId" ON "edfi"."SurveyQuestion" ("QuestionFormDescriptor_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_SurveySection_DocumentId_Namespace_e270e8fabc" ON "edfi"."SurveyQuestion" ("SurveySection_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveyQuestion_Survey_DocumentId_Namespace_Unifie_c282b98d87" ON "edfi"."SurveyQuestion" ("Survey_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_ContentVersion" ON "edfi"."SurveyQuestionResponse" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_Namespace_Unified_Auth" ON "edfi"."SurveyQuestionResponse" ("Namespace_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_SurveyQuestion_DocumentId__d59e808f2a" ON "edfi"."SurveyQuestionResponse" ("SurveyQuestion_DocumentId", "SurveyQuestion_QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified");
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_Namespace_Unified_SurveyId_ed830fa803" ON "edfi"."SurveyQuestionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_SurveyResponse_DocumentId__e43813d341" ON "edfi"."SurveyQuestionResponse" ("SurveyResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_SurveyQuestionResponse_SurveyQuestion_QuestionCod_b435200767" ON "edfi"."SurveyQuestionResponse" ("SurveyQuestion_QuestionCode", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyQuestion_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_ContentVersion" ON "edfi"."SurveyResponse" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceContact_Docum_e1728e55b7" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceContact_DocumentId", "SurveyResponderChoiceContact_ContactUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceContact_Conta_8c6fb504aa" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceContact_ContactUniqueId", "SurveyResponderChoiceContact_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceStaff_Documen_5ccb161625" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceStaff_DocumentId", "SurveyResponderChoiceStaff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceStaff_StaffUn_c241339cfb" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceStaff_StaffUniqueId", "SurveyResponderChoiceStaff_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceStudent_Docum_f03ed0c1fa" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceStudent_DocumentId", "SurveyResponderChoiceStudent_StudentUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_SurveyResponderChoiceStudent_Stude_4b491f018f" ON "edfi"."SurveyResponse" ("SurveyResponderChoiceStudent_StudentUniqueId", "SurveyResponderChoiceStudent_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_Survey_DocumentId_Survey_Namespace_72cbc0a72f" ON "edfi"."SurveyResponse" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_Survey_Namespace_Auth" ON "edfi"."SurveyResponse" ("Survey_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponse_Survey_Namespace_Survey_SurveyIden_a416e6432a" ON "edfi"."SurveyResponse" ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_38000b64ea" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_86d09c2f51" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_89ceea42ad" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("SurveyResponse_DocumentId", "SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_8aec057b57" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_961ac12205" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("SurveyResponse_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_a5259b8ffc" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseEducationOrganizationTargetAssociat_f0bf597951" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_ContentVersion" ON "edfi"."SurveyResponseStaffTargetAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_Staff_Docume_b8780a2098" ON "edfi"."SurveyResponseStaffTargetAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
-
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_Staff_DocumentId_Auth" ON "edfi"."SurveyResponseStaffTargetAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_Staff_StaffU_c35ab0fee8" ON "edfi"."SurveyResponseStaffTargetAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_SurveyRespon_640eafdaca" ON "edfi"."SurveyResponseStaffTargetAssociation" ("SurveyResponse_Namespace");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_SurveyRespon_f015f4bf9f" ON "edfi"."SurveyResponseStaffTargetAssociation" ("SurveyResponse_DocumentId", "SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_SurveyResponseStaffTargetAssociation_SurveyRespon_a7fdc79d64" ON "edfi"."SurveyResponseStaffTargetAssociation" ("SurveyResponse_Namespace", "SurveyResponse_SurveyIdentifier", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_DescriptorId" ON "edfi"."SurveyResponseSurveyLevel" ("SurveyLevelDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySection_ContentVersion" ON "edfi"."SurveySection" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_DocumentId_Survey_Namespace__59924cfd5e" ON "edfi"."SurveySection" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_Namespace_Auth" ON "edfi"."SurveySection" ("Survey_Namespace");
+CREATE INDEX IF NOT EXISTS "IX_SurveySection_Survey_Namespace_Survey_SurveyIdent_10a9c6f322" ON "edfi"."SurveySection" ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_ContentVersion" ON "edfi"."SurveySectionAssociation" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Section_DocumentId_Secti_d38e6a279f" ON "edfi"."SurveySectionAssociation" ("Section_DocumentId", "Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier");
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Section_LocalCourseCode__3cd789a4ce" ON "edfi"."SurveySectionAssociation" ("Section_LocalCourseCode", "Section_SchoolId", "Section_SchoolYear", "Section_SessionName", "Section_SectionIdentifier", "Section_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Section_SchoolId_Auth" ON "edfi"."SurveySectionAssociation" ("Section_SchoolId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_DocumentId_Survey_d96de0fe97" ON "edfi"."SurveySectionAssociation" ("Survey_DocumentId", "Survey_Namespace", "Survey_SurveyIdentifier");
-
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_Namespace_Auth" ON "edfi"."SurveySectionAssociation" ("Survey_Namespace");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionAssociation_Survey_Namespace_Survey__d82e660ca6" ON "edfi"."SurveySectionAssociation" ("Survey_Namespace", "Survey_SurveyIdentifier", "Survey_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_ContentVersion" ON "edfi"."SurveySectionResponse" ("ContentVersion");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_Namespace_Unified_Auth" ON "edfi"."SurveySectionResponse" ("Namespace_Unified");
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_Namespace_Unified_SurveyIde_20a9094c27" ON "edfi"."SurveySectionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle", "SurveySection_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_SurveyResponse_DocumentId_N_9e35c7c3fd" ON "edfi"."SurveySectionResponse" ("SurveyResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_SurveySection_DocumentId_Na_f243a79b4c" ON "edfi"."SurveySectionResponse" ("SurveySection_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySection_SurveySectionTitle");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_38d6ca658a" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("SurveySectionResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle");
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponse_Namespace_Unified_SurveyIde_c78c4f20e6" ON "edfi"."SurveySectionResponse" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveyResponse_SurveyResponseIdentifier", "SurveyResponse_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_653199d4b1" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_73a1e7e0d2" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_afaa55b052" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_7930acb6d4" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_b1be32b157" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle", "SurveySectionResponse_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseEducationOrganizationTargetA_d589c9b11c" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation" ("Namespace_Unified");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_ContentVersion" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("ContentVersion");
 
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Names_2898ea2b06" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle", "SurveySectionResponse_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Names_f9c6e98310" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Namespace_Unified");
 
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Staff_8ce0d2157f" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Staff_DocumentId", "Staff_StaffUniqueId");
+CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Staff_6a3e167ec0" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Staff_f3b222f077" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Surve_da71b9acbc" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("SurveySectionResponse_DocumentId", "Namespace_Unified", "SurveyIdentifier_Unified", "SurveySectionResponse_SurveyResponseIdentifier", "SurveySectionResponse_SurveySectionTitle");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
 SELECT "DocumentId" AS "DocumentId", "CommunityOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:CommunityOrganization'::varchar(256) AS "Discriminator"

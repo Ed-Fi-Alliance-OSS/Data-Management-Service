@@ -227,27 +227,26 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 context.SetContext.Dialect == SqlDialect.Mssql
                 && (targetInfo.IsAbstract || targetInfo.TransitivelyAllowIdentityUpdates);
 
+            // Column order mirrors the target *_RefKey unique constraint: identity storage
+            // columns first, DocumentId last. FK pairing is positional, so the local list
+            // reorders to match.
             var localColumns = new List<DbColumnName>(
                 1 + (mssqlTriggerHandlesPropagation ? 0 : mappedIdentityColumns.LocalColumns.Count)
-            )
-            {
-                localReferenceFkColumn,
-            };
+            );
             if (!mssqlTriggerHandlesPropagation)
             {
                 localColumns.AddRange(mappedIdentityColumns.LocalColumns);
             }
+            localColumns.Add(localReferenceFkColumn);
 
             var targetColumns = new List<DbColumnName>(
                 1 + (mssqlTriggerHandlesPropagation ? 0 : mappedIdentityColumns.TargetColumns.Count)
-            )
-            {
-                targetDocumentIdColumn,
-            };
+            );
             if (!mssqlTriggerHandlesPropagation)
             {
                 targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
             }
+            targetColumns.Add(targetDocumentIdColumn);
 
             var onUpdate = ResolveOnUpdate(context.SetContext.Dialect, targetInfo);
 
@@ -707,11 +706,14 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         );
         HashSet<string> seenColumns = new(StringComparer.Ordinal);
         List<DbColumnName> uniqueColumns = new(1 + targetIdentityColumns.Count);
-        AddUniqueColumn(RelationalNameConventions.DocumentIdColumnName, uniqueColumns, seenColumns);
+        // Identity storage columns lead and DocumentId trails so the RefKey index also serves
+        // identity-value lookups (e.g. the /deletes recreated-resource probe) while preserving
+        // the same uniqueness contract.
         foreach (var column in targetIdentityColumns)
         {
             AddUniqueColumn(column, uniqueColumns, seenColumns);
         }
+        AddUniqueColumn(RelationalNameConventions.DocumentIdColumnName, uniqueColumns, seenColumns);
 
         if (
             !ContainsUniqueConstraint(
