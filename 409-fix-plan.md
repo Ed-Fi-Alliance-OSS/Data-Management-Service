@@ -40,10 +40,12 @@ This change should be narrowly scoped to missing document-reference precedence. 
 
 In scope:
 
-- Defer document-reference failures inside `DefaultRelationalWriteExecutor`.
+- Defer only missing document-reference failures inside `DefaultRelationalWriteExecutor`.
 - Keep descriptor-reference failures immediate.
-- Allow merge/proposed-auth preflight to proceed when document references are missing.
-- Return the remembered document-reference failures as `409` only if no higher-precedence result occurs.
+- Keep non-missing document-reference failures, such as incompatible target type, on the current immediate path.
+- Keep profile writes on the current immediate reference-failure path for this change.
+- Allow no-profile merge/proposed-auth preflight to proceed when document references are missing.
+- Return the remembered missing document-reference failures as `409` only if no higher-precedence result occurs.
 - Preserve database FK mapping as a final race-condition fallback.
 - Add focused unit coverage.
 - Flip only scenarios whose expected relational behavior now matches ODS precedence.
@@ -67,18 +69,22 @@ stored relationship/namespace authorization boundary
 If-Match checks that must happen before proposed authorization
 resolve request references
 
-if descriptor-reference failures exist:
-    return 400 Bad Request validation/reference failure
+if descriptor-reference failures or non-missing document-reference failures exist:
+    return current reference failure result
 
-remember document-reference failures, but do not return yet
+if profile write and missing document-reference failures exist:
+    return current reference failure result
+
+remember missing document-reference failures, but do not return yet
 
 resolve execution state/current state
 merge selected body with current state
 run immutable identity/key-change check
 run proposed namespace authorization
 run proposed relationship authorization
+run deferred If-Match precondition evaluation, when applicable
 
-if remembered document-reference failures exist:
+if remembered missing document-reference failures exist:
     return 409 Unresolved Reference
 
 guarded no-op handling
@@ -90,7 +96,7 @@ on database FK/reference exception:
     map to unresolved reference as today
 ```
 
-The key behavior change is moving the document-reference `BuildReferenceFailureResult` until after proposed authorization.
+The key behavior change is moving the missing document-reference `BuildReferenceFailureResult` until after proposed authorization and deferred `If-Match` evaluation.
 
 ## Implementation Details
 
@@ -102,18 +108,34 @@ Add small helper methods near the executor or `RelationalWriteExecutorResults` t
 private static bool HasDescriptorReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
     resolvedReferences.InvalidDescriptorReferences.Count > 0;
 
-private static bool HasDocumentReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
-    resolvedReferences.InvalidDocumentReferences.Count > 0;
+private static bool HasImmediateDocumentReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
+    resolvedReferences.InvalidDocumentReferences.Any(static failure =>
+        failure.Reason is not DocumentReferenceFailureReason.Missing
+    );
+
+private static bool HasDeferredMissingDocumentReferenceFailures(
+    ResolvedReferenceSet resolvedReferences
+) =>
+    resolvedReferences.InvalidDocumentReferences.Any(static failure =>
+        failure.Reason is DocumentReferenceFailureReason.Missing
+    );
 ```
 
 Do not use `ResolvedReferenceSet.HasFailures` for precedence decisions in the executor because it conflates descriptor and document failures.
 
-### 2. Return Descriptor Failures Immediately
+### 2. Return Immediate Reference Failures Immediately
 
-After `ReferenceResolver.ResolveAsync`, replace the current `HasFailures` branch with descriptor-specific behavior:
+After `ReferenceResolver.ResolveAsync`, replace the current `HasFailures` branch with scoped behavior:
 
 ```csharp
-if (resolvedReferences.InvalidDescriptorReferences.Count > 0)
+if (
+    HasDescriptorReferenceFailures(resolvedReferences)
+    || HasImmediateDocumentReferenceFailures(resolvedReferences)
+    || (
+        request.ProfileWriteContext is not null
+        && HasDeferredMissingDocumentReferenceFailures(resolvedReferences)
+    )
+)
 {
     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
     return RelationalWriteExecutorResults.BuildReferenceFailureResult(
@@ -123,20 +145,21 @@ if (resolvedReferences.InvalidDescriptorReferences.Count > 0)
 }
 ```
 
-This preserves the legacy ODS rule that descriptor validation beats unresolved document references.
+This preserves the legacy ODS rule that descriptor validation beats unresolved document references, avoids changing incompatible-target behavior, and keeps profile write behavior out of scope.
 
-If both descriptor and document failures are present, returning the combined reference result is acceptable because Core maps mixed descriptor/document reference failures to `400 Bad Request`, preserving validation precedence.
+If both descriptor and document failures are present, returning the combined reference result is intentional for this change. Core maps mixed descriptor/document reference failures to `400 Bad Request`, preserving validation precedence by status. The body may include both descriptor and document-reference entries; do not flip exact E2E expectations for mixed-failure bodies unless that body difference is explicitly accepted.
 
-### 3. Defer Document Failures
+### 3. Defer Missing Document Failures
 
 Keep the resolved reference set and continue:
 
 ```csharp
-var hasDeferredDocumentReferenceFailures =
-    resolvedReferences.InvalidDocumentReferences.Count > 0;
+var hasDeferredMissingDocumentReferenceFailures =
+    request.ProfileWriteContext is null
+    && HasDeferredMissingDocumentReferenceFailures(resolvedReferences);
 ```
 
-Do not return yet. The deferred result should be emitted only after identity stability and proposed authorization complete.
+Do not return yet. The deferred result should be emitted only after identity stability, proposed authorization, and any deferred `If-Match` precondition evaluation complete.
 
 ### 4. Let Merge Run With Deferred Missing Document References
 
@@ -147,7 +170,7 @@ Preferred implementation:
 - Add an explicit option to merge/flatten for this preflight case, for example:
   - `RelationalWriteMergeOptions.AllowMissingDocumentReferenceValuesForPrecedenceCheck`, or
   - a boolean on `FlatteningInput`, such as `AllowDeferredDocumentReferenceFailures`.
-- Use that option only when `hasDeferredDocumentReferenceFailures` is true.
+- Use that option only when `hasDeferredMissingDocumentReferenceFailures` is true.
 - In `RelationalWriteFlattener.ResolveDocumentReferenceValue`, if the reference object exists but no resolved document id is available:
   - return `FlattenedWriteValue.Literal(null)` only when the explicit option is enabled;
   - keep the existing exception in normal mode.
@@ -159,8 +182,8 @@ This makes the precedence path explicit and prevents unresolved-reference tolera
 
 Important constraint:
 
-- The executor must not persist when deferred document-reference failures exist.
-- After proposed authorization, if the deferred document-reference failure list is still present, return `BuildReferenceFailureResult`.
+- The executor must not persist when deferred missing document-reference failures exist.
+- After proposed authorization and deferred `If-Match` evaluation, if the deferred missing document-reference failure list is still present, return `BuildReferenceFailureResult`.
 
 ### 5. Keep Identity Stability Before Proposed Authorization
 
@@ -188,10 +211,32 @@ var namespaceAuthorizationBoundary = await _proposedNamespaceAuthorizationOrches
 var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator.ResolveAsync(...);
 ```
 
-Then add the deferred document-reference return:
+Then run the existing deferred `If-Match` precondition block:
 
 ```csharp
-if (hasDeferredDocumentReferenceFailures)
+if (
+    ifMatchPreconditionEvaluation
+    is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+)
+{
+    var deferredPreconditionResult =
+        _executionStateResolver.TryBuildDeferredPreconditionFailureResult(
+            executionRequest,
+            currentState
+        );
+
+    if (deferredPreconditionResult is not null)
+    {
+        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        return deferredPreconditionResult;
+    }
+}
+```
+
+Only after that should the executor add the deferred missing document-reference return:
+
+```csharp
+if (hasDeferredMissingDocumentReferenceFailures)
 {
     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
     return RelationalWriteExecutorResults.BuildReferenceFailureResult(
@@ -202,6 +247,8 @@ if (hasDeferredDocumentReferenceFailures)
 ```
 
 This is what fixes the authorization precedence cases where current relational behavior returns `409` before the ODS-shaped `403`.
+
+The ordering also preserves deferred `If-Match` behavior: a stale deferred precondition must not be hidden by a remembered missing document reference.
 
 ### 7. Preserve Database FK Mapping
 
@@ -251,11 +298,24 @@ Required coverage:
    - Authorization passes or is not required.
    - Assert document-reference failure is returned after proposed authorization.
 
-6. **Normal missing document reference tolerance is not enabled accidentally**
+6. **Deferred If-Match beats missing document reference**
+   - Existing-target write with deferred `If-Match` evaluation.
+   - Include a missing document reference.
+   - Assert the deferred precondition failure is returned before the remembered reference failure.
+
+7. **Incompatible document-reference target is not deferred**
+   - Arrange `DocumentReferenceFailureReason.IncompatibleTargetType`.
+   - Assert the executor returns the current reference-failure result immediately.
+
+8. **Profile writes are not changed by this fix**
+   - Profile write with a missing document reference.
+   - Assert the current immediate reference-failure path is preserved.
+
+9. **Normal missing document reference tolerance is not enabled accidentally**
    - Exercise flattener/merge without the explicit deferred-reference option.
    - Assert the existing fail-fast behavior remains.
 
-7. **No persistence occurs when deferred document-reference failures exist**
+10. **No persistence occurs when deferred missing document-reference failures exist**
    - Verify `PersistAsync` is not called when the executor returns the deferred reference result.
 
 ### E2E Tests
@@ -321,11 +381,15 @@ A second risk is proposed authorization using `null` values produced by unresolv
 
 Another risk is accidentally persisting a write with unresolved document references. The executor must return the deferred reference failure before guarded no-op or persistence code, and unit tests should verify `PersistAsync` is not called.
 
+A fourth risk is broadening this fix into profile-write behavior. Keep profile writes on the current immediate reference-failure path unless a separate product decision defines profile/reference precedence.
+
 ## Acceptance Criteria
 
 - Descriptor-reference failures still produce early `400 Bad Request`.
+- Only missing document-reference failures are deferred; incompatible document-reference target failures keep current behavior.
+- Profile writes keep current immediate reference-failure behavior.
 - Missing document-reference failures no longer beat immutable identity/key-change failures.
-- Missing document-reference failures no longer beat proposed namespace or relationship authorization failures.
+- Missing document-reference failures no longer beat proposed namespace, relationship authorization, or deferred `If-Match` failures.
 - Missing document-reference failures still produce `409 Unresolved Reference` when no higher-precedence failure exists.
 - Database FK failures after authorization still map to `409`.
 - The affected E2E scenarios are flipped with explicit expected bodies/statuses, not fallback assertions.
