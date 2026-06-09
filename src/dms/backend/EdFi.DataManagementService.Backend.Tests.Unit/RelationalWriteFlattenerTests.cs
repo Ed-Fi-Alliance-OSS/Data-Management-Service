@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -870,6 +871,31 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_materializes_null_for_an_exact_deferred_missing_root_document_reference()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 255901
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: CreateResolvedReferenceSet(
+                invalidDocumentReferences: [CreateMissingDocumentReferenceFailure("$.schoolReference")]
+            ),
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.Values[8].Should().Be(new FlattenedWriteValue.Literal(null));
+    }
+
+    [Test]
     public void It_returns_a_validation_failure_when_a_nested_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
@@ -908,6 +934,90 @@ public class Given_RelationalWriteFlattener
             .Contain(
                 "could not materialize document reference 'Ed-Fi.School' at path '$.addresses[0].periods[0].schoolReference'"
             );
+    }
+
+    [Test]
+    public void It_materializes_null_for_an_exact_deferred_missing_nested_document_reference()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "periods": [
+                        {
+                          "beginDate": "2026-08-20",
+                          "schoolReference": {
+                            "schoolId": 255901
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: CreateResolvedReferenceSet(
+                invalidDocumentReferences:
+                [
+                    CreateMissingDocumentReferenceFailure("$.addresses[0].periods[0].schoolReference"),
+                ]
+            ),
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.CollectionCandidates.Single()
+            .CollectionCandidates.Single()
+            .Values[5]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(null));
+    }
+
+    [Test]
+    public void It_fails_when_a_present_document_reference_is_missing_at_a_different_ordinal_path_despite_deferred_missing()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "periods": [
+                        {
+                          "beginDate": "2026-08-20",
+                          "schoolReference": {
+                            "schoolId": 255901
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: CreateResolvedReferenceSet(
+                invalidDocumentReferences:
+                [
+                    CreateMissingDocumentReferenceFailure("$.addresses[0].periods[1].schoolReference"),
+                ]
+            ),
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[0].periods[0].schoolReference");
     }
 
     [Test]
@@ -1361,6 +1471,37 @@ public class Given_RelationalWriteFlattener
             .Message.Should()
             .Contain("could not materialize reference-derived value at path '$.schoolReference.schoolYear'")
             .And.Contain("reference object '$.schoolReference'");
+    }
+
+    [Test]
+    public void It_materializes_null_for_an_exact_deferred_missing_reference_derived_member()
+    {
+        var writePlan = CreateReferenceDerivedValueOnlyWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                invalidDocumentReferences: [CreateMissingDocumentReferenceFailure("$.schoolReference")]
+            ),
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(new FlattenedWriteValue.Literal(456L), new FlattenedWriteValue.Literal(null));
     }
 
     [Test]
@@ -3304,11 +3445,13 @@ public class Given_RelationalWriteFlattener
 
     private static ResolvedReferenceSet CreateResolvedReferenceSet(
         IEnumerable<ResolvedDocumentReference>? documentReferences = null,
-        IEnumerable<ResolvedDescriptorReference>? descriptorReferences = null
+        IEnumerable<ResolvedDescriptorReference>? descriptorReferences = null,
+        IEnumerable<DocumentReferenceFailure>? invalidDocumentReferences = null
     )
     {
         var resolvedDocumentReferences = documentReferences?.ToArray() ?? [];
         var resolvedDescriptorReferences = descriptorReferences?.ToArray() ?? [];
+        var invalidDocumentReferenceFailures = invalidDocumentReferences?.ToArray() ?? [];
 
         return new ResolvedReferenceSet(
             SuccessfulDocumentReferencesByPath: resolvedDocumentReferences.ToDictionary(
@@ -3320,7 +3463,7 @@ public class Given_RelationalWriteFlattener
                 descriptorReference => descriptorReference
             ),
             LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
+            InvalidDocumentReferences: invalidDocumentReferenceFailures,
             InvalidDescriptorReferences: [],
             DocumentReferenceOccurrences: [],
             DescriptorReferenceOccurrences: []
@@ -3347,6 +3490,19 @@ public class Given_RelationalWriteFlattener
             ),
             documentId,
             ResourceKeyId: 21
+        );
+    }
+
+    private static DocumentReferenceFailure CreateMissingDocumentReferenceFailure(string path)
+    {
+        return DocumentReferenceFailure.From(
+            new DocumentReference(
+                _schoolResourceInfo,
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255999")]),
+                new ReferentialId(Guid.NewGuid()),
+                new JsonPath(path)
+            ),
+            DocumentReferenceFailureReason.Missing
         );
     }
 
@@ -3438,7 +3594,8 @@ public class Given_RelationalWriteFlattener
             RelationalWriteTargetContext targetContext,
             ResolvedReferenceSet? resolvedReferences = null,
             bool emitEmptyExtensionBuffers = false,
-            bool validateStorageCollapsedCollectionIdentityUniqueness = false
+            bool validateStorageCollapsedCollectionIdentityUniqueness = false,
+            bool allowMissingDocumentReferencesForPrecedence = false
         )
         {
             return new FlatteningInput(
@@ -3448,7 +3605,8 @@ public class Given_RelationalWriteFlattener
                 selectedBody,
                 resolvedReferences ?? ResolvedReferences,
                 emitEmptyExtensionBuffers,
-                validateStorageCollapsedCollectionIdentityUniqueness
+                validateStorageCollapsedCollectionIdentityUniqueness,
+                allowMissingDocumentReferencesForPrecedence
             );
         }
 

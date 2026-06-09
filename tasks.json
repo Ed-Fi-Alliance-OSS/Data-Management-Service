@@ -72,7 +72,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener\"",
       "Confirm focused tests prove exact deferred occurrences produce nulls and non-deferred missing lookups at other bindings or ordinal paths still fail fast."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Deferred 409 return point",

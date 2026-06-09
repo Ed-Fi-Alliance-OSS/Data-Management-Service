@@ -863,6 +863,16 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return new FlattenedWriteValue.Literal(documentId.Value);
         }
 
+        if (
+            resolvedReferenceLookups.IsDeferredMissingDocumentReference(
+                documentReference.BindingIndex,
+                ordinalPath
+            )
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
         throw CreateMissingDocumentReferenceLookupException(
             tableWritePlan,
             columnBinding,
@@ -988,6 +998,18 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 referenceDerived.ReferenceSource,
                 out var referenceNode
             ) || referenceNode is null
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        if (
+            resolvedReferenceLookups.GetDocumentId(referenceDerived.ReferenceSource.BindingIndex, ordinalPath)
+                is null
+            && resolvedReferenceLookups.IsDeferredMissingDocumentReference(
+                referenceDerived.ReferenceSource.BindingIndex,
+                ordinalPath
+            )
         )
         {
             return new FlattenedWriteValue.Literal(null);

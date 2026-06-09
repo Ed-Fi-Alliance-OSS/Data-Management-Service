@@ -12,3 +12,8 @@ Task completed: Exact missing-reference lookup; story 409-fix-plan.md
 Key decisions: lookup opt-in remains default false; deferred missing map derived only from resolver InvalidDocumentReferences with Missing reason; concrete paths match compiled binding wildcard plus ordinal path; unmatched opt-in path throws invariant.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs; src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/FlatteningResolvedReferenceLookupSetTests.cs; tasks.json; progress.txt
 Notes: required filter FullyQualifiedName~FlatteningResolvedReferenceLookupSet passed 18 tests.
+
+Task completed: Flattener deferred-reference tolerance; story 409-fix-plan.md
+Key decisions: present document references with exact deferred Missing occurrences flatten FK to null; present reference-derived members with no resolved document id and exact deferred Missing occurrence flatten to null before literal lookup; all unmatched occurrences keep fail-fast validation.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
+Notes: required filter FullyQualifiedName~RelationalWriteFlattener passed 47 tests after csharpier.
