@@ -1,0 +1,4 @@
+Task completed: Executor reference precedence; story 409-fix-plan.md
+Key decisions: executor now splits descriptor, non-missing document, and missing document reference failures; only no-profile Missing document failures defer; return deferred reference after merge/proposed auth/deferred If-Match and before no-op/persist to avoid writes with remembered failures.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DefaultRelationalWriteExecutorTests.cs; tasks.json; progress.txt
+Notes: progress.txt was absent at iteration start; recreated. Exact prompt test filter FullyQualifiedName~DefaultRelationalWriteExecutor matched no tests, actual fixture filter FullyQualifiedName~Given_Default_Relational_Write_Executor passed.

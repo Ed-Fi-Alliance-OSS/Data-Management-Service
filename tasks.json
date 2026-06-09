@@ -17,7 +17,7 @@
       "Confirm no executor precedence branch depends on ResolvedReferenceSet.HasFailures.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Flattening opt-in plumbing",
