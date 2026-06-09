@@ -17,7 +17,9 @@ Import-Module ../SchoolYear-Loader.psm1 -Force -Global
     Sets up paths for the bulk loader, XSDs, and temporary directories required for loading sample data.
 
 .PARAMETER BulkLoadVersion
-    The version of the Ed-Fi Bulk Load client to use.
+    Diagnostic override of the repo-pinned BulkLoadClient version. Must be an exact
+    three-part numeric version (e.g. 7.3.20144); partial or wildcard values are rejected.
+    Normal template builds omit it and use the shared pin from Package-Management.psm1.
 
 .PARAMETER BaseDirectory
     The base directory where temporary folders will be created.
@@ -27,10 +29,18 @@ Import-Module ../SchoolYear-Loader.psm1 -Force -Global
 #>
 function Initialize-BulkLoad {
     param(
-        $BulkLoadVersion = '7.3'
+        [string]
+        $BulkLoadVersion = ''
     )
 
-    $bulkLoadClientExe = (Join-Path -Path (Get-BulkLoadClient $BulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
+    if ([string]::IsNullOrWhiteSpace($BulkLoadVersion)) {
+        $BulkLoadVersion = Get-BulkLoadClientPinnedVersion
+    }
+    elseif ($BulkLoadVersion -notmatch '^\d+\.\d+\.\d+$') {
+        throw "Initialize-BulkLoad: -BulkLoadVersion is a diagnostic override and requires an exact three-part numeric version (current pin: $(Get-BulkLoadClientPinnedVersion)). Partial or wildcard versions float to the newest matching feed build and are not allowed for template builds."
+    }
+
+    $bulkLoadClientExe = (Join-Path -Path (Get-BulkLoadClient -PackageVersion $BulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
     $bulkLoadClientExe = Resolve-Path $bulkLoadClientExe
 
     $xsdDirectory = "$($PSScriptRoot)/tmp/XSD"

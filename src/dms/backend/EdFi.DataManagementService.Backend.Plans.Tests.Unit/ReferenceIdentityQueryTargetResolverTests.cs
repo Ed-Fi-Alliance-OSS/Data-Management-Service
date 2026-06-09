@@ -80,10 +80,10 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
         candidate.IdentityJsonPath.Canonical.Should().Be("$.studentReference.studentUniqueId");
         candidate.ReferenceJsonPath.Canonical.Should().Be("$.studentAcademicRecordReference.studentUniqueId");
         candidate.Column.Should().Be(new DbColumnName("StudentAcademicRecord_StudentUniqueId"));
-        candidate.TargetResource.Should().Be(_studentAcademicRecordResource);
-        candidate.ReferenceObjectPath.Canonical.Should().Be("$.studentAcademicRecordReference");
-        candidate.FkColumn.Should().Be(new DbColumnName("StudentAcademicRecord_DocumentId"));
-        candidate
+        group.TargetResource.Should().Be(_studentAcademicRecordResource);
+        group.ReferenceObjectPath.Canonical.Should().Be("$.studentAcademicRecordReference");
+        group.FkColumn.Should().Be(new DbColumnName("StudentAcademicRecord_DocumentId"));
+        group
             .RepresentativeBindingColumn.Should()
             .Be(new DbColumnName("StudentAcademicRecord_StudentUniqueId"));
     }
@@ -154,11 +154,6 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
             .Equal(
                 new DbColumnName("Student_StudentUniqueIdAlias"),
                 new DbColumnName("Student_StudentUniqueIdDuplicateAlias")
-            );
-        group
-            .CandidatesInOrder.Should()
-            .OnlyContain(candidate =>
-                candidate.RepresentativeBindingColumn == new DbColumnName("Student_StudentUniqueIdAlias")
             );
 
         var match = resolution.Should().BeOfType<ReferenceIdentityQueryCandidateResolution.Match>().Subject;

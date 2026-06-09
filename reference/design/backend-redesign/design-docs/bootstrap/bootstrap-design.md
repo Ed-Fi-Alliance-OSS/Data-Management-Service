@@ -393,9 +393,8 @@ Modes 1 and 2 cover the vast majority of development workflows. Use these for da
 **Mode 1 - Default (core Ed-Fi only)**
 
 Omit `-Extensions` entirely. In the target package-backed flow, bootstrap resolves only the standard core
-Data Standard ApiSchema asset package (e.g. `EdFi.DataStandard52.ApiSchema`; **exact package name must be
-confirmed against the NuGet feed before Story 06 implementation begins**, not Story 00 or Story
-01) host-side, extracts it into an isolated package-specific temporary directory, normalizes its asset payload into
+Data Standard ApiSchema asset package (`EdFi.DataStandard52.ApiSchema`) host-side, extracts it into an
+isolated package-specific temporary directory, normalizes its asset payload into
 `eng/docker-compose/.bootstrap/ApiSchema/`, and computes the expected `EffectiveSchemaHash` from the
 normalized core schema file. The target package payload is asset-only as defined in
 [`apischema-container.md`](apischema-container.md); publishing that package shape is tracked separately in
@@ -556,7 +555,7 @@ For each extension in `-Extensions`, bootstrap resolves the schema package and a
 fragment metadata from the configured artifact sources. The seed phase owns a separate seed catalog that may
 define an optional built-in seed data package for the same extension name:
 
-1. **Schema package** (e.g., `EdFi.Sample.ApiSchema`) - determines API surface
+1. **Schema package** (e.g., `EdFi.DataStandard52.ApiSchema.Sample`) - determines API surface
 2. **Security fragment** (e.g., `004-sample-extension-claimset.json`) - determines authorization rules
 3. **Optional built-in seed data package** (when present in the seed catalog) - determines bootstrap-managed
    sample data
@@ -1650,7 +1649,7 @@ seed-catalog concern rather than a schema-selection concern.
 The `-Extensions` parameter is the single developer-facing control for enabling extensions. Passing it triggers three coordinated actions automatically - the developer does not need to configure each concern separately:
 
 1. **ApiSchema files staged host-side (Section 3)** - The script resolves the extension's NuGet schema
-   package (e.g., `EdFi.Sample.ApiSchema`) on the host, stages the resulting file in
+   package (e.g., `EdFi.DataStandard52.ApiSchema.Sample`) on the host, stages the resulting file in
    `eng/docker-compose/.bootstrap/ApiSchema/`, and includes that staged file in the exact set later hashed
    and mounted/read by DMS.
 
@@ -1904,8 +1903,8 @@ A minimal acceptable console shape is:
 Bootstrap-DMS: Starting...
 
 [prepare-dms-schema]                                       (0.4s)
-  Core:  EdFi.DataStandard52.ApiSchema 1.0.328
-  Ext:   EdFi.Sample.ApiSchema         1.0.328
+  Core:  EdFi.DataStandard52.ApiSchema        1.0.328
+  Ext:   EdFi.DataStandard52.ApiSchema.Sample 1.0.154
 [prepare-dms-claims]                                       (0.2s)
   Hybrid mode: 1 security fragment(s) staged
 [start-local-dms -InfraOnly]                              (13.7s)
@@ -1938,6 +1937,9 @@ Summary
   ----------------------------------------------
   Total                                   216.0s
 ```
+
+> The core and extension ApiSchema packages are versioned independently and may not share a version (the
+> versions above are illustrative); bootstrap resolves each package to its own configured feed version.
 
 CI environments may suppress color output. The summary table is always emitted on both success and failure;
 on failure the failing phase name and error are printed before the summary.

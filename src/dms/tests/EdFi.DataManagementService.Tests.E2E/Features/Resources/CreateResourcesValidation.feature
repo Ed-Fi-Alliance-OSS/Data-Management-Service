@@ -463,27 +463,28 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @API-166 @POST
+        @API-166 @POST @relational-backend
+        @relational-ci-shard-1
         Scenario: 16 Post a new document (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
-                      "contentIdentifier": "Testing",
-                      "namespace": "Testing",
-                      "shortDescription": "Testing",
+                      "contentIdentifier": "Testing-API-166",
+                      "namespace": "Testing-API-166",
+                      "shortDescription": "Testing-API-166",
                       "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                      "learningResourceMetadataURI": "Testing"
+                      "learningResourceMetadataURI": "Testing-API-166"
                   }
                   """
              Then it should respond with 201
              When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
-                      "contentIdentifier": "Testing",
-                      "namespace": "Testing",
-                      "shortDescription": "Testing",
+                      "contentIdentifier": "Testing-API-166",
+                      "namespace": "Testing-API-166",
+                      "shortDescription": "Testing-API-166",
                       "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                      "learningResourceMetadataURI": "Testing"
+                      "learningResourceMetadataURI": "Testing-API-166"
                   }
                   """
              Then it should respond with 200

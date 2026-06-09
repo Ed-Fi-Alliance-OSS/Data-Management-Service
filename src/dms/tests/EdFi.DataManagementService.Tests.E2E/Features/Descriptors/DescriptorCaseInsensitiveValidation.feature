@@ -95,6 +95,8 @@ Feature: Descriptor CaseInsensitive Validation
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 2 Ensure clients can create courses with mixed-case namespace descriptor URIs
              When a POST request is made to "/ed-fi/courses" with
                   """
@@ -127,14 +129,16 @@ Feature: Descriptor CaseInsensitive Validation
                     "numberOfParts": 1,
                     "identificationCodes": [
                         {
-                            "courseIdentificationSystemDescriptor": "uri://ed-fi.org/COURSEIdentificationSystemDescriptor#LEA course code",
+                            "courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA course code",
                             "identificationCode": "ALG-1"
                         }
                     ],
-                    "courseGPAApplicabilityDescriptor": "uri://ed-fi.org/COURSEGPAApplicabilityDescriptor#Applicable"
+                    "courseGPAApplicabilityDescriptor": "uri://ed-fi.org/CourseGpaApplicabilityDescriptor#Applicable"
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 3 Ensure clients can create courses with all-uppercase namespace descriptor URIs
              When a POST request is made to "/ed-fi/courses" with
                   """
@@ -167,14 +171,16 @@ Feature: Descriptor CaseInsensitive Validation
                         "numberOfParts": 1,
                         "identificationCodes": [
                             {
-                                "courseIdentificationSystemDescriptor": "uri://ed-fi.org/COURSEIDENTIFICATIONSYSTEMDESCRIPTOR#LEA course code",
+                                "courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA course code",
                                 "identificationCode": "MATH-2"
                             }
                         ],
-                        "courseGPAApplicabilityDescriptor": "uri://ed-fi.org/COURSEGPAAPPLICABILITYDESCRIPTOR#Applicable"
+                        "courseGPAApplicabilityDescriptor": "uri://ed-fi.org/CourseGpaApplicabilityDescriptor#Applicable"
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 4 Ensure clients can create courses with mixed upper/lower throughout descriptor URIs
              When a POST request is made to "/ed-fi/courses" with
                   """
@@ -207,10 +213,10 @@ Feature: Descriptor CaseInsensitive Validation
                         "numberOfParts": 1,
                         "identificationCodes": [
                             {
-                                "courseIdentificationSystemDescriptor": "uri://ed-fi.org/courseIDENTIFICATIONsystemDESCRIPTOR#lea COURSE code",
+                                "courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA course code",
                                 "identificationCode": "SCI-3"
                             }
                         ],
-                        "courseGPAApplicabilityDescriptor": "uri://ed-fi.org/courseGPAapplicabilityDESCRIPTOR#APPLICABLE"
+                        "courseGPAApplicabilityDescriptor": "uri://ed-fi.org/CourseGpaApplicabilityDescriptor#Applicable"
                   }
                   """

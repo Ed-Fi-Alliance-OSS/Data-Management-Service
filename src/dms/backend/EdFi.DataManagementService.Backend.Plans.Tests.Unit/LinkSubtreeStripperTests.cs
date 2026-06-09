@@ -215,7 +215,8 @@ public class Given_LinkSubtreeStripper
                     [
                         new ReferenceIdentityProjectionFieldOrdinal(
                             ReferenceJsonPath: _schoolReferenceSchoolIdPath,
-                            ColumnOrdinal: 2
+                            ColumnOrdinal: 2,
+                            ScalarType: new RelationalScalarType(ScalarKind.Int32)
                         ),
                     ]
                 ),

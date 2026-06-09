@@ -486,6 +486,8 @@ Feature: Create a Descriptor
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-2
         Scenario: 17 Post a Descriptor using a resource not configured in claims
              When a POST request is made to "/ed-fi/academicHonorCategoryDescriptors" with
                   """
@@ -500,14 +502,12 @@ Feature: Create a Descriptor
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org').",
+                      "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
-                      "errors": [
-                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ed-fi.org'."
-                      ]
+                      "errors": []
                     }
                   """
         @relational-backend

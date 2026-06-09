@@ -26,9 +26,8 @@ function Get-EffectiveBootstrapEnvFile {
     Returns the env file to forward to the phase commands. When the sibling modules are present,
     materializes a per-run derived file for the wrapper path, forcing DMS startup database
     provisioning off. When -LoadSeedData is requested, also delegates to env-utility's
-    Resolve-BootstrapDerivedEnv to apply the canonical seed profile (loose circuit-breaker;
-    Sample/Homograph excluded only when no custom -SeedDataPath is supplied). The user's base env
-    file is left untouched.
+    Resolve-BootstrapDerivedEnv to apply the canonical seed profile (loose circuit-breaker). The
+    user's base env file is left untouched.
 
     Wrapper-only convenience: this materialization is intentionally scoped to wrapper invocation
     so each phase command keeps its supplied env file authoritative (see
@@ -41,8 +40,7 @@ function Get-EffectiveBootstrapEnvFile {
     #>
     param(
         [string]$BaseEnvironmentFile,
-        [switch]$LoadSeedDataRequested,
-        [switch]$SeedDataPathSupplied
+        [switch]$LoadSeedDataRequested
     )
 
     $BaseEnvironmentFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $BaseEnvironmentFile
@@ -56,20 +54,12 @@ function Get-EffectiveBootstrapEnvFile {
     Import-Module $envUtilityPath -Force
     Import-Module $manifestPath -Force
 
-    # Only apply the Sample/Homograph SCHEMA_PACKAGES exclusion when the seed source is built-in.
-    # Custom -SeedDataPath callers may reference Sample/Homograph resources in their XML and need
-    # those schemas active. The exclusion is a built-in-template-specific BulkLoadClient 7.3.1
-    # workaround, not a general policy.
-    $filterSampleHomograph = -not $SeedDataPathSupplied
-
     $derivedPath = Join-Path (Get-BootstrapRoot) ".env.derived"
     if ($LoadSeedDataRequested) {
         $result = Resolve-BootstrapDerivedEnv `
             -BaseEnvironmentFile $BaseEnvironmentFile `
-            -DerivedTargetPath $derivedPath `
-            -FilterSampleHomograph:$filterSampleHomograph
-        $filterNote = if ($filterSampleHomograph) { "Sample/Homograph filtered (built-in seed path)" } else { "Sample/Homograph retained (-SeedDataPath supplied)" }
-        Write-Information "Bootstrap-derived env written: $derivedPath (DMS startup provisioning disabled; FAILURE_RATIO=0.95; $filterNote)." -InformationAction Continue
+            -DerivedTargetPath $derivedPath
+        Write-Information "Bootstrap-derived env written: $derivedPath (DMS startup provisioning disabled; FAILURE_RATIO=0.95)." -InformationAction Continue
         return $result
     }
 
@@ -267,9 +257,9 @@ function Invoke-BootstrapWrapper {
         }
     }
 
-    # $seedDataPathSupplied is also read by Get-EffectiveBootstrapEnvFile below, which runs
-    # regardless of -LoadSeedData, so both predicates live at function entry rather than inside
-    # the -LoadSeedData branch.
+    # $seedDataPathSupplied is read by the seed-flag preflights below and by the caller-CWD
+    # path normalization that runs regardless of -LoadSeedData, so both predicates live at
+    # function entry rather than inside the -LoadSeedData branch.
     $seedTemplateSupplied = $PSBoundParameters.ContainsKey('SeedTemplate') -and -not [string]::IsNullOrWhiteSpace($SeedTemplate)
     $seedDataPathSupplied = $PSBoundParameters.ContainsKey('SeedDataPath') -and -not [string]::IsNullOrWhiteSpace($SeedDataPath)
 
@@ -347,12 +337,10 @@ function Invoke-BootstrapWrapper {
             -EffectiveEnvironmentFile $baseEnvFile
 
         # Resolve the effective env file. When seed loading is requested, materialize a derived env
-        # with the bootstrap profile so BulkLoadClient 7.3.1 doesn't NRE on Sample's inline-object
-        # array shapes and the circuit breaker tolerates the bulk-load failure ratio.
+        # with the bootstrap profile so the circuit breaker tolerates the bulk-load failure ratio.
         $effectiveEnvFile = Get-EffectiveBootstrapEnvFile `
             -BaseEnvironmentFile $baseEnvFile `
-            -LoadSeedDataRequested:$LoadSeedData `
-            -SeedDataPathSupplied:$seedDataPathSupplied
+            -LoadSeedDataRequested:$LoadSeedData
 
         Assert-WrapperStagedSchemaWorkspace
 

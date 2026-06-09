@@ -49,7 +49,8 @@ Feature: Update Reference Validation
                   }
                   """
 
-        @API-111
+        @API-111 @relational-backend
+        @relational-ci-shard-4
         Scenario: 02 Ensure clients cannot update a resource missing a direct reference
             Given the system has these "studentEducationOrganizationAssociations" references
                   | educationOrganizationReference     | studentReference             |

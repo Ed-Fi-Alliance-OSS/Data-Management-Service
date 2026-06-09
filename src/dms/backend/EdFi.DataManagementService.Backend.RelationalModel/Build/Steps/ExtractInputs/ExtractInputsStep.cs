@@ -93,6 +93,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         var allowIdentityUpdates = RequireBoolean(resourceSchema, "allowIdentityUpdates");
         var documentReferenceMappings = DocumentReferenceMappingsExtractor.ExtractDocumentReferenceMappings(
             resourceSchema,
+            jsonSchemaForInsert,
             projectName,
             resourceName,
             identityJsonPathSet

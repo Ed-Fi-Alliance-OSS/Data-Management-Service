@@ -204,7 +204,10 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             throw new InvalidOperationException($"Expected properties to be an object at {scopePath}.");
         }
 
-        var requiredProperties = GetRequiredProperties(schema, pathSegments);
+        var requiredProperties = JsonSchemaRequirednessConventions.GetRequiredProperties(
+            schema,
+            pathSegments
+        );
         var isReferenceScope = referenceObjectPaths.Contains(scopePath);
 
         foreach (var property in propertiesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
@@ -233,7 +236,10 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             var propertyPath = JsonPathExpressionCompiler.FromSegments(propertyPathSegments);
             var propertySchemaPath = $"{schemaPath}.properties.{property.Key}";
             var isRequired = requiredProperties.Contains(property.Key);
-            var isXNullable = IsXNullable(propertySchema, propertyPath.Canonical);
+            var isXNullable = JsonSchemaRequirednessConventions.IsXNullable(
+                propertySchema,
+                propertyPath.Canonical
+            );
             var isOptional = !isRequired;
             var isNullable = hasOptionalAncestor || isOptional || isXNullable;
             var nextHasOptionalAncestor = hasOptionalAncestor || isOptional || isXNullable;
@@ -390,7 +396,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         }
 
         var columnSegments = BuildDescriptorArrayColumnSegments(propertySegments);
-        var isNullable = IsXNullable(itemsSchema, elementPath.Canonical);
+        var isNullable = JsonSchemaRequirednessConventions.IsXNullable(itemsSchema, elementPath.Canonical);
 
         AddScalarOrDescriptorColumn(
             tableBuilder,
@@ -548,25 +554,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
     }
 
     /// <summary>
-    /// Reads <c>x-nullable</c> (an OpenAPI extension commonly used in Ed-Fi schemas) as an override for
-    /// JSON Schema required-ness.
-    /// </summary>
-    private static bool IsXNullable(JsonObject schema, string path)
-    {
-        if (!schema.TryGetPropertyValue("x-nullable", out var nullableNode) || nullableNode is null)
-        {
-            return false;
-        }
-
-        if (nullableNode is not JsonValue jsonValue)
-        {
-            throw new InvalidOperationException($"Expected x-nullable to be a boolean at {path}.");
-        }
-
-        return jsonValue.GetValue<bool>();
-    }
-
-    /// <summary>
     /// Builds the physical column base name from the accumulated column-segment path using PascalCase.
     /// </summary>
     private static string BuildColumnBaseName(IReadOnlyList<string> segments)
@@ -629,58 +616,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         List<string> propertyColumnSegments = [.. columnSegments, propertyName];
 
         return propertyColumnSegments;
-    }
-
-    /// <summary>
-    /// Reads and validates the <c>required</c> array on an object schema.
-    /// </summary>
-    private static HashSet<string> GetRequiredProperties(
-        JsonObject schema,
-        List<JsonPathSegment> pathSegments
-    )
-    {
-        var path = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
-
-        if (!schema.TryGetPropertyValue("required", out var requiredNode) || requiredNode is null)
-        {
-            return new HashSet<string>(StringComparer.Ordinal);
-        }
-
-        if (requiredNode is not JsonArray requiredArray)
-        {
-            throw new InvalidOperationException($"Expected required to be an array at {path}.required.");
-        }
-
-        HashSet<string> requiredProperties = new(StringComparer.Ordinal);
-
-        foreach (var requiredEntry in requiredArray)
-        {
-            if (requiredEntry is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be non-null at {path}.required."
-                );
-            }
-
-            if (requiredEntry is not JsonValue jsonValue)
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be strings at {path}.required."
-                );
-            }
-
-            var name = jsonValue.GetValue<string>();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                throw new InvalidOperationException(
-                    $"Expected required entries to be non-empty at {path}.required."
-                );
-            }
-
-            requiredProperties.Add(name);
-        }
-
-        return requiredProperties;
     }
 
     /// <summary>

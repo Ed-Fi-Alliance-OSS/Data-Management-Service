@@ -6,6 +6,9 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -100,6 +103,34 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
     }
 
+    [Test]
+    public void ServiceCollection_registers_mssql_relational_token_info_lookup_without_replacing_base_lookup()
+    {
+        var services = new ServiceCollection();
+
+        services.AddScoped<IRelationalCommandExecutor>(_ => A.Fake<IRelationalCommandExecutor>());
+        services.AddScoped<IRelationalParameterConfigurator>(_ => A.Fake<IRelationalParameterConfigurator>());
+        services.AddScoped<ITokenInfoEducationOrganizationLookup, StubTokenInfoEducationOrganizationLookup>();
+        services.AddMssqlRelationalTokenInfoEducationOrganizationLookup();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<StubTokenInfoEducationOrganizationLookup>();
+
+        scope
+            .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
+    }
+
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
         services.TryAddSingleton<IDocumentLinkSlugResolver, NoLinkSlugResolver>();
@@ -114,5 +145,12 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
     {
         public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
             throw new InvalidOperationException("NoLinkSlugResolver is unused in composition-surface tests.");
+    }
+
+    private sealed class StubTokenInfoEducationOrganizationLookup : ITokenInfoEducationOrganizationLookup
+    {
+        public Task<IEnumerable<TokenInfoEducationOrganization>> GetEducationOrganizations(
+            IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds
+        ) => Task.FromResult<IEnumerable<TokenInfoEducationOrganization>>([]);
     }
 }

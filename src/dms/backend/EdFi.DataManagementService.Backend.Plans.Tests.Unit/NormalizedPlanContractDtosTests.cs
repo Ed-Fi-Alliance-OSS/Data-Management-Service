@@ -140,11 +140,13 @@ public class Given_NormalizedPlanContractDtos
                             [
                                 new ReferenceIdentityProjectionFieldOrdinalDto(
                                     ReferenceJsonPath: "$.schoolReference.schoolId",
-                                    ColumnOrdinal: 3
+                                    ColumnOrdinal: 3,
+                                    ScalarType: new RelationalScalarTypeDto(NormalizedScalarKind.Int32)
                                 ),
                                 new ReferenceIdentityProjectionFieldOrdinalDto(
                                     ReferenceJsonPath: "$.schoolReference.schoolYear",
-                                    ColumnOrdinal: 4
+                                    ColumnOrdinal: 4,
+                                    ScalarType: new RelationalScalarTypeDto(NormalizedScalarKind.Int32)
                                 ),
                             ]
                         ),

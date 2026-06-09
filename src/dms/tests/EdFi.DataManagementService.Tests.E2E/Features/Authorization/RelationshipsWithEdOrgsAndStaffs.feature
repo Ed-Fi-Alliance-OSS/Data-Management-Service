@@ -50,6 +50,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              Then it should respond with 201
 
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 Ensure client cannot create a staffSchoolAssociations when the staff is not assigned to the school school using staffEducationOrganizationAssignmentAssociations
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """
@@ -67,14 +69,13 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
-                      "correlationId": "0HNCJPIJKHR7A:00000019",
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901', '25590100100000') and the resource item's StaffUniqueId value."
+                        "No relationships have been established between the caller's education organization id claims ('255901', '25590100100000') and the resource item's 'StaffUniqueId' value."
                       ]
                     }
                   """
@@ -149,6 +150,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 05 Ensure client can POST staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -165,6 +168,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
 
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 06 Ensure client can Get staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -198,6 +203,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
 
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 07 Ensure client can PUT staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -224,6 +231,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 08 Ensure client can DELETE staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -240,6 +249,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              When a DELETE request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations/{id}"
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 09 Ensure client cannot  Create staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
@@ -256,18 +267,19 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
-                      "correlationId": "0HNCJPIJKHR9A:0000001A",
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901903') and the resource item's 'EducationOrganizationId' value."
                       ]
                     }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 10 Ensure client cannot get staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -286,13 +298,13 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
+                        "No relationships have been established between the caller's education organization id claim ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                       ]
                     }
                   """
@@ -320,6 +332,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                      []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 12  Ensure client cannot update staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -348,17 +362,19 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claim ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 13  Ensure client cannot delete staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -377,19 +393,21 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claim ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """
 
     Rule: StaffEducationOrganizationEmploymentAssociation CRUD is properly authorized
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 14 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
@@ -475,6 +493,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 17 Ensure client can POST staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -489,6 +509,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 18 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -519,6 +541,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 19 Ensure client can PUT staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -545,6 +569,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 20 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -561,6 +587,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              When a DELETE request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations/{id}"
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 21 Ensure client cannot  Create staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
@@ -577,18 +605,19 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
-                      "correlationId": "0HNCJPIJKHR9A:0000001A",
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claim ('255901903') and the resource item's 'EducationOrganizationId' value."
                       ]
                     }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 22 Ensure client cannot  get staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -607,13 +636,13 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
-                      "type": "urn:ed-fi:api:security:authorization:",
+                      "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
+                        "No relationships have been established between the caller's education organization id claim ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                       ]
                     }
                   """
@@ -641,6 +670,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                      []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 24 Ensure client cannot  update staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -669,17 +700,19 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claim ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 25 Ensure client cannot  delete staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -698,13 +731,13 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                   {
-                    "detail": "Access to the resource could not be authorized.",
-                    "type": "urn:ed-fi:api:security:authorization:",
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
                     "title": "Authorization Denied",
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claim ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """

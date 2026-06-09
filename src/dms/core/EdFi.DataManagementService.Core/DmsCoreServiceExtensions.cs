@@ -130,6 +130,7 @@ public static class DmsCoreServiceExtensions
             .AddTransient<ProfileFilteringMiddleware>()
             .AddTransient<ProfileWriteValidationMiddleware>()
             .AddTransient<ProfileWritePipelineMiddleware>()
+            .AddSingleton<ITokenInfoRelationalMappingSetResolver, TokenInfoRelationalMappingSetResolver>()
             .AddSingleton<GetTokenInfoHandler>();
 
         return services;

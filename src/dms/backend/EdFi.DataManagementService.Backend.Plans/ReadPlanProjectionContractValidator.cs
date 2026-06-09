@@ -610,6 +610,14 @@ internal static class ReadPlanProjectionContractValidator
             );
         }
 
+        if (fieldOrdinal.ScalarType != fieldColumnModel.ScalarType)
+        {
+            throw createException(
+                $"reference identity projection field '{fieldOrdinal.ReferenceJsonPath.Canonical}' at index '{fieldIndex}' for reference '{referenceObjectPath.Canonical}' on table '{table}' has ScalarType "
+                    + $"'{FormatScalarType(fieldOrdinal.ScalarType)}', but column '{fieldColumnModel.ColumnName.Value}' declares '{FormatScalarType(fieldColumnModel.ScalarType)}'"
+            );
+        }
+
         if (authoritativeLogicalField.MemberColumnsInOrder.Contains(fieldColumnModel.ColumnName))
         {
             return;
@@ -814,6 +822,17 @@ internal static class ReadPlanProjectionContractValidator
     {
         var paths = formattedPaths.ToArray();
         return paths.Length == 0 ? "<none>" : string.Join(", ", paths);
+    }
+
+    private static string FormatScalarType(RelationalScalarType? scalarType)
+    {
+        return scalarType switch
+        {
+            null => "<null>",
+            { Decimal: { } facets } => $"{scalarType.Kind}({facets.Precision},{facets.Scale})",
+            { MaxLength: { } maxLength } => $"{scalarType.Kind}({maxLength})",
+            _ => scalarType.Kind.ToString(),
+        };
     }
 
     private static bool DescriptorSourcesMatch(DescriptorEdgeSource actual, DescriptorEdgeSource expected)

@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Npgsql;
-using NpgsqlTypes;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -1332,6 +1331,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     {
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
         var studentEducationOrganizationAssociationResourceKeyId = await GetResourceKeyIdAsync(
             "Ed-Fi",
             "StudentEducationOrganizationAssociation"
@@ -1353,8 +1353,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         await InsertSchoolAsync(schoolDocumentId, 100, "Alpha Academy");
         await InsertSchoolExtensionAsync(schoolDocumentId);
 
+        var directlyOwnedBusDocumentId = await InsertDocumentAsync(
+            Guid.Parse("10101010-1010-1010-1010-101010101010"),
+            busResourceKeyId
+        );
+        await InsertBusAsync(directlyOwnedBusDocumentId, "BUS-001");
+
         var schoolExtensionDirectlyOwnedBusCollectionItemId =
-            await InsertSchoolExtensionDirectlyOwnedBusAsync(schoolDocumentId, 1);
+            await InsertSchoolExtensionDirectlyOwnedBusAsync(
+                schoolDocumentId,
+                1,
+                directlyOwnedBusDocumentId,
+                "BUS-001"
+            );
 
         var studentDocumentId = await InsertDocumentAsync(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
@@ -1598,20 +1609,13 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
-    private async Task<long> InsertSchoolExtensionDirectlyOwnedBusAsync(long schoolDocumentId, int ordinal)
+    private async Task<long> InsertSchoolExtensionDirectlyOwnedBusAsync(
+        long schoolDocumentId,
+        int ordinal,
+        long directlyOwnedBusDocumentId,
+        string directlyOwnedBusId
+    )
     {
-        var directlyOwnedBusDocumentIdParameter = new NpgsqlParameter(
-            "directlyOwnedBusDocumentId",
-            NpgsqlDbType.Bigint
-        )
-        {
-            Value = DBNull.Value,
-        };
-        var directlyOwnedBusIdParameter = new NpgsqlParameter("directlyOwnedBusId", NpgsqlDbType.Varchar)
-        {
-            Value = DBNull.Value,
-        };
-
         return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "sample"."SchoolExtensionDirectlyOwnedBus" ("Ordinal", "School_DocumentId", "DirectlyOwnedBus_DocumentId", "DirectlyOwnedBus_BusId")
@@ -1620,8 +1624,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             """,
             new NpgsqlParameter("ordinal", ordinal),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
-            directlyOwnedBusDocumentIdParameter,
-            directlyOwnedBusIdParameter
+            new NpgsqlParameter("directlyOwnedBusDocumentId", directlyOwnedBusDocumentId),
+            new NpgsqlParameter("directlyOwnedBusId", directlyOwnedBusId)
         );
     }
 

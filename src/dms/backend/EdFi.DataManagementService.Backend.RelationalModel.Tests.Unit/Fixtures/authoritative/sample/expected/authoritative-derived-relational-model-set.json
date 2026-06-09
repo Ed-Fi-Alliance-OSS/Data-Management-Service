@@ -73394,7 +73394,7 @@
               "type": {
                 "kind": "Int64"
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference",
               "storage": {
                 "kind": "Stored"
@@ -73407,7 +73407,7 @@
                 "kind": "String",
                 "max_length": 65
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName",
               "storage": {
                 "kind": "Stored"
@@ -73420,7 +73420,7 @@
                 "kind": "String",
                 "max_length": 60
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier",
               "storage": {
                 "kind": "Stored"
@@ -73433,7 +73433,7 @@
                 "kind": "String",
                 "max_length": 255
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
               "storage": {
                 "kind": "Stored"
@@ -77013,7 +77013,7 @@
               "type": {
                 "kind": "Int64"
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference",
               "storage": {
                 "kind": "Stored"
@@ -77025,7 +77025,7 @@
               "type": {
                 "kind": "Int64"
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
               "storage": {
                 "kind": "Stored"
@@ -77037,7 +77037,7 @@
               "type": {
                 "kind": "Int64"
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
               "storage": {
                 "kind": "Stored"
@@ -77049,7 +77049,7 @@
               "type": {
                 "kind": "Int32"
               },
-              "is_nullable": true,
+              "is_nullable": false,
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear",
               "storage": {
                 "kind": "Stored"

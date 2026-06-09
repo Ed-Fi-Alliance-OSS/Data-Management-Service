@@ -39,4 +39,5 @@ public enum FixtureKey
     ProfileCollectionAlignedExtensionHiddenDescendant,
     AuthorizationQuery,
     AuthoritativeDs52,
+    AuthoritativeDs52Tpdm,
 }

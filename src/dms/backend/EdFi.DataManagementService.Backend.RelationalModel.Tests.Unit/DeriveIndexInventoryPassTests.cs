@@ -1782,6 +1782,7 @@ internal static class IndexInventoryTestSchemaBuilder
                     },
                 },
             },
+            ["required"] = new JsonArray { "schoolReference", "studentReference" },
         };
 
         return new JsonObject
@@ -1954,6 +1955,7 @@ internal static class IndexInventoryTestSchemaBuilder
                     },
                 },
             },
+            ["required"] = new JsonArray { "educationOrganizationReference", "studentReference" },
         };
 
         return new JsonObject

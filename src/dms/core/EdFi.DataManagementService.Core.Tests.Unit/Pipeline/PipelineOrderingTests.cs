@@ -419,6 +419,7 @@ public class PipelineOrderingTests
 
             var claimSetProvider = A.Fake<IClaimSetProvider>();
             var profileService = A.Fake<IProfileService>();
+            services.AddSingleton(A.Fake<ITokenInfoRelationalMappingSetResolver>());
 
             services.AddSingleton(claimSetProvider);
             services.AddSingleton(profileService);
@@ -465,7 +466,7 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_omits_ResolveMappingSetMiddleware()
+        public void It_defers_ResolveMappingSetMiddleware_until_a_relational_lookup_is_needed()
         {
             _stepTypes.Should().NotContain(typeof(ResolveMappingSetMiddleware));
         }
@@ -536,6 +537,22 @@ public class PipelineOrderingTests
                 .BeLessThan(
                     apiSchemaValidationIndex,
                     "ValidateResourceKeySeedMiddleware must run before schema-dependent middleware"
+                );
+        }
+
+        [Test]
+        public void It_places_resource_key_validation_before_GetTokenInfoHandler()
+        {
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+            var handlerIndex = _stepTypes.IndexOf(typeof(GetTokenInfoHandler));
+
+            resourceKeyIndex.Should().BeGreaterThanOrEqualTo(0);
+            handlerIndex.Should().BeGreaterThanOrEqualTo(0);
+            resourceKeyIndex
+                .Should()
+                .BeLessThan(
+                    handlerIndex,
+                    "ValidateResourceKeySeedMiddleware must run before token_info can resolve relational mapping metadata"
                 );
         }
     }

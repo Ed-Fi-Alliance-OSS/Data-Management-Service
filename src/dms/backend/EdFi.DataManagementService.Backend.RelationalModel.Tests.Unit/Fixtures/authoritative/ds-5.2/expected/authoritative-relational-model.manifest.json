@@ -1488,7 +1488,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference",
                 "storage": {
                   "kind": "Stored"
@@ -1501,7 +1501,7 @@
                   "kind": "String",
                   "max_length": 65
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName",
                 "storage": {
                   "kind": "Stored"
@@ -1514,7 +1514,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -1527,7 +1527,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
                 "storage": {
                   "kind": "Stored"
@@ -2050,7 +2050,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.objectiveAssessments[*].objectiveAssessmentReference",
                 "storage": {
                   "kind": "Stored"
@@ -2063,7 +2063,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.objectiveAssessments[*].objectiveAssessmentReference.assessmentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -2076,7 +2076,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.objectiveAssessments[*].objectiveAssessmentReference.namespace",
                 "storage": {
                   "kind": "Stored"
@@ -2089,7 +2089,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.objectiveAssessments[*].objectiveAssessmentReference.identificationCode",
                 "storage": {
                   "kind": "Stored"
@@ -2663,7 +2663,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference",
                 "storage": {
                   "kind": "Stored"
@@ -2676,7 +2676,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference.learningStandardId",
                 "storage": {
                   "kind": "Stored"
@@ -3390,7 +3390,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference",
                 "storage": {
                   "kind": "Stored"
@@ -3403,7 +3403,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference.learningStandardId",
                 "storage": {
                   "kind": "Stored"
@@ -5254,7 +5254,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference",
                 "storage": {
                   "kind": "Stored"
@@ -5266,7 +5266,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -5279,7 +5279,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName",
                 "storage": {
                   "kind": "Stored"
@@ -5291,7 +5291,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -5647,7 +5647,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference",
                 "storage": {
                   "kind": "Stored"
@@ -5660,7 +5660,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.localCourseCode",
                 "storage": {
                   "kind": "Stored"
@@ -5672,7 +5672,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -5684,7 +5684,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.schoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -5697,7 +5697,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.sessionName",
                 "storage": {
                   "kind": "Stored"
@@ -5710,7 +5710,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.sectionIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -6691,7 +6691,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference",
                 "storage": {
                   "kind": "Stored"
@@ -6704,7 +6704,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference.classPeriodName",
                 "storage": {
                   "kind": "Stored"
@@ -6716,7 +6716,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -9831,7 +9831,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference",
                 "storage": {
                   "kind": "Stored"
@@ -9843,7 +9843,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -9856,7 +9856,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName",
                 "storage": {
                   "kind": "Stored"
@@ -9868,7 +9868,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -19214,7 +19214,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.coursePrograms[*].courseProgramReference",
                 "storage": {
                   "kind": "Stored"
@@ -19226,7 +19226,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.coursePrograms[*].courseProgramReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -19239,7 +19239,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.coursePrograms[*].courseProgramReference.programName",
                 "storage": {
                   "kind": "Stored"
@@ -19251,7 +19251,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.coursePrograms[*].courseProgramReference.programTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -19881,7 +19881,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference",
                 "storage": {
                   "kind": "Stored"
@@ -19894,7 +19894,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.localCourseCode",
                 "storage": {
                   "kind": "Stored"
@@ -19906,7 +19906,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -19918,7 +19918,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.schoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -19931,7 +19931,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.sessionName",
                 "storage": {
                   "kind": "Stored"
@@ -19944,7 +19944,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.sectionIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -21220,7 +21220,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference",
                 "storage": {
                   "kind": "Stored"
@@ -21233,7 +21233,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference.learningStandardId",
                 "storage": {
                   "kind": "Stored"
@@ -23889,7 +23889,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.staffs[*].staffReference",
                 "storage": {
                   "kind": "Stored"
@@ -23902,7 +23902,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.staffs[*].staffReference.staffUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -24043,7 +24043,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference",
                 "storage": {
                   "kind": "Stored"
@@ -24055,7 +24055,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference.behaviorDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -24068,7 +24068,7 @@
                   "kind": "String",
                   "max_length": 36
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference.incidentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -24080,7 +24080,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -24093,7 +24093,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference.studentUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -26070,7 +26070,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.derivativeSourceEducationContents[*].derivativeSourceEducationContentReference",
                 "storage": {
                   "kind": "Stored"
@@ -26083,7 +26083,7 @@
                   "kind": "String",
                   "max_length": 225
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.derivativeSourceEducationContents[*].derivativeSourceEducationContentReference.contentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -33441,7 +33441,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference",
                 "storage": {
                   "kind": "Stored"
@@ -33454,7 +33454,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference.learningStandardId",
                 "storage": {
                   "kind": "Stored"
@@ -36112,7 +36112,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.creditsByCourses[*].courses[*].courseReference",
                 "storage": {
                   "kind": "Stored"
@@ -36125,7 +36125,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.creditsByCourses[*].courses[*].courseReference.courseCode",
                 "storage": {
                   "kind": "Stored"
@@ -36137,7 +36137,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.creditsByCourses[*].courses[*].courseReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -37681,7 +37681,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.educationContents[*].educationContentReference",
                 "storage": {
                   "kind": "Stored"
@@ -37694,7 +37694,7 @@
                   "kind": "String",
                   "max_length": 225
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.educationContents[*].educationContentReference.contentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -38846,7 +38846,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.educationContents[*].educationContentReference",
                 "storage": {
                   "kind": "Stored"
@@ -38859,7 +38859,7 @@
                   "kind": "String",
                   "max_length": 225
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.educationContents[*].educationContentReference.contentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -40554,7 +40554,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.educationContents[*].educationContentReference",
                 "storage": {
                   "kind": "Stored"
@@ -40567,7 +40567,7 @@
                   "kind": "String",
                   "max_length": 225
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.educationContents[*].educationContentReference.contentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -40708,7 +40708,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.interventionPrescriptions[*].interventionPrescriptionReference",
                 "storage": {
                   "kind": "Stored"
@@ -40720,7 +40720,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.interventionPrescriptions[*].interventionPrescriptionReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -40733,7 +40733,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.interventionPrescriptions[*].interventionPrescriptionReference.interventionPrescriptionIdentificationCode",
                 "storage": {
                   "kind": "Stored"
@@ -41260,7 +41260,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.staffs[*].staffReference",
                 "storage": {
                   "kind": "Stored"
@@ -41273,7 +41273,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.staffs[*].staffReference.staffUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -48814,7 +48814,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentItems[*].assessmentItemReference",
                 "storage": {
                   "kind": "Stored"
@@ -48827,7 +48827,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentItems[*].assessmentItemReference.assessmentIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -48840,7 +48840,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentItems[*].assessmentItemReference.namespace",
                 "storage": {
                   "kind": "Stored"
@@ -48853,7 +48853,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.assessmentItems[*].assessmentItemReference.identificationCode",
                 "storage": {
                   "kind": "Stored"
@@ -49008,7 +49008,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference",
                 "storage": {
                   "kind": "Stored"
@@ -49021,7 +49021,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference.learningStandardId",
                 "storage": {
                   "kind": "Stored"
@@ -58454,7 +58454,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference",
                 "storage": {
                   "kind": "Stored"
@@ -58467,7 +58467,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.learningStandards[*].learningStandardReference.learningStandardId",
                 "storage": {
                   "kind": "Stored"
@@ -59923,7 +59923,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": null,
                 "storage": {
                   "kind": "Stored"
@@ -59935,7 +59935,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference",
                 "storage": {
                   "kind": "Stored"
@@ -59947,7 +59947,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.gradeTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -59959,7 +59959,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.gradingPeriodDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -59972,7 +59972,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.gradingPeriodName",
                 "storage": {
                   "kind": "Stored"
@@ -59984,7 +59984,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.schoolId",
                 "storage": {
                   "kind": "UnifiedAlias",
@@ -59998,7 +59998,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.gradingPeriodSchoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -60010,7 +60010,7 @@
                 "type": {
                   "kind": "Date"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.beginDate",
                 "storage": {
                   "kind": "Stored"
@@ -60023,7 +60023,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.localCourseCode",
                 "storage": {
                   "kind": "Stored"
@@ -60035,7 +60035,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.schoolId",
                 "storage": {
                   "kind": "UnifiedAlias",
@@ -60049,7 +60049,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.schoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -60062,7 +60062,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.sectionIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -60075,7 +60075,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.sessionName",
                 "storage": {
                   "kind": "Stored"
@@ -60088,7 +60088,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.studentUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -60342,7 +60342,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference",
                 "storage": {
                   "kind": "Stored"
@@ -60354,7 +60354,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.gradingPeriodDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -60367,7 +60367,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.gradingPeriodName",
                 "storage": {
                   "kind": "Stored"
@@ -60379,7 +60379,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.gradingPeriodSchoolId",
                 "storage": {
                   "kind": "Stored"
@@ -60391,7 +60391,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.gradingPeriodSchoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -60403,7 +60403,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objectiveEducationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -60416,7 +60416,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objective",
                 "storage": {
                   "kind": "Stored"
@@ -60428,7 +60428,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objectiveGradeLevelDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -60441,7 +60441,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.studentUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -61416,7 +61416,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference",
                 "storage": {
                   "kind": "Stored"
@@ -61428,7 +61428,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -61441,7 +61441,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName",
                 "storage": {
                   "kind": "Stored"
@@ -61453,7 +61453,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -65963,7 +65963,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference",
                 "storage": {
                   "kind": "Stored"
@@ -65976,7 +65976,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference.classPeriodName",
                 "storage": {
                   "kind": "Stored"
@@ -65988,7 +65988,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -66398,7 +66398,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference",
                 "storage": {
                   "kind": "Stored"
@@ -66410,7 +66410,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -66423,7 +66423,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName",
                 "storage": {
                   "kind": "Stored"
@@ -66435,7 +66435,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -67132,7 +67132,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.academicWeeks[*].academicWeekReference",
                 "storage": {
                   "kind": "Stored"
@@ -67144,7 +67144,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.academicWeeks[*].academicWeekReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -67157,7 +67157,7 @@
                   "kind": "String",
                   "max_length": 80
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.academicWeeks[*].academicWeekReference.weekIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -67305,7 +67305,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.gradingPeriods[*].gradingPeriodReference",
                 "storage": {
                   "kind": "Stored"
@@ -67317,7 +67317,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.gradingPeriods[*].gradingPeriodReference.gradingPeriodDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -67330,7 +67330,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.gradingPeriods[*].gradingPeriodReference.gradingPeriodName",
                 "storage": {
                   "kind": "Stored"
@@ -67342,7 +67342,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.gradingPeriods[*].gradingPeriodReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -67354,7 +67354,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.gradingPeriods[*].gradingPeriodReference.schoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -73609,7 +73609,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.credentials[*].credentialReference",
                 "storage": {
                   "kind": "Stored"
@@ -73622,7 +73622,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.credentials[*].credentialReference.credentialIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -73634,7 +73634,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.credentials[*].credentialReference.stateOfIssueStateAbbreviationDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -80654,7 +80654,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference",
                 "storage": {
                   "kind": "Stored"
@@ -80666,7 +80666,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -80678,7 +80678,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference.gradingPeriodDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -80691,7 +80691,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference.gradingPeriodName",
                 "storage": {
                   "kind": "Stored"
@@ -80703,7 +80703,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference.gradingPeriodSchoolId",
                 "storage": {
                   "kind": "Stored"
@@ -80715,7 +80715,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference.gradingPeriodSchoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -80728,7 +80728,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference.studentUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -86493,7 +86493,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference",
                 "storage": {
                   "kind": "Stored"
@@ -86506,7 +86506,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.localCourseCode",
                 "storage": {
                   "kind": "Stored"
@@ -86518,7 +86518,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -86530,7 +86530,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.schoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -86543,7 +86543,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.sessionName",
                 "storage": {
                   "kind": "Stored"
@@ -86556,7 +86556,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.sections[*].sectionReference.sectionIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -87152,7 +87152,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference",
                 "storage": {
                   "kind": "Stored"
@@ -87164,7 +87164,7 @@
                 "type": {
                   "kind": "Date"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.beginDate",
                 "storage": {
                   "kind": "Stored"
@@ -87176,7 +87176,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -87188,7 +87188,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programEducationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -87201,7 +87201,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programName",
                 "storage": {
                   "kind": "Stored"
@@ -87213,7 +87213,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -87226,7 +87226,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.studentUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -87418,7 +87418,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference",
                 "storage": {
                   "kind": "Stored"
@@ -87430,7 +87430,7 @@
                 "type": {
                   "kind": "Date"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.beginDate",
                 "storage": {
                   "kind": "Stored"
@@ -87443,7 +87443,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.localCourseCode",
                 "storage": {
                   "kind": "Stored"
@@ -87455,7 +87455,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -87467,7 +87467,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.schoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -87480,7 +87480,7 @@
                   "kind": "String",
                   "max_length": 255
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.sectionIdentifier",
                 "storage": {
                   "kind": "Stored"
@@ -87493,7 +87493,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.sessionName",
                 "storage": {
                   "kind": "Stored"
@@ -87506,7 +87506,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.studentUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -103831,7 +103831,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference",
                 "storage": {
                   "kind": "Stored"
@@ -103843,7 +103843,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -103855,7 +103855,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -103867,7 +103867,7 @@
                 "type": {
                   "kind": "Int32"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear",
                 "storage": {
                   "kind": "Stored"
@@ -106803,7 +106803,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference",
                 "storage": {
                   "kind": "Stored"
@@ -106815,7 +106815,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
@@ -106828,7 +106828,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName",
                 "storage": {
                   "kind": "Stored"
@@ -106840,7 +106840,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programTypeDescriptor",
                 "storage": {
                   "kind": "Stored"
@@ -107484,7 +107484,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference",
                 "storage": {
                   "kind": "Stored"
@@ -107497,7 +107497,7 @@
                   "kind": "String",
                   "max_length": 60
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference.classPeriodName",
                 "storage": {
                   "kind": "Stored"
@@ -107509,7 +107509,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": true,
+                "is_nullable": false,
                 "source_path": "$.classPeriods[*].classPeriodReference.schoolId",
                 "storage": {
                   "kind": "Stored"
@@ -115529,7 +115529,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": false,
+                "is_nullable": true,
                 "source_path": "$.contactReference",
                 "storage": {
                   "kind": "Stored"
@@ -115542,7 +115542,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": false,
+                "is_nullable": true,
                 "source_path": "$.contactReference.contactUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -115554,7 +115554,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": false,
+                "is_nullable": true,
                 "source_path": "$.staffReference",
                 "storage": {
                   "kind": "Stored"
@@ -115567,7 +115567,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": false,
+                "is_nullable": true,
                 "source_path": "$.staffReference.staffUniqueId",
                 "storage": {
                   "kind": "Stored"
@@ -115579,7 +115579,7 @@
                 "type": {
                   "kind": "Int64"
                 },
-                "is_nullable": false,
+                "is_nullable": true,
                 "source_path": "$.studentReference",
                 "storage": {
                   "kind": "Stored"
@@ -115592,7 +115592,7 @@
                   "kind": "String",
                   "max_length": 32
                 },
-                "is_nullable": false,
+                "is_nullable": true,
                 "source_path": "$.studentReference.studentUniqueId",
                 "storage": {
                   "kind": "Stored"
