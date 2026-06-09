@@ -151,13 +151,13 @@
     "category": "Relational E2E scenario alignment",
     "description": "Flip only the E2E scenarios named in the 409 fix plan whose relational behavior now matches ODS precedence, and validate them through the relational build script path.",
     "acceptance-criteria": [
-      "UpdateReferenceValidation.feature scenarios 03 and 04 are handled explicitly: scenario 03 may be tagged or expectation-flipped because descriptor validation already beats unresolved document reference, and scenario 04 expects 400 Key Change Not Supported instead of an early 409 after this fix.",
-      "RelationshipsWithEdOrgsAndContacts.feature scenario 20 is tagged or expectation-flipped only when it returns 403 Authorization Denied instead of an early 409.",
-      "RelationshipsWithEdOrgsAndPeople.feature scenarios 32, 39, and 40 are tagged or expectation-flipped only when their relational behavior matches the ODS-shaped authorization/precedence result described in 409-fix-plan.md.",
-      "RelationshipsWithEdOrgsAndStaffs.feature scenarios 03 and 15 are tagged or expectation-flipped because the current relational behavior already matches ODS precedence for key-change versus update-authorization ordering.",
+      "UpdateReferenceValidation.feature scenario 03 is enabled for relational backend with descriptor-validation precedence expectations, and scenario 04 expects 400 Key Change Not Supported instead of an early 409 after this fix.",
+      "RelationshipsWithEdOrgsAndContacts.feature scenario 20 is enabled for relational backend only when it returns 403 Authorization Denied instead of an early 409.",
+      "RelationshipsWithEdOrgsAndPeople.feature scenarios 32, 39, and 40 are enabled for relational backend only when their relational behavior matches the ODS-shaped authorization/precedence result described in 409-fix-plan.md; scenarios 39 and 40 expect 403 Authorization Denied, and scenario 32 records its exact expected status and body explicitly in the feature.",
+      "RelationshipsWithEdOrgsAndStaffs.feature scenarios 03 and 15 are enabled for relational backend with key-change-before-update-authorization expectations because the current relational behavior already matches ODS precedence.",
       "Each newly enabled scenario has @relational-backend and the appropriate @relational-ci-shard-* tag before it is counted as covered by the relational E2E run.",
       "No unrelated E2E scenarios receive expectation changes, relational-backend tags, or shard tags as part of this fix.",
-      "Shard tags for newly enabled scenarios follow the neighboring feature-file convention for the same test lane: authorization scenarios use shard 3 and UpdateReferenceValidation scenarios use shard 4 unless the feature file convention changes during implementation.",
+      "Shard tags for newly enabled scenarios follow the neighboring feature-file convention for the same test lane: authorization scenarios use shard 3 and UpdateReferenceValidation scenarios use shard 4 in the current repo, unless the feature file convention changes during implementation.",
       "The relational E2E run uses ./build-dms.ps1 E2ETest with ./.env.e2e.relational rather than direct setup-local-dms.ps1 plus dotnet test.",
       "Any environment-only E2E failure is documented with Docker/runtime evidence rather than treated as a product failure."
     ],
@@ -180,6 +180,7 @@
       "All modified C# files under src/dms are formatted with csharpier.",
       "Focused backend unit tests for executor precedence, flattener deferred missing-reference behavior, and database fallback preservation pass.",
       "Core reference-failure status mapping tests still pass without new handler behavior.",
+      "ProblemDetails wording and Core response/status mapping remain unchanged.",
       "The relational E2E shards containing the named authorization and reference scenarios pass, or any environment-only failure is documented with supporting evidence.",
       "tasks.json remains valid JSON and no production or test source changes outside this story scope are included."
     ],
