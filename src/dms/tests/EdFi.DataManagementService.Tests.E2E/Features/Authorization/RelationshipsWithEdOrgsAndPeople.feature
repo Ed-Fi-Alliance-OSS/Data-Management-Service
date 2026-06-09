@@ -869,19 +869,19 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                       "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
                   }
                   """
-		             Then it should respond with 403
-		              And the response body is
-		                  """
-		                  {
-		                      "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'SchoolId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-		                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
-		                      "title": "Authorization Denied",
-		                      "status": 403,
-		                      "correlationId": null,
-		                      "validationErrors": {},
-		                      "errors": []
-		                  }
-		                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'SchoolId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
 
         @relational-ci-shard-3
         @relational-backend
@@ -1319,18 +1319,18 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                       }
                     }
                   """
-	             Then it should respond with 403
-	              And the response body is
-	                  """
-	                  {
-	                  "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'EducationOrganizationId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-	                  "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
-	                  "title": "Authorization Denied",
-	                  "status": 403,
-	                  "validationErrors": {},
-	                  "errors": []
-	                  }
-	                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                  "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'EducationOrganizationId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                  "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                  "title": "Authorization Denied",
+                  "status": 403,
+                  "validationErrors": {},
+                  "errors": []
+                  }
+                  """
 
         @relational-backend
         @relational-ci-shard-3
@@ -1369,19 +1369,19 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                     }
                     }
                   """
-	             Then it should respond with 400
-	              And the response body is
-	                  """
-	                  {
-	                      "detail": "Identifying values for the CourseTranscript resource cannot be changed. Delete and recreate the resource item instead.",
-	                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
-	                      "title": "Key Change Not Supported",
-	                      "status": 400,
-	                      "correlationId": null,
-	                      "validationErrors": {},
-	                      "errors": []
-	                  }
-	                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Identifying values for the CourseTranscript resource cannot be changed. Delete and recreate the resource item instead.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                      "title": "Key Change Not Supported",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
 
     Rule: DELETE or GET resource fails with a 403 forbidden error with no student school association
         Background:

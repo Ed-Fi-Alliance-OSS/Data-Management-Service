@@ -83,7 +83,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
         @relational-backend
         @relational-ci-shard-3
-        Scenario: 03 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using staffEducationOrganizationAssignmentAssociations
+        Scenario: 03 Ensure key change is rejected before authorization when updating a staffSchoolAssociations using staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """
@@ -426,7 +426,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
         @relational-backend
         @relational-ci-shard-3
-        Scenario: 15 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using StaffEducationOrganizationEmploymentAssociation
+        Scenario: 15 Ensure key change is rejected before authorization when updating a staffSchoolAssociations using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """

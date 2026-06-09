@@ -131,6 +131,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 writePlan,
                 documentReferenceBindings,
                 documentBindingIndexByPath,
+                documentReferenceMapsByBindingIndex,
                 resolvedReferences,
                 allowMissingDocumentReferencesForPrecedence
             ),
@@ -650,6 +651,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         ResourceWritePlan writePlan,
         IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings,
         IReadOnlyDictionary<string, int> documentBindingIndexByPath,
+        IReadOnlyList<OrdinalPathMap<ResolvedDocumentReference>?> documentReferenceMapsByBindingIndex,
         ResolvedReferenceSet resolvedReferences,
         bool allowMissingDocumentReferencesForPrecedence
     )
@@ -675,6 +677,16 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             {
                 throw new InvalidOperationException(
                     $"Missing document-reference failure path '{failurePath.Value}' did not match any compiled document-reference binding for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}'."
+                );
+            }
+
+            if (
+                documentReferenceMapsByBindingIndex[bindingIndex] is { } resolvedMap
+                && resolvedMap.TryGet(parsedPath.OrdinalPath, out _)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Document-reference occurrence '{failurePath.Value}' was both successfully resolved and marked as a deferred missing reference for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}'."
                 );
             }
 

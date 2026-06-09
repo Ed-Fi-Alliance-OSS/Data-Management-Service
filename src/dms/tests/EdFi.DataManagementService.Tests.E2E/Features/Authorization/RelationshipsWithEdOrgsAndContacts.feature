@@ -741,18 +741,18 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      "emergencyContactStatus": true
                   }
                   """
-	             Then it should respond with 403
-	              And the response body is
-	                  """
-	                    {
-	                      "detail": "Access to the requested data could not be authorized. The 'StudentUniqueId' value is required for authorization purposes. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-	                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
-	                      "title": "Authorization Denied",
-	                      "status": 403,
-	                      "validationErrors": {},
-	                      "errors": []
-	                    }
-	                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                    {
+                      "detail": "Access to the requested data could not be authorized. The 'StudentUniqueId' value is required for authorization purposes. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": []
+                    }
+                  """
 
     Rule: Associate more than one students with a contact
 

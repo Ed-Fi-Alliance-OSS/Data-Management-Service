@@ -277,6 +277,47 @@ public class Given_FlatteningResolvedReferenceLookupSet
     }
 
     [Test]
+    public void It_rejects_document_reference_occurrences_that_are_both_successful_and_deferred_missing()
+    {
+        var resolvedReferences = new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            {
+                [new JsonPath("$.sections[0].schoolReference")] = CreateResolvedDocumentReference(
+                    _schoolResourceInfo,
+                    "$.sections[0].schoolReference",
+                    201L,
+                    ("$.schoolId", "255901")
+                ),
+            },
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences:
+            [
+                CreateDocumentReferenceFailure(
+                    "$.sections[0].schoolReference",
+                    DocumentReferenceFailureReason.Missing
+                ),
+            ],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
+        var act = () =>
+            FlatteningResolvedReferenceLookupSet.Create(
+                _writePlan,
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence: true
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Document-reference occurrence '$.sections[0].schoolReference' was both successfully resolved and marked as a deferred missing reference*"
+            );
+    }
+
+    [Test]
     public void It_rejects_deferred_missing_document_reference_failures_that_do_not_match_compiled_bindings()
     {
         var resolvedReferences = new ResolvedReferenceSet(
