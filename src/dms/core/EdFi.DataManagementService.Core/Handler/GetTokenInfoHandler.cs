@@ -7,8 +7,10 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -32,7 +34,8 @@ internal partial class GetTokenInfoHandler(
     ILogger<GetTokenInfoHandler> logger,
     IJwtValidationService jwtValidationService,
     IClaimSetProvider claimSetProvider,
-    IProfileService profileService
+    IProfileService profileService,
+    ITokenInfoRelationalMappingSetResolver tokenInfoRelationalMappingSetResolver
 ) : IPipelineStep
 {
     private const string EdFiOdsServiceClaimBaseUri = $"{Conventions.EdFiOdsServiceClaimBaseUri}/";
@@ -48,8 +51,6 @@ internal partial class GetTokenInfoHandler(
         );
 
         // Resolve scoped dependencies from per-request scope
-        var authorizationRepository =
-            requestInfo.ScopedServiceProvider.GetRequiredService<IAuthorizationRepository>();
         var applicationContextProvider =
             requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
 
@@ -163,6 +164,16 @@ internal partial class GetTokenInfoHandler(
             return;
         }
 
+        var educationOrganizations = await GetAuthorizedEducationOrganizations(
+            requestInfo,
+            requestInfo.ClientAuthorizations.EducationOrganizationIds
+        );
+
+        if (!educationOrganizations.Succeeded)
+        {
+            return;
+        }
+
         var response = new TokenInfoResponse
         {
             Active = true,
@@ -170,10 +181,7 @@ internal partial class GetTokenInfoHandler(
             NamespacePrefixes = requestInfo.ClientAuthorizations.NamespacePrefixes.Select(namespacePrefix =>
                 namespacePrefix.Value
             ),
-            EducationOrganizations = await GetAuthorizedEducationOrganizations(
-                authorizationRepository,
-                requestInfo.ClientAuthorizations.EducationOrganizationIds
-            ),
+            EducationOrganizations = educationOrganizations.EducationOrganizations,
             AssignedProfiles = await GetAssignedProfiles(
                 appContext.ApplicationId,
                 requestInfo.FrontendRequest.Tenant
@@ -193,46 +201,162 @@ internal partial class GetTokenInfoHandler(
         );
     }
 
-    private async Task<IEnumerable<OrderedDictionary<string, object>>> GetAuthorizedEducationOrganizations(
-        IAuthorizationRepository authorizationRepository,
+    private sealed record AuthorizedEducationOrganizationsResult(
+        bool Succeeded,
+        IEnumerable<OrderedDictionary<string, object>> EducationOrganizations
+    );
+
+    private async Task<AuthorizedEducationOrganizationsResult> GetAuthorizedEducationOrganizations(
+        RequestInfo requestInfo,
         IReadOnlyCollection<EducationOrganizationId> clientEducationOrganizationIds
     )
     {
-        return (
-            await authorizationRepository.GetTokenInfoEducationOrganizations(clientEducationOrganizationIds)
-        )
-            .OrderBy(edOrg => edOrg.EducationOrganizationId)
-            .GroupBy(
-                edOrg => (edOrg.EducationOrganizationId, edOrg.NameOfInstitution, edOrg.Discriminator),
-                edOrg =>
-                {
-                    string edOrgIdPropertyName = ConvertPascalToSnakeCase($"{edOrg.AncestorDiscriminator}Id");
-                    return new
-                    {
-                        PropertyName = edOrgIdPropertyName,
-                        EducationOrganizationId = edOrg.AncestorEducationOrganizationId,
-                    };
-                }
-            )
-            .Select(edOrgGroup =>
+        if (clientEducationOrganizationIds.Count == 0)
+        {
+            return new AuthorizedEducationOrganizationsResult(true, []);
+        }
+
+        IEnumerable<TokenInfoEducationOrganization> educationOrganizationRows;
+
+        var relationalLookup =
+            requestInfo.ScopedServiceProvider.GetService<IRelationalTokenInfoEducationOrganizationLookup>();
+
+        if (relationalLookup is not null)
+        {
+            var mappingSetResolution = await tokenInfoRelationalMappingSetResolver.ResolveAsync(requestInfo);
+            if (!mappingSetResolution.Succeeded || mappingSetResolution.MappingSet is not { } mappingSet)
             {
-                var tokenInfoEducationOrganization = new OrderedDictionary<string, object>();
+                return new AuthorizedEducationOrganizationsResult(false, []);
+            }
 
-                // Add properties for current claim value
-                var (educationOrganizationId, nameOfInstitution, discriminator) = edOrgGroup.Key;
-                tokenInfoEducationOrganization["education_organization_id"] = educationOrganizationId;
-                tokenInfoEducationOrganization["name_of_institution"] = nameOfInstitution;
-                tokenInfoEducationOrganization["type"] = $"edfi.{discriminator}";
+            educationOrganizationRows = await relationalLookup.GetEducationOrganizations(
+                clientEducationOrganizationIds,
+                mappingSet
+            );
+        }
+        else
+        {
+            var educationOrganizationLookup =
+                requestInfo.ScopedServiceProvider.GetRequiredService<ITokenInfoEducationOrganizationLookup>();
 
-                // Add related ancestor EducationOrganizationIds
-                foreach (var ancestorEdOrg in edOrgGroup)
+            educationOrganizationRows = await educationOrganizationLookup.GetEducationOrganizations(
+                clientEducationOrganizationIds
+            );
+        }
+
+        return new AuthorizedEducationOrganizationsResult(
+            true,
+            educationOrganizationRows
+                .OrderBy(edOrg => edOrg.EducationOrganizationId)
+                .GroupBy(
+                    edOrg =>
+                    {
+                        var discriminator = ParseEducationOrganizationDiscriminator(edOrg.Discriminator);
+                        return (
+                            edOrg.EducationOrganizationId,
+                            edOrg.NameOfInstitution,
+                            Type: FormatEducationOrganizationType(
+                                requestInfo.ApiSchemaDocuments,
+                                discriminator
+                            )
+                        );
+                    },
+                    edOrg =>
+                    {
+                        var ancestorDiscriminator = ParseEducationOrganizationDiscriminator(
+                            edOrg.AncestorDiscriminator
+                        );
+                        string edOrgIdPropertyName = ConvertPascalToSnakeCase(
+                            $"{ancestorDiscriminator.ResourceName}Id"
+                        );
+                        return new
+                        {
+                            PropertyName = edOrgIdPropertyName,
+                            EducationOrganizationId = edOrg.AncestorEducationOrganizationId,
+                        };
+                    }
+                )
+                .Select(edOrgGroup =>
                 {
-                    tokenInfoEducationOrganization[ancestorEdOrg.PropertyName] =
-                        ancestorEdOrg.EducationOrganizationId;
-                }
+                    var tokenInfoEducationOrganization = new OrderedDictionary<string, object>();
 
-                return tokenInfoEducationOrganization;
-            });
+                    // Add properties for current claim value
+                    var (educationOrganizationId, nameOfInstitution, type) = edOrgGroup.Key;
+                    tokenInfoEducationOrganization["education_organization_id"] = educationOrganizationId;
+                    tokenInfoEducationOrganization["name_of_institution"] = nameOfInstitution;
+                    tokenInfoEducationOrganization["type"] = type;
+
+                    // Add related ancestor EducationOrganizationIds
+                    foreach (var ancestorEdOrg in edOrgGroup)
+                    {
+                        tokenInfoEducationOrganization[ancestorEdOrg.PropertyName] =
+                            ancestorEdOrg.EducationOrganizationId;
+                    }
+
+                    return tokenInfoEducationOrganization;
+                })
+        );
+    }
+
+    private readonly record struct EducationOrganizationDiscriminator(
+        string ProjectName,
+        string ResourceName,
+        bool HasProjectName
+    );
+
+    private static EducationOrganizationDiscriminator ParseEducationOrganizationDiscriminator(
+        string discriminator
+    )
+    {
+        int separatorIndex = discriminator.IndexOf(':');
+        if (separatorIndex < 0)
+        {
+            return new EducationOrganizationDiscriminator(
+                ProjectName: string.Empty,
+                ResourceName: discriminator,
+                HasProjectName: false
+            );
+        }
+
+        return new EducationOrganizationDiscriminator(
+            ProjectName: discriminator[..separatorIndex],
+            ResourceName: discriminator[(separatorIndex + 1)..],
+            HasProjectName: true
+        );
+    }
+
+    private static string FormatEducationOrganizationType(
+        ApiSchemaDocuments apiSchemaDocuments,
+        EducationOrganizationDiscriminator discriminator
+    )
+    {
+        if (!discriminator.HasProjectName)
+        {
+            return $"edfi.{discriminator.ResourceName}";
+        }
+
+        ProjectSchema? projectSchema = apiSchemaDocuments.FindProjectSchemaForProjectName(
+            new ProjectName(discriminator.ProjectName)
+        );
+
+        if (projectSchema is null)
+        {
+            throw new InvalidOperationException(
+                $"Unable to resolve token_info education organization discriminator project '{discriminator.ProjectName}'."
+            );
+        }
+
+        string projectEndpointName = IsStandardEdFiProject(projectSchema)
+            ? "edfi"
+            : projectSchema.ProjectEndpointName.Value;
+
+        return $"{projectEndpointName}.{discriminator.ResourceName}";
+    }
+
+    private static bool IsStandardEdFiProject(ProjectSchema projectSchema)
+    {
+        return projectSchema.ProjectName.Value.Equals("Ed-Fi", StringComparison.OrdinalIgnoreCase)
+            || projectSchema.ProjectEndpointName.Value.Equals("ed-fi", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<IEnumerable<TokenInfoResource>> GetAuthorizedResources(

@@ -35,6 +35,10 @@ same workspace.
   ```
 
 - Extension packages use the same package contract as core packages.
+- Published package IDs use the canonical Data-Standard-qualified convention defined in
+  [`../../design-docs/bootstrap/apischema-container.md`](../../design-docs/bootstrap/apischema-container.md):
+  the core package is `EdFi.DataStandard52.ApiSchema`, and extension packages follow
+  `EdFi.DataStandard52.ApiSchema.<Project>`.
 - The package schema file is named `ApiSchema.json` in the package contract. If MetaEd generation produces
   `ApiSchema-EXTENSION.json`, packaging normalizes it to `ApiSchema.json`; the package manifest and schema
   content identify whether the project is core or extension.

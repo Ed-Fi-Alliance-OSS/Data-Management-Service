@@ -51,6 +51,8 @@ Feature: Identity Conflict validation
                   }
                   """
 
+        @relational-ci-shard-1
+        @relational-backend
         Scenario: 02 Ensure client can't create a resource with the same identity as another resource
              When a PUT request is made to "/ed-fi/classPeriods/{secondClassPeriod}" with
                   """

@@ -131,6 +131,8 @@ Feature: JWT Token Introspection
         | communityProviderId | nameOfInstitution | categories                                                                                                                   | providerStatusDescriptor                        |  | providerCategoryDescriptor                        |
         |            19255901 | CP Test           | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#communityProvider"} ] | "uri://ed-fi.org/providerStatusDescriptor#Test" |  | "uri://ed-fi.org/providerCategoryDescriptor#Test" |
 
+    @relational-backend
+    @relational-ci-shard-3
     Scenario: 01 Valid token returns authorization information including education organization hierarchy
       Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with profiles "E2E-Test-School-IncludeOnly, E2E-Test-School-IncludeOnly-Alt" and namespacePrefixes "uri://ed-fi.org, uri://ns2.org" and educationOrganizationIds "255950, 19255901"
       When a POST request is made to "/oauth/token_info" with

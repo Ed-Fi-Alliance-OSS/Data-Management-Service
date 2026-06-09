@@ -111,9 +111,11 @@ public sealed record ReferenceIdentityProjectionBinding
 /// </summary>
 /// <param name="ReferenceJsonPath">Reference identity field path in the materialized JSON object.</param>
 /// <param name="ColumnOrdinal">Zero-based hydration select-list ordinal for this field's value column.</param>
+/// <param name="ScalarType">Relational scalar type of the projected column, used for typed JSON value conversion.</param>
 public sealed record ReferenceIdentityProjectionFieldOrdinal(
     JsonPathExpression ReferenceJsonPath,
-    int ColumnOrdinal
+    int ColumnOrdinal,
+    RelationalScalarType ScalarType
 );
 
 /// <summary>

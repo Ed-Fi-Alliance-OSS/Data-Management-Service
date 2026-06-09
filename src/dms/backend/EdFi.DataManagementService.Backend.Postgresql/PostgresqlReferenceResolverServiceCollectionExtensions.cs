@@ -41,6 +41,22 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             PostgresqlSessionDocumentHydrator
         >();
     }
+
+    public static IServiceCollection AddPostgresqlRelationalTokenInfoEducationOrganizationLookup(
+        this IServiceCollection services
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                IRelationalTokenInfoEducationOrganizationLookup,
+                PostgresqlTokenInfoEducationOrganizationLookup
+            >()
+        );
+
+        return services;
+    }
 }
 
 internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)

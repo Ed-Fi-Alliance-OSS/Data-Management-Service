@@ -52,7 +52,11 @@ both materialize to the same workspace before runtime starts.
   `.bootstrap/ApiSchema` is mounted/read by DMS, and `.bootstrap/claims` is mounted/read by Config Service for
   the same root bootstrap manifest.
 - Existing non-bootstrap behavior may keep a compatibility path for assembly-bundled content when
-  `UseApiSchemaPath=false`, but that path is not the DMS-916 bootstrap contract.
+  `UseApiSchemaPath=false`, but that path is not the DMS-916 bootstrap contract. That legacy path discovers
+  assemblies with a `*.ApiSchema.dll` glob and derives served filenames from the assembly name. Asset-only
+  Data-Standard-qualified packages contain no `*.ApiSchema.dll` assemblies for that glob to find, so consuming
+  those qualified packages relies on the file-based workspace contract delivered here, with package resolution
+  owned by Story 06.
 - Unit or integration coverage proves that metadata/specification JSON and XSD endpoints work from a
   file-based staged workspace with no `*.ApiSchema.dll` files present.
 

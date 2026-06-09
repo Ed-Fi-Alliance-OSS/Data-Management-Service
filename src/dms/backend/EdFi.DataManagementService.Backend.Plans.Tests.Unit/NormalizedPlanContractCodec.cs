@@ -89,7 +89,8 @@ internal static class NormalizedPlanContractCodec
                             IdentityFieldOrdinalsInOrder: binding.IdentityFieldOrdinalsInOrder.Select(
                                 fieldOrdinal => new ReferenceIdentityProjectionFieldOrdinalDto(
                                     ReferenceJsonPath: fieldOrdinal.ReferenceJsonPath.Canonical,
-                                    ColumnOrdinal: fieldOrdinal.ColumnOrdinal
+                                    ColumnOrdinal: fieldOrdinal.ColumnOrdinal,
+                                    ScalarType: EncodeScalarType(fieldOrdinal.ScalarType)
                                 )
                             )
                         )
@@ -612,7 +613,11 @@ internal static class NormalizedPlanContractCodec
 
                     fieldOrdinals[fieldIndex] = new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
                         ReferenceJsonPath: referenceJsonPath,
-                        ColumnOrdinal: columnOrdinal
+                        ColumnOrdinal: columnOrdinal,
+                        ScalarType: DecodeScalarType(
+                            fieldDto.ScalarType,
+                            $"{fieldArgument}.{nameof(ReferenceIdentityProjectionFieldOrdinalDto.ScalarType)}"
+                        )
                     );
                 }
 

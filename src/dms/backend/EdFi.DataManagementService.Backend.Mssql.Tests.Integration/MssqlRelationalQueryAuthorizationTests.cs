@@ -1376,6 +1376,24 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .BeLessThan(command.IndexOf("INSERT INTO [dms].[Document]", StringComparison.Ordinal));
     }
 
+    public void AssertPostCreateStandaloneRelationshipAuthorizationWithoutDocumentInsert()
+    {
+        var commands = _writeSessionRecorder
+            .Commands.Select(static recorded => recorded.CommandText)
+            .ToArray();
+
+        commands
+            .Where(static commandText => commandText.Contains("AUTH1", StringComparison.Ordinal))
+            .Should()
+            .NotBeEmpty("deferred reference writes should force proposed authorization before returning 409");
+        commands
+            .Where(static commandText =>
+                commandText.Contains("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+            )
+            .Should()
+            .BeEmpty("deferred missing references should stop before inserting the document");
+    }
+
     public void AssertPostCreateDirectClaimMatchAuthorizationBeforeDocumentInsert()
     {
         var command = GetRequiredPostCreateRelationshipAuthorizationCommand();

@@ -227,8 +227,7 @@ direct-SQL path as an ongoing or permanent alternative.
 - Wrapper `-LoadSeedData` does not require `-AddSmokeTestCredentials`; smoke-test credential creation
   remains an independent CMS-only workflow concern outside this story's dependency path.
 - The bootstrap wrapper materializes `eng/docker-compose/.bootstrap/.env.derived` with seed-delivery
-  tolerant overrides (`FAILURE_RATIO=0.95` for the BulkLoadClient circuit breaker, plus a
-  Sample/Homograph `SCHEMA_PACKAGES` filter when no `-SeedDataPath` is supplied) before invoking the
+  tolerant overrides (`FAILURE_RATIO=0.95` for the BulkLoadClient circuit breaker) before invoking the
   start and seed phases. This is a wrapper-only convenience for the common developer path. Direct
   phase invocation (`pwsh load-dms-seed-data.ps1 -EnvironmentFile <path>`) does not materialize
   `.env.derived`; callers must supply an env file already configured for seed delivery. The

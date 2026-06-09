@@ -445,12 +445,12 @@ public class Given_Duplicate_Reference_Path_Bindings
     {
         var schoolFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "School_DocumentId"));
 
         schoolFk
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("School_DocumentId", "School_EducationOrganizationId", "School_SchoolId");
+            .Equal("School_EducationOrganizationId", "School_SchoolId", "School_DocumentId");
     }
 }
 
@@ -511,17 +511,17 @@ public class Given_Reference_Constraint_Derivation
     {
         var schoolFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "School_DocumentId"));
 
         schoolFk
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("School_DocumentId", "School_EducationOrganizationId", "School_SchoolId");
+            .Equal("School_EducationOrganizationId", "School_SchoolId", "School_DocumentId");
 
         schoolFk
             .TargetColumns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+            .Equal("EducationOrganizationId", "SchoolId", "DocumentId");
     }
 
     /// <summary>
@@ -532,10 +532,10 @@ public class Given_Reference_Constraint_Derivation
     {
         var schoolFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "School_DocumentId"));
         var studentFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "Student_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "Student_DocumentId"));
 
         schoolFk.OnUpdate.Should().Be(ReferentialAction.Cascade);
         studentFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
@@ -554,7 +554,7 @@ public class Given_Reference_Constraint_Derivation
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+            .Equal("EducationOrganizationId", "SchoolId", "DocumentId");
     }
 }
 
@@ -612,7 +612,7 @@ public class Given_Reference_Constraint_Derivation_With_Key_Unification
     {
         var schoolFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "School_DocumentId"));
 
         var localCanonicalColumn = ResolveCanonicalColumn(_enrollmentTable, "School_EducationOrganizationId");
         ResolveCanonicalColumn(_enrollmentTable, "School_SchoolId").Should().Be(localCanonicalColumn);
@@ -620,7 +620,7 @@ public class Given_Reference_Constraint_Derivation_With_Key_Unification
         schoolFk
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("School_DocumentId", localCanonicalColumn.Value);
+            .Equal(localCanonicalColumn.Value, "School_DocumentId");
 
         var targetCanonicalColumn = ResolveCanonicalColumn(_schoolTable, "EducationOrganizationId");
         ResolveCanonicalColumn(_schoolTable, "SchoolId").Should().Be(targetCanonicalColumn);
@@ -628,9 +628,9 @@ public class Given_Reference_Constraint_Derivation_With_Key_Unification
         schoolFk
             .TargetColumns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", targetCanonicalColumn.Value);
+            .Equal(targetCanonicalColumn.Value, "DocumentId");
 
-        foreach (var columnName in schoolFk.Columns.Skip(1))
+        foreach (var columnName in schoolFk.Columns.SkipLast(1))
         {
             _enrollmentTable
                 .Columns.Single(column => column.ColumnName.Equals(columnName))
@@ -638,7 +638,7 @@ public class Given_Reference_Constraint_Derivation_With_Key_Unification
                 .BeOfType<ColumnStorage.Stored>();
         }
 
-        foreach (var columnName in schoolFk.TargetColumns.Skip(1))
+        foreach (var columnName in schoolFk.TargetColumns.SkipLast(1))
         {
             _schoolTable
                 .Columns.Single(column => column.ColumnName.Equals(columnName))
@@ -679,7 +679,7 @@ public class Given_Reference_Constraint_Derivation_With_Key_Unification
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", targetCanonicalColumn.Value);
+            .Equal(targetCanonicalColumn.Value, "DocumentId");
     }
 
     /// <summary>
@@ -911,11 +911,8 @@ public class Given_Foreign_Key_Storage_Invariant_Validation
                 constraint =>
                     constraint is TableConstraint.ForeignKey foreignKey
                     && string.Equals(foreignKey.TargetTable.Name, "School", StringComparison.Ordinal)
-                    && foreignKey.Columns.Count > 0
-                    && string.Equals(
-                        foreignKey.Columns[0].Value,
-                        "School_DocumentId",
-                        StringComparison.Ordinal
+                    && foreignKey.Columns.Any(column =>
+                        string.Equals(column.Value, "School_DocumentId", StringComparison.Ordinal)
                     )
             );
 
@@ -935,8 +932,9 @@ public class Given_Foreign_Key_Storage_Invariant_Validation
                 );
             }
 
+            // Identity columns lead the FK column list; DocumentId trails.
             var targetColumns = schoolForeignKey.TargetColumns.ToArray();
-            targetColumns[1] = new DbColumnName("EducationOrganizationId");
+            targetColumns[0] = new DbColumnName("EducationOrganizationId");
 
             constraints[fkIndex] = schoolForeignKey with { TargetColumns = targetColumns };
 
@@ -1037,11 +1035,8 @@ public class Given_Foreign_Key_Storage_Invariant_Validation_With_Local_Alias
                 constraint =>
                     constraint is TableConstraint.ForeignKey foreignKey
                     && string.Equals(foreignKey.TargetTable.Name, "School", StringComparison.Ordinal)
-                    && foreignKey.Columns.Count > 0
-                    && string.Equals(
-                        foreignKey.Columns[0].Value,
-                        "School_DocumentId",
-                        StringComparison.Ordinal
+                    && foreignKey.Columns.Any(column =>
+                        string.Equals(column.Value, "School_DocumentId", StringComparison.Ordinal)
                     )
             );
 
@@ -1061,8 +1056,9 @@ public class Given_Foreign_Key_Storage_Invariant_Validation_With_Local_Alias
                 );
             }
 
+            // Identity columns lead the FK column list; DocumentId trails.
             var localColumns = schoolForeignKey.Columns.ToArray();
-            localColumns[1] = new DbColumnName("School_EducationOrganizationId");
+            localColumns[0] = new DbColumnName("School_EducationOrganizationId");
 
             constraints[fkIndex] = schoolForeignKey with { Columns = localColumns };
 
@@ -1138,17 +1134,17 @@ public class Given_Shuffled_Reference_Identity_Bindings
     {
         var schoolFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "School_DocumentId"));
 
         schoolFk
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("School_DocumentId", "School_EducationOrganizationId", "School_SchoolId");
+            .Equal("School_EducationOrganizationId", "School_SchoolId", "School_DocumentId");
 
         schoolFk
             .TargetColumns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+            .Equal("EducationOrganizationId", "SchoolId", "DocumentId");
     }
 
     /// <summary>
@@ -1290,7 +1286,7 @@ public class Given_Target_Unique_Mutation_From_Reference
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+            .Equal("EducationOrganizationId", "SchoolId", "DocumentId");
     }
 }
 
@@ -1349,7 +1345,7 @@ public class Given_Multiple_References_To_Same_Target
             .Single()
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+            .Equal("EducationOrganizationId", "SchoolId", "DocumentId");
     }
 }
 
@@ -1404,7 +1400,9 @@ public class Given_Abstract_Reference_Constraint_Derivation
     {
         var educationOrganizationFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "EducationOrganization_DocumentId");
+            .Single(constraint =>
+                constraint.Columns.Any(column => column.Value == "EducationOrganization_DocumentId")
+            );
 
         educationOrganizationFk.OnUpdate.Should().Be(ReferentialAction.Cascade);
         educationOrganizationFk.TargetTable.Name.Should().Be("EducationOrganizationIdentity");
@@ -1458,10 +1456,10 @@ public class Given_Reference_Constraint_Derivation_On_Mssql
     {
         var schoolFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "School_DocumentId"));
         var studentFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "Student_DocumentId");
+            .Single(constraint => constraint.Columns.Any(column => column.Value == "Student_DocumentId"));
 
         schoolFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
         studentFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
@@ -1516,7 +1514,9 @@ public class Given_Abstract_Reference_Constraint_Derivation_On_Mssql
     {
         var educationOrganizationFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
-            .Single(constraint => constraint.Columns[0].Value == "EducationOrganization_DocumentId");
+            .Single(constraint =>
+                constraint.Columns.Any(column => column.Value == "EducationOrganization_DocumentId")
+            );
 
         educationOrganizationFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
         educationOrganizationFk.TargetTable.Name.Should().Be("EducationOrganizationIdentity");

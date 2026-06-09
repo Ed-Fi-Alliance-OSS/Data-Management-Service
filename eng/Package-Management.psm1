@@ -11,6 +11,20 @@ if (-not [Net.ServicePointManager]::SecurityProtocol.HasFlag([Net.SecurityProtoc
     [Net.ServicePointManager]::SecurityProtocol += [Net.SecurityProtocolType]::Tls12
 }
 
+# Canonical BulkLoadClient version for every repo consumer (seed loading, database
+# templates, sample-data loaders). Exactly three parts; never a partial like "7.3",
+# which would float to the newest matching feed build. Bumps must be reviewed against
+# the BulkLoadClient XML flag preflight and invocation shape.
+$script:PinnedBulkLoadClientVersion = "7.3.20144"
+
+<#
+.SYNOPSIS
+    Returns the repo-pinned BulkLoadClient package version shared by all consumers.
+#>
+function Get-BulkLoadClientPinnedVersion {
+    return $script:PinnedBulkLoadClientVersion
+}
+
 <#
 .SYNOPSIS
     Sorts versions semantically.
@@ -231,21 +245,21 @@ function Get-SampleData {
 
 .OUTPUTS
     String containing the name of the created directory, e.g.
-    `.packages/edfi.datastandard.sampledata.3.3.1-b`.
+    `.packages/edfi.suite3.bulkloadclient.console.<pinned version>`.
 
 .EXAMPLE
-    Get-BulkLoadClient -PackageVersion 5
+    Get-BulkLoadClient
+    Resolves the repo-pinned version (see Get-BulkLoadClientPinnedVersion).
 
 .EXAMPLE
-    Get-BulkLoadClient -PackageVersion 6 -PreRelease
-
+    Get-BulkLoadClient -PackageVersion "7.3.10212"
+    Diagnostic override of the repo pin.
 #>
 function Get-BulkLoadClient {
     param (
-        # Requested version, example: "5" (latest 5.x.y), "5.3" (latest 5.3.y), "5.3.123" (exact)
-        [Parameter(Mandatory=$true)]
+        # Diagnostic override of the repo-pinned version. Defaults to the shared pin.
         [string]
-        $PackageVersion,
+        $PackageVersion = $script:PinnedBulkLoadClientVersion,
 
         # Enable usage of prereleases
         [Switch]
@@ -597,4 +611,4 @@ function Add-FileToCsProjForNuget {
 }
 
 Export-ModuleMember -Function `
-    Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData, Get-SmokeTestTool, Get-ApiSdkDll, New-CsprojForNuget, Add-FileToCsProjForNuget
+    Get-BulkLoadClientPinnedVersion, Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData, Get-SmokeTestTool, Get-ApiSdkDll, New-CsprojForNuget, Add-FileToCsProjForNuget

@@ -1,6 +1,7 @@
 Feature: The Discovery API provides information about the application version, supported data model(s), and URLs for additional metadata.
 
-        @API-062
+        @API-062 @relational-backend
+        @relational-ci-shard-4
         Scenario: 01 GET / returns the root Discovery API document
              When a GET request is made to "/"
              Then it should respond with 200

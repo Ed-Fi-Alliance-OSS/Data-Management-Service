@@ -227,7 +227,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
     }
 
     [Test]
-    public async Task It_keeps_reference_resolution_failure_distinct_from_authorization_denial()
+    public async Task It_returns_403_before_deferred_missing_reference_when_proposed_edorg_value_is_missing()
     {
         var seed = CreateRootChildSeed(
             "cccccccc-0000-0000-0000-000000000003",
@@ -239,9 +239,31 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
 
         var result = await PostRootChildAsync(seed);
 
-        var referenceFailure = result.Should().BeOfType<UpsertResult.UpsertFailureReference>().Subject;
-        referenceFailure.HasDocumentReferenceFailures.Should().BeTrue();
+        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
         await AssertNoCreateSideEffectsAsync(seed);
+    }
+
+    [Test]
+    public async Task It_returns_deferred_missing_reference_after_proposed_edorg_values_authorize()
+    {
+        var seed = CreateRootChildSeed(
+            "cccccccc-0000-0000-0000-000000000008",
+            108,
+            "authorized-with-missing-class-period",
+            100,
+            [new ClassPeriodReferenceSeed("Missing", 100)]
+        );
+
+        var result = await PostRootChildAsync(seed);
+
+        var referenceFailure = result.Should().BeOfType<UpsertResult.UpsertFailureReference>().Subject;
+        referenceFailure.InvalidDescriptorReferences.Should().BeEmpty();
+        referenceFailure
+            .InvalidDocumentReferences.Select(static failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(("$.classPeriods[0].classPeriodReference", DocumentReferenceFailureReason.Missing));
+        await AssertNoCreateSideEffectsAsync(seed);
+        _context.AssertPostCreateStandaloneRelationshipAuthorizationWithoutDocumentInsert();
     }
 
     [Test]
@@ -428,7 +450,7 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
     }
 
     [Test]
-    public async Task It_keeps_people_reference_resolution_failure_distinct_when_claims_are_present()
+    public async Task It_returns_403_before_deferred_people_missing_reference_when_proposed_value_is_missing()
     {
         var seed = CreateAuthorizationStudentAcademicRecordSeed(
             "cccccccc-0000-0000-0000-000000000205",
@@ -442,8 +464,11 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
 
         var result = await PostStudentAcademicRecordAsync(seed);
 
-        var referenceFailure = result.Should().BeOfType<UpsertResult.UpsertFailureReference>().Subject;
-        referenceFailure.HasDocumentReferenceFailures.Should().BeTrue();
+        AssertPeopleRelationshipDenied(
+            result,
+            RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
+            [ClaimEducationOrganizationId]
+        );
         await AssertNoPeopleCreateSideEffectsAsync(seed);
     }
 

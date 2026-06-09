@@ -109,7 +109,8 @@ Feature: Delete reference validation
                   }
                   """
 
-        @API-088
+        @API-088 @relational-backend
+        @relational-ci-shard-4
         Scenario: 05 Ensure clients cannot delete a resource that is used by another items
             Given the system has these "programs" references
                   | programName                    | programTypeDescriptor                                                | educationOrganizationReference        |

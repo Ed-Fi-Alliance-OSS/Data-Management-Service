@@ -2441,11 +2441,13 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                             [
                                 new ReferenceIdentityProjectionFieldOrdinal(
                                     ReferenceJsonPath: Path("$.schoolReference.schoolId"),
-                                    ColumnOrdinal: 3
+                                    ColumnOrdinal: 3,
+                                    ScalarType: new RelationalScalarType(ScalarKind.Int32)
                                 ),
                                 new ReferenceIdentityProjectionFieldOrdinal(
                                     ReferenceJsonPath: Path("$.schoolReference.schoolYear"),
-                                    ColumnOrdinal: 4
+                                    ColumnOrdinal: 4,
+                                    ScalarType: new RelationalScalarType(ScalarKind.Int32)
                                 ),
                             ]
                         ),
@@ -2458,7 +2460,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                             [
                                 new ReferenceIdentityProjectionFieldOrdinal(
                                     ReferenceJsonPath: Path("$.calendarReference.calendarCode"),
-                                    ColumnOrdinal: 6
+                                    ColumnOrdinal: 6,
+                                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50)
                                 ),
                             ]
                         ),

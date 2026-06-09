@@ -442,7 +442,8 @@
                     "identity_field_ordinals_in_order": [
                       {
                         "reference_json_path": "$.schoolReference.schoolId",
-                        "column_ordinal": 2
+                        "column_ordinal": 2,
+                        "scalar_kind": "int32"
                       }
                     ]
                   }
@@ -1108,7 +1109,8 @@
                     "identity_field_ordinals_in_order": [
                       {
                         "reference_json_path": "$.schoolReference.schoolId",
-                        "column_ordinal": 2
+                        "column_ordinal": 2,
+                        "scalar_kind": "int32"
                       }
                     ]
                   }

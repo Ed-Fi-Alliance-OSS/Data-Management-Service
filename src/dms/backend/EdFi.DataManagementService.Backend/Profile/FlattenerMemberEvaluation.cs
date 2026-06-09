@@ -172,6 +172,16 @@ internal static class FlattenerMemberEvaluation
             return KeyUnificationMemberEvaluation.Absent;
         }
 
+        if (
+            resolvedReferenceLookups.IsDeferredMissingDocumentReference(
+                member.ReferenceSource.BindingIndex,
+                ordinalPath
+            )
+        )
+        {
+            return KeyUnificationMemberEvaluation.AbsentBecauseDeferredMissingReference;
+        }
+
         var memberPathColumn = RelationalWriteFlattener.GetRequiredColumnModel(
             tableWritePlan,
             member.MemberPathColumn
@@ -195,9 +205,16 @@ internal static class FlattenerMemberEvaluation
     }
 }
 
-internal sealed record KeyUnificationMemberEvaluation(bool IsPresent, object? Value)
+internal sealed record KeyUnificationMemberEvaluation(
+    bool IsPresent,
+    object? Value,
+    bool IsAbsentBecauseDeferredMissingReference = false
+)
 {
     public static KeyUnificationMemberEvaluation Absent { get; } = new(false, null);
+
+    public static KeyUnificationMemberEvaluation AbsentBecauseDeferredMissingReference { get; } =
+        new(false, null, true);
 
     public static KeyUnificationMemberEvaluation Present(object value)
     {

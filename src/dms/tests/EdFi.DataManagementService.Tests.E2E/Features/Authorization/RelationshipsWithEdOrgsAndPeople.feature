@@ -43,6 +43,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 201
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 02 Ensure client can not create a StudentSchoolAssociation belonging to an unauthorized education organization hierarchy
              When a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -80,6 +82,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/studentSchoolAssociations/{id}"
              Then it should respond with 200
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 04 Ensure client can not retrieve a StudentSchoolAssociation belonging to an unauthorized education organization hierarchy
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -192,6 +196,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 07 Ensure client can not update a StudentSchoolAssociation belonging to an unauthorized education organization hierarchy
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901002"
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
@@ -227,6 +233,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 08 Ensure client can not delete a StudentSchoolAssociation belonging to an unauthorized education organization hierarchy
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901002"
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
@@ -317,10 +325,14 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 12 Ensure client can not retrieve an unassociated Student
              When a GET request is made to "/ed-fi/students/{UnassociatedStudentId}"
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 13 Ensure client can not retrieve a Student associated to an unauthorized education organization hierarchy
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "2255901002"
 
@@ -362,6 +374,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 16 Ensure client can not update an unassociated Student
              When a PUT request is made to "/ed-fi/students/{UnassociatedStudentId}" with
                   """
@@ -375,6 +389,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 17 Ensure client can not update a Student associated to an unauthorized education organization hierarchy
              When a PUT request is made to "/ed-fi/students/{UnauthorizedStudentId}" with
                   """
@@ -432,6 +448,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 201
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 20 Ensure client can not create a Student-securable if the Student is unassociated
              When a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -445,6 +463,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 21 Ensure client can not create a Student-securable if the Student is associated to an unauthorized education organization hierarchy
              When a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -458,6 +478,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 22 Ensure client can retrieve a Student-securable
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -485,6 +507,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 23 Ensure client can not retrieve a Student-securable if the Student is unassociated
 
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
@@ -521,6 +545,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 24 Ensure client can not retrieve a Student-securable if the Student is associated to an unauthorized education organization hierarchy
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3255901002"
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
@@ -539,6 +565,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 25 Ensure client can only query authorized Student-securables
             # Set up a Student-securable for an unassociated Student
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
@@ -619,6 +647,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 26 Ensure client can update a Student-securable
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -646,6 +676,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 27 Ensure client can not update a Student-securable if the Student is unassociated
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -692,6 +724,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 28 Ensure client can not update a Student-securable if the Student is associated to an unauthorized education organization hierarchy
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3255901002"
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
@@ -721,6 +755,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 29 Ensure client can delete a Student-securable
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
                   """
@@ -737,6 +773,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 30 Ensure client can not delete a Student-securable if the Student is unassociated
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -772,6 +810,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 31 Ensure client can not delete a Student-securable if the Student is associated to an unauthorized education organization hierarchy
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3255901002"
             Given a POST request is made to "/ed-fi/PostSecondaryEvents" with
@@ -812,6 +852,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | 4255902001                 | Authorized PSI    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"} ] |
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "4255901001, 4255902001"
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 32 Ensure client can not update a StudentSchoolAssociation to an unauthorized education organization hierarchy
              When a PUT request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}" with
                   """
@@ -828,7 +870,21 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'SchoolId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 33 Ensure client can no longer CRUD a Student and a Student-securable after the StudentSchoolAssociation's SchoolId changed
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "4255901001, 4255901002"
              When a PUT request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}" with
@@ -914,6 +970,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 34 Ensure client can no longer CRUD a Student and a Student-securable after the StudentSchoolAssociation is deleted
              When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
              Then it should respond with 204
@@ -979,6 +1037,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/postSecondaryEvents/{PostSecondaryEventId}"
              Then it should respond with 403
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 35 Ensure client can CRUD a Student and a Student-securable after the StudentSchoolAssociation is re-created
              When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
              Then it should respond with 204
@@ -1098,6 +1158,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | studentReference            | educationOrganizationReference            | schoolYearTypeReference | termDescriptor                            |
                   | { "studentUniqueId": "51" } | { "educationOrganizationId": 5255901001 } | {"schoolYear": 2023}    | "uri://ed-fi.org/TermDescriptor#Semester" |
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 36 Ensure client can create a courseTranscripts with edorg id:5255901001 and student id:51
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
@@ -1136,6 +1198,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                     }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 37 Ensure client can update a courseTranscripts with edorg id:5255901001 and student id:51
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
@@ -1194,6 +1258,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                     }
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 38 Ensure client can delete a courseTranscripts with edorg id:5255901001 and student id:51
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
@@ -1234,6 +1300,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/courseTranscripts/{id}"
              Then it should respond with 204
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 39 Ensure client can not create a courseTranscripts with out student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
@@ -1255,17 +1323,17 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                   {
-                  "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                  "type": "urn:ed-fi:api:security:authorization:",
+                  "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'EducationOrganizationId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                  "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
                   "title": "Authorization Denied",
                   "status": 403,
                   "validationErrors": {},
-                  "errors": [
-                    "No relationships have been established between the caller's education organization id claims ('5255901001') and the resource item's StudentUniqueId value."
-                  ]
+                  "errors": []
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 40 Ensure client can not update a courseTranscripts with out student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
@@ -1301,18 +1369,17 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                     }
                     }
                   """
-             Then it should respond with 403
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization:",
-                      "title": "Authorization Denied",
-                      "status": 403,
+                      "detail": "Identifying values for the CourseTranscript resource cannot be changed. Delete and recreate the resource item instead.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                      "title": "Key Change Not Supported",
+                      "status": 400,
+                      "correlationId": null,
                       "validationErrors": {},
-                      "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('5255901001') and the resource item's StudentUniqueId value."
-                      ]
+                      "errors": []
                   }
                   """
 
@@ -1341,6 +1408,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | studentReference            | schoolReference            | entryGradeLevelDescriptor                          | entryDate  | exitGradeLevel                                     | exitWithdrawTypeDescriptor                                    |
                   | { "studentUniqueId": "61" } | { "schoolId": 6255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
         @addrelationships
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 41 Ensure client can not delete or get a PostSecondaryEvent with out student school association
 
              When a POST request is made to "/ed-fi/PostSecondaryEvents" with
@@ -1374,13 +1443,13 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                         {
-                         "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                         "type": "urn:ed-fi:api:security:authorization:",
-                         "title": "Authorization Denied",
-                         "status": 403,
-                         "validationErrors": {},
-                         "errors": [
-                              "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's StudentUniqueId value."
+                          "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                          "type": "urn:ed-fi:api:security:authorization",
+                          "title": "Authorization Denied",
+                          "status": 403,
+                          "validationErrors": {},
+                          "errors": [
+                            "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's 'StudentUniqueId' value."
                           ]
                         }
                   """
@@ -1389,15 +1458,15 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                         {
-                        "detail": "Access to the resource could not be authorized.",
-                        "type": "urn:ed-fi:api:security:authorization:",
-                        "title": "Authorization Denied",
-                        "status": 403,
-                        "validationErrors": {},
-                        "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's StudentUniqueId value."
-                        ]
-                      }
+                          "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                          "type": "urn:ed-fi:api:security:authorization",
+                          "title": "Authorization Denied",
+                          "status": 403,
+                          "validationErrors": {},
+                          "errors": [
+                            "No relationships have been established between the caller's education organization id claims ('3', '6255901') and the resource item's 'StudentUniqueId' value."
+                          ]
+                        }
                   """
 
     Rule: Edge cases are properly authorized
@@ -1533,6 +1602,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Then it should respond with 204
 
         # Change to use long EdOrgIds when DMS-706 is done
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 44 Ensure client with LEA access can CRUD a PostSecondaryEvent
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "955901"
               And the system has these "localEducationAgencies"
@@ -1599,6 +1670,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 204
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 45 Ensure client can create a PostSecondaryEvent after transfering the Student to a School within the client's LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "10255901001, 10255901002"
               And the resulting token is stored in the "EdFiSandbox_full_access" variable
@@ -1661,6 +1734,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
              Then it should respond with 201 or 200
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 46 Ensure securable elements are combined with 'and' and not with 'or'
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1555901001, 1555901002"
@@ -1807,6 +1882,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                     }
                   ]
                   """
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 48 Ensure search still works when the student association is updated and deleted
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1155901001,1155902001,5"
              When a PUT request is made to "/ed-fi/StudentSchoolAssociations/{StudentASchool1AssociationId}" with
@@ -1849,6 +1926,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
 
     Rule: Multi-school enrollment is properly authorized - Edge cases
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 51 Ensure client can retrieve a Student-securable after the SSA has been recreated
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001, 1255901002, 1255901003"
@@ -2049,6 +2128,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 52 Ensure client can retrieve a Student-securable after the SSA has been updated to a new School
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1355901001, 1355901002, 1355901003"
@@ -2199,6 +2280,8 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 53 Ensure client can retrieve a Student-securable after the SSA has been updated to a new Student
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1455901001"

@@ -77,6 +77,8 @@ Feature: EducationOrganizationChanges Authorization
                   }
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 02 Ensure client can't access the Student anymore when a School gets updated to a different LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -134,15 +136,14 @@ Feature: EducationOrganizationChanges Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's StudentUniqueId value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255901') and the resource item's 'StudentUniqueId' value."
+                    ]
                   }
                   """
              When a GET request is made to "/ed-fi/students/?studentUniqueId=62"
@@ -152,6 +153,8 @@ Feature: EducationOrganizationChanges Authorization
                     []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 03 Ensure client can't access the  Contact anymore when a student  gets updated to a different school
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a POST request is made to "/ed-fi/schools" with
@@ -197,15 +200,14 @@ Feature: EducationOrganizationChanges Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ContactUniqueId value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'ContactUniqueId' value."
+                    ]
                   }
                   """
              When a GET request is made to "/ed-fi/contacts/?contactUniqueId=91111"
@@ -215,6 +217,8 @@ Feature: EducationOrganizationChanges Authorization
                    []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 04 Ensure client can't access the  Staffs anymore when a staff gets updated to a different school
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/staffSchoolAssociations/{staffSchoolAssociationId1}" with
@@ -238,15 +242,14 @@ Feature: EducationOrganizationChanges Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StaffUniqueId value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'StaffUniqueId' value."
+                    ]
                   }
                   """
              When a GET request is made to "/ed-fi/staffs/?staffUniqueId=s0001"
@@ -290,6 +293,8 @@ Feature: EducationOrganizationChanges Authorization
                   | _storeResultingIdInVariable | staffReference               | schoolReference           | programAssignmentDescriptor                                     |
                   | staffSchoolAssociationId1   | { "staffUniqueId": "s0001" } | { "schoolId": 255901001 } | "uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education" |
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 05 Ensure client can't access the Student anymore when a School updated to remove LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -318,15 +323,14 @@ Feature: EducationOrganizationChanges Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StudentUniqueId value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'StudentUniqueId' value."
+                    ]
                   }
                   """
              When a GET request is made to "/ed-fi/students/?studentUniqueId=61"
@@ -336,6 +340,8 @@ Feature: EducationOrganizationChanges Authorization
                     []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 06 Ensure client can't access the Contact anymore when a School updated to remove LEA
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
@@ -365,15 +371,14 @@ Feature: EducationOrganizationChanges Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ContactUniqueId value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'ContactUniqueId' value."
+                    ]
                   }
                   """
              When a GET request is made to "/ed-fi/contacts/?contactUniqueId=91111"
@@ -383,6 +388,8 @@ Feature: EducationOrganizationChanges Authorization
                     []
                   """
 
+        @relational-backend
+        @relational-ci-shard-3
         Scenario: 07 Ensure client can't access the staff anymore when a School updated to remove LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with
@@ -411,15 +418,14 @@ Feature: EducationOrganizationChanges Authorization
               And the response body is
                   """
                   {
-                     "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StaffUniqueId value."
-                     ]
+                    "detail": "Access to the requested data could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
+                    "type": "urn:ed-fi:api:security:authorization",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claim ('255902') and the resource item's 'StaffUniqueId' value."
+                    ]
                   }
                   """
              When a GET request is made to "/ed-fi/staffs/?staffUniqueId=s0001"
@@ -572,6 +578,8 @@ Feature: EducationOrganizationChanges Authorization
                       "contactUniqueId": "91111"
                   }
                   """
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 10 Ensure client can  access the staff  when a School updated to new LEA
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
              When a PUT request is made to "/ed-fi/schools/{SchoolId1}" with

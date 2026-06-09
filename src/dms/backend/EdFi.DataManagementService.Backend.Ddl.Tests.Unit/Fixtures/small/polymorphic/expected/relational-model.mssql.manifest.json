@@ -100,8 +100,8 @@
             "kind": "Unique",
             "name": "UX_EducationOrganizationIdentity_RefKey",
             "columns": [
-              "DocumentId",
-              "EducationOrganizationId"
+              "EducationOrganizationId",
+              "DocumentId"
             ]
           },
           {
@@ -262,8 +262,8 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "DocumentId",
-        "EducationOrganizationId"
+        "EducationOrganizationId",
+        "DocumentId"
       ]
     },
     {

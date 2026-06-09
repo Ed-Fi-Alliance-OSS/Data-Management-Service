@@ -213,6 +213,7 @@ public static class WebApplicationBuilderExtensions
                 webAppBuilder.Services.AddPostgresqlReferenceResolver();
                 ReplaceWithRelationalDocumentStoreRepository(webAppBuilder.Services);
                 ReplaceWithRelationalBackendMappingInitializer(webAppBuilder.Services);
+                webAppBuilder.Services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
             }
 
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Old.Postgresql.Deploy.DatabaseDeploy>();
@@ -235,6 +236,7 @@ public static class WebApplicationBuilderExtensions
                 AddMssqlRelationalRuntimeServices(webAppBuilder.Services, webAppBuilder.Configuration);
                 ReplaceWithRelationalDocumentStoreRepository(webAppBuilder.Services);
                 ReplaceWithRelationalBackendMappingInitializer(webAppBuilder.Services);
+                webAppBuilder.Services.AddMssqlRelationalTokenInfoEducationOrganizationLookup();
             }
 
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();

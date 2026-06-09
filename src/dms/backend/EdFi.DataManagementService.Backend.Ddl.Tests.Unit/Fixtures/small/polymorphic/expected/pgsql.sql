@@ -483,7 +483,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationIdentity_NK" UNIQUE ("EducationOrganizationId"),
-    CONSTRAINT "UX_EducationOrganizationIdentity_RefKey" UNIQUE ("DocumentId", "EducationOrganizationId")
+    CONSTRAINT "UX_EducationOrganizationIdentity_RefKey" UNIQUE ("EducationOrganizationId", "DocumentId")
 );
 
 DO $$

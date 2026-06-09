@@ -445,7 +445,7 @@ CREATE TABLE [edfi].[Student]
     [StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId]),
-    CONSTRAINT [UX_Student_RefKey] UNIQUE ([DocumentId], [StudentUniqueId])
+    CONSTRAINT [UX_Student_RefKey] UNIQUE ([StudentUniqueId], [DocumentId])
 );
 
 IF OBJECT_ID(N'tracked_changes_edfi.Descriptor', N'U') IS NULL
@@ -512,8 +512,8 @@ IF NOT EXISTS (
 )
 ALTER TABLE [edfi].[ProfileRootOnlyMergeItem]
 ADD CONSTRAINT [FK_ProfileRootOnlyMergeItem_StudentReference_RefKey]
-FOREIGN KEY ([StudentReference_DocumentId], [StudentReference_StudentUniqueId])
-REFERENCES [edfi].[Student] ([DocumentId], [StudentUniqueId])
+FOREIGN KEY ([StudentReference_StudentUniqueId], [StudentReference_DocumentId])
+REFERENCES [edfi].[Student] ([StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -556,9 +556,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_StudentReference_DocumentId_StudentReference_StudentUniqueId'
+    WHERE s.name = N'edfi' AND t.name = N'ProfileRootOnlyMergeItem' AND i.name = N'IX_ProfileRootOnlyMergeItem_StudentReference_StudentUniqueId_StudentReference_DocumentId'
 )
-CREATE INDEX [IX_ProfileRootOnlyMergeItem_StudentReference_DocumentId_StudentReference_StudentUniqueId] ON [edfi].[ProfileRootOnlyMergeItem] ([StudentReference_DocumentId], [StudentReference_StudentUniqueId]);
+CREATE INDEX [IX_ProfileRootOnlyMergeItem_StudentReference_StudentUniqueId_StudentReference_DocumentId] ON [edfi].[ProfileRootOnlyMergeItem] ([StudentReference_StudentUniqueId], [StudentReference_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

@@ -433,7 +433,7 @@ CREATE TABLE [edfi].[DecimalKeyResource]
     [DecimalKey] decimal(9,2) NOT NULL,
     CONSTRAINT [PK_DecimalKeyResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_DecimalKeyResource_NK] UNIQUE ([DecimalKey]),
-    CONSTRAINT [UX_DecimalKeyResource_RefKey] UNIQUE ([DocumentId], [DecimalKey])
+    CONSTRAINT [UX_DecimalKeyResource_RefKey] UNIQUE ([DecimalKey], [DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.DecimalRefResource', N'U') IS NULL
@@ -476,7 +476,7 @@ CREATE TABLE [edfi].[EdOrgDependentResource]
     [EdOrgDependentResourceId] nvarchar(64) NOT NULL,
     CONSTRAINT [PK_EdOrgDependentResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EdOrgDependentResource_NK] UNIQUE ([EdOrgDependentResourceId], [EducationOrganization_DocumentId]),
-    CONSTRAINT [UX_EdOrgDependentResource_RefKey] UNIQUE ([DocumentId], [EdOrgDependentResourceId], [EducationOrganization_EducationOrganizationId]),
+    CONSTRAINT [UX_EdOrgDependentResource_RefKey] UNIQUE ([EdOrgDependentResourceId], [EducationOrganization_EducationOrganizationId], [DocumentId]),
     CONSTRAINT [CK_EdOrgDependentResource_EducationOrganization_AllNone] CHECK (([EducationOrganization_DocumentId] IS NULL AND [EducationOrganization_EducationOrganizationId] IS NULL) OR ([EducationOrganization_DocumentId] IS NOT NULL AND [EducationOrganization_EducationOrganizationId] IS NOT NULL))
 );
 
@@ -511,7 +511,7 @@ CREATE TABLE [edfi].[ResourceA]
     [ResourceAId] nvarchar(64) NOT NULL,
     CONSTRAINT [PK_ResourceA] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_ResourceA_NK] UNIQUE ([ResourceAId], [StudentReference_DocumentId]),
-    CONSTRAINT [UX_ResourceA_RefKey] UNIQUE ([DocumentId], [ResourceAId], [StudentReference_StudentUniqueId]),
+    CONSTRAINT [UX_ResourceA_RefKey] UNIQUE ([ResourceAId], [StudentReference_StudentUniqueId], [DocumentId]),
     CONSTRAINT [CK_ResourceA_StudentReference_AllNone] CHECK (([StudentReference_DocumentId] IS NULL AND [StudentReference_StudentUniqueId] IS NULL) OR ([StudentReference_DocumentId] IS NOT NULL AND [StudentReference_StudentUniqueId] IS NOT NULL))
 );
 
@@ -526,7 +526,7 @@ CREATE TABLE [edfi].[ResourceB]
     [ResourceBId] nvarchar(64) NOT NULL,
     CONSTRAINT [PK_ResourceB] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_ResourceB_NK] UNIQUE ([ResourceBId], [StudentReference_DocumentId]),
-    CONSTRAINT [UX_ResourceB_RefKey] UNIQUE ([DocumentId], [ResourceBId], [StudentReference_StudentUniqueId]),
+    CONSTRAINT [UX_ResourceB_RefKey] UNIQUE ([ResourceBId], [StudentReference_StudentUniqueId], [DocumentId]),
     CONSTRAINT [CK_ResourceB_StudentReference_AllNone] CHECK (([StudentReference_DocumentId] IS NULL AND [StudentReference_StudentUniqueId] IS NULL) OR ([StudentReference_DocumentId] IS NOT NULL AND [StudentReference_StudentUniqueId] IS NOT NULL))
 );
 
@@ -541,7 +541,7 @@ CREATE TABLE [edfi].[School]
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_School_NK] UNIQUE ([SchoolId]),
-    CONSTRAINT [UX_School_RefKey] UNIQUE ([DocumentId], [SchoolId])
+    CONSTRAINT [UX_School_RefKey] UNIQUE ([SchoolId], [DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.Student', N'U') IS NULL
@@ -554,7 +554,7 @@ CREATE TABLE [edfi].[Student]
     [StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId]),
-    CONSTRAINT [UX_Student_RefKey] UNIQUE ([DocumentId], [StudentUniqueId])
+    CONSTRAINT [UX_Student_RefKey] UNIQUE ([StudentUniqueId], [DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
@@ -728,7 +728,7 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EducationOrganizationIdentity_NK] UNIQUE ([EducationOrganizationId]),
-    CONSTRAINT [UX_EducationOrganizationIdentity_RefKey] UNIQUE ([DocumentId], [EducationOrganizationId])
+    CONSTRAINT [UX_EducationOrganizationIdentity_RefKey] UNIQUE ([EducationOrganizationId], [DocumentId])
 );
 
 IF NOT EXISTS (
@@ -759,8 +759,8 @@ IF NOT EXISTS (
 )
 ALTER TABLE [edfi].[DecimalRefResource]
 ADD CONSTRAINT [FK_DecimalRefResource_DecimalKeyReference_RefKey]
-FOREIGN KEY ([DecimalKeyReference_DocumentId], [DecimalKeyReference_DecimalKey])
-REFERENCES [edfi].[DecimalKeyResource] ([DocumentId], [DecimalKey])
+FOREIGN KEY ([DecimalKeyReference_DecimalKey], [DecimalKeyReference_DocumentId])
+REFERENCES [edfi].[DecimalKeyResource] ([DecimalKey], [DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -987,9 +987,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'DecimalRefResource' AND i.name = N'IX_DecimalRefResource_DecimalKeyReference_DocumentId_DecimalKeyReference_DecimalKey'
+    WHERE s.name = N'edfi' AND t.name = N'DecimalRefResource' AND i.name = N'IX_DecimalRefResource_DecimalKeyReference_DecimalKey_DecimalKeyReference_DocumentId'
 )
-CREATE INDEX [IX_DecimalRefResource_DecimalKeyReference_DocumentId_DecimalKeyReference_DecimalKey] ON [edfi].[DecimalRefResource] ([DecimalKeyReference_DocumentId], [DecimalKeyReference_DecimalKey]);
+CREATE INDEX [IX_DecimalRefResource_DecimalKeyReference_DecimalKey_DecimalKeyReference_DocumentId] ON [edfi].[DecimalRefResource] ([DecimalKeyReference_DecimalKey], [DecimalKeyReference_DocumentId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i

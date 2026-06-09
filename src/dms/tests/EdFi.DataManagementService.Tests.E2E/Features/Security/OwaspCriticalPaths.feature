@@ -256,6 +256,8 @@ Feature: OWASP critical attack path protections
              When a POST request larger than 11 MB is made to "/ed-fi/schools"
              Then the direct response should be 413
 
+        @relational-ci-shard-3
+        @relational-backend
         Scenario: 16 BOLA cross-education-organization access to object id is denied
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "localEducationAgencies"

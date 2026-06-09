@@ -96,6 +96,20 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        public void It_uses_the_legacy_token_info_lookup_adapter_when_relational_backend_is_disabled()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+            using var scope = serviceProvider.CreateScope();
+
+            scope
+                .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter>();
+        }
+
+        [Test]
         public void It_does_not_register_relational_reference_resolution_services_by_default()
         {
             using var serviceProvider = CreateServices("postgresql");
@@ -209,6 +223,37 @@ public class WebApplicationBuilderExtensionsTests
                 .ContainSingle()
                 .Which.Dialect.Should()
                 .Be(SqlDialect.Pgsql);
+        }
+
+        [Test]
+        public void It_keeps_the_legacy_token_info_lookup_and_registers_the_postgresql_relational_lookup()
+        {
+            using var serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
+            );
+            using var scope = serviceProvider.CreateScope();
+
+            scope
+                .ServiceProvider.GetServices<IAuthorizationRepository>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<PostgresqlAuthorizationRepository>();
+
+            scope
+                .ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<AuthorizationRepositoryTokenInfoEducationOrganizationLookupAdapter>();
+
+            scope
+                .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<PostgresqlTokenInfoEducationOrganizationLookup>();
         }
     }
 
@@ -331,6 +376,25 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IResourceKeyRowReader>()
                 .Should()
                 .BeOfType<MssqlResourceKeyRowReader>();
+        }
+
+        [Test]
+        public void It_registers_the_mssql_relational_token_info_lookup()
+        {
+            using var serviceProvider = CreateServices(
+                "mssql",
+                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
+            );
+            using var scope = serviceProvider.CreateScope();
+
+            scope.ServiceProvider.GetServices<ITokenInfoEducationOrganizationLookup>().Should().BeEmpty();
+
+            scope
+                .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
         }
     }
 }
