@@ -221,6 +221,47 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_short_circuits_descriptor_reference_failures_before_mixed_missing_document_references()
+    {
+        var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
+            new ReferentialId(Guid.NewGuid()),
+            "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+            "$.schoolTypeDescriptor"
+        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference],
+            descriptorReferences: [descriptorReference]
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureReference(
+                        [
+                            DocumentReferenceFailure.From(
+                                documentReference,
+                                DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                    )
+                )
+            );
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_short_circuits_non_missing_document_reference_failures_before_flattening()
     {
         var referentialId = new ReferentialId(Guid.NewGuid());
@@ -422,6 +463,47 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_immutable_identity_failure_before_deferred_missing_reference()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            documentReferences: [documentReference],
+            selectedBody: JsonNode.Parse("""{"schoolId":255902,"name":"Lincoln High Updated"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureImmutableIdentity(
+                        "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
+                    )
+                )
+            );
+        _writeFlattener.CapturedInput!.AllowMissingDocumentReferencesForPrecedence.Should().BeTrue();
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_forces_create_new_post_proposed_relationship_authorization_before_deferred_missing_reference()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -459,6 +541,66 @@ public class Given_Default_Relational_Write_Executor
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_proposed_namespace_authorization_failure_before_deferred_missing_reference()
+    {
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        UseNamespaceProviderFailureExtractor(payload);
+        _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
+            new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.educationOrganizationReference"
+        );
+        var rootPlan = CreateNamespaceRootPlan();
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference],
+            rootWritePlan: rootPlan,
+            selectedBody: JsonNode.Parse("""{"namespace":"uri://other.org/Survey"}""")!
+        );
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal("uri://other.org/Survey"),
+                ]
+            )
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedNamespaceAuthorization = CreateProposedNamespaceAuthorization(),
+            }
+        );
+
+        var notAuthorized = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Subject;
+        notAuthorized
+            .NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NamespaceMismatch);
+        notAuthorized
+            .NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
+        _writeFlattener.CapturedInput!.AllowMissingDocumentReferencesForPrecedence.Should().BeTrue();
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);

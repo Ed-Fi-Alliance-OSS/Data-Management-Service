@@ -129,7 +129,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"",
       "Review existing Core WriteResultReferenceFailureContractTests only to confirm status mapping remains separately covered."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Database fallback preservation",
