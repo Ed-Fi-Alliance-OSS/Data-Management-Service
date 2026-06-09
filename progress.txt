@@ -17,3 +17,8 @@ Task completed: Flattener deferred-reference tolerance; story 409-fix-plan.md
 Key decisions: present document references with exact deferred Missing occurrences flatten FK to null; present reference-derived members with no resolved document id and exact deferred Missing occurrence flatten to null before literal lookup; all unmatched occurrences keep fail-fast validation.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
 Notes: required filter FullyQualifiedName~RelationalWriteFlattener passed 47 tests after csharpier.
+
+Task completed: Deferred 409 return point; story 409-fix-plan.md
+Key decisions: executor return point already after merge, identity stability, proposed namespace/relationship authorization, and deferred If-Match; added guarded no-op regression to prove remembered Missing references return 409 before freshness/read/commit/persist.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DefaultRelationalWriteExecutorTests.cs; tasks.json; progress.txt
+Notes: prompt filter FullyQualifiedName~DefaultRelationalWriteExecutor matched no tests; fixture-aware filter FullyQualifiedName~Given_Default_Relational_Write_Executor passed 137 tests.

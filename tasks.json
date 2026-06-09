@@ -90,7 +90,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"",
       "Confirm focused tests assert PersistAsync is not called and guarded no-op success is not returned when deferred missing references remain."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Proposed relationship authorization",
