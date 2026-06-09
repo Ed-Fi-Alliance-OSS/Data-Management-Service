@@ -1276,9 +1276,29 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_accepts_a_clr_int_backed_number_for_an_int64_scalar()
+    {
+        var writePlan = CreateSingleScalarWritePlan(ScalarKind.Int64);
+        var body = (JsonObject)JsonNode.Parse("""{ "amount": 0 }""")!;
+        body["amount"] = JsonValue.Create(2026);
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            writePlan,
+            body,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.Values[1].Should().Be(new FlattenedWriteValue.Literal(2026L));
+    }
+
+    [Test]
     public void It_accepts_a_clr_double_backed_number_for_a_decimal_scalar()
     {
-        var writePlan = CreateSingleDecimalScalarWritePlan();
+        var writePlan = CreateSingleScalarWritePlan(ScalarKind.Decimal);
         var body = (JsonObject)JsonNode.Parse("""{ "amount": 0 }""")!;
         body["amount"] = JsonValue.Create(12.5d);
 
@@ -1298,7 +1318,7 @@ public class Given_RelationalWriteFlattener
     [Test]
     public void It_accepts_a_clr_decimal_backed_number_for_a_decimal_scalar()
     {
-        var writePlan = CreateSingleDecimalScalarWritePlan();
+        var writePlan = CreateSingleScalarWritePlan(ScalarKind.Decimal);
         var body = (JsonObject)JsonNode.Parse("""{ "amount": 0 }""")!;
         body["amount"] = JsonValue.Create(12.5m);
 
@@ -1340,14 +1360,43 @@ public class Given_RelationalWriteFlattener
             .And.Contain("encountered JSON value kind 'Number' with raw value 2022.5");
     }
 
-    private static ResourceWritePlan CreateSingleDecimalScalarWritePlan()
+    [Test]
+    public void It_rejects_an_out_of_range_number_for_the_int32_scalar()
     {
+        // The numeric-literal fallback hands raw JSON text to the shared scalar literal parser,
+        // whose target-type parse must reject values outside the column's range rather than
+        // truncating or wrapping them.
+        var body = (JsonObject)JsonNode.Parse("""{ "schoolYear": 0 }""")!;
+        body["schoolYear"] = JsonValue.Create(5_000_000_000L);
+
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: body,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolYear");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("Column 'SchoolYear' on table 'edfi.Student' expected scalar kind 'Int32'")
+            .And.Contain("encountered JSON value kind 'Number' with raw value 5000000000");
+    }
+
+    private static ResourceWritePlan CreateSingleScalarWritePlan(ScalarKind scalarKind)
+    {
+        var tableName = $"{scalarKind}ScalarExample";
         var amountPath = CreateTestPath("$.amount", new JsonPathSegment.Property("amount"));
         var table = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName("edfi"), "DecimalScalarExample"),
+            Table: new DbTableName(new DbSchemaName("edfi"), tableName),
             JsonScope: CreateTestPath("$"),
             Key: new TableKey(
-                ConstraintName: "PK_DecimalScalarExample",
+                ConstraintName: $"PK_{tableName}",
                 Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
             ),
             Columns:
@@ -1363,7 +1412,7 @@ public class Given_RelationalWriteFlattener
                 new DbColumnModel(
                     ColumnName: new DbColumnName("Amount"),
                     Kind: ColumnKind.Scalar,
-                    ScalarType: new RelationalScalarType(ScalarKind.Decimal),
+                    ScalarType: new RelationalScalarType(scalarKind),
                     IsNullable: true,
                     SourceJsonPath: amountPath,
                     TargetResource: null
@@ -1383,7 +1432,7 @@ public class Given_RelationalWriteFlattener
 
         return new ResourceWritePlan(
             new RelationalResourceModel(
-                Resource: new QualifiedResourceName("Ed-Fi", "DecimalScalarExample"),
+                Resource: new QualifiedResourceName("Ed-Fi", tableName),
                 PhysicalSchema: new DbSchemaName("edfi"),
                 StorageKind: ResourceStorageKind.RelationalTables,
                 Root: table,
@@ -1394,7 +1443,7 @@ public class Given_RelationalWriteFlattener
             [
                 new TableWritePlan(
                     TableModel: table,
-                    InsertSql: "INSERT INTO [edfi].[DecimalScalarExample] ([DocumentId], [Amount]) VALUES (@documentId, @amount);",
+                    InsertSql: $"INSERT INTO [edfi].[{tableName}] ([DocumentId], [Amount]) VALUES (@documentId, @amount);",
                     UpdateSql: null,
                     DeleteByParentSql: null,
                     BulkInsertBatching: new BulkInsertBatchingInfo(1000, 2, 2100),
@@ -1409,7 +1458,7 @@ public class Given_RelationalWriteFlattener
                             Column: table.Columns[1],
                             Source: new WriteValueSource.Scalar(
                                 amountPath,
-                                new RelationalScalarType(ScalarKind.Decimal)
+                                new RelationalScalarType(scalarKind)
                             ),
                             ParameterName: "amount"
                         ),
