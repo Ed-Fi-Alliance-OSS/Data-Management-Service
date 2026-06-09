@@ -263,7 +263,13 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrchestrator
-                .ResolveAsync(executionRequest, mergeResult, writeSession, cancellationToken)
+                .ResolveAsync(
+                    executionRequest,
+                    mergeResult,
+                    writeSession,
+                    cancellationToken,
+                    forceStandaloneAuthorization: deferMissingDocumentReferenceFailures
+                )
                 .ConfigureAwait(false);
 
             if (proposedAuthorizationBoundary.ImmediateResult is not null)

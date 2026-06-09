@@ -422,6 +422,49 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_forces_create_new_post_proposed_relationship_authorization_before_deferred_missing_reference()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference]
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureReference(
+                        [
+                            DocumentReferenceFailure.From(
+                                documentReference,
+                                DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
+                )
+            );
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _committedRepresentationReader.ReadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_authorizes_stored_relationship_values_for_existing_put_before_reference_resolution()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
@@ -4428,6 +4471,8 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<RelationalWriteExecutorResult.Upsert>()
             .Which.Result.Should()
             .BeOfType<UpsertResult.InsertSuccess>();
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _noProfilePersister.CapturedMergeResult.Should().NotBeNull();
 
         var runtimeCheck = _noProfilePersister

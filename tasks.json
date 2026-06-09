@@ -107,7 +107,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"",
       "Confirm tests cover create-new POST with deferred missing references and a successful create-new POST without deferred missing references."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Focused precedence tests",

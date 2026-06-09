@@ -22,3 +22,8 @@ Task completed: Deferred 409 return point; story 409-fix-plan.md
 Key decisions: executor return point already after merge, identity stability, proposed namespace/relationship authorization, and deferred If-Match; added guarded no-op regression to prove remembered Missing references return 409 before freshness/read/commit/persist.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DefaultRelationalWriteExecutorTests.cs; tasks.json; progress.txt
 Notes: prompt filter FullyQualifiedName~DefaultRelationalWriteExecutor matched no tests; fixture-aware filter FullyQualifiedName~Given_Default_Relational_Write_Executor passed 137 tests.
+
+Task completed: Proposed relationship authorization; story 409-fix-plan.md
+Key decisions: ProposedRelationshipAuthorizationOrchestrator gets defaulted forceStandaloneAuthorization; executor enables it only for deferred no-profile Missing document-reference failures so create-new POST Auth1 runs before deferred 409 while normal create-new POST keeps inline Auth1.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs; src/dms/backend/EdFi.DataManagementService.Backend/ProposedRelationshipAuthorizationOrchestrator.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DefaultRelationalWriteExecutorTests.cs; tasks.json; progress.txt
+Notes: prompt filter FullyQualifiedName~DefaultRelationalWriteExecutor matched no tests after build; fixture-aware filter FullyQualifiedName~Given_Default_Relational_Write_Executor passed 138 tests.

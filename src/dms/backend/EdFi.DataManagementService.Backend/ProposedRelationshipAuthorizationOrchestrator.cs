@@ -17,7 +17,8 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool forceStandaloneAuthorization = false
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -89,7 +90,14 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
                 );
         }
 
-        await AuthorizeAsync(request, mergeResult, writeSession, cancellationToken).ConfigureAwait(false);
+        await AuthorizeAsync(
+                request,
+                mergeResult,
+                writeSession,
+                forceStandaloneAuthorization,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         return new ProposedRelationshipAuthorizationBoundary(mergeResult, null);
     }
@@ -98,6 +106,7 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
+        bool forceStandaloneAuthorization,
         CancellationToken cancellationToken
     )
     {
@@ -106,7 +115,7 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
             return;
         }
 
-        if (IsHandledByPostInlineAuth1(request))
+        if (!forceStandaloneAuthorization && IsHandledByPostInlineAuth1(request))
         {
             return;
         }
