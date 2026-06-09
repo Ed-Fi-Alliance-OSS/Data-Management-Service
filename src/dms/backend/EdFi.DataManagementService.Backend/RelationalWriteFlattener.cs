@@ -732,7 +732,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups,
                 ordinalPath
             );
-            hasDeferredMissingReferenceMember |= evaluation.IsDeferredMissingReference;
+            hasDeferredMissingReferenceMember |= evaluation.IsAbsentBecauseDeferredMissingReference;
 
             if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceBindingIndex)
             {
