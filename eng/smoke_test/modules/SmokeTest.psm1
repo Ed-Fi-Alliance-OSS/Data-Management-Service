@@ -38,7 +38,16 @@ function Invoke-SmokeTestUtility {
 
         [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
         [string]
-        $SdkNamespace = "EdFi.DmsApi.TestSdk"
+        $SdkNamespace = "EdFi.DmsApi.TestSdk",
+
+        # Explicit OAuth token URL for the smoke test console. Without it the console
+        # resolves the token endpoint from the DMS discovery document, which only works
+        # when the advertised endpoint is reachable from the console's host. Stacks that
+        # advertise a Docker-internal endpoint must pass the host-reachable DMS token
+        # proxy here (e.g. http://localhost:8080/oauth/token); explicit values win over
+        # discovery in the console.
+        [string]
+        $OAuthUrl
     )
 
     $options = @(
@@ -48,6 +57,10 @@ function Invoke-SmokeTestUtility {
         "-t", $TestSet,
         "-c", $SdkNamespace
     )
+
+    if ($OAuthUrl) {
+        $options += @("-o", $OAuthUrl)
+    }
 
     if($TestSet -ne "NonDestructiveApi")
     {

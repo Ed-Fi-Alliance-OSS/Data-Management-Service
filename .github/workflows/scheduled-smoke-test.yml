@@ -28,6 +28,14 @@ jobs:
       package_name: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0"
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: "populated.template.intoto.jsonl"
+      # The smoke test consumes the template artifact built in this run; nothing is
+      # published to the package feed from the smoke path. Feed publishing stays with
+      # the template package workflows (tag/release and explicit dispatch opt-in).
+      publish_package: false
+      use_relational_backend: true
+      environment_file: "./.env.template.relational"
+      verify_restore: true
+      require_populated_data: true
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
 
@@ -35,6 +43,9 @@ jobs:
     name: Smoke Tests
     needs: build-populated-template
     runs-on: ubuntu-latest
+
+    env:
+      SMOKE_DATABASE_NAME: edfi_datamanagementservice_smoke
 
     defaults:
       run:
@@ -85,8 +96,70 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
-      - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
-        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -LoadSeedData -EnvironmentFile "./.env.example"
+      - name: Download Populated Template Package artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0-NuGet"
+          path: ${{ github.workspace }}/template-package
+
+      # The smoke environment serves the same Core (DS52) + TPDM surface the populated
+      # template was built from. The dms.EffectiveSchema fingerprint requires the running
+      # schema packages and the restored database to match exactly, so the smoke test
+      # reuses the template build's environment file. Sample and Homograph remain covered
+      # by the relational E2E suite (.env.e2e.relational).
+      - name: Start DMS on the relational backend with Core and TPDM (SmokeTest)
+        run: |
+          $env:LOG_LEVEL="Warning"
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig -NoDataStore
+        working-directory: eng/docker-compose/
+
+      - name: Wait for the Configuration Service to be ready
+        run: |
+          $deadline = [datetime]::UtcNow.AddSeconds(300)
+          while ($true) {
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:8081/health" -Method Get -TimeoutSec 5 -ErrorAction Stop
+              if ($response.StatusCode -eq 200) { break }
+            }
+            catch {
+              $null = $_
+            }
+
+            if ([datetime]::UtcNow -ge $deadline) {
+              throw "Configuration Service did not become healthy within 300 seconds."
+            }
+
+            Start-Sleep -Seconds 5
+          }
+
+      - name: Restore the Populated Template artifact into the smoke database
+        run: |
+          Import-Module ./Template-Management.psm1 -Force
+          Restore-TemplatePackage -PackageDirectory "${{ github.workspace }}/template-package" -DatabaseName $env:SMOKE_DATABASE_NAME
+        working-directory: eng/DatabaseTemplates/
+
+      # The relational stack starts with -NoDataStore, and DMS fails fatally at startup
+      # when the Configuration Service has no data stores. Register the restored smoke
+      # database as the single data store and hand its id forward; the Configuration
+      # Service protects data store connection strings in API responses, so the id from
+      # registration is the only reliable way to select this data store later.
+      - name: Register the smoke test data store
+        run: |
+          Import-Module ../Dms-Management.psm1 -Force
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile "./.env.template.relational"
+          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
+          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $env:SMOKE_DATABASE_NAME -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
+          if (-not $dataStoreId) {
+            throw "Failed to register the smoke test data store."
+          }
+          "SMOKE_DATA_STORE_ID=$dataStoreId" | Out-File -FilePath $env:GITHUB_ENV -Append
+        working-directory: eng/docker-compose/
+
+      - name: Restart DMS to load the smoke data store
+        run: |
+          docker restart dms-local-dms-1
 
       - name: Wait for services to be ready
         run: |
@@ -116,7 +189,7 @@ jobs:
       - name: Create Smoke Test Credentials
         run: |
           Import-Module ./modules/SmokeTest.psm1 -Force
-          $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
+          $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @([long]$env:SMOKE_DATA_STORE_ID)
           # Store credentials in environment variables for subsequent steps
           "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -151,30 +224,31 @@ jobs:
               exit 1
           }
 
+      # The smoke test console must fetch tokens through the host-reachable DMS token
+      # proxy: the stack's advertised OAuth endpoint is Docker-internal (the DMS
+      # container forwards /oauth/token to it), so the discovery document cannot be
+      # used from the runner host. This is the same token route BulkLoadClient uses
+      # during the template build.
       - name: Run NonDestructive API Tests
         run: |
-          ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET"
+          ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
       - name: Run NonDestructive DMS SDK Tests
         run: |
-          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
+          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
       - name: Run Destructive DMS SDK Tests
         run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
+          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll" -OAuthUrl "http://localhost:8080/oauth/token"
         working-directory: eng/smoke_test/
 
-      - name: Run NonDestructive ODS SDK Tests
-        run: |
-          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk"
-        working-directory: eng/smoke_test/
-
-      - name: Run Destructive ODS SDK Tests
-        run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk"
-        working-directory: eng/smoke_test/
+      # The published ODS SDK sweep (EdFi.OdsApi.Sdk) exercises the full ODS resource
+      # surface, including the Sample and Homograph extensions. This relational smoke
+      # path serves only the Core (DS52) + TPDM product surface, so that sweep would
+      # 404 on Sample/Homograph resources. ODS SDK smoke coverage is reintroduced once
+      # the Sample/Homograph smoke surface is restored.
 
       - name: Export Docker Logs on Failure
         if: failure()
@@ -215,7 +289,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -235,7 +309,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Backend:* Relational\n*Extensions:* Core (DS52), TPDM\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]

@@ -289,7 +289,12 @@ function Invoke-DatabaseDump {
         $options += $schema
     }
 
-    & docker @options | Out-File -FilePath $backupPath -Encoding utf8
+    # Schema-scoped pg_dump never emits CREATE EXTENSION statements, but the dumped
+    # dms.uuidv5() function requires pgcrypto's digest(). Emit the extension bootstrap
+    # ahead of the dump so the template restores as a self-contained, writable database.
+    "CREATE EXTENSION IF NOT EXISTS ""pgcrypto"";" | Out-File -FilePath $backupPath -Encoding utf8
+
+    & docker @options | Out-File -FilePath $backupPath -Encoding utf8 -Append
 
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
@@ -379,6 +384,182 @@ function Build-NuGetPackage {
 
 <#
 .SYNOPSIS
+    Asserts that a data store id is registered in the Configuration Service.
+
+.DESCRIPTION
+    The Configuration Service protects data store connection strings in API
+    responses, so a caller that needs a specific target database must pass the
+    id returned when the data store was registered; membership of that id in
+    the registered set is the only property that can be verified here.
+#>
+function Assert-DataStoreIdRegistered {
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$DataStores,
+
+        [Parameter(Mandatory = $true)]
+        [long]$DataStoreId
+    )
+
+    $registeredIds = @($DataStores | ForEach-Object { [long]$_.id })
+
+    if ($DataStoreId -notin $registeredIds) {
+        $registeredIdList = if ($registeredIds.Count -eq 0) { "<none>" } else { $registeredIds -join ', ' }
+        throw "Data store id '$DataStoreId' is not registered in the Configuration Service. Registered ids: $registeredIdList."
+    }
+}
+
+<#
+.SYNOPSIS
+    Resolves which data store id a template build should bind applications to.
+
+.DESCRIPTION
+    A caller-supplied data store id is validated for membership and used as-is.
+    Without one, an empty data store list returns $null so the caller registers
+    a new data store. Existing data stores cannot be matched to a requested
+    database because the Configuration Service protects connection strings in
+    API responses, so a bound database name with pre-existing data stores is an
+    error; callers that bind neither parameter keep first-data-store behavior.
+#>
+function Resolve-DataStoreIdForTemplate {
+    param (
+        [AllowEmptyCollection()]
+        [object[]]$DataStores = @(),
+
+        [System.Nullable[long]]$RequestedDataStoreId = $null,
+
+        [bool]$DatabaseNameBound = $false
+    )
+
+    if ($null -ne $RequestedDataStoreId) {
+        Assert-DataStoreIdRegistered -DataStores $DataStores -DataStoreId $RequestedDataStoreId
+        return [long]$RequestedDataStoreId
+    }
+
+    if ($DataStores.Count -eq 0) {
+        return $null
+    }
+
+    if ($DatabaseNameBound) {
+        throw "Existing data stores cannot be verified against a requested database because the Configuration Service protects connection strings in API responses. Pass -DataStoreId for the data store that targets the requested database."
+    }
+
+    return [long]$DataStores[0].id
+}
+
+<#
+.SYNOPSIS
+    Discovers the non-system schemas present in a PostgreSQL database.
+
+.DESCRIPTION
+    Queries pg_namespace inside the running PostgreSQL container, excluding
+    pg_* system schemas, information_schema, and public. Throws when the
+    database has no user schemas, which indicates it was never provisioned.
+#>
+function Get-UserSchemaNames {
+    param (
+        [string]$ContainerName = "dms-postgresql",
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName
+    )
+
+    $query = "SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ('information_schema', 'public') ORDER BY nspname;"
+    $output = & docker exec $ContainerName psql -U postgres -d $DatabaseName -tA -c $query
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to discover schemas in database '$DatabaseName'."
+    }
+
+    $schemas = @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+
+    if ($schemas.Count -eq 0) {
+        throw "No user schemas found in database '$DatabaseName'; the database does not appear to be provisioned."
+    }
+
+    return $schemas
+}
+
+<#
+.SYNOPSIS
+    Restores a database template package into a freshly created database.
+
+.DESCRIPTION
+    Locates the single .nupkg in the package directory, extracts its .sql dump,
+    drops and recreates the target database inside the running PostgreSQL
+    container, and restores the dump into it. Returns the name of the restored
+    package file.
+
+.PARAMETER PackageDirectory
+    Directory containing the template .nupkg (default: current directory).
+
+.PARAMETER DatabaseName
+    The database to drop, recreate, and restore the dump into.
+
+.PARAMETER ContainerName
+    The running PostgreSQL container hosting the database.
+#>
+function Restore-TemplatePackage {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
+    param (
+        [string]$PackageDirectory = ".",
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$ContainerName = "dms-postgresql"
+    )
+
+    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
+        throw "Database name '$DatabaseName' contains unsupported characters."
+    }
+
+    $package = Get-ChildItem -Path $PackageDirectory -Filter *.nupkg | Select-Object -First 1
+
+    if ($null -eq $package) {
+        throw "No .nupkg found in '$PackageDirectory'."
+    }
+
+    Write-Host "Restoring template package '$($package.Name)' into database '$DatabaseName'" -ForegroundColor Cyan
+
+    $extractDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "template-restore-$([Guid]::NewGuid().ToString('N'))"
+
+    try {
+        New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
+        $zipPath = Join-Path $extractDirectory "package.zip"
+        Copy-Item $package.FullName $zipPath
+        Expand-Archive -Path $zipPath -DestinationPath (Join-Path $extractDirectory "contents")
+
+        $sqlFile = Get-ChildItem -Path (Join-Path $extractDirectory "contents") -Filter *.sql -Recurse | Select-Object -First 1
+
+        if ($null -eq $sqlFile) {
+            throw "No .sql dump found inside package '$($package.Name)'."
+        }
+
+        & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DatabaseName;" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to drop existing database '$DatabaseName'." }
+
+        & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE $DatabaseName;" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create database '$DatabaseName'." }
+
+        & docker cp $sqlFile.FullName "$($ContainerName):/tmp/template-restore.sql" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to copy the dump into container '$ContainerName'." }
+
+        & docker exec $ContainerName psql -U postgres -d $DatabaseName -v ON_ERROR_STOP=1 -f /tmp/template-restore.sql | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Restore of '$($sqlFile.Name)' into '$DatabaseName' failed." }
+
+        return $package.Name
+    }
+    finally {
+        if (Test-Path $extractDirectory) {
+            Remove-Item $extractDirectory -Recurse -Force
+        }
+    }
+}
+
+<#
+.SYNOPSIS
     Builds a NuGet package containing a PostgreSQL database backup.
 
 .PARAMETER ConfigFilePath
@@ -391,10 +572,17 @@ function Build-NuGetPackage {
 .PARAMETER PackageVersion
     The version to assign to the generated NuGet package.
 
+.PARAMETER DatabaseName
+    The database to dump into the template package.
+
+.PARAMETER DumpAllUserSchemas
+    Dump every non-system schema of the target database instead of only the dms schema.
+
 .EXAMPLE
     Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
 #>
 function Build-TemplateNuGetPackage {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     param (
         [Parameter(Mandatory = $true)]
         [string]$ConfigFilePath,
@@ -403,7 +591,11 @@ function Build-TemplateNuGetPackage {
         [string]$StandardVersion,
 
         [Parameter(Mandatory = $true)]
-        [string]$PackageVersion
+        [string]$PackageVersion,
+
+        [string]$DatabaseName = "edfi_datamanagementservice",
+
+        [switch]$DumpAllUserSchemas
     )
 
     $config = Import-PowerShellDataFile -Path $ConfigFilePath
@@ -414,7 +606,17 @@ function Build-TemplateNuGetPackage {
         }
     }
 
-    Invoke-DatabaseDump -DatabaseSchemas "dms" -BackupDirectory './' -BackupFileName $config.DatabaseBackupName
+    $databaseSchemas =
+        if ($DumpAllUserSchemas) {
+            $discoveredSchemas = @(Get-UserSchemaNames -DatabaseName $DatabaseName)
+            Write-Host "Dumping all user schemas from '$DatabaseName': $($discoveredSchemas -join ', ')"
+            $discoveredSchemas
+        }
+        else {
+            @("dms")
+        }
+
+    Invoke-DatabaseDump -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName
 
     New-DatabaseTemplateCsproj -Config $config -BackupDirectory './'
 
@@ -462,6 +664,18 @@ enum TemplateType {
 .PARAMETER ApplicationName
     The name of the application to create. Defaults to "Demo application".
 
+.PARAMETER DataStoreDatabaseName
+    Database the CMS-registered data store must target; also the database that is dumped into the template.
+
+.PARAMETER DataStoreId
+    Id of an already-registered data store to bind applications to. The Configuration Service
+    protects data store connection strings in API responses, so the registrar of the data store
+    must hand its id forward; requires -DataStoreDatabaseName so writes and the dump target the
+    same database.
+
+.PARAMETER DumpAllUserSchemas
+    Dump every non-system schema of the target database instead of only the dms schema.
+
 .PARAMETER PostgresPassword
     The PostgreSQL password for database connection. Defaults to environment variable POSTGRES_PASSWORD or "abcdefgh1!".
 
@@ -478,6 +692,8 @@ enum TemplateType {
         -PostgresPassword "mypassword"
 #>
 function Build-Template {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; there is no companion username credential and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; SecureString adds no protection across that boundary.')]
     param (
 
         [Parameter(Mandatory = $true)]
@@ -508,22 +724,38 @@ function Build-Template {
 
         [string]$ApplicationName = "Demo application",
 
+        [string]$DataStoreDatabaseName = "edfi_datamanagementservice",
+
+        [long]$DataStoreId,
+
+        [switch]$DumpAllUserSchemas,
+
         [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
     )
+
+    if ($PSBoundParameters.ContainsKey('DataStoreId') -and -not $PSBoundParameters.ContainsKey('DataStoreDatabaseName')) {
+        throw "-DataStoreId requires -DataStoreDatabaseName so the dump targets the same database the bound applications write to."
+    }
 
     Add-CmsClient -CmsUrl $CmsUrl
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    # Get or create DMS instance
-    $dataStores = Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken
-    if ($dataStores.Count -eq 0) {
-        $dataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword
-    } else {
-        $dataStoreId = $dataStores[0].id
+    # Resolve the data store to bind applications to. The CMS-registered data store
+    # connection string controls where bulk-load writes land but is protected in API
+    # responses, so a caller that targets a specific database must hand the data store id
+    # forward from registration; callers that bind neither parameter keep the original
+    # first-data-store behavior.
+    $dataStores = @(Get-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken)
+    $targetDataStoreId = Resolve-DataStoreIdForTemplate `
+        -DataStores $dataStores `
+        -RequestedDataStoreId ($PSBoundParameters.ContainsKey('DataStoreId') ? $DataStoreId : $null) `
+        -DatabaseNameBound ($PSBoundParameters.ContainsKey('DataStoreDatabaseName'))
+    if ($null -eq $targetDataStoreId) {
+        $targetDataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword -PostgresDbName $DataStoreDatabaseName
     }
 
-    # Create Bootstrap application and assign to DMS instance
-    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($dataStoreId)
+    # Create Bootstrap application and assign to the data store
+    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($targetDataStoreId)
 
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $bootstrapApp.Key -Secret $bootstrapApp.Secret
 
@@ -546,8 +778,8 @@ function Build-Template {
             throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
         }
 
-        # Create Sandbox application and assign to DMS instance
-        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($dataStoreId)
+        # Create Sandbox application and assign to the data store
+        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DataStoreIds @($targetDataStoreId)
 
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
@@ -561,7 +793,7 @@ function Build-Template {
             -ForceReloadMetadata
     }
 
-    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
 }
 
-Export-ModuleMember -Function Build-Template
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage
