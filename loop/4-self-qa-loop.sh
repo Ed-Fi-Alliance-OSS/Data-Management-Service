@@ -19,7 +19,7 @@ echo "Running self-QA loop $iterations times..."
 # Run the self-QA prompt for the specified number of iterations
 for ((i=1; i<=iterations; i++)); do
     echo "=== Self-QA iteration $i/$iterations ==="
-    codex exec --dangerously-bypass-approvals-and-sandbox @.orc/loop/prompts/self-qa-loop-prompt.md
+    codex exec --dangerously-bypass-approvals-and-sandbox @./loop/prompts/self-qa-loop-prompt.md
     echo ""
 done
 

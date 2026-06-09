@@ -19,7 +19,7 @@ echo "Running command $iterations times..."
 # Run the command for the specified number of iterations
 for ((i=1; i<=iterations; i++)); do
     echo "=== Iteration $i/$iterations ==="
-    codex exec --dangerously-bypass-approvals-and-sandbox @.orc/loop/prompts/implementation-loop-prompt.md
+    codex exec --dangerously-bypass-approvals-and-sandbox @./loop/prompts/implementation-loop-prompt.md
     echo ""
 done
 

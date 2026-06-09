@@ -19,7 +19,7 @@ echo "Running task refinement loop $iterations times..."
 # Run the refinement prompt for the specified number of iterations
 for ((i=1; i<=iterations; i++)); do
     echo "=== Task refinement iteration $i/$iterations ==="
-    codex exec --dangerously-bypass-approvals-and-sandbox @.orc/loop/prompts/task-refinement-loop-prompt.md
+    codex exec --dangerously-bypass-approvals-and-sandbox @./loop/prompts/task-refinement-loop-prompt.md
     echo ""
 done
 
