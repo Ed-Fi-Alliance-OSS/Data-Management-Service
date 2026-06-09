@@ -179,7 +179,7 @@ internal static class FlattenerMemberEvaluation
             )
         )
         {
-            return KeyUnificationMemberEvaluation.Absent;
+            return KeyUnificationMemberEvaluation.DeferredMissingReference;
         }
 
         var memberPathColumn = RelationalWriteFlattener.GetRequiredColumnModel(
@@ -205,9 +205,15 @@ internal static class FlattenerMemberEvaluation
     }
 }
 
-internal sealed record KeyUnificationMemberEvaluation(bool IsPresent, object? Value)
+internal sealed record KeyUnificationMemberEvaluation(
+    bool IsPresent,
+    object? Value,
+    bool IsDeferredMissingReference = false
+)
 {
     public static KeyUnificationMemberEvaluation Absent { get; } = new(false, null);
+
+    public static KeyUnificationMemberEvaluation DeferredMissingReference { get; } = new(false, null, true);
 
     public static KeyUnificationMemberEvaluation Present(object value)
     {

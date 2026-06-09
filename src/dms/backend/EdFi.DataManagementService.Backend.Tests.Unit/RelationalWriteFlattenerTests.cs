@@ -755,6 +755,107 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_allows_deferred_missing_document_reference_collection_identity_collisions_to_reach_deferred_reference_failure()
+    {
+        var writePlan = CreateReferenceBackedPeriodIdentityWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "periods": [
+                        {
+                          "beginDate": "2026-08-20",
+                          "schoolReference": {
+                            "schoolId": 255901
+                          }
+                        },
+                        {
+                          "beginDate": "2026-08-21",
+                          "schoolReference": {
+                            "schoolId": 255902
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                invalidDocumentReferences:
+                [
+                    CreateMissingDocumentReferenceFailure("$.addresses[0].periods[0].schoolReference"),
+                    CreateMissingDocumentReferenceFailure("$.addresses[0].periods[1].schoolReference"),
+                ]
+            ),
+            validateStorageCollapsedCollectionIdentityUniqueness: true,
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        var periodCandidates = result.RootRow.CollectionCandidates.Single().CollectionCandidates;
+        periodCandidates.Should().HaveCount(2);
+        periodCandidates
+            .Select(candidate => candidate.SemanticIdentityValues[0])
+            .Should()
+            .Equal((object?)null, (object?)null);
+        periodCandidates
+            .Select(candidate => candidate.Values[5])
+            .Should()
+            .Equal(new FlattenedWriteValue.Literal(null), new FlattenedWriteValue.Literal(null));
+    }
+
+    [Test]
+    public void It_still_rejects_normal_collection_duplicates_when_deferred_missing_reference_exists_elsewhere()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 255901
+                  },
+                  "addresses": [
+                    {
+                      "addressType": "Home"
+                    },
+                    {
+                      "addressType": "Home"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: CreateResolvedReferenceSet(
+                invalidDocumentReferences: [CreateMissingDocumentReferenceFailure("$.schoolReference")]
+            ),
+            validateStorageCollapsedCollectionIdentityUniqueness: true,
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'."
+            );
+    }
+
+    [Test]
     public void It_keeps_collection_siblings_distinct_in_profile_mode_when_one_omits_and_one_explicit_nulls_the_identity_property()
     {
         // Counter-test for the no-profile rejection above: with the default profile-mode flag,
@@ -3942,6 +4043,53 @@ public class Given_RelationalWriteFlattener
                 ]
             ),
             [writePlan]
+        );
+    }
+
+    private ResourceWritePlan CreateReferenceBackedPeriodIdentityWritePlan()
+    {
+        var tablePlans = _fixture
+            .WritePlan.TablePlansInDependencyOrder.Select(plan =>
+                plan.TableModel.JsonScope.Canonical == "$.addresses[*].periods[*]"
+                    ? UseSchoolDocumentReferenceAsSemanticIdentity(plan)
+                    : plan
+            )
+            .ToArray();
+
+        return new ResourceWritePlan(_fixture.WritePlan.Model, tablePlans);
+    }
+
+    private static TableWritePlan UseSchoolDocumentReferenceAsSemanticIdentity(TableWritePlan tablePlan)
+    {
+        var mergePlan =
+            tablePlan.CollectionMergePlan
+            ?? throw new InvalidOperationException(
+                "Expected the period table to have a collection merge plan."
+            );
+
+        return new TableWritePlan(
+            TableModel: tablePlan.TableModel,
+            InsertSql: tablePlan.InsertSql,
+            UpdateSql: tablePlan.UpdateSql,
+            DeleteByParentSql: tablePlan.DeleteByParentSql,
+            BulkInsertBatching: tablePlan.BulkInsertBatching,
+            ColumnBindings: tablePlan.ColumnBindings,
+            KeyUnificationPlans: tablePlan.KeyUnificationPlans,
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        CreateTestPath("$.schoolReference", new JsonPathSegment.Property("schoolReference")),
+                        5
+                    ),
+                ],
+                StableRowIdentityBindingIndex: mergePlan.StableRowIdentityBindingIndex,
+                UpdateByStableRowIdentitySql: mergePlan.UpdateByStableRowIdentitySql,
+                DeleteByStableRowIdentitySql: mergePlan.DeleteByStableRowIdentitySql,
+                OrdinalBindingIndex: mergePlan.OrdinalBindingIndex,
+                CompareBindingIndexesInOrder: mergePlan.CompareBindingIndexesInOrder
+            ),
+            CollectionKeyPreallocationPlan: tablePlan.CollectionKeyPreallocationPlan
         );
     }
 

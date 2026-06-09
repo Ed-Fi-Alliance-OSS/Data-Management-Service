@@ -264,7 +264,7 @@ Expected to pass after executor implementation:
 - `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature`
   - scenario 32 should return the ODS-shaped authorization/precedence result.
   - scenario 39 should return `403 Authorization Denied` instead of early `409`.
-  - scenario 40 should return `403 Authorization Denied` instead of early `409`.
+  - scenario 40 should return `400 Key Change Not Supported` instead of early `409`.
 
 Already match ODS precedence relationally and can be flipped with expectation changes:
 
