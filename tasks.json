@@ -45,12 +45,13 @@
       "Missing failure paths are matched to compiled DocumentReferenceBinding entries by wildcard path and ordinal path.",
       "An invalid missing failure path that cannot be matched to a compiled document-reference binding throws an internal invariant exception.",
       "The lookup exposes a narrow method that answers whether a binding index and ordinal path correspond to a deferred missing document-reference occurrence.",
+      "Successful document-reference and descriptor-reference lookup behavior remains unchanged for all non-deferred occurrences.",
       "Callers cannot supply arbitrary tolerated paths or fabricate successful resolved references."
     ],
     "steps-to-verify": [
       "Review src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs for resolver-derived deferred-missing mapping.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet\"",
-      "Confirm tests cover root and nested ordinal paths plus an unmatched failure-path invariant."
+      "Confirm tests cover root and nested ordinal paths, mixed successful and deferred references, and an unmatched failure-path invariant."
     ],
     "completed": false
   },
@@ -62,13 +63,14 @@
       "ResolveReferenceDerivedValue returns FlattenedWriteValue.Literal(null) under the same exact-occurrence condition before calling the literal resolver that would otherwise throw for a missing backing reference lookup.",
       "Absent reference objects still materialize null as before and do not require the deferred-missing marker.",
       "Normal flattener mode still throws for present document references that lack a resolved document id.",
+      "A present missing reference at a different binding or ordinal path still throws even when another occurrence is deferred.",
       "Descriptor reference flattening behavior is unchanged.",
       "The implementation does not catch or remap unrelated RelationalWriteRequestValidationException or InvalidOperationException failures."
     ],
     "steps-to-verify": [
       "Review src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs at ResolveDocumentReferenceValue and ResolveReferenceDerivedValue.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener\"",
-      "Confirm focused tests prove exact deferred occurrences produce nulls and non-deferred missing lookups still fail fast."
+      "Confirm focused tests prove exact deferred occurrences produce nulls and non-deferred missing lookups at other bindings or ordinal paths still fail fast."
     ],
     "completed": false
   },
@@ -153,8 +155,9 @@
       "RelationshipsWithEdOrgsAndContacts.feature scenario 20 is tagged or expectation-flipped only when it returns 403 Authorization Denied instead of an early 409.",
       "RelationshipsWithEdOrgsAndPeople.feature scenarios 32, 39, and 40 are tagged or expectation-flipped only when their relational behavior matches the ODS-shaped authorization/precedence result described in 409-fix-plan.md.",
       "RelationshipsWithEdOrgsAndStaffs.feature scenarios 03 and 15 are tagged or expectation-flipped because the current relational behavior already matches ODS precedence for key-change versus update-authorization ordering.",
+      "Each newly enabled scenario has @relational-backend and the appropriate @relational-ci-shard-* tag before it is counted as covered by the relational E2E run.",
       "No unrelated E2E scenarios receive expectation changes, relational-backend tags, or shard tags as part of this fix.",
-      "Shard tags for newly enabled scenarios follow the neighboring feature-file convention for the same test lane.",
+      "Shard tags for newly enabled scenarios follow the neighboring feature-file convention for the same test lane: authorization scenarios use shard 3 and UpdateReferenceValidation scenarios use shard 4 unless the feature file convention changes during implementation.",
       "The relational E2E run uses ./build-dms.ps1 E2ETest with ./.env.e2e.relational rather than direct setup-local-dms.ps1 plus dotnet test.",
       "Any environment-only E2E failure is documented with Docker/runtime evidence rather than treated as a product failure."
     ],
@@ -165,7 +168,7 @@
       "Review src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature scenarios 03 and 15.",
       "Run dotnet build src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release",
       "From the repository root, run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'",
-      "From the repository root, run any additional relational shard that contains newly enabled UpdateReferenceValidation scenarios, for example ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-4' if those scenarios use shard 4.",
+      "From the repository root, run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-4' for the newly enabled UpdateReferenceValidation scenarios, or use the updated shard tag if the feature file convention changes during implementation.",
       "If the E2E run fails before issuing API requests, inspect dms-local Docker logs and the stack environment before classifying the result."
     ],
     "completed": false
@@ -186,7 +189,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~WriteResultReferenceFailureContract\"",
       "Run dotnet build src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release",
       "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-3'",
-      "Run any additional relational shard that contains newly enabled UpdateReferenceValidation scenarios, for example ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-4' if those scenarios use shard 4.",
+      "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend&Category=@relational-ci-shard-4' for the newly enabled UpdateReferenceValidation scenarios, or use the updated shard tag if the feature file convention changes during implementation.",
       "Run jq empty tasks.json",
       "Run git diff --check"
     ],
