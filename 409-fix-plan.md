@@ -34,6 +34,10 @@ The relational write path should follow this order:
 
 Descriptor failures should remain early `400 Bad Request` validation failures. Missing document references should be deferred until after identity and proposed authorization.
 
+Resource/data-annotation validation happens before the relational backend executor receives the write request. This plan should not move or duplicate that upstream validation; it only changes the backend ordering after the request body has already passed resource validation.
+
+The existing stored-target authorization/locking boundary at the start of `DefaultRelationalWriteExecutor` should remain in place. This fix is intentionally scoped to the later proposed-value write path where missing document references currently beat identity stability and proposed authorization.
+
 ## Scope
 
 This change should be narrowly scoped to missing document-reference precedence. It should not introduce broad fallback behavior or relax E2E assertions.
@@ -44,7 +48,8 @@ In scope:
 - Keep descriptor-reference failures immediate.
 - Keep non-missing document-reference failures, such as incompatible target type, on the current immediate path.
 - Keep profile writes on the current immediate reference-failure path for this change.
-- Allow no-profile merge/proposed-auth preflight to proceed when document references are missing.
+- Allow no-profile merge/proposed-auth preflight to proceed when document references are missing, using an explicit path-specific allowance.
+- Reuse the existing executor, merge orchestrator, and flattener path; do not add a second write pipeline.
 - Force proposed relationship authorization to execute before the deferred `409` return, including create-new POSTs that normally rely on inline Auth1 during insert.
 - Return the remembered missing document-reference failures as `409` only if no higher-precedence result occurs.
 - Preserve database FK mapping as a final race-condition fallback.
@@ -58,6 +63,7 @@ Out of scope:
 - Normalizing numeric/date serialization.
 - Broadly changing reference resolver semantics.
 - Hiding missing references during actual persistence.
+- Reordering the existing stored-target authorization/locking boundary.
 
 ## Proposed Executor Flow
 
@@ -133,7 +139,7 @@ if (
     HasDescriptorReferenceFailures(resolvedReferences)
     || HasImmediateDocumentReferenceFailures(resolvedReferences)
     || (
-        request.ProfileWriteContext is not null
+        executionRequest.ProfileWriteContext is not null
         && HasDeferredMissingDocumentReferenceFailures(resolvedReferences)
     )
 )
@@ -156,7 +162,7 @@ Keep the resolved reference set and continue:
 
 ```csharp
 var hasDeferredMissingDocumentReferenceFailures =
-    request.ProfileWriteContext is null
+    executionRequest.ProfileWriteContext is null
     && HasDeferredMissingDocumentReferenceFailures(resolvedReferences);
 ```
 
@@ -166,28 +172,31 @@ Do not return yet. The deferred result should be emitted only after identity sta
 
 This is the only part that needs careful implementation because the flattener currently expects every submitted document reference to have a resolved document id.
 
-Preferred implementation:
+Use one concrete mechanism:
 
-- Add an explicit path-specific allowance to merge/flatten for this preflight case, for example:
-  - `RelationalWriteMergeOptions.DeferredMissingDocumentReferences`, or
-  - a nullable set on `FlatteningInput`, such as `DeferredMissingDocumentReferenceKeys`.
-- Use that allowance only when `hasDeferredMissingDocumentReferenceFailures` is true.
-- Build the allowance from `resolvedReferences.InvalidDocumentReferences` where `Reason` is `Missing`.
-- Key the allowance narrowly enough that the flattener can match the exact missing occurrence, for example by document-reference binding index plus ordinal path, or by the concrete reference path after parsing it back to wildcard path plus ordinal path.
+- Add an explicit opt-in flag to `FlatteningInput`, for example `allowDeferredMissingDocumentReferences`, defaulting to `false`.
+- Pass that flag only from the executor through `RelationalWriteMergeOrchestrator` into the no-profile `FlatteningInput` when `hasDeferredMissingDocumentReferenceFailures` is true.
+- Leave profile flattening calls unchanged because profile writes stay on the immediate reference-failure path for this fix.
+- When the flag is true, have `FlatteningResolvedReferenceLookupSet.Create` derive a backend-local path-specific allowance from `resolvedReferences.InvalidDocumentReferences` where `Reason` is `Missing`.
+- Represent the derived allowance as a small set keyed by document-reference binding index plus ordinal path, with a helper such as `ContainsDeferredMissingDocumentReference(int bindingIndex, ReadOnlySpan<int> ordinalPath)`.
+- Derive each key by parsing the failure's concrete JSON path into wildcard path plus ordinal path, then matching the wildcard path to the compiled `DocumentReferenceBinding.ReferenceObjectPath`.
+- Treat a missing binding/path match while building the derived allowance as an internal invariant failure, not as a broader fallback.
 - In `RelationalWriteFlattener.ResolveDocumentReferenceValue`, if the reference object exists but no resolved document id is available:
-  - return `FlattenedWriteValue.Literal(null)` only when that exact binding/path occurrence is in the deferred-missing-reference allowance;
+  - return `FlattenedWriteValue.Literal(null)` only when that exact binding/path occurrence is in the derived deferred-missing-reference allowance;
   - keep the existing exception in normal mode.
-- Apply the same rule for reference-derived document identity values if they are needed by a root value used for identity/proposed authorization:
-  - return `null` only when that exact reference-derived occurrence corresponds to an allowed deferred missing document reference;
+- Apply the same rule for reference-derived document identity values backed by a document-reference binding:
+  - materialize `FlattenedWriteValue.Literal(null)` only when that exact reference-derived occurrence corresponds to an allowed deferred missing document-reference occurrence;
   - keep current fail-fast behavior otherwise.
+- Do not catch or suppress unrelated `RelationalWriteRequestValidationException` failures broadly. If a request-shape validation failure still occurs in deferred-reference mode, it should remain a validation failure unless the code can prove it is the direct result of an allowed deferred missing reference. If one of the target scenarios exposes a null-substitution artifact, handle that artifact narrowly with a unit test rather than adding a generic validation-to-409 fallback.
 
-Do not use a simple global boolean that allows any missing lookup to become `null`. The allowance must be tied to the actual `DocumentReferenceFailureReason.Missing` occurrences from the resolver so extractor, planner, or mapping bugs still fail fast.
+Do not use a simple global boolean that allows any missing lookup to become `null`. The opt-in flag may only enable an exact allowance derived from actual `DocumentReferenceFailureReason.Missing` occurrences from the resolver so extractor, planner, or mapping bugs still fail fast.
 
 This makes the precedence path explicit and prevents unresolved-reference tolerance from leaking into normal persistence.
 
 Important constraint:
 
 - The executor must not persist when deferred missing document-reference failures exist.
+- The executor must also skip guarded no-op success handling when deferred missing document-reference failures exist.
 - After proposed authorization and deferred `If-Match` evaluation, if the deferred missing document-reference failure list is still present, return `BuildReferenceFailureResult`.
 
 ### 5. Keep Identity Stability Before Proposed Authorization
@@ -279,7 +288,7 @@ Those failures should still map to `409 Unresolved Reference`.
 
 ### Unit Tests
 
-Add focused tests in `DefaultRelationalWriteExecutorTests`.
+Add focused executor tests in `DefaultRelationalWriteExecutorTests` and focused flattener/lookup tests in `RelationalWriteFlattenerTests` where the behavior is local to the deferred-reference allowance.
 
 Required coverage:
 
@@ -408,16 +417,20 @@ A fourth risk is broadening this fix into profile-write behavior. Keep profile w
 
 A fifth risk is skipping proposed relationship authorization for create-new POSTs because the current path normally combines Auth1 with the insert. The deferred-reference path must force standalone proposed authorization before returning the remembered `409`.
 
+A sixth risk is allowing substituted `null` reference values to create new merge/flattener validation failures that are only artifacts of the precedence preflight. The first implementation should not add a broad catch-and-remap path. Tests should cover a plain missing-reference case returning `409`; if a target scenario exposes a specific artifact, address that artifact narrowly and keep unrelated validation failures as validation failures.
+
 ## Acceptance Criteria
 
 - Descriptor-reference failures still produce early `400 Bad Request`.
 - Only missing document-reference failures are deferred; incompatible document-reference target failures keep current behavior.
 - Profile writes keep current immediate reference-failure behavior.
 - Deferred missing-reference tolerance is keyed to exact resolver-produced missing document-reference occurrences, not enabled globally.
+- Deferred missing-reference tolerance is enabled by an explicit `FlatteningInput` opt-in for the no-profile preflight path only, and the exact tolerated paths are derived from resolver-produced missing document-reference failures.
 - Missing document-reference failures no longer beat immutable identity/key-change failures.
 - Missing document-reference failures no longer beat proposed namespace, relationship authorization, or deferred `If-Match` failures.
 - Create-new POST proposed relationship authorization runs before the deferred missing-reference return, even though normal successful POSTs may still use insert-inline Auth1.
 - Missing document-reference failures still produce `409 Unresolved Reference` when no higher-precedence failure exists.
+- Guarded no-op success is not returned while deferred missing document-reference failures are remembered.
 - Database FK failures after authorization still map to `409`.
 - The affected E2E scenarios are flipped with explicit expected bodies/statuses, not fallback assertions.
 - Unit tests cover the new precedence ordering and the no-persist guarantee.
