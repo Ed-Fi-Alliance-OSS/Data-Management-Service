@@ -42,6 +42,8 @@ The existing stored-target authorization/locking boundary at the start of `Defau
 
 This change should be narrowly scoped to missing document-reference precedence. It should not introduce broad fallback behavior or relax E2E assertions.
 
+The simplest responsible rule is: defer only resolver-produced `DocumentReferenceFailureReason.Missing` failures, only long enough to let already-planned identity, authorization, and deferred precondition checks arbitrate. Do not add a second write pipeline, a generic validation fallback, or a new reference-resolution model.
+
 In scope:
 
 - Defer only missing document-reference failures inside `DefaultRelationalWriteExecutor`.
@@ -50,7 +52,7 @@ In scope:
 - Keep profile writes on the current immediate reference-failure path for this change.
 - Allow no-profile merge/proposed-auth preflight to proceed when document references are missing, using an explicit path-specific allowance.
 - Reuse the existing executor, merge orchestrator, and flattener path; do not add a second write pipeline.
-- Force proposed relationship authorization to execute before the deferred `409` return, including create-new POSTs that normally rely on inline Auth1 during insert.
+- Run proposed relationship authorization before the deferred `409` return. Add the smallest force-standalone hook needed for deferred-missing create-new POSTs, because those attempts must return before the insert-inline Auth1 path can run.
 - Return the remembered missing document-reference failures as `409` only if no higher-precedence result occurs.
 - Preserve database FK mapping as a final race-condition fallback.
 - Add focused unit coverage.
@@ -174,24 +176,26 @@ This is the only part that needs careful implementation because the flattener cu
 
 Use one concrete mechanism:
 
-- Add an explicit opt-in flag to `FlatteningInput`, for example `allowDeferredMissingDocumentReferences`, defaulting to `false`.
-- Pass that flag only from the executor through `RelationalWriteMergeOrchestrator` into the no-profile `FlatteningInput` when `hasDeferredMissingDocumentReferenceFailures` is true.
+- Add an explicit no-profile preflight opt-in to `FlatteningInput`, for example a `DeferredMissingDocumentReferenceAllowance` value that defaults to `None`.
+- Add a matching optional parameter to `RelationalWriteMergeOrchestrator.Resolve`, defaulting to `DeferredMissingDocumentReferenceAllowance.None`, and pass it only into the no-profile `FlatteningInput`.
+- The executor should pass a non-empty allowance only when `hasDeferredMissingDocumentReferenceFailures` is true.
 - Leave profile flattening calls unchanged because profile writes stay on the immediate reference-failure path for this fix.
-- When the flag is true, have `FlatteningResolvedReferenceLookupSet.Create` derive a backend-local path-specific allowance from `resolvedReferences.InvalidDocumentReferences` where `Reason` is `Missing`.
-- Represent the derived allowance as a small set keyed by document-reference binding index plus ordinal path, with a helper such as `ContainsDeferredMissingDocumentReference(int bindingIndex, ReadOnlySpan<int> ordinalPath)`.
+- Build the allowance from `resolvedReferences.InvalidDocumentReferences` where `Reason` is `Missing`; do not let callers provide arbitrary tolerated paths.
+- Keep this allowance backend-local. Do not change the reference resolver's external contract or teach `ResolvedReferenceSet` that missing document references are successful.
+- Represent the allowance the same way successful references are represented today: an array indexed by document-reference binding index, with an `OrdinalPathMap<bool>` for concrete occurrence paths. Add a helper such as `ContainsDeferredMissingDocumentReference(int bindingIndex, ReadOnlySpan<int> ordinalPath)`.
 - Derive each key by parsing the failure's concrete JSON path into wildcard path plus ordinal path, then matching the wildcard path to the compiled `DocumentReferenceBinding.ReferenceObjectPath`.
 - Treat a missing binding/path match while building the derived allowance as an internal invariant failure, not as a broader fallback.
 - In `RelationalWriteFlattener.ResolveDocumentReferenceValue`, if the reference object exists but no resolved document id is available:
   - return `FlattenedWriteValue.Literal(null)` only when that exact binding/path occurrence is in the derived deferred-missing-reference allowance;
   - keep the existing exception in normal mode.
-- Apply the same rule for reference-derived document identity values backed by a document-reference binding:
-  - materialize `FlattenedWriteValue.Literal(null)` only when that exact reference-derived occurrence corresponds to an allowed deferred missing document-reference occurrence;
-  - keep current fail-fast behavior otherwise.
+- Apply the same rule at the outer `ResolveReferenceDerivedValue` boundary, not by loosening `ResolveReferenceDerivedLiteralValue` globally:
+  - after the reference object is confirmed present, if the backing document-reference binding has no resolved lookup and that exact binding/path occurrence is in the derived allowance, return `FlattenedWriteValue.Literal(null)`;
+  - otherwise keep the existing fail-fast behavior in `ResolveReferenceDerivedLiteralValue`.
 - Do not catch or suppress unrelated `RelationalWriteRequestValidationException` failures broadly. If a request-shape validation failure still occurs in deferred-reference mode, it should remain a validation failure unless the code can prove it is the direct result of an allowed deferred missing reference. If one of the target scenarios exposes a null-substitution artifact, handle that artifact narrowly with a unit test rather than adding a generic validation-to-409 fallback.
 
-Do not use a simple global boolean that allows any missing lookup to become `null`. The opt-in flag may only enable an exact allowance derived from actual `DocumentReferenceFailureReason.Missing` occurrences from the resolver so extractor, planner, or mapping bugs still fail fast.
+Do not use a bare global boolean that allows any missing lookup to become `null`. The opt-in may only enable an exact allowance derived from actual `DocumentReferenceFailureReason.Missing` occurrences from the resolver so extractor, planner, or mapping bugs still fail fast.
 
-This makes the precedence path explicit and prevents unresolved-reference tolerance from leaking into normal persistence.
+This keeps the change to one executor-controlled preflight path and prevents unresolved-reference tolerance from leaking into normal persistence.
 
 Important constraint:
 
@@ -229,6 +233,8 @@ var proposedAuthorizationBoundary = await _proposedRelationshipAuthorizationOrch
 ```
 
 The `forceStandaloneAuthorization` behavior is required for create-new POSTs. Today those writes skip the standalone proposed-auth query because Auth1 is combined with the insert command. When deferred missing document references are present, the executor must return before insert/persist, so inline Auth1 would never run. The simplest responsible change is to add an optional boolean to `ProposedRelationshipAuthorizationOrchestrator.ResolveAsync` and have `AuthorizeAsync` ignore `IsHandledByPostInlineAuth1(request)` when that boolean is true.
+
+Keep the default path unchanged. Successful create-new POSTs without deferred missing document references should still use the existing inline Auth1 behavior.
 
 Then run the existing deferred `If-Match` precondition block:
 
@@ -290,7 +296,7 @@ Those failures should still map to `409 Unresolved Reference`.
 
 Add focused executor tests in `DefaultRelationalWriteExecutorTests` and focused flattener/lookup tests in `RelationalWriteFlattenerTests` where the behavior is local to the deferred-reference allowance.
 
-Required coverage:
+Minimum focused coverage. Combine cases when practical, but keep the precedence assertions explicit:
 
 1. **Descriptor validation beats document-reference failure**
    - Arrange descriptor failure and document-reference failure.
@@ -384,7 +390,13 @@ dotnet build src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagem
 Run backend unit tests around the changed executor:
 
 ```bash
-dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj -c Release --filter DefaultRelationalWriteExecutor
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj -c Release --filter "FullyQualifiedName~DefaultRelationalWriteExecutor"
+```
+
+Format changed C# files:
+
+```bash
+dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit
 ```
 
 Run relational E2E shards containing the flipped scenarios from the repository root:
@@ -425,7 +437,7 @@ A sixth risk is allowing substituted `null` reference values to create new merge
 - Only missing document-reference failures are deferred; incompatible document-reference target failures keep current behavior.
 - Profile writes keep current immediate reference-failure behavior.
 - Deferred missing-reference tolerance is keyed to exact resolver-produced missing document-reference occurrences, not enabled globally.
-- Deferred missing-reference tolerance is enabled by an explicit `FlatteningInput` opt-in for the no-profile preflight path only, and the exact tolerated paths are derived from resolver-produced missing document-reference failures.
+- Deferred missing-reference tolerance is enabled by an explicit no-profile `FlatteningInput` allowance only, and the exact tolerated paths are derived from resolver-produced missing document-reference failures.
 - Missing document-reference failures no longer beat immutable identity/key-change failures.
 - Missing document-reference failures no longer beat proposed namespace, relationship authorization, or deferred `If-Match` failures.
 - Create-new POST proposed relationship authorization runs before the deferred missing-reference return, even though normal successful POSTs may still use insert-inline Auth1.
