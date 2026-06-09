@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -50,6 +51,7 @@ public static class ReferenceResolverServiceCollectionExtensions
 
         services.AddOptions();
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalCommandExecutor, TRelationalCommandExecutor>());
+        services.TryAdd(ServiceDescriptor.Scoped<IChangeQueryRepository, RelationalChangeQueryRepository>());
         services.TryAdd(
             ServiceDescriptor.Scoped<
                 IRelationalParameterConfigurator,

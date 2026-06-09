@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -1219,6 +1220,87 @@ public class ProfileStepDefinitions(
                     $"Path '{jsonPath}' should not match the stored value in variable '{variableName}'."
                 );
         }
+    }
+
+    [Then(@"the response body path ""([^""]*)"" should be a non-negative integer")]
+    public async Task ThenTheResponseBodyPathShouldBeANonNegativeInteger(string jsonPath)
+    {
+        string responseBody = await GetCurrentApiResponse().TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        string[] pathParts = jsonPath.Split('.');
+        bool pathExists = TryResolvePath(
+            responseJson,
+            pathParts,
+            out JsonNode? current,
+            out string failedAtPart
+        );
+
+        pathExists
+            .Should()
+            .BeTrue(
+                $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {responseBody}"
+            );
+
+        current
+            .Should()
+            .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
+
+        long.TryParse(current!.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long value)
+            .Should()
+            .BeTrue($"Path '{jsonPath}' should be an integer but was '{current}'.");
+
+        value.Should().BeGreaterThanOrEqualTo(0, $"Path '{jsonPath}' should be a non-negative integer.");
+    }
+
+    [Then(@"the response body path ""([^""]*)"" should be greater than variable ""([^""]*)""")]
+    public async Task ThenTheResponseBodyPathShouldBeGreaterThanVariable(string jsonPath, string variableName)
+    {
+        string responseBody = await GetCurrentApiResponse().TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        string[] pathParts = jsonPath.Split('.');
+        bool pathExists = TryResolvePath(
+            responseJson,
+            pathParts,
+            out JsonNode? current,
+            out string failedAtPart
+        );
+
+        pathExists
+            .Should()
+            .BeTrue(
+                $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {responseBody}"
+            );
+
+        current
+            .Should()
+            .NotBeNull($"Path '{jsonPath}' should resolve to a non-null value. Response: {responseBody}");
+
+        long.TryParse(
+                current!.ToString(),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out long actual
+            )
+            .Should()
+            .BeTrue($"Path '{jsonPath}' should be an integer but was '{current}'.");
+
+        long.TryParse(
+                _scenarioVariables.GetValueByName(variableName),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out long stored
+            )
+            .Should()
+            .BeTrue($"Variable '{variableName}' should hold an integer value.");
+
+        actual
+            .Should()
+            .BeGreaterThan(
+                stored,
+                $"Path '{jsonPath}' ({actual}) should be greater than variable '{variableName}' ({stored})."
+            );
     }
 
     [When(@"the response header ""([^""]*)"" is stored as variable ""([^""]*)""")]

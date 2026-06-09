@@ -1707,8 +1707,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             // the code so it will work either way.
             input = input.StartsWith('/') ? input[1..] : input;
 
-            // metadata should not have "data" added to the URL.
-            input = input.StartsWith("metadata") || input.StartsWith("oauth") ? input : $"data/{input}";
+            // metadata, oauth, and changeQueries are server-root endpoints, not under /data.
+            input =
+                input.StartsWith("metadata") || input.StartsWith("oauth") || input.StartsWith("changeQueries")
+                    ? input
+                    : $"data/{input}";
 
             return input;
         }

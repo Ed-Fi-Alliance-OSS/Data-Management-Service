@@ -342,4 +342,28 @@ public static class AspNetCoreFrontend
             string.Empty
         );
     }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the Change Queries availableChangeVersions request
+    /// </summary>
+    public static async Task<IResult> GetAvailableChangeVersions(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings
+    )
+    {
+        return ToResult(
+            await apiService.GetAvailableChangeVersions(
+                await FromRequest(
+                    httpContext.Request,
+                    string.Empty,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                )
+            ),
+            httpContext,
+            string.Empty
+        );
+    }
 }

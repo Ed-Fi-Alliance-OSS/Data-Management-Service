@@ -131,7 +131,8 @@ public static class DmsCoreServiceExtensions
             .AddTransient<ProfileWriteValidationMiddleware>()
             .AddTransient<ProfileWritePipelineMiddleware>()
             .AddSingleton<ITokenInfoRelationalMappingSetResolver, TokenInfoRelationalMappingSetResolver>()
-            .AddSingleton<GetTokenInfoHandler>();
+            .AddSingleton<GetTokenInfoHandler>()
+            .AddSingleton<AvailableChangeVersionsHandler>();
 
         return services;
 

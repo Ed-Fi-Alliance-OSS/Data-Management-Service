@@ -81,6 +81,11 @@ internal class ApiService : IApiService
     private readonly Lazy<PipelineProvider> _getTokenInfoSteps;
 
     /// <summary>
+    /// The pipeline steps to satisfy a get available change versions request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _getAvailableChangeVersionsSteps;
+
+    /// <summary>
     /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
     private readonly Lazy<JsonNode> _resourceOpenApiSpecification;
@@ -135,6 +140,9 @@ internal class ApiService : IApiService
         _updateSteps = new Lazy<PipelineProvider>(CreateUpdatePipeline);
         _deleteByIdSteps = new Lazy<PipelineProvider>(CreateDeleteByIdPipeline);
         _getTokenInfoSteps = new Lazy<PipelineProvider>(CreateGetTokenInfoPipeline);
+        _getAvailableChangeVersionsSteps = new Lazy<PipelineProvider>(
+            CreateGetAvailableChangeVersionsPipeline
+        );
         _resourceOpenApiSpecification = new Lazy<JsonNode>(CreateResourceOpenApiSpecification);
         _descriptorOpenApiSpecification = new Lazy<JsonNode>(CreateDescriptorOpenApiSpecification);
     }
@@ -375,6 +383,21 @@ internal class ApiService : IApiService
         return new PipelineProvider(steps);
     }
 
+    private PipelineProvider CreateGetAvailableChangeVersionsPipeline()
+    {
+        // Intentionally minimal: the common steps supply JWT auth (401) and datastore
+        // resolution, and fingerprint validation yields the existing 503 on an unprovisioned
+        // database. No ApiSchema or resource-key-seed steps, so availability does not depend on
+        // ApiSchema.json or OpenAPI path presence.
+        var steps = GetCommonInitialSteps();
+        steps.AddRange([
+            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
+            _serviceProvider.GetRequiredService<AvailableChangeVersionsHandler>(),
+        ]);
+
+        return new PipelineProvider(steps);
+    }
+
     /// <summary>
     /// Parses the excluded domains configuration setting into an array of domain names
     /// </summary>
@@ -479,6 +502,17 @@ internal class ApiService : IApiService
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
         RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST, scope.ServiceProvider);
         await _getTokenInfoSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for the Change Queries availableChangeVersions request
+    /// </summary>
+    public async Task<IFrontendResponse> GetAvailableChangeVersions(FrontendRequest frontendRequest)
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
+        await _getAvailableChangeVersionsSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 
