@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -21,13 +22,22 @@ internal sealed record FocusedStableKeySmokeSeedData(
     long SponsorReferenceCollectionItemId
 );
 
+internal sealed record MssqlDocumentStampState(long ContentVersion, DateTime ContentLastModifiedAt);
+
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key_Fixture_For_Smoke_Coverage
 {
-    private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
+    private static readonly string FixtureRelativePath = Path.Combine(
+        "src",
+        "dms",
+        "backend",
+        "EdFi.DataManagementService.Backend.Ddl.Tests.Unit",
+        "Fixtures",
+        "focused",
+        "stable-key-extension-child-collections"
+    );
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
@@ -47,7 +57,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
             );
         }
 
-        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(ResolveFixtureDirectory());
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _addressPeriodForeignKeys = await _database.GetForeignKeyMetadataAsync("edfi", "SchoolAddressPeriod");
         _interventionForeignKeys = await _database.GetForeignKeyMetadataAsync(
@@ -96,6 +106,125 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
 
         generatedCollectionItemIds.Should().OnlyContain(collectionItemId => collectionItemId > 0);
         generatedCollectionItemIds.Should().OnlyHaveUniqueItems();
+    }
+
+    [Test]
+    public async Task It_should_keep_school_mirror_in_lock_step_for_representative_write_paths()
+    {
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
+
+        var schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        var rootRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[School]
+            SET [SchoolId] = @schoolId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@schoolId", 101),
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+        rootRowsAffected.Should().Be(1);
+
+        var schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
+
+        schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        var childRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[SchoolAddress]
+            SET [City] = @city
+            WHERE [CollectionItemId] = @collectionItemId;
+            """,
+            new SqlParameter("@city", "Mirror City"),
+            new SqlParameter("@collectionItemId", _seedData.AddressCollectionItemId)
+        );
+        childRowsAffected.Should().Be(1);
+
+        schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
+
+        schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        var extensionRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [sample].[SchoolExtension]
+            SET [CampusCode] = @campusCode
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@campusCode", "Mirror Campus"),
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+        extensionRowsAffected.Should().Be(1);
+
+        schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
+
+        schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var otherSchoolBefore = await GetDocumentStampStateAsync(_seedData.OtherSchoolDocumentId);
+
+        var multiRowRowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[School]
+            SET [SchoolId] = [SchoolId] + 1000
+            WHERE [DocumentId] IN (@documentIdA, @documentIdB);
+            """,
+            new SqlParameter("@documentIdA", _seedData.SchoolDocumentId),
+            new SqlParameter("@documentIdB", _seedData.OtherSchoolDocumentId)
+        );
+        multiRowRowsAffected.Should().Be(2);
+
+        schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var otherSchoolAfter = await GetDocumentStampStateAsync(_seedData.OtherSchoolDocumentId);
+        schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
+        otherSchoolAfter.ContentVersion.Should().BeGreaterThan(otherSchoolBefore.ContentVersion);
+        schoolAfter.ContentVersion.Should().NotBe(otherSchoolAfter.ContentVersion);
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.OtherSchoolDocumentId);
+    }
+
+    [Test]
+    public async Task It_should_allocate_one_content_version_for_multi_row_child_updates_of_one_document()
+    {
+        // DMS-1173 AC: multi-row updates allocate one distinct ContentVersion per affected
+        // document under SQL Server statement-level stamping. Two child rows of the same
+        // root document changed in one statement must produce exactly one allocation.
+        var secondAddressCollectionItemId = await InsertSchoolAddressAsync(
+            _seedData.SchoolDocumentId,
+            2,
+            "Dallas"
+        );
+        secondAddressCollectionItemId.Should().NotBe(_seedData.AddressCollectionItemId);
+
+        var schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+
+        // City participates in UX_SchoolAddress_City_School_DocumentId, so each row
+        // needs a distinct new value.
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[SchoolAddress]
+            SET [City] = [City] + ' II'
+            WHERE [School_DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+        rowsAffected.Should().Be(2);
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(
+                1L,
+                "a multi-row child update of one root document must allocate exactly one content stamp"
+            );
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
     }
 
     [Test]
@@ -546,9 +675,69 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         return await _database.ExecuteScalarAsync<long>(sql, parameters);
     }
 
+    private async Task<long> ReadMaxChangeVersionAsync()
+    {
+        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
+    }
+
+    private async Task<MssqlDocumentStampState> GetDocumentStampStateAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT [ContentVersion], [ContentLastModifiedAt]
+            FROM [dms].[Document]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+        var row = rows.Single();
+        return new(Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
+    }
+
+    private async Task<MssqlDocumentStampState> GetSchoolMirrorStampStateAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT [ContentVersion], [ContentLastModifiedAt]
+            FROM [edfi].[School]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+        var row = rows.Single();
+        return new(Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
+    }
+
+    private async Task AssertSchoolMirrorMatchesDocumentAsync(long documentId)
+    {
+        var document = await GetDocumentStampStateAsync(documentId);
+        var mirror = await GetSchoolMirrorStampStateAsync(documentId);
+
+        mirror.Should().Be(document);
+    }
+
     private static async Task AssertForeignKeyViolationAsync(Func<Task> act)
     {
         var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
         exception.Number.Should().Be(547);
+    }
+
+    private static string ResolveFixtureDirectory()
+    {
+        var fixtureDirectory = FixturePathResolver.ResolveRepositoryRelativePath(
+            TestContext.CurrentContext.TestDirectory,
+            FixtureRelativePath
+        );
+
+        return RemoveWindowsLongPathPrefix(fixtureDirectory);
+    }
+
+    private static string RemoveWindowsLongPathPrefix(string path)
+    {
+        const string windowsLongPathPrefix = @"\\?\";
+
+        return path.StartsWith(windowsLongPathPrefix, StringComparison.Ordinal)
+            ? path[windowsLongPathPrefix.Length..]
+            : path;
     }
 }

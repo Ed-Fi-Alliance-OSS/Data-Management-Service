@@ -238,6 +238,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_default_descriptor_content_version_to_zero()
+    {
+        _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT 0");
+    }
+
+    [Test]
     public void It_should_create_document_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"");
@@ -570,14 +576,15 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_create_descriptor_stamping_trigger()
     {
         _ddl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
-        _ddl.Should().Contain("AFTER UPDATE ON \"dms\".\"Descriptor\"");
+        _ddl.Should().Contain("AFTER INSERT OR UPDATE OR DELETE ON \"dms\".\"Descriptor\"");
         _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()");
     }
 
     [Test]
     public void It_should_emit_no_op_guard_in_descriptor_stamping_function()
     {
-        _ddl.Should().Contain("IF TG_OP = 'UPDATE' AND NOT (");
+        _ddl.Should().Contain("IF TG_OP = 'UPDATE' THEN");
+        _ddl.Should().Contain("IF NOT (");
         _ddl.Should().Contain("OLD.\"Namespace\" IS DISTINCT FROM NEW.\"Namespace\"");
         _ddl.Should().Contain("OLD.\"CodeValue\" IS DISTINCT FROM NEW.\"CodeValue\"");
         _ddl.Should().Contain("OLD.\"ShortDescription\" IS DISTINCT FROM NEW.\"ShortDescription\"");
@@ -589,12 +596,67 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_stamp_document_from_descriptor_trigger()
+    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
     {
+        _ddl.Should().Contain("IF TG_OP = 'INSERT' THEN");
+        _ddl.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("FROM \"dms\".\"Document\"");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
+        _ddl.Should()
+            .Contain(
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+            );
+    }
+
+    [Test]
+    public void It_should_allocate_document_stamps_for_descriptor_updates()
+    {
+        _ddl.Should().Contain("ELSIF TG_OP = 'UPDATE' THEN");
         _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
         _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+    }
+
+    [Test]
+    public void It_should_allocate_document_stamps_for_descriptor_deletes()
+    {
+        _ddl.Should().Contain("ELSIF TG_OP = 'DELETE' THEN");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = OLD.\"DocumentId\"");
+        _ddl.Should().Contain("RETURN OLD;");
+    }
+
+    [Test]
+    public void It_should_not_mirror_descriptor_delete_stamps_to_the_deleted_row()
+    {
+        // DocumentId is the Descriptor PK and the row is already gone when the AFTER
+        // DELETE branch runs, so a mirror update can never match a row. The DELETE
+        // branch must stamp dms.Document with a plain UPDATE and nothing else.
+        var deleteStart = _ddl.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        deleteStart.Should().BeGreaterOrEqualTo(0);
+        var deleteEnd = _ddl.IndexOf("END IF;", deleteStart, StringComparison.Ordinal);
+        deleteEnd.Should().BeGreaterThan(deleteStart);
+        var deleteBranch = _ddl[deleteStart..deleteEnd];
+
+        deleteBranch.Should().Contain("UPDATE \"dms\".\"Document\"");
+        deleteBranch.Should().Contain("WHERE \"DocumentId\" = OLD.\"DocumentId\";");
+        deleteBranch.Should().NotContain("WITH stamped AS (");
+        deleteBranch.Should().NotContain("RETURNING");
+        deleteBranch.Should().NotContain("UPDATE \"dms\".\"Descriptor\" r");
+        deleteBranch.Should().Contain("RETURN OLD;");
+    }
+
+    [Test]
+    public void It_should_capture_descriptor_document_stamps_with_returning_and_mirror_them()
+    {
+        _ddl.Should().Contain("WITH stamped AS (");
+        _ddl.Should().Contain("RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
+        _ddl.Should()
+            .Contain(
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+            );
+        _ddl.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
     }
 
     [Test]
@@ -891,6 +953,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime())");
     }
 
+    [Test]
+    public void It_should_default_descriptor_content_version_to_zero()
+    {
+        _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0");
+    }
+
     // ── MSSQL named default constraints ─────────────────────────────
 
     [Test]
@@ -1073,7 +1141,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]");
         _ddl.Should().Contain("ON [dms].[Descriptor]");
-        _ddl.Should().Contain("AFTER UPDATE");
+        _ddl.Should().Contain("AFTER INSERT, UPDATE, DELETE");
     }
 
     [Test]
@@ -1099,13 +1167,33 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_emit_affected_docs_cte_in_descriptor_stamping_trigger()
     {
-        // AFTER UPDATE guarantees every inserted row has a matching deleted row,
-        // so a single INNER JOIN is sufficient — no LEFT JOIN+UNION ceremony.
+        // INSERT rows have no deleted counterpart and copy the dms.Document default stamps.
+        // UPDATE rows keep the null-safe diff predicate so no-op updates produce
+        // no affected docs, including the recursive mirror-only UPDATE. DELETE rows are
+        // included so descriptor deletes allocate the tombstone-facing content stamp.
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("FROM inserted i");
-        _ddl.Should().Contain("INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
-        _ddl.Should().NotContain("LEFT JOIN deleted");
-        _ddl.Should().NotContain("LEFT JOIN inserted");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
+        // The branches are disjoint (changed updates vs pure deletes), so UNION ALL
+        // avoids a pointless dedup sort on every descriptor statement.
+        _ddl.Should().Contain("UNION ALL");
+        _ddl.Should().Contain("FROM deleted del");
+        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
+        _ddl.Should().Contain("WHERE i.[DocumentId] IS NULL");
+    }
+
+    [Test]
+    public void It_should_guard_the_descriptor_mirror_update_against_empty_stamped_worksets()
+    {
+        // Without this guard the mirror self-UPDATE re-fires the trigger even when
+        // @stamped is empty, which recurses to the nesting limit on databases with
+        // RECURSIVE_TRIGGERS ON (statement triggers fire on 0 affected rows).
+        var guardStart = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        guardStart.Should().BeGreaterOrEqualTo(0);
+
+        var mirrorUpdateStart = _ddl.IndexOf("UPDATE r", guardStart, StringComparison.Ordinal);
+        mirrorUpdateStart.Should().BeGreaterThan(guardStart);
     }
 
     [Test]
@@ -1140,6 +1228,33 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
+    }
+
+    [Test]
+    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
+    {
+        _ddl.Should()
+            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
+        _ddl.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+        _ddl.Should().Contain("FROM [dms].[Document] d");
+        _ddl.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("WHERE del.[DocumentId] IS NULL;");
+    }
+
+    [Test]
+    public void It_should_capture_descriptor_document_stamps_with_output_and_mirror_them()
+    {
+        _ddl.Should().Contain("DECLARE @stamped TABLE (");
+        _ddl.Should()
+            .Contain(
+                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+            );
+        _ddl.Should().Contain("UPDATE r");
+        _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
+        _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]");
+        _ddl.Should().Contain("FROM [dms].[Descriptor] r");
+        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
     }
 
     [Test]
@@ -1313,7 +1428,7 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     public void It_should_render_the_descriptor_stamping_trigger_targeting_dms_Descriptor()
     {
         _pgsqlDdl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
-        _pgsqlDdl.Should().Contain("AFTER UPDATE ON \"dms\".\"Descriptor\"");
+        _pgsqlDdl.Should().Contain("AFTER INSERT OR UPDATE OR DELETE ON \"dms\".\"Descriptor\"");
     }
 
     [Test]

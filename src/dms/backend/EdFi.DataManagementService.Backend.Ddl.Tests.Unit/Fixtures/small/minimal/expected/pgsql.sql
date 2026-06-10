@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "Discriminator" varchar(128) NOT NULL,
     "Uri" varchar(306) NOT NULL,
-    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
 );
@@ -407,19 +407,45 @@ CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."Referen
 CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'UPDATE' AND NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
-        RETURN NEW;
+    IF TG_OP = 'UPDATE' THEN
+        IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+            RETURN NEW;
+        END IF;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'INSERT' THEN
+        WITH stamped AS (
+            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+            FROM "dms"."Document"
+            WHERE "DocumentId" = NEW."DocumentId"
+        )
+        UPDATE "dms"."Descriptor" r
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        FROM stamped
+        WHERE r."DocumentId" = stamped."DocumentId";
+    ELSIF TG_OP = 'UPDATE' THEN
+        WITH stamped AS (
+            UPDATE "dms"."Document"
+            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+            WHERE "DocumentId" = NEW."DocumentId"
+            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        )
+        UPDATE "dms"."Descriptor" r
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        FROM stamped
+        WHERE r."DocumentId" = stamped."DocumentId";
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Descriptor_Stamp_Document" ON "dms"."Descriptor";
 CREATE TRIGGER "TR_Descriptor_Stamp_Document"
-    AFTER UPDATE ON "dms"."Descriptor"
+    AFTER INSERT OR UPDATE OR DELETE ON "dms"."Descriptor"
     FOR EACH ROW
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 
@@ -430,7 +456,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
 (
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
+    "ContentVersion" bigint NOT NULL DEFAULT 0,
     "PersonId" integer NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Person_NK" UNIQUE ("PersonId")
@@ -486,6 +512,9 @@ EXECUTE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_Stamp"()
 RETURNS TRIGGER AS $func$
+DECLARE
+    _stampedContentVersion bigint;
+    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
@@ -496,10 +525,20 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."PersonId" IS DISTINCT FROM NEW."PersonId") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
+    IF TG_OP = 'INSERT' THEN
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
+        FROM "dms"."Document"
+        WHERE "DocumentId" = NEW."DocumentId";
+        NEW."ContentVersion" := _stampedContentVersion;
+        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+    ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
+        WHERE "DocumentId" = NEW."DocumentId"
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        NEW."ContentVersion" := _stampedContentVersion;
+        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."PersonId" IS DISTINCT FROM NEW."PersonId") THEN
         UPDATE "dms"."Document"

@@ -142,7 +142,7 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveEndDate] date NULL,
     [Discriminator] nvarchar(128) NOT NULL,
     [Uri] nvarchar(306) NOT NULL,
-    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
 );
@@ -389,20 +389,45 @@ CREATE INDEX [IX_ReferentialIdentity_DocumentId] ON [dms].[ReferentialIdentity] 
 GO
 CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]
 ON [dms].[Descriptor]
-AFTER UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
+    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
+    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL;
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL))
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
+        UNION ALL
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [dms].[Descriptor] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
 END;
 GO
 
@@ -418,7 +443,7 @@ CREATE TABLE [edfi].[School]
 (
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_School_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
+    [ContentVersion] bigint NOT NULL CONSTRAINT [DF_School_ContentVersion] DEFAULT 0,
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_School_NK] UNIQUE ([SchoolId])
@@ -561,21 +586,41 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
+    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
+    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+    WHERE del.[DocumentId] IS NULL;
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
-        UNION
+        WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)))
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[School] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN
         UPDATE d
@@ -594,6 +639,11 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
     ;WITH affectedDocs AS (
         SELECT i.[School_DocumentId]
         FROM inserted i
@@ -607,8 +657,18 @@ BEGIN
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId];
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId]
+    INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[School] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
 END;
 GO
 
@@ -618,6 +678,11 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
         FROM inserted i
@@ -631,8 +696,18 @@ BEGIN
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]
+    INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[School] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
 END;
 GO
 
@@ -642,6 +717,11 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @stamped TABLE (
+        [DocumentId] bigint NOT NULL PRIMARY KEY,
+        [ContentVersion] bigint NOT NULL,
+        [ContentLastModifiedAt] datetime2(7) NOT NULL
+    );
     ;WITH affectedDocs AS (
         SELECT i.[School_DocumentId]
         FROM inserted i
@@ -655,8 +735,18 @@ BEGIN
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId];
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId]
+    INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[School] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
 END;
 GO
 

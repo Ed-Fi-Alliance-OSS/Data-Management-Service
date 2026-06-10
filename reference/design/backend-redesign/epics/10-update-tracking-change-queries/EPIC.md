@@ -51,6 +51,7 @@ Deliverables include:
 - `DMS-1188` — `25-readchanges-authorization.md` — Apply relationship-based `ReadChanges` authorization to `/deletes` and `/keyChanges`
 - `DMS-1189` — `26-school-year-type-readchanges-forbidden.md` — _Retired_ No longer needed
 - `DMS-1197` — `27-no-further-and-namespace-readchanges-authorization.md` — Apply `NoFurtherAuthorizationRequired` and `NamespaceBased` `ReadChanges` authorization to Change Query endpoints
+- `DMS-1208` — `28-postgresql-statement-level-child-stamping.md` — Deduplicate PostgreSQL child and `_ext` stamping by affected document
 - `DMS-1194` — `32-document-v1-release-note-deferrals.md` — Document DMS v1.0 Change Queries deferred features in release notes
 
 ## Deferred Stories (post-v1.0)

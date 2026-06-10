@@ -403,7 +403,8 @@ internal static class PermutationInputOrderFixture
             new DbTableName(schema, tableName),
             [new DbColumnName("DocumentId")],
             [],
-            new TriggerKindParameters.DocumentStamping()
+            new TriggerKindParameters.DocumentStamping(),
+            MirrorStampTargetTable: new DbTableName(schema, tableName)
         );
     }
 
