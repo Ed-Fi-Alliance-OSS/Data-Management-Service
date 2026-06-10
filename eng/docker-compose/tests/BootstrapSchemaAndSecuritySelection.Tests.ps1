@@ -476,6 +476,27 @@ exit $ExitCode
                 Where-Object { $_.resourceClaim -eq "http://example.org/identity/claims/domains/explicitParent" })[0]
             $check.claimSetName | Should -Be "EdFiSandbox"
             $check.action | Should -Be "Read"
+            # DMS-1153: parent-derived checks carry isParent so the claims-ready gate can
+            # defer them — parent grants materialize on leaf descendants via lineage and the
+            # parent name never appears in /authorizationMetadata claims[].
+            $check.isParent | Should -BeTrue
+        }
+
+        It "records the embedded baseline probe against a leaf resource claim, not a domain parent" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet)
+            Invoke-PrepareClaim
+            $manifest = Get-RootManifest
+
+            $checks = @($manifest.claims.expectedVerificationChecks)
+            $checks.Count | Should -BeGreaterOrEqual 1
+            $baseline = $checks[0]
+            $baseline.claimSetName | Should -Be "EdFiSandbox"
+            # CMS /authorizationMetadata flattens the claims hierarchy to leaf resource claims
+            # only (verified live in DMS-1153); a probe against a domains/* parent can never
+            # verify. schoolYearType is the edFiTypes domain's leaf child in embedded claims.
+            $baseline.resourceClaim | Should -Be "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"
+            $baseline.action | Should -Be "Read"
+            $baseline.resourceClaim | Should -Not -Match "/domains/" -Because "domain parents are never serialized in /authorizationMetadata claims[] and would hard-fail every gate run"
         }
 
         It "rejects explicit claimSets on non-parent resource claims because CMS does not compose them" {
@@ -979,6 +1000,23 @@ exit $ExitCode
                 $content = Get-Content -LiteralPath $path -Raw
                 $content | Should -Match "AddExtensionSecurityMetadata"
             }
+        }
+
+        It "InstanceManagement E2E setup does not pass -NoDataStore to start-local-dms.ps1 after de-scope" {
+            # -NoDataStore was removed from start-local-dms.ps1 in DMS-1153. The InstanceManagement
+            # E2E suite creates its own per-test databases rather than relying on the start script to
+            # create a default data store, so the flag is simply dropped (not redirected to configure-local-data-store.ps1).
+            $imSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1") -Raw
+            # Reject any start-local-dms.ps1 invocation that still carries the removed flag
+            $imSetup | Should -Not -Match "start-local-dms\.ps1[^`n]*-NoDataStore"
+        }
+
+        It "DataManagementService E2E setup calls configure-local-data-store.ps1 to create the default data store" {
+            # start-local-dms.ps1 no longer creates a data store automatically after DMS-1153.
+            # The DataManagementService E2E setup must call configure-local-data-store.ps1 explicitly
+            # so a default route-unqualified data store is present before the tests run.
+            $dmsSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+            $dmsSetup | Should -Match "configure-local-data-store\.ps1"
         }
 
         It "build-dms.ps1 teardown invocations include -RemoveBootstrap to wipe stale bootstrap workspace" {

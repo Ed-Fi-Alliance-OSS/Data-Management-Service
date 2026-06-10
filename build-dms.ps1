@@ -98,7 +98,11 @@ param(
     [switch]
     $SkipDockerBuild,
 
-    # Forwarded to start-{local,published}-dms.ps1 to opt into the seed phase after the stack starts.
+    # Opts into the seed phase after the stack starts. For the published-image path, forwarded to
+    # start-published-dms.ps1. For the local-image path, the direct-SQL database-template seed path
+    # (setup-database-template.psm1 LoadSeedData) runs after stack startup: start-local-dms.ps1 is
+    # infrastructure-lifecycle-only as of DMS-1153, and the API-based load-dms-seed-data.ps1 path
+    # requires a staged bootstrap manifest that this flow's -RemoveBootstrap teardown removes.
     [switch]
     $LoadSeedData,
 
@@ -680,12 +684,6 @@ function Start-DockerEnvironment {
         }
     }
 
-    # build-dms.ps1's -LoadSeedData invokes start-(local|published)-dms.ps1 directly with -LoadSeedData,
-    # which runs the direct-SQL database-template-package path via setup-database-template.psm1.
-    # The new API-based seed flow (bootstrap-(local|published)-dms.ps1 + load-dms-seed-data.ps1) is
-    # the forward developer-facing contract; the deletion of the direct-SQL path here is gated on
-    # bootstrap-design.md §6.4 (line 1250) Story-04 XSD-staging verification. See those scripts'
-    # docstrings for the same gate citation.
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
@@ -698,12 +696,40 @@ function Start-DockerEnvironment {
                 }
             }
             else {
+                # Local-image path: start-local-dms.ps1 is infrastructure-lifecycle-only as of
+                # DMS-1153 and no longer accepts -LoadSeedData.
+                #
+                # This flow is intentionally OUTSIDE the DMS-1153 bootstrap-manifest contract:
+                # the -RemoveBootstrap teardown above guarantees no manifest is staged, so the
+                # claims-ready gate is skipped and NEED_DATABASE_SETUP from the env file
+                # provisions the database in-container at DMS startup. The full start (rather
+                # than the -InfraOnly/-DmsOnly split) is required here because -DmsOnly forces
+                # NEED_DATABASE_SETUP=false per the DMS-1151 phase contract, which would leave
+                # this legacy DLL-backed flow unprovisioned. The DMS container restarts until
+                # the configure step below lands the data store (restart: unless-stopped).
+                # Story 04 moves this flow onto the staged bootstrap workspace and the ordered
+                # phase flow.
+                ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+
                 if ($LoadSeedData) {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -LoadSeedData -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    # Direct-SQL database-template seed path, relocated verbatim from the seed
+                    # block de-scoped out of start-local-dms.ps1; its removal is gated on the
+                    # bootstrap-design.md Section 6.4 Story-04 XSD-staging verification. The
+                    # API-based load-dms-seed-data.ps1 path is not usable here: it requires a
+                    # staged bootstrap manifest, and the -RemoveBootstrap teardown above
+                    # guarantees none is present.
+                    Import-Module ./setup-database-template.psm1 -Force
+                    Write-Output "Loading initial data from the database template..."
+                    LoadSeedData -EnvironmentFile $environmentFilePath
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Failed to load initial data, with exit code $LASTEXITCODE."
+                    }
                 }
-                else {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-                }
+
+                # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
+                # create it explicitly so DMS startup finds an instance in CMS.
+                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath
             }
         }
         finally {

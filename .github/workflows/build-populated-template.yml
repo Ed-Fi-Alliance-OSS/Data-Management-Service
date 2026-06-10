@@ -176,7 +176,7 @@ jobs:
         if: ${{ inputs.use_relational_backend }}
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -NoDataStore
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig
         working-directory: eng/docker-compose/
 
       - name: Provision relational database
@@ -185,12 +185,11 @@ jobs:
           ./provision-relational-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
         working-directory: eng/docker-compose/
 
-      # DMS fails fatally at startup when the Configuration Service has no data stores,
-      # and the relational stack was started with -NoDataStore so no data store points at
-      # the main database. Register the single relational data store here and hand its id
-      # forward; the Configuration Service protects data store connection strings in API
-      # responses, so the id from registration is the only reliable way to select this
-      # data store later.
+      # DMS fails fatally at startup when the Configuration Service has no data stores.
+      # No data store is created by default; register the single relational data store here
+      # and hand its id forward; the Configuration Service protects data store connection
+      # strings in API responses, so the id from registration is the only reliable way to
+      # select this data store later.
       - name: Register relational data store
         if: ${{ inputs.use_relational_backend }}
         run: |

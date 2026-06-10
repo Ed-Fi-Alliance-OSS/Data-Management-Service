@@ -101,6 +101,15 @@ a container.
 This may take around a minute to startup. This script not only starts the
 containers, it also calls an additional script for configuring Keycloak.
 
+Next, create the initial data store. As of DMS-1153, `start-local-dms.ps1` is
+infrastructure-only and no longer creates one automatically; the DMS container
+keeps restarting until at least one data store is registered in the
+Configuration Service:
+
+```powershell
+./configure-local-data-store.ps1
+```
+
 Once started, try the following HTTP request, which will load the Ed-Fi
 Discovery API endpoint from the DMS.
 
@@ -157,11 +166,16 @@ template package name using the .env variable:
 DATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Minimal.Template.PostgreSql.5.2.0
 ```
 
-Then, run the following command in PowerShell to start the local DMS instance
-and load the seed data:
+Then, run the following commands in PowerShell to start the local DMS instance,
+create the data store, and load the seed data. As of DMS-1153,
+`start-local-dms.ps1` no longer accepts `-LoadSeedData`; the database-template
+load is invoked directly from `setup-database-template.psm1`:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -LoadSeedData
+./start-local-dms.ps1 -EnableConfig -EnableKafkaUI
+./configure-local-data-store.ps1
+Import-Module ./setup-database-template.psm1
+LoadSeedData -EnvironmentFile ./.env
 ```
 
 This will ensure your environment is initialized with the required schema and

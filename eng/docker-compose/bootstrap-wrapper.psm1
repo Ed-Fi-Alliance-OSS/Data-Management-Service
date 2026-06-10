@@ -237,10 +237,38 @@ function Invoke-BootstrapWrapper {
 
         [Switch]$AddSmokeTestCredentials,
 
-        [string]$SchoolYearRange = ""
+        [string]$SchoolYearRange = "",
+
+        # IDE workflow: stop before DMS startup so the developer can launch DMS in an IDE debugger.
+        # When combined with -DmsBaseUrl, after configure + provision the wrapper waits for the
+        # IDE-hosted DMS to become healthy before returning (or optionally loading seed data).
+        # Must not be forwarded to start-published-dms.ps1 (D5: IDE shapes are local-only).
+        [Switch]$InfraOnly,
+
+        # IDE workflow: base URL of an IDE-hosted DMS process to health-wait after infrastructure
+        # startup, configure, and provision. Valid only with -InfraOnly; rejected without it.
+        # The value is held locally and NOT forwarded to the initial start-script infra invocation;
+        # it is forwarded only to the post-provision start-script health-wait invocation and,
+        # when -LoadSeedData is also requested, to load-dms-seed-data.ps1.
+        [string]$DmsBaseUrl
     )
 
     $ErrorActionPreference = "Stop"
+
+    # Fail fast: IDE workflow shape parameter validation — runs before any phase invocation.
+    # -DmsBaseUrl is only valid with -InfraOnly; reject it without -InfraOnly so a misuse
+    # never reaches Docker or CMS state.
+    $dmsBaseUrlSupplied = $PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace($DmsBaseUrl)
+    if ($dmsBaseUrlSupplied -and -not $InfraOnly) {
+        throw "-DmsBaseUrl requires -InfraOnly. Use: bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>"
+    }
+
+    # -LoadSeedData combined with -InfraOnly but WITHOUT -DmsBaseUrl is rejected because the
+    # terminal pre-DMS shape has no running DMS process: seed delivery requires a healthy DMS
+    # endpoint and there is none when the workflow stops before DMS startup.
+    if ($LoadSeedData -and $InfraOnly -and -not $dmsBaseUrlSupplied) {
+        throw "-LoadSeedData with -InfraOnly requires -DmsBaseUrl. The terminal pre-DMS shape stops before any DMS process is running; seed delivery requires a healthy DMS endpoint. Supply -DmsBaseUrl to enable the health-wait continuation and seed phase."
+    }
 
     # Fail fast: validate -SchoolYearRange before any phase invocation. The format also gets parsed
     # again below for the seed phase; hoisting both the regex check and the StartYear <= EndYear
@@ -366,6 +394,8 @@ function Invoke-BootstrapWrapper {
             # Isolated wrapper Pester fixtures copy only the wrapper and stub phase scripts. The
             # production checkout always has these siblings, so the real wrapper path continues
             # below through configure -> provision -> DMS-only -> seed.
+            # The -InfraOnly branch bypasses configure/provision/DMS-only the same way it would in
+            # production: if the siblings are absent this is a test sandbox, so just return early.
             if (-not $LoadSeedData) { return }
 
             $seedArgs = @{ IdentityProvider = $resolvedIdentityProvider }
@@ -376,6 +406,7 @@ function Invoke-BootstrapWrapper {
             if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
                 $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
             }
+            if ($dmsBaseUrlSupplied) { $seedArgs.DmsBaseUrl = $DmsBaseUrl }
 
             & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -413,6 +444,78 @@ function Invoke-BootstrapWrapper {
         & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+        }
+
+        if ($InfraOnly) {
+            # IDE workflow: infrastructure + configure + provision complete. The wrapper now branches:
+            #
+            #   Primary (terminal): -InfraOnly alone — print IDE guidance and stop. The developer
+            #   launches DMS in an IDE debugger manually. No -DmsOnly invocation runs here.
+            #
+            #   Continuation: -InfraOnly -DmsBaseUrl <url> — after provision, invoke the start
+            #   script again with -InfraOnly -DmsBaseUrl to trigger the health-wait. The value is
+            #   intentionally NOT forwarded to the earlier infra invocation above (command-boundaries
+            #   §3.3: start-local-dms.ps1 owns the health-wait; the wrapper holds the URL until now).
+            if (-not $dmsBaseUrlSupplied) {
+                # Terminal pre-DMS shape: IDE guidance was already printed by provision-dms-schema.ps1.
+                # The caller launches DMS in their IDE and then manually runs seed or health-wait.
+                # Terminal guidance contract (DMS-1153 AC): do NOT present a second
+                # start-local-dms.ps1 run as a resume mechanism. The continuation shape is a
+                # fresh wrapper invocation — there is no persisted stop/resume state. Because
+                # this terminal run already created the data store, a follow-up wrapper run
+                # must pass -NoDataStore so the configure phase reuses it instead of creating
+                # a duplicate (verified live: a plain re-run creates a second data store).
+                Write-Information "" -InformationAction Continue
+                Write-Information "--- IDE Workflow: Pre-DMS preparation complete ---" -InformationAction Continue
+                Write-Information "Infrastructure is running, schema is provisioned. Launch DMS in your IDE debugger." -InformationAction Continue
+                Write-Information "Optional seed delivery once your IDE-hosted DMS is healthy:" -InformationAction Continue
+                Write-Information "  load-dms-seed-data.ps1 -DmsBaseUrl <url> [...]" -InformationAction Continue
+                Write-Information "For a wrapper-managed health-wait and seed (fresh wrapper run; -NoDataStore reuses the data store this run created):" -InformationAction Continue
+                Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]" -InformationAction Continue
+                return
+            }
+
+            # Continuation shape: trigger the health-wait via start-local-dms.ps1 -InfraOnly -DmsBaseUrl.
+            # -DmsBaseUrl is deliberately withheld from the first (infra) invocation above and only
+            # forwarded here, after configure + provision are complete.
+            $healthWaitArgs = @{
+                IdentityProvider = $resolvedIdentityProvider
+                InfraOnly = $true
+                EnableConfig = $true
+                EnvironmentFile = $effectiveEnvFile
+                DmsBaseUrl = $DmsBaseUrl
+            }
+            if ($EnableKafkaUI) { $healthWaitArgs.EnableKafkaUI = $true }
+            if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
+            if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
+
+            & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "$StartScriptName -InfraOnly -DmsBaseUrl health-wait failed with exit code $LASTEXITCODE."
+            }
+
+            # Seed phase is wrapper-level opt-in; only runs in the continuation shape.
+            if (-not $LoadSeedData) { return }
+
+            $seedArgs = @{ IdentityProvider = $resolvedIdentityProvider }
+            $seedArgs.EnvironmentFile = $effectiveEnvFile
+            $seedArgs.DmsBaseUrl = $DmsBaseUrl
+            if ($PSBoundParameters.ContainsKey('SeedTemplate')) { $seedArgs.SeedTemplate = $SeedTemplate }
+            if ($PSBoundParameters.ContainsKey('SeedDataPath')) { $seedArgs.SeedDataPath = $SeedDataPath }
+            if ($AdditionalNamespacePrefix.Count -gt 0) { $seedArgs.AdditionalNamespacePrefix = $AdditionalNamespacePrefix }
+
+            if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+                $seedArgs.SchoolYear = @($rangeStartYear..$rangeEndYear)
+            }
+            elseif (-not $configured.HasRouteQualifiedDataStores -and $configuredDataStoreIds.Count -eq 1) {
+                $seedArgs.DataStoreId = [long[]]@([long]$configuredDataStoreIds[0])
+            }
+
+            & "$PSScriptRoot/load-dms-seed-data.ps1" @seedArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "load-dms-seed-data.ps1 -InfraOnly continuation failed with exit code $LASTEXITCODE."
+            }
+            return
         }
 
         $dmsStartArgs = @{
