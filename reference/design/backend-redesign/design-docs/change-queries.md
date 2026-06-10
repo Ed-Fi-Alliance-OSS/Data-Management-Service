@@ -509,11 +509,9 @@ This is not an issue in ODS because OrganizationDepartment's `ReadChanges` actio
 
 ### SchoolYearTypes
 
-The `SchoolYearType` resource is excluded from the advertised Change Queries OpenAPI surface because it is immutable. The OpenAPI metadata does not include the `/deletes` or `/keyChanges` endpoints.
+ODS treats `SchoolYearType` as a special OpenAPI exception for the tracked-change routes. Its live resource endpoint supports `minChangeVersion` and `maxChangeVersion`, but ODS does not advertise `/ed-fi/schoolYearTypes/deletes` or `/ed-fi/schoolYearTypes/keyChanges`.
 
-However, for the sake of simplicity, the generic DeletesController and KeyChangesController do not check for SchoolYearType by name, and the generated DB scripts still add ChangeVersion, a tracked changes table, and delete tracking for SchoolYearType. Its update trigger updates ChangeVersion but does not insert key-change rows.
-
-The `ReadChanges` action is not configured for this resource, so crafted requests to its `/deletes` or `/keyChanges` endpoints result in authorization denied instead of an unknown-route response.
+DMS intentionally differs from this ODS OpenAPI exception. The DMS-specific `SchoolYearType` decision is described in the later authorization section.
 
 ### Filtering live resources by ChangeVersion
 
