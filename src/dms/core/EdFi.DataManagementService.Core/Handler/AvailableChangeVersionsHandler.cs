@@ -31,8 +31,9 @@ internal sealed class AvailableChangeVersionsHandler(ILogger<AvailableChangeVers
         var changeQueryRepository = requestInfo.ScopedServiceProvider.GetService<IChangeQueryRepository>();
 
         // Change Queries are a relational-backend feature; IChangeQueryRepository is only
-        // registered on that path. Return an intentional 503 (a configuration condition) rather
-        // than letting GetRequiredService throw an opaque missing-service exception.
+        // registered on that path. When support is unavailable in the runtime the endpoint is
+        // treated as not routed and returns the standard 404 not-found response, matching the
+        // Change Queries contract (the same shape Program.cs MapFallback emits for any unrouted path).
         if (changeQueryRepository is null)
         {
             logger.LogWarning(
@@ -40,9 +41,9 @@ internal sealed class AvailableChangeVersionsHandler(ILogger<AvailableChangeVers
                 requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 503,
-                Body: FailureResponse.ForServiceConfigurationError(
-                    "Change Queries require the relational backend.",
+                StatusCode: 404,
+                Body: FailureResponse.ForNotFound(
+                    "The specified data could not be found.",
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: [],

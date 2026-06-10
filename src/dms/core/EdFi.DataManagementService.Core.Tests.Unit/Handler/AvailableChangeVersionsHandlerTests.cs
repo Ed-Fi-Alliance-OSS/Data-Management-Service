@@ -78,14 +78,15 @@ public class Given_AvailableChangeVersionsHandler
     }
 
     [Test]
-    public async Task It_returns_503_when_change_query_repository_is_not_registered()
+    public async Task It_returns_404_when_change_query_repository_is_not_registered()
     {
         RequestInfo requestInfo = CreateRequestInfo(new SingleServiceProvider(repository: null));
 
         await Execute(requestInfo);
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        requestInfo.FrontendResponse.StatusCode.Should().Be(404);
         requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("urn:ed-fi:api:not-found");
     }
 
     /// <summary>
