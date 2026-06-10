@@ -1467,7 +1467,8 @@ internal static class NestedCollectionsFixture
                 schoolTableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // DocumentStamping on child table SchoolAddress (no identity projection)
             new(
@@ -1475,7 +1476,8 @@ internal static class NestedCollectionsFixture
                 addressTableName,
                 [documentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // DocumentStamping on nested child table (no identity projection)
             new(
@@ -1483,7 +1485,8 @@ internal static class NestedCollectionsFixture
                 phoneTableName,
                 [documentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // ReferentialIdentityMaintenance on root table
             new(
@@ -1758,7 +1761,8 @@ internal static class PolymorphicAbstractFixture
                 leaTableName,
                 [documentIdColumn],
                 [organizationIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: leaTableName
             ),
             // AbstractIdentityMaintenance on LEA → EducationOrganizationIdentity
             new(
@@ -1798,7 +1802,8 @@ internal static class PolymorphicAbstractFixture
                 schoolTableName,
                 [documentIdColumn],
                 [organizationIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // AbstractIdentityMaintenance on School → EducationOrganizationIdentity
             new(
@@ -2073,7 +2078,8 @@ internal static class ExtensionMappingFixture
                 schoolTableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // DocumentStamping on child table SchoolAddress (no identity projection)
             new(
@@ -2081,7 +2087,8 @@ internal static class ExtensionMappingFixture
                 addressTableName,
                 [documentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // DocumentStamping on extension table SchoolAddressExtension (no identity projection)
             new(
@@ -2089,7 +2096,8 @@ internal static class ExtensionMappingFixture
                 addressExtTableName,
                 [documentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // DocumentStamping on extension table SchoolExtension (no identity projection)
             new(
@@ -2097,7 +2105,8 @@ internal static class ExtensionMappingFixture
                 schoolExtTableName,
                 [documentIdColumn],
                 [],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // ReferentialIdentityMaintenance on root table
             new(
@@ -2316,7 +2325,8 @@ internal static class IdentityPropagationFixture
                 schoolTableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // ReferentialIdentityMaintenance on School
             new(
@@ -2343,7 +2353,8 @@ internal static class IdentityPropagationFixture
                 assocTableName,
                 [documentIdColumn],
                 [schoolIdColumn, studentIdColumn, entryDateColumn, entryTimestampColumn, isActiveColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: assocTableName
             ),
             // ReferentialIdentityMaintenance on StudentSchoolAssociation
             new(
@@ -2573,14 +2584,16 @@ internal static class FkSupportIndexFixture
                 schoolTableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             new(
                 new DbTriggerName("TR_Enrollment_Stamp"),
                 enrollmentTableName,
                 [documentIdColumn],
                 [enrollmentIdColumn, schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: enrollmentTableName
             ),
         ];
 
@@ -2839,7 +2852,8 @@ internal static class KeyUnificationFixture
                 schoolTableName,
                 [documentIdColumn],
                 [schoolIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: schoolTableName
             ),
             // ReferentialIdentityMaintenance on School
             new(
@@ -2867,7 +2881,8 @@ internal static class KeyUnificationFixture
                 regTableName,
                 [documentIdColumn],
                 regIdentityProjectionColumns,
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: regTableName
             ),
             // ReferentialIdentityMaintenance on CourseRegistration
             // IdentityElements use alias columns (readable from inserted/NEW for hash computation).
@@ -3216,7 +3231,8 @@ internal static class AuthEdOrgHierarchyFixture
                 leaTableName,
                 [documentIdColumn],
                 [organizationIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: leaTableName
             ),
             // AbstractIdentityMaintenance on LEA
             new(
@@ -3287,7 +3303,8 @@ internal static class AuthEdOrgHierarchyFixture
                 seaTableName,
                 [documentIdColumn],
                 [organizationIdColumn],
-                new TriggerKindParameters.DocumentStamping()
+                new TriggerKindParameters.DocumentStamping(),
+                MirrorStampTargetTable: seaTableName
             ),
             // AbstractIdentityMaintenance on SEA
             new(

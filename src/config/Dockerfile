@@ -44,8 +44,8 @@ RUN version_args=""; \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05ad7ea16782b4bee55260de4acc6f99bec897fd11de7640c AS runtimebase
 
-# Install OpenSSL on the patched 3.5.6 line and runtime helpers
-RUN apk add --no-cache openssl=~3.5.6 bash=~5 postgresql16-client=~16
+# Install OpenSSL on the 3.5 line and runtime helpers
+RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16
 
 FROM runtimebase AS setup
 
