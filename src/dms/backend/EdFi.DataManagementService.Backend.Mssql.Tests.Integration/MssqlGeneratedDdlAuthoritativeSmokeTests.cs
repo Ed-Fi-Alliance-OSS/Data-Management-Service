@@ -992,13 +992,17 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             busResourceKeyId
         );
         var beforeInsert = await GetDocumentStampStateAsync(busDocumentId);
+        var beforeInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var initialBusId = $"BUS-{busDocumentId}-001";
+        var updatedBusId = $"BUS-{busDocumentId}-002";
 
         await DelayForDistinctTimestampsAsync();
-        await InsertBusAsync(busDocumentId, "BUS-001");
+        await InsertBusAsync(busDocumentId, initialBusId);
 
         var afterInsert = await GetDocumentStampStateAsync(busDocumentId);
-        afterInsert.ContentVersion.Should().BeGreaterThan(beforeInsert.ContentVersion);
-        afterInsert.IdentityVersion.Should().Be(beforeInsert.IdentityVersion);
+        var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        afterInsert.Should().Be(beforeInsert);
+        afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
         await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
 
         await DelayForDistinctTimestampsAsync();
@@ -1008,7 +1012,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SET [BusId] = @busId
             WHERE [DocumentId] = @documentId;
             """,
-            new SqlParameter("@busId", "BUS-002"),
+            new SqlParameter("@busId", updatedBusId),
             new SqlParameter("@documentId", busDocumentId)
         );
         updateRowsAffected.Should().Be(1);
@@ -1047,10 +1051,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             busResourceKeyId
         );
 
-        await InsertBusAsync(busDocumentId, "BUS-STAMP-ONLY");
+        await InsertBusAsync(busDocumentId, $"BUS-{busDocumentId}-STAMP-ONLY");
 
         var beforeDocument = await GetDocumentStampStateAsync(busDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var trackedChangeRowsBefore = await CountRowsAsync(
             "SELECT COUNT(*) FROM [tracked_changes_sample].[Bus];"
         );
@@ -1069,11 +1074,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var afterDocument = await GetDocumentStampStateAsync(busDocumentId);
         var afterMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var trackedChangeRowsAfter = await CountRowsAsync(
             "SELECT COUNT(*) FROM [tracked_changes_sample].[Bus];"
         );
 
         afterDocument.Should().Be(beforeDocument);
+        afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion);
         trackedChangeRowsAfter.Should().Be(trackedChangeRowsBefore);
         afterMirror.ContentVersion.Should().Be(beforeMirror.ContentVersion + 1);
         afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
@@ -1860,6 +1867,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task<long> CountRowsAsync(string sql, params SqlParameter[] parameters)
     {
         return await _database.ExecuteScalarAsync<long>(sql, parameters);
+    }
+
+    private async Task<long> ReadMaxChangeVersionAsync()
+    {
+        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
     }
 
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)

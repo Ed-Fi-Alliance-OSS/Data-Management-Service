@@ -1268,6 +1268,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(".");
             writer.Append(Quote(keyColumn));
             writer.AppendLine();
+            writer.Append("AND EXISTS (");
+            writer.Append("SELECT 1 FROM ");
+            writer.Append(Quote(mirrorStampTargetTable));
+            writer.Append(" r WHERE r.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = ");
+            writer.Append(sourceRowAlias);
+            writer.Append(".");
+            writer.Append(Quote(keyColumn));
+            writer.AppendLine(")");
             writer.Append("RETURNING ");
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(", ");
@@ -1411,7 +1421,21 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(DocumentIdColumn));
         writer.Append(" = a.");
         writer.Append(quotedKeyColumn);
-        writer.AppendLine(";");
+        if (!isRootDocumentStampingTrigger)
+        {
+            writer.AppendLine();
+            writer.Append("INNER JOIN ");
+            writer.Append(mirrorStampTarget);
+            writer.Append(" stampTarget ON stampTarget.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = a.");
+            writer.Append(quotedKeyColumn);
+            writer.AppendLine(";");
+        }
+        else
+        {
+            writer.AppendLine(";");
+        }
 
         writer.AppendLine("UPDATE r");
         writer.Append("SET r.");

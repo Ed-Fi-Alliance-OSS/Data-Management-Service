@@ -160,6 +160,7 @@ BEGIN
             UPDATE "dms"."Document"
             SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = OLD."DocumentId"
+            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."DocumentId")
             RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
         )
         UPDATE "edfi"."School" r
@@ -175,6 +176,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."DocumentId")
         RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
@@ -203,6 +205,7 @@ BEGIN
             UPDATE "dms"."Document"
             SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = OLD."DocumentId"
+            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."DocumentId")
             RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
         )
         UPDATE "edfi"."School" r
@@ -218,6 +221,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."DocumentId")
         RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
@@ -246,6 +250,7 @@ BEGIN
             UPDATE "dms"."Document"
             SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = OLD."DocumentId"
+            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."DocumentId")
             RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
         )
         UPDATE "edfi"."School" r
@@ -261,6 +266,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."DocumentId")
         RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r

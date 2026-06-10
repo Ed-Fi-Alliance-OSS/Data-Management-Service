@@ -157,7 +157,8 @@ BEGIN
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]
+    INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
     UPDATE r
     SET r.[ContentVersion] = s.[ContentVersion],
         r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
@@ -192,7 +193,8 @@ BEGIN
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]
+    INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
     UPDATE r
     SET r.[ContentVersion] = s.[ContentVersion],
         r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]

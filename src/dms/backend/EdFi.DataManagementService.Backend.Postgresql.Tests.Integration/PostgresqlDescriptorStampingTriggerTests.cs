@@ -58,11 +58,20 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         string codeValue = "Female"
     )
     {
+        var documentId = await InsertDocumentAsync();
+        await InsertDescriptorAsync(documentId, codeValue);
+
+        var stamps = await ReadStampPairAsync(documentId);
+        return (documentId, stamps.Document.ContentVersion, stamps.Document.ContentLastModifiedAt);
+    }
+
+    private async Task<long> InsertDocumentAsync()
+    {
         var resourceKeyId = await _database.ExecuteScalarAsync<short>(
             """SELECT MIN("ResourceKeyId") FROM dms."ResourceKey";"""
         );
 
-        var documentId = await _database.ExecuteScalarAsync<long>(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
             VALUES (@uuid, @resourceKeyId)
@@ -71,7 +80,10 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("uuid", Guid.NewGuid()),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
+    }
 
+    private async Task InsertDescriptorAsync(long documentId, string codeValue = "Female")
+    {
         var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
         await _database.ExecuteNonQueryAsync(
             """
@@ -89,9 +101,20 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             new NpgsqlParameter("discriminator", uriOrDiscriminator),
             new NpgsqlParameter("uri", uriOrDiscriminator)
         );
+    }
 
-        var stamps = await ReadStampPairAsync(documentId);
-        return (documentId, stamps.Document.ContentVersion, stamps.Document.ContentLastModifiedAt);
+    private async Task<StampValues> ReadDocumentStampAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ContentVersion", "ContentLastModifiedAt"
+            FROM dms."Document"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+        var row = rows.Single();
+        return new(Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
     }
 
     private async Task<StampPair> ReadStampPairAsync(long documentId)
@@ -130,6 +153,45 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     private sealed record StampPair(StampValues Document, StampValues Mirror);
 
     private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
+
+    [Test]
+    public async Task It_copies_existing_document_stamp_on_descriptor_insert_without_allocating_version()
+    {
+        var documentId = await InsertDocumentAsync();
+        var beforeDocument = await ReadDocumentStampAsync(documentId);
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+
+        await InsertDescriptorAsync(documentId);
+
+        var after = await ReadStampPairAsync(documentId);
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        after.Document.Should().Be(beforeDocument);
+        after.Mirror.Should().Be(beforeDocument);
+        afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion);
+    }
+
+    [Test]
+    public async Task It_stamps_document_on_descriptor_delete()
+    {
+        var seed = await SeedAsync();
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM dms."Descriptor"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", seed.DocumentId)
+        );
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var afterDocument = await ReadDocumentStampAsync(seed.DocumentId);
+        afterDocument.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
+        afterDocument.ContentLastModifiedAt.Should().BeOnOrAfter(seed.ContentLastModifiedAt);
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(1L, "a descriptor delete must allocate exactly one content stamp");
+    }
 
     [Test]
     public async Task It_stamps_document_on_descriptor_value_change()

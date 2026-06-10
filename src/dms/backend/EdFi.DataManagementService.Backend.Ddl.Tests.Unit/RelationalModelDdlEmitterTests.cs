@@ -944,6 +944,19 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
+    public void It_should_skip_child_delete_stamping_when_the_root_mirror_row_is_absent()
+    {
+        var deleteBranch = ExtractPlpgsqlBlock(
+            GetStampFunctionBody("SchoolAddress"),
+            "IF TG_OP = 'DELETE' THEN"
+        );
+
+        deleteBranch.Should().Contain("AND EXISTS (");
+        deleteBranch.Should().Contain("FROM \"edfi\".\"School\" r");
+        deleteBranch.Should().Contain("WHERE r.\"DocumentId\" = OLD.\"School_DocumentId\"");
+    }
+
+    [Test]
     public void It_should_allocate_document_stamps_for_root_updates()
     {
         var updateBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "ELSIF TG_OP = 'UPDATE' THEN");
@@ -1335,10 +1348,22 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
         _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
-        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];");
+        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[CollectionItemId] = i.[CollectionItemId]");
         _ddl.Should().Contain("LEFT JOIN inserted i ON i.[CollectionItemId] = del.[CollectionItemId]");
-        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId];");
+        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId]");
+    }
+
+    [Test]
+    public void It_should_skip_child_delete_stamping_when_the_root_mirror_row_is_absent()
+    {
+        var childTriggerBody = GetStampTriggerBody("SchoolAddress");
+
+        childTriggerBody
+            .Should()
+            .Contain(
+                "INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];"
+            );
     }
 
     [Test]
@@ -1438,8 +1463,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 
     private string GetSchoolStampTriggerBody()
     {
+        return GetStampTriggerBody("School");
+    }
+
+    private string GetStampTriggerBody(string tableName)
+    {
         var triggerStart = _ddl.IndexOf(
-            "CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]",
+            $"CREATE OR ALTER TRIGGER [edfi].[TR_{tableName}_Stamp]",
             StringComparison.Ordinal
         );
         triggerStart.Should().BeGreaterOrEqualTo(0);

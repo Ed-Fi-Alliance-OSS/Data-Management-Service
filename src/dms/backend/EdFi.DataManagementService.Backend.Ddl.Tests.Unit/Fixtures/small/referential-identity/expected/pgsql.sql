@@ -433,6 +433,18 @@ BEGIN
         SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
+    ELSIF TG_OP = 'DELETE' THEN
+        WITH stamped AS (
+            UPDATE "dms"."Document"
+            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+            WHERE "DocumentId" = OLD."DocumentId"
+            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        )
+        UPDATE "dms"."Descriptor" r
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        FROM stamped
+        WHERE r."DocumentId" = stamped."DocumentId";
+        RETURN OLD;
     END IF;
     RETURN NEW;
 END;
@@ -440,7 +452,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Descriptor_Stamp_Document" ON "dms"."Descriptor";
 CREATE TRIGGER "TR_Descriptor_Stamp_Document"
-    AFTER INSERT OR UPDATE ON "dms"."Descriptor"
+    AFTER INSERT OR UPDATE OR DELETE ON "dms"."Descriptor"
     FOR EACH ROW
     EXECUTE FUNCTION "dms"."TF_Descriptor_Stamp_Document"();
 

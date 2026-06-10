@@ -576,7 +576,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_create_descriptor_stamping_trigger()
     {
         _ddl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
-        _ddl.Should().Contain("AFTER INSERT OR UPDATE ON \"dms\".\"Descriptor\"");
+        _ddl.Should().Contain("AFTER INSERT OR UPDATE OR DELETE ON \"dms\".\"Descriptor\"");
         _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()");
     }
 
@@ -616,6 +616,14 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
         _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
+    }
+
+    [Test]
+    public void It_should_allocate_document_stamps_for_descriptor_deletes()
+    {
+        _ddl.Should().Contain("ELSIF TG_OP = 'DELETE' THEN");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = OLD.\"DocumentId\"");
+        _ddl.Should().Contain("RETURN OLD;");
     }
 
     [Test]
@@ -1113,7 +1121,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("CREATE OR ALTER TRIGGER [dms].[TR_Descriptor_Stamp_Document]");
         _ddl.Should().Contain("ON [dms].[Descriptor]");
-        _ddl.Should().Contain("AFTER INSERT, UPDATE");
+        _ddl.Should().Contain("AFTER INSERT, UPDATE, DELETE");
     }
 
     [Test]
@@ -1141,12 +1149,16 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         // INSERT rows have no deleted counterpart and copy the dms.Document default stamps.
         // UPDATE rows keep the null-safe diff predicate so no-op updates produce
-        // no affected docs, including the recursive mirror-only UPDATE.
+        // no affected docs, including the recursive mirror-only UPDATE. DELETE rows are
+        // included so descriptor deletes allocate the tombstone-facing content stamp.
         _ddl.Should().Contain(";WITH affectedDocs AS (");
         _ddl.Should().Contain("FROM inserted i");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
-        _ddl.Should().NotContain("LEFT JOIN inserted");
+        _ddl.Should().Contain("UNION");
+        _ddl.Should().Contain("FROM deleted del");
+        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
+        _ddl.Should().Contain("WHERE i.[DocumentId] IS NULL");
     }
 
     [Test]
@@ -1381,7 +1393,7 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     public void It_should_render_the_descriptor_stamping_trigger_targeting_dms_Descriptor()
     {
         _pgsqlDdl.Should().Contain("CREATE TRIGGER \"TR_Descriptor_Stamp_Document\"");
-        _pgsqlDdl.Should().Contain("AFTER INSERT OR UPDATE ON \"dms\".\"Descriptor\"");
+        _pgsqlDdl.Should().Contain("AFTER INSERT OR UPDATE OR DELETE ON \"dms\".\"Descriptor\"");
     }
 
     [Test]
