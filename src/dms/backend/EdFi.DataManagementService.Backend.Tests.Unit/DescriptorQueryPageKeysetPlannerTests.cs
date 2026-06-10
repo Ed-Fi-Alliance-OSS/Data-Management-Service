@@ -675,7 +675,7 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
-    public void It_should_emit_only_the_supplied_change_version_bound_for_descriptor_queries()
+    public void It_should_emit_only_the_min_bound_predicate_when_max_change_version_is_absent()
     {
         var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
 
@@ -690,6 +690,24 @@ public class Given_DescriptorQueryPageKeysetPlanner
         keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
         keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
         keyset.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_emit_only_the_max_bound_predicate_when_min_change_version_is_absent()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(null, 200L)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.ParameterValues.Keys.Should().NotContain("minChangeVersion");
     }
 
     [Test]

@@ -970,8 +970,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             async () =>
                 await Database.ExecuteNonQueryAsync(
                     """
-                    INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId])
-                    VALUES (@documentId, @nameOfInstitution, @schoolId);
+                    INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId], [ContentVersion])
+                    SELECT @documentId, @nameOfInstitution, @schoolId, doc.[ContentVersion]
+                    FROM [dms].[Document] doc
+                    WHERE doc.[DocumentId] = @documentId;
                     """,
                     new SqlParameter("@documentId", documentId),
                     new SqlParameter("@nameOfInstitution", seed.NameOfInstitution),
@@ -1089,7 +1091,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         int? offset = null,
         bool totalCount = true,
         IReadOnlyList<QueryElement>? queryElements = null,
-        Func<MappingSet, MappingSet>? mappingSetTransform = null
+        Func<MappingSet, MappingSet>? mappingSetTransform = null,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         ResetRecorder();
@@ -1119,7 +1122,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 TotalCount: totalCount,
                 MaximumPageSize: MaximumPageSize
             ),
-            TraceId: new TraceId($"{resourceName}-authorization-query")
+            TraceId: new TraceId($"{resourceName}-authorization-query"),
+            ChangeVersionRange: changeVersionRange
         );
 
         return await scope
@@ -2710,6 +2714,41 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative
 
         result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
         _context.AssertNoHydration();
+    }
+
+    [Test]
+    public async Task It_composes_the_change_version_window_with_relationship_authorization_filtering()
+    {
+        // The stamping triggers assign strictly increasing ContentVersion values in insert order, so a
+        // window from Beta to Gamma holds Beta — SchoolId 200, authorized under the normal strategy —
+        // and unauthorized Gamma, SchoolId 300. The window excludes authorized Alpha and Delta, and
+        // authorization excludes in-window Gamma, so only the intersection survives.
+        var betaSchool = _persistedSchoolsInDocumentOrder[1];
+        var gammaSchool = _persistedSchoolsInDocumentOrder[2];
+
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            "School",
+            [ClaimEducationOrganizationId],
+            _normalStrategy,
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(betaSchool.ContentVersion, gammaSchool.ContentVersion)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(betaSchool.DocumentUuid.ToString());
+
+        var keyset = _context.AssertSingleQueryHydration();
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.[ContentVersion] >= @minChangeVersion")
+            .And.Contain("r.[ContentVersion] <= @maxChangeVersion")
+            .And.Contain("@ClaimEducationOrganizationIds_0");
     }
 
     [Test]

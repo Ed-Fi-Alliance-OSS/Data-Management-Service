@@ -942,7 +942,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         IReadOnlyList<string> strategyNames,
         int? limit = null,
         int? offset = null,
-        bool totalCount = true
+        bool totalCount = true,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         ResetRecorder();
@@ -971,7 +972,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 TotalCount: totalCount,
                 MaximumPageSize: MaximumPageSize
             ),
-            TraceId: new TraceId($"{resourceName}-authorization-query")
+            TraceId: new TraceId($"{resourceName}-authorization-query"),
+            ChangeVersionRange: changeVersionRange
         );
 
         return await scope
@@ -2441,6 +2443,41 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_The_Authorit
 
         result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
         _context.AssertNoHydration();
+    }
+
+    [Test]
+    public async Task It_composes_the_change_version_window_with_relationship_authorization_filtering()
+    {
+        // The stamping triggers assign strictly increasing ContentVersion values in insert order, so a
+        // window from Beta to Gamma holds Beta — SchoolId 200, authorized under the normal strategy —
+        // and unauthorized Gamma, SchoolId 300. The window excludes authorized Alpha and Delta, and
+        // authorization excludes in-window Gamma, so only the intersection survives.
+        var betaSchool = _persistedSchoolsInDocumentOrder[1];
+        var gammaSchool = _persistedSchoolsInDocumentOrder[2];
+
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            "School",
+            [ClaimEducationOrganizationId],
+            _normalStrategy,
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(betaSchool.ContentVersion, gammaSchool.ContentVersion)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(betaSchool.DocumentUuid.ToString());
+
+        var keyset = _context.AssertSingleQueryHydration();
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.\"ContentVersion\" >= @minChangeVersion")
+            .And.Contain("r.\"ContentVersion\" <= @maxChangeVersion")
+            .And.Contain("= ANY(@ClaimEducationOrganizationIds)");
     }
 }
 
