@@ -1028,7 +1028,8 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalQueryRequest.AuthorizationStrategyEvaluators,
                         relationalQueryRequest.ReadableProfileProjectionContext,
                         relationalQueryRequest.TraceId,
-                        relationalQueryRequest.AuthorizationContext
+                        relationalQueryRequest.AuthorizationContext,
+                        relationalQueryRequest.ChangeVersionRange
                     )
                 )
                 .ConfigureAwait(false);
@@ -1144,7 +1145,8 @@ public sealed class RelationalDocumentStoreRepository(
                     relationalQueryRequest.PaginationParameters,
                     out plannedQuery,
                     out _,
-                    authorization: pageQueryAuthorization
+                    authorization: pageQueryAuthorization,
+                    changeVersionRange: relationalQueryRequest.ChangeVersionRange
                 ) || plannedQuery is null
             )
             {

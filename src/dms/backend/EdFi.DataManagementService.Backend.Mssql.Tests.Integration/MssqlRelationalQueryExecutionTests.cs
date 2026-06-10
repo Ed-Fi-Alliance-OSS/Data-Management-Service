@@ -165,7 +165,8 @@ internal sealed record PersistedQuerySchool(
     long DocumentId,
     Guid DocumentUuid,
     int SchoolId,
-    string NameOfInstitution
+    string NameOfInstitution,
+    long ContentVersion
 );
 
 [TestFixture]
@@ -410,6 +411,94 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
     }
 
+    [Test]
+    public async Task It_returns_only_resources_inside_the_change_version_window()
+    {
+        // The stamping triggers assign strictly increasing ContentVersion values in insert order,
+        // so a window spanning only the middle school's stamp excludes the first and last.
+        var middleSchool = _persistedSchoolsInDocumentOrder[1];
+
+        var result = await ExecuteQueryAsync(
+            [],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-change-version-window",
+            changeVersionRange: new ChangeVersionRange(
+                middleSchool.ContentVersion,
+                middleSchool.ContentVersion
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success.EdfiDocs.Should().HaveCount(1);
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(middleSchool.DocumentUuid.ToString());
+        AssertPageMaterialization(middleSchool.DocumentId);
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_when_the_change_version_window_excludes_all_resources()
+    {
+        var lastSchool = _persistedSchoolsInDocumentOrder[^1];
+
+        var result = await ExecuteQueryAsync(
+            [],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-change-version-exclusion",
+            changeVersionRange: new ChangeVersionRange(lastSchool.ContentVersion + 1, null)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(0);
+        success.EdfiDocs.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_composes_the_change_version_window_with_a_query_filter()
+    {
+        var middleSchool = _persistedSchoolsInDocumentOrder[1];
+
+        var matchingResult = await ExecuteQueryAsync(
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-change-version-composed-match",
+            changeVersionRange: new ChangeVersionRange(
+                _persistedSchoolsInDocumentOrder[0].ContentVersion,
+                _persistedSchoolsInDocumentOrder[^1].ContentVersion
+            )
+        );
+
+        var matchingSuccess = matchingResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        matchingSuccess.TotalCount.Should().Be(1);
+        matchingSuccess.EdfiDocs.Should().HaveCount(1);
+        matchingSuccess.EdfiDocs[0]!["id"]!
+            .GetValue<string>()
+            .Should()
+            .Be(middleSchool.DocumentUuid.ToString());
+
+        _recorder.Reset();
+
+        var excludedResult = await ExecuteQueryAsync(
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "mssql-query-change-version-composed-excluded",
+            changeVersionRange: new ChangeVersionRange(null, middleSchool.ContentVersion - 1)
+        );
+
+        var excludedSuccess = excludedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        excludedSuccess.TotalCount.Should().Be(0);
+        excludedSuccess.EdfiDocs.Should().BeEmpty();
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
@@ -489,7 +578,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         int? limit,
         int? offset,
         bool totalCount,
-        string traceId
+        string traceId,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -508,7 +598,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 TotalCount: totalCount,
                 MaximumPageSize: MaximumPageSize
             ),
-            TraceId: new TraceId(traceId)
+            TraceId: new TraceId(traceId),
+            ChangeVersionRange: changeVersionRange
         );
 
         return await scope
@@ -526,7 +617,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 doc.[DocumentId],
                 doc.[DocumentUuid],
                 school.[SchoolId],
-                school.[NameOfInstitution]
+                school.[NameOfInstitution],
+                school.[ContentVersion]
             FROM [dms].[Document] doc
             INNER JOIN [{physicalSchema}].[School] school
                 ON school.[DocumentId] = doc.[DocumentId]
@@ -542,7 +634,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 DocumentId: GetRequiredInt64(row, "DocumentId"),
                 DocumentUuid: GetRequiredGuid(row, "DocumentUuid"),
                 SchoolId: GetRequiredInt32(row, "SchoolId"),
-                NameOfInstitution: GetRequiredString(row, "NameOfInstitution")
+                NameOfInstitution: GetRequiredString(row, "NameOfInstitution"),
+                ContentVersion: GetRequiredInt64(row, "ContentVersion")
             )),
         ];
     }

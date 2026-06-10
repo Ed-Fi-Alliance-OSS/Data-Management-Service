@@ -95,4 +95,10 @@ public interface IRelationalQueryRequest : IQueryRequest
     /// Null when no readable profile applies to the request.
     /// </summary>
     ReadableProfileProjectionContext? ReadableProfileProjectionContext { get; }
+
+    /// <summary>
+    /// The validated minChangeVersion / maxChangeVersion window for this query.
+    /// <see cref="ChangeVersionRange.None"/> when neither parameter was supplied.
+    /// </summary>
+    ChangeVersionRange ChangeVersionRange { get; }
 }

@@ -125,7 +125,8 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
                 PaginationParameters: requestInfo.PaginationParameters,
                 TraceId: requestInfo.FrontendRequest.TraceId,
-                ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
+                ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
+                ChangeVersionRange: requestInfo.ChangeVersionRange
             )
             : new QueryRequest(
                 ResourceInfo: requestInfo.ResourceInfo,

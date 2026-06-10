@@ -97,7 +97,8 @@ public sealed record DescriptorQueryRequest
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         TraceId traceId,
-        RelationalAuthorizationContext? relationalAuthorizationContext = null
+        RelationalAuthorizationContext? relationalAuthorizationContext = null,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -112,6 +113,7 @@ public sealed record DescriptorQueryRequest
         TraceId = traceId;
         RelationalAuthorizationContext =
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
+        ChangeVersionRange = changeVersionRange ?? ChangeVersionRange.None;
     }
 
     /// <summary>
@@ -156,6 +158,12 @@ public sealed record DescriptorQueryRequest
     /// carry the namespace prefixes the planner needs.
     /// </summary>
     public RelationalAuthorizationContext RelationalAuthorizationContext { get; init; }
+
+    /// <summary>
+    /// The validated minChangeVersion / maxChangeVersion window for this query.
+    /// <see cref="ChangeVersionRange.None"/> when neither parameter was supplied.
+    /// </summary>
+    public ChangeVersionRange ChangeVersionRange { get; init; }
 }
 
 /// <summary>

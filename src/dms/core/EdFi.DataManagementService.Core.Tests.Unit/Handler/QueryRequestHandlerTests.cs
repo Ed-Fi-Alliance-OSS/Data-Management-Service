@@ -734,6 +734,7 @@ public class QueryRequestHandlerTests
             _requestInfo.QueryElements = _queryElements;
             _requestInfo.PaginationParameters = _paginationParameters;
             _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
+            _requestInfo.ChangeVersionRange = new ChangeVersionRange(100L, 200L);
             _requestInfo.ClientAuthorizations = new ClientAuthorizations(
                 TokenId: "token-id",
                 ClientId: "client-id",
@@ -810,6 +811,13 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest.ReadableProfileProjectionContext.IdentityPropertyNames.Should()
                 .Equal("studentUniqueId", "schoolReference");
+        }
+
+        [Test]
+        public void It_copies_the_change_version_range_onto_the_relational_query_request()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.ChangeVersionRange.Should().Be(new ChangeVersionRange(100L, 200L));
         }
 
         [Test]
@@ -999,6 +1007,13 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
                 .BeEmpty();
+        }
+
+        [Test]
+        public void It_normalizes_an_unset_change_version_range_to_none()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.ChangeVersionRange.Should().Be(ChangeVersionRange.None);
         }
     }
 }

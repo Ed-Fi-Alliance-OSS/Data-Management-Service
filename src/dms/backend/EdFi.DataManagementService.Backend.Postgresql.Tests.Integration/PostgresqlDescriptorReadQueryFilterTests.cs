@@ -265,7 +265,7 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
     }
 
     [Test]
-    public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
+    public async Task It_excludes_document_rows_without_descriptor_rows_from_descriptor_query_pages_and_total_count()
     {
         await SeedDescriptorsAsync([PagingFirstSeed]);
 
@@ -279,41 +279,76 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             resourceKeyId
         );
 
-        var result = await ExecuteQueryAsync(
-            [],
-            "pg-descriptor-query-corrupt-outside-page",
-            totalCount: true,
-            limit: 1,
-            offset: 0
-        );
+        // The descriptor page keyset roots on dms.Descriptor, so a dms.Document row without a
+        // descriptor row (corruption) is never selected and never counted.
+        var result = await ExecuteQueryAsync([], "pg-descriptor-query-corrupt-excluded", totalCount: true);
 
-        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 2);
+        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 1);
     }
 
     [Test]
-    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_query_document_has_no_descriptor_row()
+    public async Task It_returns_only_descriptors_inside_the_change_version_window()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+        var middleContentVersion = contentVersions[PagingSecondSeed.DocumentUuid.Value];
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "pg-descriptor-query-change-version-window",
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(middleContentVersion, middleContentVersion)
+        );
+
+        AssertDescriptorPage(result, [PagingSecondSeed], expectedTotalCount: 1);
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_when_the_change_version_window_excludes_all_descriptors()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "pg-descriptor-query-change-version-exclusion",
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(contentVersions.Values.Max() + 1, null)
+        );
+
+        AssertEmptyPage(result, expectedTotalCount: 0);
+    }
+
+    [Test]
+    public async Task It_scopes_the_change_version_window_to_the_requested_descriptor_type()
     {
         await SeedDescriptorsAsync([PagingFirstSeed]);
-
-        var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
-            _mappingSet,
-            SchoolTypeDescriptorResource
-        );
-        var corruptDocumentId = await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
+        await PostgresqlDescriptorReadTestSupport.SeedDescriptorAsync(
             _database,
-            new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000208")),
-            resourceKeyId
+            _mappingSet,
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+            new DescriptorReadSeed(
+                DocumentUuid: new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000209")),
+                Namespace: "uri://ed-fi.org/GradeLevelDescriptor",
+                CodeValue: "Ninth grade",
+                ShortDescription: "Ninth grade"
+            )
+        );
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+
+        // The window spans every seeded descriptor of every type; the Discriminator predicate keeps
+        // the other descriptor type out of the SchoolTypeDescriptor page and its total count.
+        var result = await ExecuteQueryAsync(
+            [],
+            "pg-descriptor-query-change-version-discriminator-scope",
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(
+                contentVersions.Values.Min(),
+                contentVersions.Values.Max()
+            )
         );
 
-        var result = await ExecuteQueryAsync([], "pg-descriptor-query-corrupt-selected", limit: 1, offset: 1);
-
-        var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
-        failure.FailureMessage.Should().Contain($"DocumentId {corruptDocumentId}");
-        // The row reader treats Namespace as nullable so a stored null can flow into the
-        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
-        // required column, so the reader's invariant message names it when the LEFT JOIN
-        // finds no descriptor row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 1);
     }
 
     private static IEnumerable<TestCaseData> SupportedFilterCases()
@@ -430,7 +465,8 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
         string traceId,
         bool totalCount = false,
         int limit = 25,
-        int offset = 0
+        int offset = 0,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -449,12 +485,29 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
                 TotalCount: totalCount,
                 MaximumPageSize: MaximumPageSize
             ),
-            TraceId: new TraceId(traceId)
+            TraceId: new TraceId(traceId),
+            ChangeVersionRange: changeVersionRange
         );
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .QueryDocuments(request);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, long>> ReadDescriptorContentVersionsByDocumentUuidAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT doc."DocumentUuid", descriptor."ContentVersion"
+            FROM "dms"."Descriptor" descriptor
+            INNER JOIN "dms"."Document" doc ON doc."DocumentId" = descriptor."DocumentId";
+            """
+        );
+
+        return rows.ToDictionary(
+            row => (Guid)row["DocumentUuid"]!,
+            row => Convert.ToInt64(row["ContentVersion"], System.Globalization.CultureInfo.InvariantCulture)
+        );
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)

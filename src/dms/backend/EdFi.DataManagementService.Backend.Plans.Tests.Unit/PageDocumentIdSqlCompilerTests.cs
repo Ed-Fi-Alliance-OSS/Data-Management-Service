@@ -2031,6 +2031,32 @@ public class Given_PageDocumentIdSqlCompiler
             );
     }
 
+    [Test]
+    public void It_should_throw_for_descriptor_column_predicates_when_the_query_roots_on_dms_Descriptor()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new QueryPredicateTarget.DescriptorColumn(new DbColumnName("CodeValue")),
+                            QueryComparisonOperator.Equal,
+                            "codeValue",
+                            ScalarKind.String
+                        ),
+                    ],
+                    [],
+                    rootTable: new DbTableName(new DbSchemaName("dms"), "Descriptor")
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Descriptor-rooted callers must express descriptor fields as root-column predicates*"
+            );
+    }
+
     private static PageDocumentIdQuerySpec CreateSpec(
         IReadOnlyList<QueryValuePredicate> predicates,
         IReadOnlyList<KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias>> unifiedAliasMappings,

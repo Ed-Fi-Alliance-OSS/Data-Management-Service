@@ -1309,7 +1309,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 doc."DocumentId",
                 doc."DocumentUuid",
                 school."SchoolId",
-                school."NameOfInstitution"
+                school."NameOfInstitution",
+                school."ContentVersion"
             FROM "dms"."Document" doc
             INNER JOIN "{physicalSchema}"."School" school
                 ON school."DocumentId" = doc."DocumentId"
@@ -1325,7 +1326,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 DocumentId: GetRequiredInt64(row, "DocumentId"),
                 DocumentUuid: GetRequiredGuid(row, "DocumentUuid"),
                 SchoolId: GetRequiredInt32(row, "SchoolId"),
-                NameOfInstitution: GetRequiredString(row, "NameOfInstitution")
+                NameOfInstitution: GetRequiredString(row, "NameOfInstitution"),
+                ContentVersion: GetRequiredInt64(row, "ContentVersion")
             )),
         ];
     }

@@ -27,9 +27,9 @@ internal sealed class DescriptorReadHandler(
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
 
-    // The descriptor page query binds a single ResourceKeyId discriminator parameter on top of the paging
+    // The descriptor page query binds a single Discriminator parameter on top of the paging
     // parameters; see DescriptorQueryPageKeysetPlanner. Counted into the non-authorization parameter budget.
-    private const int DescriptorQueryResourceKeyParameterCount = 1;
+    private const int DescriptorQueryDiscriminatorParameterCount = 1;
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IReadableProfileProjector _readableProfileProjector =
@@ -217,9 +217,8 @@ internal sealed class DescriptorReadHandler(
 
         var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
 
-        // The descriptor page subquery roots on dms.Document while Namespace lives on the joined
-        // dms.Descriptor row. The page SQL compiler aliases the namespace check to the descriptor
-        // join, so the planner consumes the orchestrator's namespace check specs + prefix
+        // The descriptor page subquery roots on dms.Descriptor, so the Namespace check binds to the
+        // root alias directly. The planner consumes the orchestrator's namespace check specs + prefix
         // parameterization through PageDocumentIdAuthorizationSpec.
         var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
 
@@ -252,14 +251,16 @@ internal sealed class DescriptorReadHandler(
         }
 
         // Descriptor queries are namespace-only, but the page query still composes the namespace prefix
-        // list with the query filter, paging, and ResourceKeyId parameters. Fail closed if that exceeds
-        // SQL Server's per-command parameter ceiling rather than letting the query fail at execution.
+        // list with the query filter, paging, Discriminator, and change-version parameters. Fail closed
+        // if that exceeds SQL Server's per-command parameter ceiling rather than letting the query fail
+        // at execution.
         if (
             BuildDescriptorQueryParameterBudgetFailure(
                 request.MappingSet.Key.Dialect,
                 request.Resource,
                 proceed.NamespacePrefixParameterization,
-                preprocessingResult.QueryElementsInOrder.Count
+                preprocessingResult.QueryElementsInOrder.Count,
+                CountChangeVersionParameters(request.ChangeVersionRange)
             ) is
             { } parameterBudgetFailure
         )
@@ -313,22 +314,32 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
+    /// Counts the change-version parameters the descriptor page query will bind: one per supplied
+    /// bound (minChangeVersion / maxChangeVersion), zero when no window applies.
+    /// </summary>
+    private static int CountChangeVersionParameters(ChangeVersionRange changeVersionRange) =>
+        (changeVersionRange.MinChangeVersion is null ? 0 : 1)
+        + (changeVersionRange.MaxChangeVersion is null ? 0 : 1);
+
+    /// <summary>
     /// Returns a security-configuration failure when the descriptor page query's namespace prefix
-    /// parameters, plus its query filter, paging, and ResourceKeyId parameters, exceed SQL Server's
-    /// per-command parameter ceiling; otherwise <see langword="null"/>. The dialect gate lives in
-    /// <see cref="AuthorizationParameterBudget.ExceedsCommandParameterLimit"/>.
+    /// parameters, plus its query filter, paging, Discriminator, and change-version parameters, exceed
+    /// SQL Server's per-command parameter ceiling; otherwise <see langword="null"/>. The dialect gate
+    /// lives in <see cref="AuthorizationParameterBudget.ExceedsCommandParameterLimit"/>.
     /// </summary>
     private static QueryResult? BuildDescriptorQueryParameterBudgetFailure(
         SqlDialect dialect,
         QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
-        int queryFilterParameterCount
+        int queryFilterParameterCount,
+        int changeVersionParameterCount
     )
     {
         var nonAuthorizationParameterCount =
             queryFilterParameterCount
             + AuthorizationParameterBudget.PaginationParameterCount
-            + DescriptorQueryResourceKeyParameterCount;
+            + DescriptorQueryDiscriminatorParameterCount
+            + changeVersionParameterCount;
 
         if (
             !AuthorizationParameterBudget.ExceedsCommandParameterLimit(
@@ -373,11 +384,11 @@ internal sealed class DescriptorReadHandler(
         }
 
         var plannedQuery = new DescriptorQueryPageKeysetPlanner(request.MappingSet.Key.Dialect).Plan(
-            request.MappingSet,
             request.Resource,
             preprocessingResult,
             request.PaginationParameters,
-            authorizationSpec
+            authorizationSpec,
+            request.ChangeVersionRange
         );
         var command = BuildQueryCommand(request.MappingSet.Key.Dialect, plannedQuery);
 
@@ -611,8 +622,10 @@ internal sealed class DescriptorReadHandler(
     {
         var pageDocumentIdSqlBody = StripTrailingSemicolon(pageDocumentIdSql);
 
-        // The shared page compiler intentionally returns only a DocumentId keyset. Descriptor queries
-        // root on dms.Document, so this performs a page-sized PK lookup instead of widening that contract.
+        // The shared page compiler intentionally returns only a DocumentId keyset. The descriptor page
+        // keyset roots on dms.Descriptor, so this performs a page-sized PK lookup against dms.Document
+        // and dms.Descriptor instead of widening that contract. Response metadata (DocumentUuid,
+        // ContentLastModifiedAt) remains sourced from dms.Document.
         return dialect switch
         {
             SqlDialect.Pgsql => $$"""
