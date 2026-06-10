@@ -8383,6 +8383,62 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
     }
 
+    [TestCase(
+        SqlDialect.Pgsql,
+        "DELETE FROM \"edfi\".\"School\"",
+        "DELETE FROM dms.\"Document\"",
+        "RETURNING \"DocumentId\""
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "DELETE FROM [edfi].[School]",
+        "DELETE FROM [dms].[Document]",
+        "OUTPUT DELETED.[DocumentId]"
+    )]
+    public async Task It_deletes_the_resource_root_table_before_the_document_row(
+        SqlDialect dialect,
+        string rootDeleteFragment,
+        string documentDeleteFragment,
+        string finalResultFragment
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var capturedDeleteCommands = new List<RelationalCommand>();
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        ConfigureDeleteOutcome(deleted: true, capturedDeleteCommands.Add);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            documentUuid: documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        capturedDeleteCommands.Should().ContainSingle();
+        var capturedDeleteCommand = capturedDeleteCommands.Single();
+        var statements = capturedDeleteCommand.CommandText.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+        statements.Should().NotBeEmpty();
+        var finalStatement = statements[^1];
+
+        capturedDeleteCommand.CommandText.Should().Contain(rootDeleteFragment);
+        capturedDeleteCommand.CommandText.Should().Contain(documentDeleteFragment);
+        finalStatement.Should().Contain(documentDeleteFragment);
+        finalStatement.Should().Contain(finalResultFragment);
+        capturedDeleteCommand
+            .CommandText.IndexOf(rootDeleteFragment, StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(
+                capturedDeleteCommand.CommandText.IndexOf(documentDeleteFragment, StringComparison.Ordinal)
+            );
+        capturedDeleteCommand.Parameters.Should().ContainSingle();
+        capturedDeleteCommand.Parameters[0].Name.Should().Be("@documentId");
+        capturedDeleteCommand.Parameters[0].Value.Should().Be(123L);
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public async Task It_returns_delete_failure_not_exists_when_the_delete_returns_no_rows(SqlDialect dialect)
@@ -9213,17 +9269,21 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(_commandExecutor).WithReturnType<Task<long?>>().Returns(Task.FromResult<long?>(42L));
     }
 
-    private void ConfigureDeleteOutcome(bool deleted)
+    private void ConfigureDeleteOutcome(bool deleted, Action<RelationalCommand>? callback = null)
     {
-        A.CallTo(_commandExecutor).WithReturnType<Task<bool>>().Returns(Task.FromResult(deleted));
+        var call = A.CallTo(_commandExecutor).WithReturnType<Task<bool>>();
+
+        if (callback is not null)
+        {
+            call.Invokes(fakeCall => callback(fakeCall.GetArgument<RelationalCommand>(0)!));
+        }
+
+        call.Returns(Task.FromResult(deleted));
     }
 
     private void ConfigureDeleteOrder(Action callback)
     {
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<bool>>()
-            .Invokes(callback)
-            .Returns(Task.FromResult(true));
+        ConfigureDeleteOutcome(deleted: true, _ => callback());
     }
 
     private void ConfigureDeleteThrows(Exception exception)

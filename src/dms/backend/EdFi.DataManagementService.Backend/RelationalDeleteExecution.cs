@@ -54,11 +54,7 @@ internal static class RelationalDeleteExecution
         try
         {
             var deleted = await commandExecutor
-                .ExecuteReaderAsync(
-                    command,
-                    static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false),
-                    cancellationToken
-                )
+                .ExecuteReaderAsync(command, ReadReturnedDeleteRowAsync, cancellationToken)
                 .ConfigureAwait(false);
 
             return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
@@ -111,6 +107,22 @@ internal static class RelationalDeleteExecution
             DeleteTargetKind.Descriptor => "descriptor",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown DeleteTargetKind."),
         };
+
+    private static async Task<bool> ReadReturnedDeleteRowAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        do
+        {
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+        } while (await reader.NextResultAsync(cancellationToken).ConfigureAwait(false));
+
+        return false;
+    }
 
     /// <summary>
     /// Translates a FK-violation <see cref="DbException"/> into a

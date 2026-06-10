@@ -914,6 +914,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             new NamespaceAuthorizationExecutionResult.Authorized()
         );
         sessionFactory.Session.Executor.ResultSets.Enqueue([
+            InMemoryRelationalResultSet.Create(),
             InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
         ]);
         var sut = CreateSut(sessionFactory);
@@ -926,10 +927,18 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        sessionFactory
+        var deleteCommand = sessionFactory
             .Session.Executor.Commands.Should()
-            .Contain(command =>
+            .ContainSingle(command =>
                 command.CommandText.Contains("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
+            )
+            .Subject;
+        deleteCommand.CommandText.Should().Contain("DELETE FROM dms.\"Descriptor\"");
+        deleteCommand
+            .CommandText.IndexOf("DELETE FROM dms.\"Descriptor\"", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(
+                deleteCommand.CommandText.IndexOf("DELETE FROM dms.\"Document\"", StringComparison.Ordinal)
             );
         sessionFactory.Session.CommitCallCount.Should().Be(1);
     }

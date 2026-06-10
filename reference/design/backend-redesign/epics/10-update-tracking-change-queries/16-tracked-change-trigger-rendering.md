@@ -34,6 +34,11 @@ Concrete abstract resources (e.g., `School`, `LocalEducationAgency`, `Organizati
 - Descriptor resources write to `tracked_changes_edfi.Descriptor` with the correct `Discriminator`.
 - Concrete abstract resources write tombstones to their own tracked-change tables on delete but do not emit key-change rows (their inherited identity is immutable in practice).
 - Tests cover deletes, identity changes, cascading key changes, descriptor paths, people securable paths, key-unification paths, multi-row updates, and root deletes with cascaded child / `_ext` rows in both dialects. The root-delete cascade tests must include at least one child-bearing resource and one extension-bearing resource on PostgreSQL and SQL Server.
+- A successful resource delete inserts a tracked-change tombstone with the bumped `ContentVersion`.
+- A successful descriptor delete inserts a descriptor tombstone with the bumped `ContentVersion`.
+- A resource delete with cascaded child, nested-child, or `_ext` rows produces exactly one visible root tombstone in the appropriate `tracked_changes_*` table.
+- The root tombstone's `ChangeVersion` is the final delete ChangeVersion exposed to Change Queries; no cascaded child or `_ext` trigger activity can leave a later visible root stamp or tracked-change row that advances an extraction watermark past the tombstone.
+- PostgreSQL and SQL Server tests cover regular resources, descriptors, at least one cascading-delete scenario for an abstract-resource family, at least one child-bearing resource delete, and at least one extension-bearing resource delete without requiring tracked-change tombstone rendering.
 
 ## Out of Scope
 

@@ -977,36 +977,7 @@ internal sealed class DescriptorWriteHandler(
         short resourceKeyId
     )
     {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                DELETE FROM dms."Document"
-                WHERE "DocumentUuid" = @documentUuid
-                  AND "ResourceKeyId" = @resourceKeyId
-                RETURNING "DocumentId";
-                """,
-                [
-                    new RelationalParameter("@documentUuid", documentUuid.Value),
-                    new RelationalParameter("@resourceKeyId", resourceKeyId),
-                ]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                DELETE FROM [dms].[Document]
-                OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentUuid] = @documentUuid
-                  AND [ResourceKeyId] = @resourceKeyId;
-                """,
-                [
-                    new RelationalParameter("@documentUuid", documentUuid.Value),
-                    new RelationalParameter("@resourceKeyId", resourceKeyId),
-                ]
-            ),
-            _ => throw new NotSupportedException(
-                $"Descriptor delete does not support SQL dialect '{dialect}'."
-            ),
-        };
+        return OrderedDeleteCommandBuilder.BuildDescriptorDeleteCommand(dialect, documentUuid, resourceKeyId);
     }
 
     private Task<DeleteResult> ExecuteDescriptorDeleteCommandAsync(

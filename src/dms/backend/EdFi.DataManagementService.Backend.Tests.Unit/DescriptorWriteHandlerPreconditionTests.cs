@@ -521,6 +521,64 @@ public class Given_Descriptor_Write_Preconditions
             .Contain("DELETE FROM dms.\"Document\"");
     }
 
+    [TestCase(
+        SqlDialect.Pgsql,
+        "DELETE FROM dms.\"Descriptor\"",
+        "DELETE FROM dms.\"Document\"",
+        "RETURNING \"DocumentId\""
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "DELETE FROM [dms].[Descriptor]",
+        "DELETE FROM [dms].[Document]",
+        "OUTPUT DELETED.[DocumentId]"
+    )]
+    public async Task It_deletes_the_shared_descriptor_row_before_the_document_row_when_delete_if_match_matches(
+        SqlDialect dialect,
+        string descriptorDeleteFragment,
+        string documentDeleteFragment,
+        string finalResultFragment
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(dialect);
+        var currentState = CreatePersistedDescriptorBody();
+        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            InMemoryRelationalResultSet.Create(),
+            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
+        ]);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreateDeleteRequest(CreateMappingSet(dialect), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        var deleteCommand = sessionFactory.Session.Executor.Commands[2];
+        var statements = deleteCommand.CommandText.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+        statements.Should().NotBeEmpty();
+        var finalStatement = statements[^1];
+
+        deleteCommand.CommandText.Should().Contain(descriptorDeleteFragment);
+        deleteCommand.CommandText.Should().Contain(documentDeleteFragment);
+        finalStatement.Should().Contain(documentDeleteFragment);
+        finalStatement.Should().Contain(finalResultFragment);
+        deleteCommand
+            .CommandText.IndexOf(descriptorDeleteFragment, StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(deleteCommand.CommandText.IndexOf(documentDeleteFragment, StringComparison.Ordinal));
+    }
+
     [Test]
     public async Task It_returns_not_exists_for_descriptor_delete_when_the_scoped_lookup_misses_under_if_match()
     {

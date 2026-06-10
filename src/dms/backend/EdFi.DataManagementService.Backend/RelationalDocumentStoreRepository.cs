@@ -468,6 +468,7 @@ public sealed class RelationalDocumentStoreRepository(
                         {
                             outcome = await ExecuteAuthorizedDeleteAsync(
                                     mappingSet,
+                                    resource,
                                     readPlanPreparation,
                                     documentUuid,
                                     traceId,
@@ -554,6 +555,7 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<DeleteResult> ExecuteAuthorizedDeleteAsync(
         MappingSet mappingSet,
+        QualifiedResourceName resource,
         ExistingDocumentReadPlanPreparation readPlanPreparation,
         DocumentUuid documentUuid,
         TraceId traceId,
@@ -587,6 +589,7 @@ public sealed class RelationalDocumentStoreRepository(
 
             return await ExecuteDeleteByDocumentIdAsync(
                     mappingSet,
+                    resource,
                     preconditionCheckResult.TargetContext.DocumentId,
                     documentUuid,
                     traceId,
@@ -597,6 +600,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         return await ExecuteDeleteByDocumentIdAsync(
                 mappingSet,
+                resource,
                 lockedTargetContext.DocumentId,
                 documentUuid,
                 traceId,
@@ -607,13 +611,27 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<DeleteResult> ExecuteDeleteByDocumentIdAsync(
         MappingSet mappingSet,
+        QualifiedResourceName resource,
         long documentId,
         DocumentUuid documentUuid,
         TraceId traceId,
         IRelationalCommandExecutor sessionCommandExecutor
     )
     {
-        var deleteCommand = BuildDocumentDeleteByDocumentIdCommand(mappingSet.Key.Dialect, documentId);
+        var concreteResource = mappingSet.GetConcreteResourceModelOrThrow(resource);
+
+        if (concreteResource.StorageKind is not ResourceStorageKind.RelationalTables)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{RelationalWriteSupport.FormatResource(resource)}' cannot use the regular-resource delete path because its storage kind is '{concreteResource.StorageKind}'."
+            );
+        }
+
+        var deleteCommand = OrderedDeleteCommandBuilder.BuildResourceDeleteByDocumentIdCommand(
+            mappingSet.Key.Dialect,
+            concreteResource.RelationalModel.Root.Table,
+            documentId
+        );
 
         return await RelationalDeleteExecution
             .TryExecuteAsync(
@@ -982,35 +1000,6 @@ public sealed class RelationalDocumentStoreRepository(
     private static DeleteResult.DeleteFailureRelationshipNotAuthorized CreateDeleteRelationshipNotAuthorized(
         RelationshipAuthorizationFailure relationshipFailure
     ) => new(relationshipFailure);
-
-    private static RelationalCommand BuildDocumentDeleteByDocumentIdCommand(
-        SqlDialect dialect,
-        long documentId
-    )
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                DELETE FROM dms."Document"
-                WHERE "DocumentId" = @documentId
-                RETURNING "DocumentId";
-                """,
-                [new RelationalParameter("@documentId", documentId)]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                DELETE FROM [dms].[Document]
-                OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentId] = @documentId;
-                """,
-                [new RelationalParameter("@documentId", documentId)]
-            ),
-            _ => throw new NotSupportedException(
-                $"Relational delete does not support SQL dialect '{dialect}'."
-            ),
-        };
-    }
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
