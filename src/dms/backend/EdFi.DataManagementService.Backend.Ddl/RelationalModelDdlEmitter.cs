@@ -672,12 +672,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(funcName));
         writer.AppendLine("()");
         writer.AppendLine("RETURNS TRIGGER AS $func$");
-        if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
+        // Only root stamping paths read the captured stamp values (to assign NEW mirror
+        // columns); child paths mirror through a CTE and need no locals.
+        if (
+            trigger.Parameters is TriggerKindParameters.DocumentStamping
+            && IsRootDocumentStampingTrigger(
+                trigger,
+                RequireDocumentStampingTableModel(trigger, tableModelsByTableName),
+                RequireMirrorStampTargetTable(trigger)
+            )
+        )
         {
             writer.AppendLine("DECLARE");
             using (writer.Indent())
             {
-                writer.AppendLine("_stampedDocumentId bigint;");
                 writer.AppendLine("_stampedContentVersion bigint;");
                 writer.AppendLine("_stampedContentLastModifiedAt timestamp with time zone;");
             }
@@ -1169,13 +1177,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     )
     {
         writer.Append("SELECT ");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(", ");
         writer.Append(Quote(ContentVersionColumn));
         writer.Append(", ");
         writer.Append(Quote(ContentLastModifiedAtColumn));
         writer.AppendLine();
-        writer.AppendLine("INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt");
+        // STRICT: a missing dms.Document row must fail with a clear no-rows error here,
+        // not as a misleading not-null violation when the NULL locals reach NEW.
+        writer.AppendLine("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
         writer.Append("FROM ");
         writer.AppendLine(documentTable);
         writer.Append("WHERE ");
@@ -1225,25 +1233,29 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(sourceRowAlias);
             writer.Append(".");
             writer.Append(Quote(keyColumn));
-            writer.AppendLine();
-            writer.Append("RETURNING ");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(", ");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(", ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(
-                " INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;"
-            );
 
             if (assignToNewMirrorColumns)
             {
+                writer.AppendLine();
+                writer.Append("RETURNING ");
+                writer.Append(Quote(ContentVersionColumn));
+                writer.Append(", ");
+                writer.Append(Quote(ContentLastModifiedAtColumn));
+                // STRICT: a missing dms.Document row must fail with a clear no-rows error
+                // here, not as a misleading not-null violation when the NULL locals reach NEW.
+                writer.AppendLine(
+                    " INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;"
+                );
                 writer.Append("NEW.");
                 writer.Append(Quote(ContentVersionColumn));
                 writer.AppendLine(" := _stampedContentVersion;");
                 writer.Append("NEW.");
                 writer.Append(Quote(ContentLastModifiedAtColumn));
                 writer.AppendLine(" := _stampedContentLastModifiedAt;");
+            }
+            else
+            {
+                writer.AppendLine(";");
             }
 
             return;
@@ -1388,7 +1400,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
             }
             writer.AppendLine();
-            writer.AppendLine("UNION");
+            // Root branches are disjoint (inserted-side takes changed updates, deleted-side
+            // pure deletes), so UNION ALL skips the dedup sort and the diff disjunction runs
+            // once per row. Child rows map many-to-one onto the root document, so the child
+            // shape keeps UNION's dedup and the deleted-side diff for changed updates.
+            writer.AppendLine(isRootDocumentStampingTrigger ? "UNION ALL" : "UNION");
             writer.Append("SELECT del.");
             writer.AppendLine(quotedKeyColumn);
             writer.AppendLine("FROM deleted del");
@@ -1397,9 +1413,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine();
             writer.Append("WHERE i.");
             writer.Append(quotedProbeKeyColumn);
-            writer.Append(" IS NULL OR ");
-            EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
-            writer.AppendLine();
+            if (isRootDocumentStampingTrigger)
+            {
+                writer.AppendLine(" IS NULL");
+            }
+            else
+            {
+                writer.Append(" IS NULL OR ");
+                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                writer.AppendLine();
+            }
         }
         writer.AppendLine(")");
 
@@ -1437,25 +1460,34 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(";");
         }
 
-        writer.AppendLine("UPDATE r");
-        writer.Append("SET r.");
-        writer.Append(Quote(ContentVersionColumn));
-        writer.Append(" = s.");
-        writer.Append(Quote(ContentVersionColumn));
-        writer.AppendLine(",");
-        writer.Append("    r.");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.Append(" = s.");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.AppendLine();
-        writer.Append("FROM ");
-        writer.Append(mirrorStampTarget);
-        writer.AppendLine(" r");
-        writer.Append("INNER JOIN @stamped s ON s.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = r.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.AppendLine(";");
+        // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
+        // this trigger even with an empty workset (statement triggers fire on 0 rows),
+        // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
+        writer.AppendLine("IF EXISTS (SELECT 1 FROM @stamped)");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("UPDATE r");
+            writer.Append("SET r.");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(" = s.");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.AppendLine(",");
+            writer.Append("    r.");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.Append(" = s.");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine();
+            writer.Append("FROM ");
+            writer.Append(mirrorStampTarget);
+            writer.AppendLine(" r");
+            writer.Append("INNER JOIN @stamped s ON s.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = r.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.AppendLine(";");
+        }
+        writer.AppendLine("END");
 
         // IdentityVersion stamp for root tables with identity projection columns
         if (trigger.IdentityProjectionColumns.Count > 0)

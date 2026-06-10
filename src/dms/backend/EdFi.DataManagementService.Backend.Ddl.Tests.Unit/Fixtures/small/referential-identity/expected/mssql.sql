@@ -409,7 +409,7 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
@@ -420,11 +420,14 @@ BEGIN
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [dms].[Descriptor] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [dms].[Descriptor] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
 END;
 GO
 
@@ -1192,22 +1195,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EventTimestamp] <> del.[EventTimestamp] OR (i.[EventTimestamp] IS NULL AND del.[EventTimestamp] IS NOT NULL) OR (i.[EventTimestamp] IS NOT NULL AND del.[EventTimestamp] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EventTimestamp] <> del.[EventTimestamp] OR (i.[EventTimestamp] IS NULL AND del.[EventTimestamp] IS NOT NULL) OR (i.[EventTimestamp] IS NOT NULL AND del.[EventTimestamp] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[DateTimeKeyResource] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[DateTimeKeyResource] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EventTimestamp]))
     BEGIN
         UPDATE d
@@ -1272,22 +1278,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DecimalKey] <> del.[DecimalKey] OR (i.[DecimalKey] IS NULL AND del.[DecimalKey] IS NOT NULL) OR (i.[DecimalKey] IS NOT NULL AND del.[DecimalKey] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DecimalKey] <> del.[DecimalKey] OR (i.[DecimalKey] IS NULL AND del.[DecimalKey] IS NOT NULL) OR (i.[DecimalKey] IS NOT NULL AND del.[DecimalKey] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[DecimalKeyResource] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[DecimalKeyResource] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([DecimalKey]))
     BEGIN
         UPDATE d
@@ -1352,22 +1361,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DecimalKeyReference_DocumentId] <> del.[DecimalKeyReference_DocumentId] OR (i.[DecimalKeyReference_DocumentId] IS NULL AND del.[DecimalKeyReference_DocumentId] IS NOT NULL) OR (i.[DecimalKeyReference_DocumentId] IS NOT NULL AND del.[DecimalKeyReference_DocumentId] IS NULL)) OR (i.[DecimalKeyReference_DecimalKey] <> del.[DecimalKeyReference_DecimalKey] OR (i.[DecimalKeyReference_DecimalKey] IS NULL AND del.[DecimalKeyReference_DecimalKey] IS NOT NULL) OR (i.[DecimalKeyReference_DecimalKey] IS NOT NULL AND del.[DecimalKeyReference_DecimalKey] IS NULL)) OR (CAST(i.[RefResourceId] AS varbinary(max)) <> CAST(del.[RefResourceId] AS varbinary(max)) OR (i.[RefResourceId] IS NULL AND del.[RefResourceId] IS NOT NULL) OR (i.[RefResourceId] IS NOT NULL AND del.[RefResourceId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[DecimalKeyReference_DocumentId] <> del.[DecimalKeyReference_DocumentId] OR (i.[DecimalKeyReference_DocumentId] IS NULL AND del.[DecimalKeyReference_DocumentId] IS NOT NULL) OR (i.[DecimalKeyReference_DocumentId] IS NOT NULL AND del.[DecimalKeyReference_DocumentId] IS NULL)) OR (i.[DecimalKeyReference_DecimalKey] <> del.[DecimalKeyReference_DecimalKey] OR (i.[DecimalKeyReference_DecimalKey] IS NULL AND del.[DecimalKeyReference_DecimalKey] IS NOT NULL) OR (i.[DecimalKeyReference_DecimalKey] IS NOT NULL AND del.[DecimalKeyReference_DecimalKey] IS NULL)) OR (CAST(i.[RefResourceId] AS varbinary(max)) <> CAST(del.[RefResourceId] AS varbinary(max)) OR (i.[RefResourceId] IS NULL AND del.[RefResourceId] IS NOT NULL) OR (i.[RefResourceId] IS NOT NULL AND del.[RefResourceId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[DecimalRefResource] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[DecimalRefResource] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([RefResourceId]) OR UPDATE([DecimalKeyReference_DecimalKey]))
     BEGIN
         UPDATE d
@@ -1432,22 +1444,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EdOrgDependentResourceReference_DocumentId] <> del.[EdOrgDependentResourceReference_DocumentId] OR (i.[EdOrgDependentResourceReference_DocumentId] IS NULL AND del.[EdOrgDependentResourceReference_DocumentId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_DocumentId] IS NOT NULL AND del.[EdOrgDependentResourceReference_DocumentId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL)) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] <> del.[EdOrgDependentResourceReference_EducationOrganizationId] OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL)) OR (CAST(i.[EdOrgDependentChildResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentChildResourceId] AS varbinary(max)) OR (i.[EdOrgDependentChildResourceId] IS NULL AND del.[EdOrgDependentChildResourceId] IS NOT NULL) OR (i.[EdOrgDependentChildResourceId] IS NOT NULL AND del.[EdOrgDependentChildResourceId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EdOrgDependentResourceReference_DocumentId] <> del.[EdOrgDependentResourceReference_DocumentId] OR (i.[EdOrgDependentResourceReference_DocumentId] IS NULL AND del.[EdOrgDependentResourceReference_DocumentId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_DocumentId] IS NOT NULL AND del.[EdOrgDependentResourceReference_DocumentId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL)) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] <> del.[EdOrgDependentResourceReference_EducationOrganizationId] OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL) OR (i.[EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL AND del.[EdOrgDependentResourceReference_EducationOrganizationId] IS NULL)) OR (CAST(i.[EdOrgDependentChildResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentChildResourceId] AS varbinary(max)) OR (i.[EdOrgDependentChildResourceId] IS NULL AND del.[EdOrgDependentChildResourceId] IS NOT NULL) OR (i.[EdOrgDependentChildResourceId] IS NOT NULL AND del.[EdOrgDependentChildResourceId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[EdOrgDependentChildResource] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[EdOrgDependentChildResource] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EdOrgDependentChildResourceId]) OR UPDATE([EdOrgDependentResourceReference_EdOrgDependentResourceId]) OR UPDATE([EdOrgDependentResourceReference_EducationOrganizationId]))
     BEGIN
         UPDATE d
@@ -1536,22 +1551,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganization_DocumentId] <> del.[EducationOrganization_DocumentId] OR (i.[EducationOrganization_DocumentId] IS NULL AND del.[EducationOrganization_DocumentId] IS NOT NULL) OR (i.[EducationOrganization_DocumentId] IS NOT NULL AND del.[EducationOrganization_DocumentId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[EdOrgDependentResourceId] AS varbinary(max)) <> CAST(del.[EdOrgDependentResourceId] AS varbinary(max)) OR (i.[EdOrgDependentResourceId] IS NULL AND del.[EdOrgDependentResourceId] IS NOT NULL) OR (i.[EdOrgDependentResourceId] IS NOT NULL AND del.[EdOrgDependentResourceId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[EdOrgDependentResource] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[EdOrgDependentResource] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EdOrgDependentResourceId]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
     BEGIN
         UPDATE d
@@ -1640,22 +1658,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (i.[ResourceAReference_DocumentId] <> del.[ResourceAReference_DocumentId] OR (i.[ResourceAReference_DocumentId] IS NULL AND del.[ResourceAReference_DocumentId] IS NOT NULL) OR (i.[ResourceAReference_DocumentId] IS NOT NULL AND del.[ResourceAReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND del.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND del.[ResourceAReference_ResourceAId] IS NULL)) OR (i.[ResourceBReference_DocumentId] <> del.[ResourceBReference_DocumentId] OR (i.[ResourceBReference_DocumentId] IS NULL AND del.[ResourceBReference_DocumentId] IS NOT NULL) OR (i.[ResourceBReference_DocumentId] IS NOT NULL AND del.[ResourceBReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND del.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND del.[ResourceBReference_ResourceBId] IS NULL)) OR (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(del.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND del.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND del.[KeyUnifiedResourceId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (i.[ResourceAReference_DocumentId] <> del.[ResourceAReference_DocumentId] OR (i.[ResourceAReference_DocumentId] IS NULL AND del.[ResourceAReference_DocumentId] IS NOT NULL) OR (i.[ResourceAReference_DocumentId] IS NOT NULL AND del.[ResourceAReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND del.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND del.[ResourceAReference_ResourceAId] IS NULL)) OR (i.[ResourceBReference_DocumentId] <> del.[ResourceBReference_DocumentId] OR (i.[ResourceBReference_DocumentId] IS NULL AND del.[ResourceBReference_DocumentId] IS NOT NULL) OR (i.[ResourceBReference_DocumentId] IS NOT NULL AND del.[ResourceBReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND del.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND del.[ResourceBReference_ResourceBId] IS NULL)) OR (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(del.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND del.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND del.[KeyUnifiedResourceId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[KeyUnifiedResource] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[KeyUnifiedResource] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([KeyUnifiedResourceId]) OR UPDATE([ResourceAReference_ResourceAId]) OR UPDATE([StudentUniqueId_Unified]) OR UPDATE([ResourceBReference_ResourceBId]))
     BEGIN
         UPDATE d
@@ -1744,22 +1765,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND del.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND del.[ResourceAId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND del.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND del.[ResourceAId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[ResourceA] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[ResourceA] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([ResourceAId]) OR UPDATE([StudentReference_StudentUniqueId]))
     BEGIN
         UPDATE d
@@ -1848,22 +1872,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND del.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND del.[ResourceBId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND del.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND del.[ResourceBId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[ResourceB] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[ResourceB] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([ResourceBId]) OR UPDATE([StudentReference_StudentUniqueId]))
     BEGIN
         UPDATE d
@@ -2026,22 +2053,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[School] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[School] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN
         UPDATE d
@@ -2138,22 +2168,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[FirstName] AS varbinary(max)) <> CAST(del.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[FirstName] AS varbinary(max)) <> CAST(del.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[Student] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[Student] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StudentUniqueId]))
     BEGIN
         UPDATE d
@@ -2218,22 +2251,25 @@ BEGIN
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolReference_DocumentId] <> del.[SchoolReference_DocumentId] OR (i.[SchoolReference_DocumentId] IS NULL AND del.[SchoolReference_DocumentId] IS NOT NULL) OR (i.[SchoolReference_DocumentId] IS NOT NULL AND del.[SchoolReference_DocumentId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)))
-        UNION
+        UNION ALL
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolReference_DocumentId] <> del.[SchoolReference_DocumentId] OR (i.[SchoolReference_DocumentId] IS NULL AND del.[SchoolReference_DocumentId] IS NOT NULL) OR (i.[SchoolReference_DocumentId] IS NOT NULL AND del.[SchoolReference_DocumentId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
+        WHERE i.[DocumentId] IS NULL
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[StudentSchoolAssociation] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[StudentSchoolAssociation] r
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StudentUniqueId]) OR UPDATE([SchoolReference_SchoolId]))
     BEGIN
         UPDATE d

@@ -188,6 +188,46 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     }
 
     [Test]
+    public async Task It_should_allocate_one_content_version_for_multi_row_child_updates_of_one_document()
+    {
+        // DMS-1173 AC: multi-row updates allocate one distinct ContentVersion per affected
+        // document under SQL Server statement-level stamping. Two child rows of the same
+        // root document changed in one statement must produce exactly one allocation.
+        var secondAddressCollectionItemId = await InsertSchoolAddressAsync(
+            _seedData.SchoolDocumentId,
+            2,
+            "Dallas"
+        );
+        secondAddressCollectionItemId.Should().NotBe(_seedData.AddressCollectionItemId);
+
+        var schoolBefore = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+
+        // City participates in UX_SchoolAddress_City_School_DocumentId, so each row
+        // needs a distinct new value.
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[SchoolAddress]
+            SET [City] = [City] + ' II'
+            WHERE [School_DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+        rowsAffected.Should().Be(2);
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var schoolAfter = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(
+                1L,
+                "a multi-row child update of one root document must allocate exactly one content stamp"
+            );
+        await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
+    }
+
+    [Test]
     public async Task It_should_enforce_immediate_parent_fk_shapes_without_redundant_root_cascade_paths()
     {
         _interventionForeignKeys.Should().ContainSingle();
@@ -633,6 +673,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     private async Task<long> CountRowsAsync(string sql, params SqlParameter[] parameters)
     {
         return await _database.ExecuteScalarAsync<long>(sql, parameters);
+    }
+
+    private async Task<long> ReadMaxChangeVersionAsync()
+    {
+        return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
     }
 
     private async Task<MssqlDocumentStampState> GetDocumentStampStateAsync(long documentId)

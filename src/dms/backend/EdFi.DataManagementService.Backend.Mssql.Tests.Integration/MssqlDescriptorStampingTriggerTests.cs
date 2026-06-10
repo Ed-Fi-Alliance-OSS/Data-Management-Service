@@ -162,6 +162,14 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
     }
 
+    private async Task DelayForDistinctTimestampsAsync()
+    {
+        // Server-side delay so the post-write ContentLastModifiedAt is strictly greater
+        // than the seed stamp, letting assertions use BeAfter instead of the weaker
+        // BeOnOrAfter (which cannot catch a stamp that never moved).
+        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+    }
+
     private sealed record StampPair(StampValues Document, StampValues Mirror);
 
     private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
@@ -187,6 +195,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        await DelayForDistinctTimestampsAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -199,7 +208,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var afterDocument = await ReadDocumentStampAsync(seed.DocumentId);
         afterDocument.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        afterDocument.ContentLastModifiedAt.Should().BeOnOrAfter(seed.ContentLastModifiedAt);
+        afterDocument.ContentLastModifiedAt.Should().BeAfter(seed.ContentLastModifiedAt);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a descriptor delete must allocate exactly one content stamp");
@@ -210,6 +219,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        await DelayForDistinctTimestampsAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -224,7 +234,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         var after = await ReadStampPairAsync(seed.DocumentId);
         after.Mirror.Should().Be(after.Document);
         after.Document.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeOnOrAfter(seed.ContentLastModifiedAt);
+        after.Document.ContentLastModifiedAt.Should().BeAfter(seed.ContentLastModifiedAt);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a single descriptor value change must allocate exactly one content stamp");

@@ -251,23 +251,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId" OR OLD."StateEducationAgency_EducationOrganizationId" IS DISTINCT FROM NEW."StateEducationAgency_EducationOrganizationId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -276,7 +274,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -370,23 +368,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -395,7 +391,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;

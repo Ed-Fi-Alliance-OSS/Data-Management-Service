@@ -897,12 +897,12 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             "ELSIF TG_OP = 'UPDATE' THEN"
         );
 
-        insertBranch.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        insertBranch.Should().Contain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
         insertBranch.Should().Contain("FROM \"dms\".\"Document\"");
         insertBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
         insertBranch
             .Should()
-            .Contain("INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt");
+            .Contain("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
         insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
         insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
         insertBranch.Should().NotContain("nextval");
@@ -968,8 +968,29 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
                 "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
             );
         updateBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
+        updateBranch
+            .Should()
+            .Contain(
+                "RETURNING \"ContentVersion\", \"ContentLastModifiedAt\" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;"
+            );
         updateBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
         updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
+    }
+
+    [Test]
+    public void It_should_not_capture_stamp_variables_on_paths_that_never_read_them()
+    {
+        // The stamp locals exist only so root INSERT/UPDATE paths can assign NEW mirror
+        // columns. The root DELETE path and the child CTE path never read them, so they
+        // must not capture into them (and child functions must not declare them at all).
+        _ddl.Should().NotContain("_stampedDocumentId");
+
+        var rootDeleteBranch = ExtractPlpgsqlBlock(GetRootStampFunctionBody(), "IF TG_OP = 'DELETE' THEN");
+        rootDeleteBranch.Should().NotContain("RETURNING");
+
+        var childFunctionBody = GetStampFunctionBody("SchoolAddress");
+        childFunctionBody.Should().NotContain("_stampedContentVersion");
+        childFunctionBody.Should().NotContain("DECLARE");
     }
 
     [Test]
@@ -1364,6 +1385,50 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             .Contain(
                 "INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];"
             );
+    }
+
+    [Test]
+    public void It_should_guard_mirror_updates_against_empty_stamped_worksets()
+    {
+        // Without this guard the mirror self-UPDATE re-fires the trigger even when
+        // @stamped is empty, which recurses to the nesting limit on databases with
+        // RECURSIVE_TRIGGERS ON (statement triggers fire on 0 affected rows).
+        foreach (var tableName in new[] { "School", "SchoolAddress" })
+        {
+            var triggerBody = GetStampTriggerBody(tableName);
+
+            var guardStart = triggerBody.IndexOf(
+                "IF EXISTS (SELECT 1 FROM @stamped)",
+                StringComparison.Ordinal
+            );
+            guardStart
+                .Should()
+                .BeGreaterOrEqualTo(
+                    0,
+                    "the {0} stamp trigger must skip the mirror update for empty stamped worksets",
+                    tableName
+                );
+
+            var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", guardStart, StringComparison.Ordinal);
+            mirrorUpdateStart.Should().BeGreaterThan(guardStart);
+        }
+    }
+
+    [Test]
+    public void It_should_use_disjoint_affected_docs_branches_for_root_triggers()
+    {
+        // Root tables key inserted/deleted by the PK, so changed updates land only in the
+        // inserted-side branch and the deleted-side branch reduces to a pure anti-join.
+        // Disjoint branches allow UNION ALL, so the per-column diff disjunction runs once
+        // per row instead of twice plus a dedup sort.
+        var rootTriggerBody = GetSchoolStampTriggerBody();
+        rootTriggerBody.Should().Contain("UNION ALL");
+        rootTriggerBody.Should().NotContain("WHERE i.[DocumentId] IS NULL OR ");
+
+        // Child triggers map many rows to one root document, so UNION's dedup is load-bearing.
+        var childTriggerBody = GetStampTriggerBody("SchoolAddress");
+        childTriggerBody.Should().NotContain("UNION ALL");
+        childTriggerBody.Should().Contain("WHERE i.[CollectionItemId] IS NULL OR ");
     }
 
     [Test]

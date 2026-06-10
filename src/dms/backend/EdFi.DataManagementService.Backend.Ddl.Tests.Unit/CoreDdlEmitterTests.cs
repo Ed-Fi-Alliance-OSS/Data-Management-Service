@@ -627,6 +627,26 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_not_mirror_descriptor_delete_stamps_to_the_deleted_row()
+    {
+        // DocumentId is the Descriptor PK and the row is already gone when the AFTER
+        // DELETE branch runs, so a mirror update can never match a row. The DELETE
+        // branch must stamp dms.Document with a plain UPDATE and nothing else.
+        var deleteStart = _ddl.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        deleteStart.Should().BeGreaterOrEqualTo(0);
+        var deleteEnd = _ddl.IndexOf("END IF;", deleteStart, StringComparison.Ordinal);
+        deleteEnd.Should().BeGreaterThan(deleteStart);
+        var deleteBranch = _ddl[deleteStart..deleteEnd];
+
+        deleteBranch.Should().Contain("UPDATE \"dms\".\"Document\"");
+        deleteBranch.Should().Contain("WHERE \"DocumentId\" = OLD.\"DocumentId\";");
+        deleteBranch.Should().NotContain("WITH stamped AS (");
+        deleteBranch.Should().NotContain("RETURNING");
+        deleteBranch.Should().NotContain("UPDATE \"dms\".\"Descriptor\" r");
+        deleteBranch.Should().Contain("RETURN OLD;");
+    }
+
+    [Test]
     public void It_should_capture_descriptor_document_stamps_with_returning_and_mirror_them()
     {
         _ddl.Should().Contain("WITH stamped AS (");
@@ -1155,10 +1175,25 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("FROM inserted i");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         _ddl.Should().Contain("WHERE del.[DocumentId] IS NOT NULL AND (");
-        _ddl.Should().Contain("UNION");
+        // The branches are disjoint (changed updates vs pure deletes), so UNION ALL
+        // avoids a pointless dedup sort on every descriptor statement.
+        _ddl.Should().Contain("UNION ALL");
         _ddl.Should().Contain("FROM deleted del");
         _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
         _ddl.Should().Contain("WHERE i.[DocumentId] IS NULL");
+    }
+
+    [Test]
+    public void It_should_guard_the_descriptor_mirror_update_against_empty_stamped_worksets()
+    {
+        // Without this guard the mirror self-UPDATE re-fires the trigger even when
+        // @stamped is empty, which recurses to the nesting limit on databases with
+        // RECURSIVE_TRIGGERS ON (statement triggers fire on 0 affected rows).
+        var guardStart = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        guardStart.Should().BeGreaterOrEqualTo(0);
+
+        var mirrorUpdateStart = _ddl.IndexOf("UPDATE r", guardStart, StringComparison.Ordinal);
+        mirrorUpdateStart.Should().BeGreaterThan(guardStart);
     }
 
     [Test]

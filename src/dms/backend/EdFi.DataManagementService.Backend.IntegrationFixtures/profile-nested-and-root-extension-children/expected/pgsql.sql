@@ -434,16 +434,9 @@ BEGIN
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     RETURN NEW;
@@ -637,23 +630,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ParentResource_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResource_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ParentResourceId" IS DISTINCT FROM NEW."ParentResourceId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -662,7 +653,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -683,10 +674,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ParentResource_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -728,10 +715,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParentChildren_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -773,10 +756,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParentChildren_Stamp"();
 
 CREATE OR REPLACE FUNCTION "rootext"."TF_TR_ParentResourceExtension_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -818,10 +797,6 @@ EXECUTE FUNCTION "rootext"."TF_TR_ParentResourceExtension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "rootext"."TF_TR_ParentResourceExtensionRootExtChildren_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (

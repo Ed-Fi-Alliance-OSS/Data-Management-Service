@@ -823,7 +823,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// Emits the PostgreSQL descriptor stamping trigger function and trigger.
     /// On INSERT, DELETE, or a real value change to any stored column of <c>dms.Descriptor</c>,
     /// bumps <c>dms.Document.ContentVersion</c> and <c>ContentLastModifiedAt</c> on
-    /// the owning document row, then mirrors those captured stamps back to the descriptor.
+    /// the owning document row, then mirrors those captured stamps back to the descriptor
+    /// (INSERT copies the existing document stamp; DELETE stamps the document only, since
+    /// the descriptor row is already gone).
     /// A DB-level no-op guard (<c>IS DISTINCT FROM</c> across every stored column)
     /// short-circuits same-value UPDATEs so unchanged PUTs do not bump the stamps.
     /// </summary>
@@ -913,33 +915,22 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("ELSIF TG_OP = 'DELETE' THEN");
             using (writer.Indent())
             {
-                writer.AppendLine("WITH stamped AS (");
-                using (writer.Indent())
-                {
-                    writer.Append("UPDATE ");
-                    writer.AppendLine(documentTable);
-                    writer.Append("SET ");
-                    writer.Append(Quote("ContentVersion"));
-                    writer.Append(" = nextval('");
-                    writer.Append(sequenceName);
-                    writer.Append("'), ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
-                    writer.AppendLine(" = now()");
-                    writer.Append("WHERE ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(" = OLD.");
-                    writer.Append(Quote("DocumentId"));
-                    writer.AppendLine();
-                    writer.Append("RETURNING ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentVersion"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
-                    writer.AppendLine();
-                }
-                writer.AppendLine(")");
-                EmitPgsqlDescriptorMirrorUpdateFromStamped(writer, descriptorTable);
+                // DocumentId is the Descriptor PK and the row is already gone in the AFTER
+                // DELETE branch, so a mirror update can never match; stamp dms.Document only.
+                writer.Append("UPDATE ");
+                writer.AppendLine(documentTable);
+                writer.Append("SET ");
+                writer.Append(Quote("ContentVersion"));
+                writer.Append(" = nextval('");
+                writer.Append(sequenceName);
+                writer.Append("'), ");
+                writer.Append(Quote("ContentLastModifiedAt"));
+                writer.AppendLine(" = now()");
+                writer.Append("WHERE ");
+                writer.Append(Quote("DocumentId"));
+                writer.Append(" = OLD.");
+                writer.Append(Quote("DocumentId"));
+                writer.AppendLine(";");
                 writer.AppendLine("RETURN OLD;");
             }
             writer.AppendLine("END IF;");
@@ -1050,7 +1041,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
                 writer.Append(")");
                 writer.AppendLine();
-                writer.AppendLine("UNION");
+                // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
+                // skips the dedup sort.
+                writer.AppendLine("UNION ALL");
                 writer.Append("SELECT del.");
                 writer.AppendLine(quotedKeyColumn);
                 writer.AppendLine("FROM deleted del");
@@ -1083,25 +1076,34 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.Append(" = a.");
             writer.Append(quotedKeyColumn);
             writer.AppendLine(";");
-            writer.AppendLine("UPDATE r");
-            writer.Append("SET r.");
-            writer.Append(Quote("ContentVersion"));
-            writer.Append(" = s.");
-            writer.Append(Quote("ContentVersion"));
-            writer.AppendLine(",");
-            writer.Append("    r.");
-            writer.Append(Quote("ContentLastModifiedAt"));
-            writer.Append(" = s.");
-            writer.Append(Quote("ContentLastModifiedAt"));
-            writer.AppendLine();
-            writer.Append("FROM ");
-            writer.Append(descriptorTable);
-            writer.AppendLine(" r");
-            writer.Append("INNER JOIN @stamped s ON s.");
-            writer.Append(quotedKeyColumn);
-            writer.Append(" = r.");
-            writer.Append(quotedKeyColumn);
-            writer.AppendLine(";");
+            // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
+            // this trigger even with an empty workset (statement triggers fire on 0 rows),
+            // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
+            writer.AppendLine("IF EXISTS (SELECT 1 FROM @stamped)");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                writer.AppendLine("UPDATE r");
+                writer.Append("SET r.");
+                writer.Append(Quote("ContentVersion"));
+                writer.Append(" = s.");
+                writer.Append(Quote("ContentVersion"));
+                writer.AppendLine(",");
+                writer.Append("    r.");
+                writer.Append(Quote("ContentLastModifiedAt"));
+                writer.Append(" = s.");
+                writer.Append(Quote("ContentLastModifiedAt"));
+                writer.AppendLine();
+                writer.Append("FROM ");
+                writer.Append(descriptorTable);
+                writer.AppendLine(" r");
+                writer.Append("INNER JOIN @stamped s ON s.");
+                writer.Append(quotedKeyColumn);
+                writer.Append(" = r.");
+                writer.Append(quotedKeyColumn);
+                writer.AppendLine(";");
+            }
+            writer.AppendLine("END");
         }
         writer.AppendLine("END;");
         // Close the batch so that subsequent DDL starts in a fresh batch.

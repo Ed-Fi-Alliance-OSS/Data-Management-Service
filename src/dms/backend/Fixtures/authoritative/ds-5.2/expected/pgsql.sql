@@ -434,16 +434,9 @@ BEGIN
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     RETURN NEW;
@@ -36655,23 +36648,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_AcademicWeek_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AcademicWeek_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."TotalInstructionalDays" IS DISTINCT FROM NEW."TotalInstructionalDays" OR OLD."WeekIdentifier" IS DISTINCT FROM NEW."WeekIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -36680,7 +36671,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -36721,23 +36712,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_AccountabilityRating_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AccountabilityRating_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Rating" IS DISTINCT FROM NEW."Rating" OR OLD."RatingDate" IS DISTINCT FROM NEW."RatingDate" OR OLD."RatingOrganization" IS DISTINCT FROM NEW."RatingOrganization" OR OLD."RatingProgram" IS DISTINCT FROM NEW."RatingProgram" OR OLD."RatingTitle" IS DISTINCT FROM NEW."RatingTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -36746,7 +36735,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -36787,23 +36776,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Assessment_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Assessment_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."MandatingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."MandatingEducationOrganization_DocumentId" OR OLD."MandatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MandatingEducationOrganization_EducationOrganizationId" OR OLD."AssessmentCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentCategoryDescriptor_DescriptorId" OR OLD."ContentStandardPublicationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContentStandardPublicationStatusDescriptor_DescriptorId" OR OLD."AdaptiveAssessment" IS DISTINCT FROM NEW."AdaptiveAssessment" OR OLD."AssessmentFamily" IS DISTINCT FROM NEW."AssessmentFamily" OR OLD."AssessmentForm" IS DISTINCT FROM NEW."AssessmentForm" OR OLD."AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentIdentifier" OR OLD."AssessmentTitle" IS DISTINCT FROM NEW."AssessmentTitle" OR OLD."AssessmentVersion" IS DISTINCT FROM NEW."AssessmentVersion" OR OLD."ContentStandardBeginDate" IS DISTINCT FROM NEW."ContentStandardBeginDate" OR OLD."ContentStandardEndDate" IS DISTINCT FROM NEW."ContentStandardEndDate" OR OLD."ContentStandardPublicationDate" IS DISTINCT FROM NEW."ContentStandardPublicationDate" OR OLD."ContentStandardPublicationYear" IS DISTINCT FROM NEW."ContentStandardPublicationYear" OR OLD."ContentStandardTitle" IS DISTINCT FROM NEW."ContentStandardTitle" OR OLD."ContentStandardUri" IS DISTINCT FROM NEW."ContentStandardUri" OR OLD."ContentStandardVersion" IS DISTINCT FROM NEW."ContentStandardVersion" OR OLD."MaxRawScore" IS DISTINCT FROM NEW."MaxRawScore" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."Nomenclature" IS DISTINCT FROM NEW."Nomenclature" OR OLD."RevisionDate" IS DISTINCT FROM NEW."RevisionDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -36812,7 +36799,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -36833,10 +36820,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Assessment_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAcademicSubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -36898,23 +36881,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministration_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministration_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssigningEducationOrganization_DocumentId" IS DISTINCT FROM NEW."AssigningEducationOrganization_DocumentId" OR OLD."AssigningEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."AssigningEducationOrganization_EducationOrganizationId" OR OLD."AdministrationIdentifier" IS DISTINCT FROM NEW."AdministrationIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -36923,7 +36904,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -36944,10 +36925,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministration_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministrationAssessmentBatteryPart_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37009,23 +36986,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_Referential
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentAdministration_DocumentId" IS DISTINCT FROM NEW."AssessmentAdministration_DocumentId" OR OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."ParticipatingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ParticipatingEducationOrganization_DocumentId" OR OLD."ParticipatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ParticipatingEducationOrganization_EducationOrganizationId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -37034,7 +37009,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -37055,10 +37030,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipationAdministr_f757e264da"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37100,10 +37071,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipationAdministr_f7
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAdministrationPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37145,10 +37112,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAssessedGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37190,10 +37153,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAssessedGradeLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentAuthor_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37255,23 +37214,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPartName") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -37280,7 +37237,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -37301,10 +37258,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentBatteryPartObjectiveAssessment_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37346,10 +37299,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentBatteryPartObjectiveAssessment_Stamp"()
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37411,23 +37360,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentItem_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentItem_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssessmentItemCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentItemCategoryDescriptor_DescriptorId" OR OLD."AssessmentItemURI" IS DISTINCT FROM NEW."AssessmentItemURI" OR OLD."ExpectedTimeAssessed" IS DISTINCT FROM NEW."ExpectedTimeAssessed" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode" OR OLD."ItemText" IS DISTINCT FROM NEW."ItemText" OR OLD."MaxRawScore" IS DISTINCT FROM NEW."MaxRawScore" OR OLD."Nomenclature" IS DISTINCT FROM NEW."Nomenclature") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -37436,7 +37383,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -37457,10 +37404,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentItem_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentItemLearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37502,10 +37445,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentItemLearningStandard_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentItemPossibleRespons_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37547,10 +37486,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentItemPossibleRespons_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentLanguage_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37592,10 +37527,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentLanguage_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentPerformanceLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37637,10 +37568,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentPerformanceLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37682,10 +37609,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentPlatformType_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37727,10 +37650,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentPlatformType_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentProgram_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37772,10 +37691,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentProgram_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentScore_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37837,23 +37752,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_ReferentialI
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."ObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ObjectiveAssessment_DocumentId" OR OLD."ObjectiveAssessment_IdentificationCode" IS DISTINCT FROM NEW."ObjectiveAssessment_IdentificationCode" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."MaximumScore" IS DISTINCT FROM NEW."MaximumScore" OR OLD."MinimumScore" IS DISTINCT FROM NEW."MinimumScore" OR OLD."ScoreRangeId" IS DISTINCT FROM NEW."ScoreRangeId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -37862,7 +37775,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -37883,10 +37796,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandardLearningSt_8238123417"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37928,10 +37837,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandardLearningSt_82
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_AssessmentSection_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -37993,23 +37898,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38018,7 +37921,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38039,10 +37942,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BalanceSheetDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38104,23 +38003,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_BellSchedule_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BellSchedule_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."AlternateDayName" IS DISTINCT FROM NEW."AlternateDayName" OR OLD."BellScheduleName" IS DISTINCT FROM NEW."BellScheduleName" OR OLD."EndTime" IS DISTINCT FROM NEW."EndTime" OR OLD."StartTime" IS DISTINCT FROM NEW."StartTime" OR OLD."TotalInstructionalTime" IS DISTINCT FROM NEW."TotalInstructionalTime") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38129,7 +38026,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38150,10 +38047,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_BellSchedule_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BellScheduleClassPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38195,10 +38088,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_BellScheduleClassPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BellScheduleDate_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38240,10 +38129,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_BellScheduleDate_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_BellScheduleGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38305,23 +38190,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Calendar_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Calendar_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."CalendarTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CalendarTypeDescriptor_DescriptorId" OR OLD."CalendarCode" IS DISTINCT FROM NEW."CalendarCode") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38330,7 +38213,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38371,23 +38254,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CalendarDate_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CalendarDate_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Calendar_DocumentId" IS DISTINCT FROM NEW."Calendar_DocumentId" OR OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."Calendar_SchoolId" IS DISTINCT FROM NEW."Calendar_SchoolId" OR OLD."Calendar_SchoolYear" IS DISTINCT FROM NEW."Calendar_SchoolYear" OR OLD."Date" IS DISTINCT FROM NEW."Date") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38396,7 +38277,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38417,10 +38298,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CalendarDate_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CalendarDateCalendarEvent_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38462,10 +38339,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CalendarDateCalendarEvent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CalendarGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38527,23 +38400,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ChartOfAccount_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ChartOfAccount_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified" OR OLD."BalanceSheetBalanceSheetDimension_DocumentId" IS DISTINCT FROM NEW."BalanceSheetBalanceSheetDimension_DocumentId" OR OLD."BalanceSheetBalanceSheetDimension_Code" IS DISTINCT FROM NEW."BalanceSheetBalanceSheetDimension_Code" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."FunctionFunctionDimension_DocumentId" IS DISTINCT FROM NEW."FunctionFunctionDimension_DocumentId" OR OLD."FunctionFunctionDimension_Code" IS DISTINCT FROM NEW."FunctionFunctionDimension_Code" OR OLD."FundFundDimension_DocumentId" IS DISTINCT FROM NEW."FundFundDimension_DocumentId" OR OLD."FundFundDimension_Code" IS DISTINCT FROM NEW."FundFundDimension_Code" OR OLD."ObjectObjectDimension_DocumentId" IS DISTINCT FROM NEW."ObjectObjectDimension_DocumentId" OR OLD."ObjectObjectDimension_Code" IS DISTINCT FROM NEW."ObjectObjectDimension_Code" OR OLD."OperationalUnitOperationalUnitDimension_DocumentId" IS DISTINCT FROM NEW."OperationalUnitOperationalUnitDimension_DocumentId" OR OLD."OperationalUnitOperationalUnitDimension_Code" IS DISTINCT FROM NEW."OperationalUnitOperationalUnitDimension_Code" OR OLD."ProgramProgramDimension_DocumentId" IS DISTINCT FROM NEW."ProgramProgramDimension_DocumentId" OR OLD."ProgramProgramDimension_Code" IS DISTINCT FROM NEW."ProgramProgramDimension_Code" OR OLD."ProjectProjectDimension_DocumentId" IS DISTINCT FROM NEW."ProjectProjectDimension_DocumentId" OR OLD."ProjectProjectDimension_Code" IS DISTINCT FROM NEW."ProjectProjectDimension_Code" OR OLD."SourceSourceDimension_DocumentId" IS DISTINCT FROM NEW."SourceSourceDimension_DocumentId" OR OLD."SourceSourceDimension_Code" IS DISTINCT FROM NEW."SourceSourceDimension_Code" OR OLD."AccountTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AccountTypeDescriptor_DescriptorId" OR OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."AccountName" IS DISTINCT FROM NEW."AccountName") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38552,7 +38423,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38573,10 +38444,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ChartOfAccount_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ChartOfAccountReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38638,23 +38505,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ClassPeriod_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ClassPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."ClassPeriodName" IS DISTINCT FROM NEW."ClassPeriodName" OR OLD."OfficialAttendancePeriod" IS DISTINCT FROM NEW."OfficialAttendancePeriod") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38663,7 +38528,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38684,10 +38549,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ClassPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ClassPeriodMeetingTime_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38749,23 +38610,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Cohort_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Cohort_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId" OR OLD."CohortScopeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CohortScopeDescriptor_DescriptorId" OR OLD."CohortTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CohortTypeDescriptor_DescriptorId" OR OLD."CohortDescription" IS DISTINCT FROM NEW."CohortDescription" OR OLD."CohortIdentifier" IS DISTINCT FROM NEW."CohortIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38774,7 +38633,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38795,10 +38654,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Cohort_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CohortProgram_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -38913,23 +38768,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganizationId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -38938,7 +38791,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -38959,10 +38812,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39004,10 +38853,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39049,10 +38894,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39094,10 +38935,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39139,10 +38976,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationIdentificationCode_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39184,10 +39017,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39229,10 +39058,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39274,10 +39099,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganizationInstitutionTelephone_Stamp"(
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganizationInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39476,23 +39297,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."CommunityOrganization_CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganization_CommunityOrganizationId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."ProviderCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProviderCategoryDescriptor_DescriptorId" OR OLD."ProviderProfitabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProviderProfitabilityDescriptor_DescriptorId" OR OLD."ProviderStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProviderStatusDescriptor_DescriptorId" OR OLD."CommunityProviderId" IS DISTINCT FROM NEW."CommunityProviderId" OR OLD."LicenseExemptIndicator" IS DISTINCT FROM NEW."LicenseExemptIndicator" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."SchoolIndicator" IS DISTINCT FROM NEW."SchoolIndicator" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -39501,7 +39320,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -39522,10 +39341,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39567,10 +39382,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39612,10 +39423,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39657,10 +39464,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39702,10 +39505,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderIdentificationCode_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39747,10 +39546,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39792,10 +39587,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39837,10 +39628,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderInstitutionTelephone_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -39902,23 +39689,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."CommunityProvider_CommunityProviderId" IS DISTINCT FROM NEW."CommunityProvider_CommunityProviderId" OR OLD."LicenseStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."LicenseStatusDescriptor_DescriptorId" OR OLD."LicenseTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."LicenseTypeDescriptor_DescriptorId" OR OLD."AuthorizedFacilityCapacity" IS DISTINCT FROM NEW."AuthorizedFacilityCapacity" OR OLD."LicenseEffectiveDate" IS DISTINCT FROM NEW."LicenseEffectiveDate" OR OLD."LicenseExpirationDate" IS DISTINCT FROM NEW."LicenseExpirationDate" OR OLD."LicenseIdentifier" IS DISTINCT FROM NEW."LicenseIdentifier" OR OLD."LicenseIssueDate" IS DISTINCT FROM NEW."LicenseIssueDate" OR OLD."LicensingOrganization" IS DISTINCT FROM NEW."LicensingOrganization" OR OLD."OldestAgeAuthorizedToServe" IS DISTINCT FROM NEW."OldestAgeAuthorizedToServe" OR OLD."YoungestAgeAuthorizedToServe" IS DISTINCT FROM NEW."YoungestAgeAuthorizedToServe") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -39927,7 +39712,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -39968,23 +39753,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CompetencyObjective_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CompetencyObjective_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ObjectiveGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."ObjectiveGradeLevelDescriptor_DescriptorId" OR OLD."CompetencyObjectiveId" IS DISTINCT FROM NEW."CompetencyObjectiveId" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."Objective" IS DISTINCT FROM NEW."Objective" OR OLD."SuccessCriteria" IS DISTINCT FROM NEW."SuccessCriteria") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -39993,7 +39776,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -40034,23 +39817,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Contact_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Contact_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Person_DocumentId" IS DISTINCT FROM NEW."Person_DocumentId" OR OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."HighestCompletedLevelOfEducationDescriptor_DescriptorId" IS DISTINCT FROM NEW."HighestCompletedLevelOfEducationDescriptor_DescriptorId" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId" OR OLD."ContactUniqueId" IS DISTINCT FROM NEW."ContactUniqueId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenderIdentity" IS DISTINCT FROM NEW."GenderIdentity" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."LoginId" IS DISTINCT FROM NEW."LoginId" OR OLD."MaidenName" IS DISTINCT FROM NEW."MaidenName" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix" OR OLD."PreferredFirstName" IS DISTINCT FROM NEW."PreferredFirstName" OR OLD."PreferredLastSurname" IS DISTINCT FROM NEW."PreferredLastSurname") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -40059,7 +39840,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -40080,10 +39861,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Contact_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40125,10 +39902,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40170,10 +39943,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactElectronicMail_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40215,10 +39984,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactElectronicMail_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40260,10 +40025,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactInternationalAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactLanguage_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40305,10 +40066,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactLanguage_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactLanguageUs_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40350,10 +40107,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactLanguageUs_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactOtherName_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40395,10 +40148,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactOtherName_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactPersonalIdentificationDocument_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40440,10 +40189,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ContactPersonalIdentificationDocument_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ContactTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40505,23 +40250,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Course_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Course_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."CareerPathwayDescriptor_DescriptorId" IS DISTINCT FROM NEW."CareerPathwayDescriptor_DescriptorId" OR OLD."CourseDefinedByDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseDefinedByDescriptor_DescriptorId" OR OLD."CourseGPAApplicabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseGPAApplicabilityDescriptor_DescriptorId" OR OLD."MaximumAvailableCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."MaximumAvailableCreditTypeDescriptor_DescriptorId" OR OLD."MinimumAvailableCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."MinimumAvailableCreditTypeDescriptor_DescriptorId" OR OLD."CourseCode" IS DISTINCT FROM NEW."CourseCode" OR OLD."CourseDescription" IS DISTINCT FROM NEW."CourseDescription" OR OLD."CourseTitle" IS DISTINCT FROM NEW."CourseTitle" OR OLD."DateCourseAdopted" IS DISTINCT FROM NEW."DateCourseAdopted" OR OLD."HighSchoolCourseRequirement" IS DISTINCT FROM NEW."HighSchoolCourseRequirement" OR OLD."MaxCompletionsForCredit" IS DISTINCT FROM NEW."MaxCompletionsForCredit" OR OLD."MaximumAvailableCreditConversion" IS DISTINCT FROM NEW."MaximumAvailableCreditConversion" OR OLD."MaximumAvailableCredits" IS DISTINCT FROM NEW."MaximumAvailableCredits" OR OLD."MinimumAvailableCreditConversion" IS DISTINCT FROM NEW."MinimumAvailableCreditConversion" OR OLD."MinimumAvailableCredits" IS DISTINCT FROM NEW."MinimumAvailableCredits" OR OLD."NumberOfParts" IS DISTINCT FROM NEW."NumberOfParts" OR OLD."TimeRequiredForCompletion" IS DISTINCT FROM NEW."TimeRequiredForCompletion") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -40530,7 +40273,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -40551,10 +40294,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Course_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseAcademicSubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40596,10 +40335,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseAcademicSubject_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseCompetencyLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40641,10 +40376,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseCompetencyLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40686,10 +40417,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseIdentificationCode_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseLearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40731,10 +40458,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseLearningStandard_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseLevelCharacteristic_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40776,10 +40499,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseLevelCharacteristic_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseOfferedGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40841,23 +40560,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseOffering_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseOffering_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Course_CourseCode" IS DISTINCT FROM NEW."Course_CourseCode" OR OLD."Course_EducationOrganizationId" IS DISTINCT FROM NEW."Course_EducationOrganizationId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."InstructionalTimePlanned" IS DISTINCT FROM NEW."InstructionalTimePlanned" OR OLD."LocalCourseCode" IS DISTINCT FROM NEW."LocalCourseCode" OR OLD."LocalCourseTitle" IS DISTINCT FROM NEW."LocalCourseTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -40866,7 +40583,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -40887,10 +40604,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseOffering_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseOfferingCourseLevelCharacteristic_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40932,10 +40645,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseOfferingCourseLevelCharacteristic_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseOfferingCurriculumUsed_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -40977,10 +40686,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseOfferingCurriculumUsed_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseOfferingOfferedGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41042,23 +40747,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscript_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscript_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CourseCourse_DocumentId" IS DISTINCT FROM NEW."CourseCourse_DocumentId" OR OLD."CourseCourse_CourseCode" IS DISTINCT FROM NEW."CourseCourse_CourseCode" OR OLD."CourseCourse_EducationOrganizationId" IS DISTINCT FROM NEW."CourseCourse_EducationOrganizationId" OR OLD."ExternalEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ExternalEducationOrganization_DocumentId" OR OLD."ExternalEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ExternalEducationOrganization_EducationOrganizationId" OR OLD."ResponsibleTeacherStaff_DocumentId" IS DISTINCT FROM NEW."ResponsibleTeacherStaff_DocumentId" OR OLD."ResponsibleTeacherStaff_StaffUniqueId" IS DISTINCT FROM NEW."ResponsibleTeacherStaff_StaffUniqueId" OR OLD."StudentAcademicRecord_DocumentId" IS DISTINCT FROM NEW."StudentAcademicRecord_DocumentId" OR OLD."StudentAcademicRecord_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAcademicRecord_EducationOrganizationId" OR OLD."StudentAcademicRecord_SchoolYear" IS DISTINCT FROM NEW."StudentAcademicRecord_SchoolYear" OR OLD."StudentAcademicRecord_StudentUniqueId" IS DISTINCT FROM NEW."StudentAcademicRecord_StudentUniqueId" OR OLD."StudentAcademicRecord_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentAcademicRecord_TermDescriptor_DescriptorId" OR OLD."AttemptedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttemptedCreditTypeDescriptor_DescriptorId" OR OLD."CourseAttemptResultDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseAttemptResultDescriptor_DescriptorId" OR OLD."CourseRepeatCodeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseRepeatCodeDescriptor_DescriptorId" OR OLD."EarnedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EarnedCreditTypeDescriptor_DescriptorId" OR OLD."MethodCreditEarnedDescriptor_DescriptorId" IS DISTINCT FROM NEW."MethodCreditEarnedDescriptor_DescriptorId" OR OLD."WhenTakenGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."WhenTakenGradeLevelDescriptor_DescriptorId" OR OLD."AlternativeCourseTitle" IS DISTINCT FROM NEW."AlternativeCourseTitle" OR OLD."AssigningOrganizationIdentificationCode" IS DISTINCT FROM NEW."AssigningOrganizationIdentificationCode" OR OLD."AttemptedCreditConversion" IS DISTINCT FROM NEW."AttemptedCreditConversion" OR OLD."AttemptedCredits" IS DISTINCT FROM NEW."AttemptedCredits" OR OLD."CourseCatalogURL" IS DISTINCT FROM NEW."CourseCatalogURL" OR OLD."CourseTitle" IS DISTINCT FROM NEW."CourseTitle" OR OLD."EarnedCreditConversion" IS DISTINCT FROM NEW."EarnedCreditConversion" OR OLD."EarnedCredits" IS DISTINCT FROM NEW."EarnedCredits" OR OLD."ExternalEducationOrganizationNameOfInstitution" IS DISTINCT FROM NEW."ExternalEducationOrganizationNameOfInstitution" OR OLD."FinalLetterGradeEarned" IS DISTINCT FROM NEW."FinalLetterGradeEarned" OR OLD."FinalNumericGradeEarned" IS DISTINCT FROM NEW."FinalNumericGradeEarned") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -41067,7 +40770,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -41088,10 +40791,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscript_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscriptAcademicSubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41133,10 +40832,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscriptAcademicSubject_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscriptAlternativeCourseIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41178,10 +40873,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscriptAlternativeCourseIdentificationCo
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscriptCourseProgram_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41223,10 +40914,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscriptCourseProgram_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscriptCreditCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41268,10 +40955,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscriptCreditCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscriptEarnedAdditionalCredits_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41313,10 +40996,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscriptEarnedAdditionalCredits_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscriptPartialCourseTranscriptAwards_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41358,10 +41037,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscriptPartialCourseTranscriptAwards_Sta
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseTranscriptSection_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41423,23 +41098,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Credential_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Credential_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CredentialFieldDescriptor_DescriptorId" IS DISTINCT FROM NEW."CredentialFieldDescriptor_DescriptorId" OR OLD."CredentialTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CredentialTypeDescriptor_DescriptorId" OR OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId" OR OLD."TeachingCredentialBasisDescriptor_DescriptorId" IS DISTINCT FROM NEW."TeachingCredentialBasisDescriptor_DescriptorId" OR OLD."TeachingCredentialDescriptor_DescriptorId" IS DISTINCT FROM NEW."TeachingCredentialDescriptor_DescriptorId" OR OLD."CredentialIdentifier" IS DISTINCT FROM NEW."CredentialIdentifier" OR OLD."EffectiveDate" IS DISTINCT FROM NEW."EffectiveDate" OR OLD."ExpirationDate" IS DISTINCT FROM NEW."ExpirationDate" OR OLD."IssuanceDate" IS DISTINCT FROM NEW."IssuanceDate" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -41448,7 +41121,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -41469,10 +41142,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Credential_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CredentialAcademicSubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41514,10 +41183,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CredentialAcademicSubject_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CredentialEndorsement_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41559,10 +41224,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_CredentialEndorsement_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CredentialGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41624,23 +41285,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_CrisisEvent_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CrisisEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CrisisTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CrisisTypeDescriptor_DescriptorId" OR OLD."CrisisDescription" IS DISTINCT FROM NEW."CrisisDescription" OR OLD."CrisisEndDate" IS DISTINCT FROM NEW."CrisisEndDate" OR OLD."CrisisEventName" IS DISTINCT FROM NEW."CrisisEventName" OR OLD."CrisisStartDate" IS DISTINCT FROM NEW."CrisisStartDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -41649,7 +41308,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -41690,23 +41349,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_DescriptorMapping_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DescriptorMapping_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."MappedNamespace" IS DISTINCT FROM NEW."MappedNamespace" OR OLD."MappedValue" IS DISTINCT FROM NEW."MappedValue" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."Value" IS DISTINCT FROM NEW."Value") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -41715,7 +41372,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -41736,10 +41393,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_DescriptorMapping_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DescriptorMappingModelEntity_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41801,23 +41454,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineAction_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineAction_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssignmentSchool_DocumentId" IS DISTINCT FROM NEW."AssignmentSchool_DocumentId" OR OLD."AssignmentSchool_SchoolId" IS DISTINCT FROM NEW."AssignmentSchool_SchoolId" OR OLD."ResponsibilitySchool_DocumentId" IS DISTINCT FROM NEW."ResponsibilitySchool_DocumentId" OR OLD."ResponsibilitySchool_SchoolId" IS DISTINCT FROM NEW."ResponsibilitySchool_SchoolId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId" OR OLD."ActualDisciplineActionLength" IS DISTINCT FROM NEW."ActualDisciplineActionLength" OR OLD."DisciplineActionIdentifier" IS DISTINCT FROM NEW."DisciplineActionIdentifier" OR OLD."DisciplineActionLength" IS DISTINCT FROM NEW."DisciplineActionLength" OR OLD."DisciplineDate" IS DISTINCT FROM NEW."DisciplineDate" OR OLD."IepPlacementMeetingIndicator" IS DISTINCT FROM NEW."IepPlacementMeetingIndicator" OR OLD."RelatedToZeroTolerancePolicy" IS DISTINCT FROM NEW."RelatedToZeroTolerancePolicy") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -41826,7 +41477,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -41847,10 +41498,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineAction_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineActionDiscipline_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41892,10 +41539,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineActionDiscipline_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineActionStaff_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -41937,10 +41580,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineActionStaff_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineActionStudentDisciplineIncidentBehav_84e0415737"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42002,23 +41641,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncident_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineIncident_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."IncidentLocationDescriptor_DescriptorId" IS DISTINCT FROM NEW."IncidentLocationDescriptor_DescriptorId" OR OLD."ReporterDescriptionDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReporterDescriptionDescriptor_DescriptorId" OR OLD."CaseNumber" IS DISTINCT FROM NEW."CaseNumber" OR OLD."IncidentCost" IS DISTINCT FROM NEW."IncidentCost" OR OLD."IncidentDate" IS DISTINCT FROM NEW."IncidentDate" OR OLD."IncidentDescription" IS DISTINCT FROM NEW."IncidentDescription" OR OLD."IncidentIdentifier" IS DISTINCT FROM NEW."IncidentIdentifier" OR OLD."IncidentTime" IS DISTINCT FROM NEW."IncidentTime" OR OLD."ReportedToLawEnforcement" IS DISTINCT FROM NEW."ReportedToLawEnforcement" OR OLD."ReporterName" IS DISTINCT FROM NEW."ReporterName") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -42027,7 +41664,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -42048,10 +41685,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncident_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineIncidentBehavior_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42093,10 +41726,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncidentBehavior_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineIncidentExternalParticipant_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42138,10 +41767,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncidentExternalParticipant_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_DisciplineIncidentWeapon_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42203,23 +41828,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContent_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" IS DISTINCT FROM NEW."LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" OR OLD."LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" IS DISTINCT FROM NEW."LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" OR OLD."ContentClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContentClassDescriptor_DescriptorId" OR OLD."CostRateDescriptor_DescriptorId" IS DISTINCT FROM NEW."CostRateDescriptor_DescriptorId" OR OLD."InteractivityStyleDescriptor_DescriptorId" IS DISTINCT FROM NEW."InteractivityStyleDescriptor_DescriptorId" OR OLD."AdditionalAuthorsIndicator" IS DISTINCT FROM NEW."AdditionalAuthorsIndicator" OR OLD."ContentIdentifier" IS DISTINCT FROM NEW."ContentIdentifier" OR OLD."Cost" IS DISTINCT FROM NEW."Cost" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."LearningResourceMetadataURI" IS DISTINCT FROM NEW."LearningResourceMetadataURI" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."PublicationDate" IS DISTINCT FROM NEW."PublicationDate" OR OLD."PublicationYear" IS DISTINCT FROM NEW."PublicationYear" OR OLD."Publisher" IS DISTINCT FROM NEW."Publisher" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."TimeRequired" IS DISTINCT FROM NEW."TimeRequired" OR OLD."UseRightsURL" IS DISTINCT FROM NEW."UseRightsURL" OR OLD."Version" IS DISTINCT FROM NEW."Version") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -42228,7 +41851,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -42249,10 +41872,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContentAppropriateGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42294,10 +41913,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContentAppropriateGradeLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContentAppropriateSex_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42339,10 +41954,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContentAppropriateSex_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContentAuthor_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42384,10 +41995,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContentAuthor_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContentDerivativeSourceEducationContent_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42429,10 +42036,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContentDerivativeSourceEducationContent_
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContentDerivativeSourceLearningResour_e669e08a70"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42474,10 +42077,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContentDerivativeSourceLearningResour_e6
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContentDerivativeSourceURI_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42519,10 +42118,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContentDerivativeSourceURI_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationContentLanguage_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42565,23 +42160,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationContentLanguage_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationInterventionPrescriptionA_eb0c0460f3"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionInterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_DocumentId" OR OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247" OR OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -42590,7 +42183,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -42703,23 +42296,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_ReferentialIdentity"
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."NetworkPurposeDescriptor_DescriptorId" IS DISTINCT FROM NEW."NetworkPurposeDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetworkId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -42728,7 +42319,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -42749,10 +42340,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42794,10 +42381,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42859,23 +42442,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Refere_7f
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."EducationOrganizationNetwork_EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId" OR OLD."MemberEducationOrganization_DocumentId" IS DISTINCT FROM NEW."MemberEducationOrganization_DocumentId" OR OLD."MemberEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MemberEducationOrganization_EducationOrganizationId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -42884,7 +42465,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -42905,10 +42486,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42950,10 +42527,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -42995,10 +42568,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkIdentificationCode_St
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43040,10 +42609,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43085,10 +42650,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkIndicatorPeriod_Stamp
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43130,10 +42691,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkInstitutionTelephone_
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43195,23 +42752,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_ReferentialI
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."PeerEducationOrganization_DocumentId" IS DISTINCT FROM NEW."PeerEducationOrganization_DocumentId" OR OLD."PeerEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."PeerEducationOrganization_EducationOrganizationId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -43220,7 +42775,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -43398,23 +42953,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."StateEducationAgency_StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgency_StateEducationAgencyId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenterId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -43423,7 +42976,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -43444,10 +42997,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43489,10 +43038,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43534,10 +43079,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43579,10 +43120,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43624,10 +43161,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterIdentificationCode_Stamp"()
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43669,10 +43202,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43714,10 +43243,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43759,10 +43284,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenterInstitutionTelephone_Stamp"
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenterInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -43824,23 +43345,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramEvaluationElement_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluationElement_DocumentId" OR OLD."ProgramEvaluationElement_ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle" OR OLD."ProgramEvaluationElement_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEducationOrganizationId" OR OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" OR OLD."ProgramEvaluationElement_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTitle" OR OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" OR OLD."ProgramEvaluationElement_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramName" OR OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" OR OLD."EvaluationRubricRatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationRubricRatingLevelDescriptor_DescriptorId" OR OLD."EvaluationCriterionDescription" IS DISTINCT FROM NEW."EvaluationCriterionDescription" OR OLD."EvaluationRubricRating" IS DISTINCT FROM NEW."EvaluationRubricRating" OR OLD."RubricDimensionSortOrder" IS DISTINCT FROM NEW."RubricDimensionSortOrder") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -43849,7 +43368,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -43890,23 +43409,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FeederSchool_DocumentId" IS DISTINCT FROM NEW."FeederSchool_DocumentId" OR OLD."FeederSchool_SchoolId" IS DISTINCT FROM NEW."FeederSchool_SchoolId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."FeederRelationshipDescription" IS DISTINCT FROM NEW."FeederRelationshipDescription") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -43915,7 +43432,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -43956,23 +43473,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_FunctionDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FunctionDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -43981,7 +43496,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -44002,10 +43517,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_FunctionDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FunctionDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44067,23 +43578,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_FundDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FundDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -44092,7 +43601,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -44113,10 +43622,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_FundDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_FundDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44178,23 +43683,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Grade_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Grade_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."GradingPeriodGradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_DocumentId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."StudentSectionAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSectionAssociation_DocumentId" OR OLD."StudentSectionAssociation_BeginDate" IS DISTINCT FROM NEW."StudentSectionAssociation_BeginDate" OR OLD."StudentSectionAssociation_LocalCourseCode" IS DISTINCT FROM NEW."StudentSectionAssociation_LocalCourseCode" OR OLD."StudentSectionAssociation_SectionIdentifier" IS DISTINCT FROM NEW."StudentSectionAssociation_SectionIdentifier" OR OLD."StudentSectionAssociation_SessionName" IS DISTINCT FROM NEW."StudentSectionAssociation_SessionName" OR OLD."StudentSectionAssociation_StudentUniqueId" IS DISTINCT FROM NEW."StudentSectionAssociation_StudentUniqueId" OR OLD."GradeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeTypeDescriptor_DescriptorId" OR OLD."PerformanceBaseConversionDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceBaseConversionDescriptor_DescriptorId" OR OLD."CurrentGradeAsOfDate" IS DISTINCT FROM NEW."CurrentGradeAsOfDate" OR OLD."CurrentGradeIndicator" IS DISTINCT FROM NEW."CurrentGradeIndicator" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement" OR OLD."GradeEarnedDescription" IS DISTINCT FROM NEW."GradeEarnedDescription" OR OLD."LetterGradeEarned" IS DISTINCT FROM NEW."LetterGradeEarned" OR OLD."NumericGradeEarned" IS DISTINCT FROM NEW."NumericGradeEarned") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -44203,7 +43706,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -44224,10 +43727,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Grade_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradeLearningStandardGrade_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44289,23 +43788,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_GradebookEntry_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradebookEntry_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."GradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriod_DocumentId" OR OLD."GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriod_GradingPeriodName" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."GradebookEntryTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradebookEntryTypeDescriptor_DescriptorId" OR OLD."DateAssigned" IS DISTINCT FROM NEW."DateAssigned" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."DueDate" IS DISTINCT FROM NEW."DueDate" OR OLD."DueTime" IS DISTINCT FROM NEW."DueTime" OR OLD."GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntryIdentifier" OR OLD."MaxPoints" IS DISTINCT FROM NEW."MaxPoints" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SourceSectionIdentifier" IS DISTINCT FROM NEW."SourceSectionIdentifier" OR OLD."Title" IS DISTINCT FROM NEW."Title") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -44314,7 +43811,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -44335,10 +43832,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_GradebookEntry_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradebookEntryLearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44400,23 +43893,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_GradingPeriod_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GradingPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodName" OR OLD."PeriodSequence" IS DISTINCT FROM NEW."PeriodSequence" OR OLD."TotalInstructionalDays" IS DISTINCT FROM NEW."TotalInstructionalDays") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -44425,7 +43916,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -44466,23 +43957,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlan_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlan_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GraduationSchoolYear_DocumentId" IS DISTINCT FROM NEW."GraduationSchoolYear_DocumentId" OR OLD."GraduationSchoolYear_GraduationSchoolYear" IS DISTINCT FROM NEW."GraduationSchoolYear_GraduationSchoolYear" OR OLD."GraduationPlanTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GraduationPlanTypeDescriptor_DescriptorId" OR OLD."TotalRequiredCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TotalRequiredCreditTypeDescriptor_DescriptorId" OR OLD."IndividualPlan" IS DISTINCT FROM NEW."IndividualPlan" OR OLD."TotalRequiredCreditConversion" IS DISTINCT FROM NEW."TotalRequiredCreditConversion" OR OLD."TotalRequiredCredits" IS DISTINCT FROM NEW."TotalRequiredCredits") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -44491,7 +43980,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -44512,10 +44001,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlan_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsByCours_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44557,10 +44042,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsByCours_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsByCoursCours_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44602,10 +44083,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsByCoursCours_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsByCreditCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44647,10 +44124,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsByCreditCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsBySubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44692,10 +44165,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlanCreditsBySubject_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlanRequiredAssessment_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44737,10 +44206,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlanRequiredAssessment_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_GraduationPlanRequiredAssessmentScore_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44802,23 +44267,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Intervention_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Intervention_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."DeliveryMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."DeliveryMethodDescriptor_DescriptorId" OR OLD."InterventionClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionClassDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."InterventionIdentificationCode" IS DISTINCT FROM NEW."InterventionIdentificationCode" OR OLD."MaxDosage" IS DISTINCT FROM NEW."MaxDosage" OR OLD."MinDosage" IS DISTINCT FROM NEW."MinDosage" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -44827,7 +44290,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -44848,10 +44311,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Intervention_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionAppropriateGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44893,10 +44352,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionAppropriateGradeLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionAppropriateSex_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44938,10 +44393,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionAppropriateSex_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionDiagnos_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -44983,10 +44434,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionDiagnos_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionEducationContent_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45028,10 +44475,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionEducationContent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionInterventionPrescription_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45073,10 +44516,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionInterventionPrescription_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionLearningResourceMetadataURI_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45118,10 +44557,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionLearningResourceMetadataURI_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionMeetingTime_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45163,10 +44598,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionMeetingTime_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPopulationServed_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45228,23 +44659,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescription_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescription_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."DeliveryMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."DeliveryMethodDescriptor_DescriptorId" OR OLD."InterventionClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionClassDescriptor_DescriptorId" OR OLD."InterventionPrescriptionIdentificationCode" IS DISTINCT FROM NEW."InterventionPrescriptionIdentificationCode" OR OLD."MaxDosage" IS DISTINCT FROM NEW."MaxDosage" OR OLD."MinDosage" IS DISTINCT FROM NEW."MinDosage" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -45253,7 +44682,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -45274,10 +44703,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescription_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescriptionAppropriateGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45319,10 +44744,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescriptionAppropriateGradeLevel_Sta
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescriptionAppropriateSex_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45364,10 +44785,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescriptionAppropriateSex_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescriptionDiagnos_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45409,10 +44826,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescriptionDiagnos_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescriptionEducationContent_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45454,10 +44867,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescriptionEducationContent_Stamp"()
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescriptionLearningResourceMetadataURI_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45499,10 +44908,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescriptionLearningResourceMetadataU
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescriptionPopulationServed_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45544,10 +44949,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescriptionPopulationServed_Stamp"()
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionPrescriptionUri_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45589,10 +44990,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescriptionUri_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStaff_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45654,23 +45051,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudy_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudy_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionInterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_DocumentId" OR OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247" OR OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" OR OLD."DeliveryMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."DeliveryMethodDescriptor_DescriptorId" OR OLD."InterventionClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionClassDescriptor_DescriptorId" OR OLD."InterventionStudyIdentificationCode" IS DISTINCT FROM NEW."InterventionStudyIdentificationCode" OR OLD."Participants" IS DISTINCT FROM NEW."Participants") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -45679,7 +45074,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -45700,10 +45095,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudy_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyAppropriateGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45745,10 +45136,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyAppropriateGradeLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyAppropriateSex_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45790,10 +45177,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyAppropriateSex_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyEducationContent_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45835,10 +45218,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyEducationContent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyInterventionEffectiveness_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45880,10 +45259,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyInterventionEffectiveness_Stamp"
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyLearningResourceMetadataURI_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45925,10 +45300,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyLearningResourceMetadataURI_Stam
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyPopulationServed_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -45970,10 +45341,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyPopulationServed_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyStateAbbreviation_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46015,10 +45382,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyStateAbbreviation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionStudyUri_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46060,10 +45423,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudyUri_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_InterventionUri_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46125,23 +45484,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LearningStandard_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."MandatingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."MandatingEducationOrganization_DocumentId" OR OLD."MandatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MandatingEducationOrganization_EducationOrganizationId" OR OLD."ParentLearningStandard_DocumentId" IS DISTINCT FROM NEW."ParentLearningStandard_DocumentId" OR OLD."ParentLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."ParentLearningStandard_LearningStandardId" OR OLD."ContentStandardPublicationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContentStandardPublicationStatusDescriptor_DescriptorId" OR OLD."LearningStandardCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."LearningStandardCategoryDescriptor_DescriptorId" OR OLD."LearningStandardScopeDescriptor_DescriptorId" IS DISTINCT FROM NEW."LearningStandardScopeDescriptor_DescriptorId" OR OLD."ContentStandardBeginDate" IS DISTINCT FROM NEW."ContentStandardBeginDate" OR OLD."ContentStandardEndDate" IS DISTINCT FROM NEW."ContentStandardEndDate" OR OLD."ContentStandardPublicationDate" IS DISTINCT FROM NEW."ContentStandardPublicationDate" OR OLD."ContentStandardPublicationYear" IS DISTINCT FROM NEW."ContentStandardPublicationYear" OR OLD."ContentStandardTitle" IS DISTINCT FROM NEW."ContentStandardTitle" OR OLD."ContentStandardUri" IS DISTINCT FROM NEW."ContentStandardUri" OR OLD."ContentStandardVersion" IS DISTINCT FROM NEW."ContentStandardVersion" OR OLD."CourseTitle" IS DISTINCT FROM NEW."CourseTitle" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."LearningStandardId" IS DISTINCT FROM NEW."LearningStandardId" OR OLD."LearningStandardItemCode" IS DISTINCT FROM NEW."LearningStandardItemCode" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SuccessCriteria" IS DISTINCT FROM NEW."SuccessCriteria" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -46150,7 +45507,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -46171,10 +45528,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LearningStandard_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandardAcademicSubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46216,10 +45569,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardAcademicSubject_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandardAuthor_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46281,23 +45630,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Referen_56
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SourceLearningStandard_DocumentId" IS DISTINCT FROM NEW."SourceLearningStandard_DocumentId" OR OLD."SourceLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."SourceLearningStandard_LearningStandardId" OR OLD."TargetLearningStandard_DocumentId" IS DISTINCT FROM NEW."TargetLearningStandard_DocumentId" OR OLD."TargetLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."TargetLearningStandard_LearningStandardId" OR OLD."LearningStandardEquivalenceStrengthDescriptor_DescriptorId" IS DISTINCT FROM NEW."LearningStandardEquivalenceStrengthDescriptor_DescriptorId" OR OLD."EffectiveDate" IS DISTINCT FROM NEW."EffectiveDate" OR OLD."LearningStandardEquivalenceStrengthDescription" IS DISTINCT FROM NEW."LearningStandardEquivalenceStrengthDescription" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -46306,7 +45653,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -46327,10 +45674,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandardGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46372,10 +45715,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardGradeLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LearningStandardIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46437,23 +45776,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalAccount_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalAccount_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified" OR OLD."ChartOfAccountChartOfAccount_DocumentId" IS DISTINCT FROM NEW."ChartOfAccountChartOfAccount_DocumentId" OR OLD."ChartOfAccountChartOfAccount_AccountIdentifier" IS DISTINCT FROM NEW."ChartOfAccountChartOfAccount_AccountIdentifier" OR OLD."ChartOfAccountChartOfAccount_EducationOrganizationId" IS DISTINCT FROM NEW."ChartOfAccountChartOfAccount_EducationOrganizationId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."AccountName" IS DISTINCT FROM NEW."AccountName") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -46462,7 +45799,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -46483,10 +45820,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalAccount_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalAccountReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -46548,23 +45881,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalActual_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalActual_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -46573,7 +45904,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -46614,23 +45945,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalBudget_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalBudget_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -46639,7 +45968,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -46680,23 +46009,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalContractedStaff_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalContractedStaff_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -46705,7 +46032,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -46953,23 +46280,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."EducationServiceCenter_EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenter_EducationServiceCenterId" OR OLD."ParentLocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."ParentLocalEducationAgency_DocumentId" OR OLD."ParentLocalEducationAgency_LocalEducationAgencyId" IS DISTINCT FROM NEW."ParentLocalEducationAgency_LocalEducationAgencyId" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."StateEducationAgency_StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgency_StateEducationAgencyId" OR OLD."CharterStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CharterStatusDescriptor_DescriptorId" OR OLD."LocalEducationAgencyCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocalEducationAgencyCategoryDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -46978,7 +46303,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -46999,10 +46324,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyAccountability_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47044,10 +46365,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyAccountability_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47089,10 +46406,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47134,10 +46447,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47179,10 +46488,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyFederalFunds_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47224,10 +46529,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyFederalFunds_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47269,10 +46570,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyIdentificationCode_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47314,10 +46611,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47359,10 +46652,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47404,10 +46693,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgencyInstitutionTelephone_Stamp"()
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgencyInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47469,23 +46754,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEncumbrance_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEncumbrance_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -47494,7 +46777,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -47535,23 +46818,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalPayroll_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalPayroll_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -47560,7 +46841,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -47601,23 +46882,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Location_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Location_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."ClassroomIdentificationCode" IS DISTINCT FROM NEW."ClassroomIdentificationCode" OR OLD."MaximumNumberOfSeats" IS DISTINCT FROM NEW."MaximumNumberOfSeats" OR OLD."OptimalNumberOfSeats" IS DISTINCT FROM NEW."OptimalNumberOfSeats") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -47626,7 +46905,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -47667,23 +46946,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ObjectDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -47692,7 +46969,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -47713,10 +46990,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ObjectDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47778,23 +47051,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."ParentObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ParentObjectiveAssessment_DocumentId" OR OLD."ParentObjectiveAssessment_IdentificationCode" IS DISTINCT FROM NEW."ParentObjectiveAssessment_IdentificationCode" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode" OR OLD."MaxRawScore" IS DISTINCT FROM NEW."MaxRawScore" OR OLD."Nomenclature" IS DISTINCT FROM NEW."Nomenclature" OR OLD."PercentOfAssessment" IS DISTINCT FROM NEW."PercentOfAssessment") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -47803,7 +47074,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -47824,10 +47095,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentAssessmentItem_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47869,10 +47136,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentAssessmentItem_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentLearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47914,10 +47177,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentLearningStandard_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentPerformanceLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -47959,10 +47218,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentPerformanceLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ObjectiveAssessmentScore_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48024,23 +47279,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_OpenStaffPosition_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OpenStaffPosition_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EmploymentStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."EmploymentStatusDescriptor_DescriptorId" OR OLD."PostingResultDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostingResultDescriptor_DescriptorId" OR OLD."ProgramAssignmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramAssignmentDescriptor_DescriptorId" OR OLD."StaffClassificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffClassificationDescriptor_DescriptorId" OR OLD."DatePosted" IS DISTINCT FROM NEW."DatePosted" OR OLD."DatePostingRemoved" IS DISTINCT FROM NEW."DatePostingRemoved" OR OLD."PositionTitle" IS DISTINCT FROM NEW."PositionTitle" OR OLD."RequisitionNumber" IS DISTINCT FROM NEW."RequisitionNumber") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -48049,7 +47302,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -48070,10 +47323,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OpenStaffPosition_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OpenStaffPositionAcademicSubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48115,10 +47364,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OpenStaffPositionAcademicSubject_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OpenStaffPositionInstructionalGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48180,23 +47425,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -48205,7 +47448,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -48226,10 +47469,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OperationalUnitDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48428,23 +47667,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ParentEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ParentEducationOrganization_DocumentId" OR OLD."ParentEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ParentEducationOrganization_EducationOrganizationId" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."OrganizationDepartmentId" IS DISTINCT FROM NEW."OrganizationDepartmentId" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -48453,7 +47690,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -48474,10 +47711,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48519,10 +47752,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48564,10 +47793,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48609,10 +47834,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48654,10 +47875,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentIdentificationCode_Stamp"()
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48699,10 +47916,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48744,10 +47957,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48789,10 +47998,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartmentInstitutionTelephone_Stamp"
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartmentInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -48854,23 +48059,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Person_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."SourceSystemDescriptor_DescriptorId" OR OLD."PersonId" IS DISTINCT FROM NEW."PersonId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -48879,7 +48082,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -48920,23 +48123,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."PostSecondaryInstitution_PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitution_PostSecondaryInstitutionId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."PostSecondaryEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostSecondaryEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -48945,7 +48146,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -49039,23 +48240,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AdministrativeFundingControlDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrativeFundingControlDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."PostSecondaryInstitutionLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostSecondaryInstitutionLevelDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitutionId" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -49064,7 +48263,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -49085,10 +48284,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49130,10 +48325,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49175,10 +48366,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49220,10 +48407,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49265,10 +48448,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionIdentificationCode_Stamp"
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49310,10 +48489,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49355,10 +48530,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49400,10 +48571,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionInstitutionTelephone_Stam
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49445,10 +48612,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionInternationalAddress_Stam
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitutionMediumOfInstruction_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49510,23 +48673,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_DescriptorId" OR OLD."ProgramId" IS DISTINCT FROM NEW."ProgramId" OR OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -49535,7 +48696,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -49556,10 +48717,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Program_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramCharacteristic_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49621,23 +48778,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -49646,7 +48801,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -49667,10 +48822,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49732,23 +48883,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_DescriptorId" OR OLD."ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."EvaluationMaxNumericRating" IS DISTINCT FROM NEW."EvaluationMaxNumericRating" OR OLD."EvaluationMinNumericRating" IS DISTINCT FROM NEW."EvaluationMinNumericRating" OR OLD."ProgramEvaluationDescription" IS DISTINCT FROM NEW."ProgramEvaluationDescription" OR OLD."ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -49757,7 +48906,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -49798,23 +48947,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramEducationOrganizationId_Unified" IS DISTINCT FROM NEW."ProgramEducationOrganizationId_Unified" OR OLD."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" OR OLD."ProgramEvaluationTitle_Unified" IS DISTINCT FROM NEW."ProgramEvaluationTitle_Unified" OR OLD."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" OR OLD."ProgramName_Unified" IS DISTINCT FROM NEW."ProgramName_Unified" OR OLD."ProgramTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_Unified_DescriptorId" OR OLD."ProgramEvaluationObjective_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluationObjective_DocumentId" OR OLD."ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" IS DISTINCT FROM NEW."ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" OR OLD."ProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluation_DocumentId" OR OLD."ElementMaxNumericRating" IS DISTINCT FROM NEW."ElementMaxNumericRating" OR OLD."ElementMinNumericRating" IS DISTINCT FROM NEW."ElementMinNumericRating" OR OLD."ElementSortOrder" IS DISTINCT FROM NEW."ElementSortOrder" OR OLD."ProgramEvaluationElementDescription" IS DISTINCT FROM NEW."ProgramEvaluationElementDescription" OR OLD."ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElementTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -49823,7 +48970,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -49844,10 +48991,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationElementProgramEvaluationLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49889,10 +49032,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationElementProgramEvaluationLevel_St
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -49954,23 +49093,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_ReferentialIdentity"()
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluation_DocumentId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" OR OLD."ObjectiveMaxNumericRating" IS DISTINCT FROM NEW."ObjectiveMaxNumericRating" OR OLD."ObjectiveMinNumericRating" IS DISTINCT FROM NEW."ObjectiveMinNumericRating" OR OLD."ObjectiveSortOrder" IS DISTINCT FROM NEW."ObjectiveSortOrder" OR OLD."ProgramEvaluationObjectiveDescription" IS DISTINCT FROM NEW."ProgramEvaluationObjectiveDescription" OR OLD."ProgramEvaluationObjectiveTitle" IS DISTINCT FROM NEW."ProgramEvaluationObjectiveTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -49979,7 +49116,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -50000,10 +49137,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjectiveProgramEvaluationLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50045,10 +49178,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjectiveProgramEvaluationLevel_
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramLearningStandard_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50090,10 +49219,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProgramLearningStandard_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProgramSponsor_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50155,23 +49280,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProjectDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProjectDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -50180,7 +49303,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -50201,10 +49324,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ProjectDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ProjectDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50266,23 +49385,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_ReportCard_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ReportCard_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GradingPeriodGradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_DocumentId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."NumberOfDaysAbsent" IS DISTINCT FROM NEW."NumberOfDaysAbsent" OR OLD."NumberOfDaysInAttendance" IS DISTINCT FROM NEW."NumberOfDaysInAttendance" OR OLD."NumberOfDaysTardy" IS DISTINCT FROM NEW."NumberOfDaysTardy") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -50291,7 +49408,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -50312,10 +49429,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ReportCard_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ReportCardGrade_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50357,10 +49470,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ReportCardGrade_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ReportCardGradePointAverage_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50402,10 +49511,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_ReportCardGradePointAverage_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ReportCardStudentCompetencyObjective_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50467,23 +49572,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_RestraintEvent_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_RestraintEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."RestraintEventIdentifier" IS DISTINCT FROM NEW."RestraintEventIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -50492,7 +49595,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -50513,10 +49616,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_RestraintEvent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_RestraintEventProgram_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50558,10 +49657,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_RestraintEventProgram_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_RestraintEventReason_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50760,23 +49855,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CharterApprovalSchoolYear_DocumentId" IS DISTINCT FROM NEW."CharterApprovalSchoolYear_DocumentId" OR OLD."CharterApprovalSchoolYear_CharterApprovalSchoolYear" IS DISTINCT FROM NEW."CharterApprovalSchoolYear_CharterApprovalSchoolYear" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."LocalEducationAgency_LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgency_LocalEducationAgencyId" OR OLD."AdministrativeFundingControlDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrativeFundingControlDescriptor_DescriptorId" OR OLD."CharterApprovalAgencyTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CharterApprovalAgencyTypeDescriptor_DescriptorId" OR OLD."CharterStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CharterStatusDescriptor_DescriptorId" OR OLD."InternetAccessDescriptor_DescriptorId" IS DISTINCT FROM NEW."InternetAccessDescriptor_DescriptorId" OR OLD."MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId" IS DISTINCT FROM NEW."MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."SchoolTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolTypeDescriptor_DescriptorId" OR OLD."TitleIPartASchoolDesignationDescriptor_DescriptorId" IS DISTINCT FROM NEW."TitleIPartASchoolDesignationDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -50785,7 +49878,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -50806,10 +49899,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50851,10 +49940,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50896,10 +49981,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50941,10 +50022,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolEducationOrganizationCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -50986,10 +50063,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolEducationOrganizationCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51031,10 +50104,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolGradeLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51076,10 +50145,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolIdentificationCode_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51121,10 +50186,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51166,10 +50227,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51211,10 +50268,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolInstitutionTelephone_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51276,23 +50329,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolYearType_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolYearType_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CurrentSchoolYear" IS DISTINCT FROM NEW."CurrentSchoolYear" OR OLD."SchoolYear" IS DISTINCT FROM NEW."SchoolYear" OR OLD."SchoolYearDescription" IS DISTINCT FROM NEW."SchoolYearDescription") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -51301,7 +50352,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -51342,23 +50393,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Section_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Section_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_U35501e03_Unified" IS DISTINCT FROM NEW."SchoolId_U35501e03_Unified" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."CourseOffering_DocumentId" IS DISTINCT FROM NEW."CourseOffering_DocumentId" OR OLD."CourseOffering_LocalCourseCode" IS DISTINCT FROM NEW."CourseOffering_LocalCourseCode" OR OLD."CourseOffering_SchoolYear" IS DISTINCT FROM NEW."CourseOffering_SchoolYear" OR OLD."CourseOffering_SessionName" IS DISTINCT FROM NEW."CourseOffering_SessionName" OR OLD."LocationLocation_DocumentId" IS DISTINCT FROM NEW."LocationLocation_DocumentId" OR OLD."LocationLocation_ClassroomIdentificationCode" IS DISTINCT FROM NEW."LocationLocation_ClassroomIdentificationCode" OR OLD."LocationSchool_DocumentId" IS DISTINCT FROM NEW."LocationSchool_DocumentId" OR OLD."AvailableCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AvailableCreditTypeDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."InstructionLanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstructionLanguageDescriptor_DescriptorId" OR OLD."MediumOfInstructionDescriptor_DescriptorId" IS DISTINCT FROM NEW."MediumOfInstructionDescriptor_DescriptorId" OR OLD."PopulationServedDescriptor_DescriptorId" IS DISTINCT FROM NEW."PopulationServedDescriptor_DescriptorId" OR OLD."SectionTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SectionTypeDescriptor_DescriptorId" OR OLD."AvailableCreditConversion" IS DISTINCT FROM NEW."AvailableCreditConversion" OR OLD."AvailableCredits" IS DISTINCT FROM NEW."AvailableCredits" OR OLD."OfficialAttendancePeriod" IS DISTINCT FROM NEW."OfficialAttendancePeriod" OR OLD."SectionIdentifier" IS DISTINCT FROM NEW."SectionIdentifier" OR OLD."SectionName" IS DISTINCT FROM NEW."SectionName" OR OLD."SequenceOfCourse" IS DISTINCT FROM NEW."SequenceOfCourse") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -51367,7 +50416,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -51408,23 +50457,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_ReferentialIdentity"(
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."CalendarDate_DocumentId" IS DISTINCT FROM NEW."CalendarDate_DocumentId" OR OLD."CalendarDate_CalendarCode" IS DISTINCT FROM NEW."CalendarDate_CalendarCode" OR OLD."CalendarDate_Date" IS DISTINCT FROM NEW."CalendarDate_Date" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -51433,7 +50480,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -51454,10 +50501,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionCharacteristic_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51499,10 +50542,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SectionCharacteristic_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionClassPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51544,10 +50583,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SectionClassPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionCourseLevelCharacteristic_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51589,10 +50624,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SectionCourseLevelCharacteristic_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionOfferedGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51634,10 +50665,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SectionOfferedGradeLevel_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SectionProgram_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51699,23 +50726,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Session_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Session_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."SessionName" IS DISTINCT FROM NEW."SessionName" OR OLD."TotalInstructionalDays" IS DISTINCT FROM NEW."TotalInstructionalDays") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -51724,7 +50749,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -51745,10 +50770,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Session_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SessionAcademicWeek_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51790,10 +50811,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SessionAcademicWeek_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SessionGradingPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51855,23 +50872,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SourceDimension_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SourceDimension_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -51880,7 +50895,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -51901,10 +50916,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SourceDimension_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SourceDimensionReportingTag_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -51966,23 +50977,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Staff_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Staff_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Person_DocumentId" IS DISTINCT FROM NEW."Person_DocumentId" OR OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."CitizenshipStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CitizenshipStatusDescriptor_DescriptorId" OR OLD."HighestCompletedLevelOfEducationDescriptor_DescriptorId" IS DISTINCT FROM NEW."HighestCompletedLevelOfEducationDescriptor_DescriptorId" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId" OR OLD."BirthDate" IS DISTINCT FROM NEW."BirthDate" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenderIdentity" IS DISTINCT FROM NEW."GenderIdentity" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."HighlyQualifiedTeacher" IS DISTINCT FROM NEW."HighlyQualifiedTeacher" OR OLD."HispanicLatinoEthnicity" IS DISTINCT FROM NEW."HispanicLatinoEthnicity" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."LoginId" IS DISTINCT FROM NEW."LoginId" OR OLD."MaidenName" IS DISTINCT FROM NEW."MaidenName" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix" OR OLD."PreferredFirstName" IS DISTINCT FROM NEW."PreferredFirstName" OR OLD."PreferredLastSurname" IS DISTINCT FROM NEW."PreferredLastSurname" OR OLD."StaffUniqueId" IS DISTINCT FROM NEW."StaffUniqueId" OR OLD."YearsOfPriorProfessionalExperience" IS DISTINCT FROM NEW."YearsOfPriorProfessionalExperience" OR OLD."YearsOfPriorTeachingExperience" IS DISTINCT FROM NEW."YearsOfPriorTeachingExperience") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -51991,7 +51000,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -52032,23 +51041,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."AbsenceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AbsenceEventCategoryDescriptor_DescriptorId" OR OLD."AbsenceEventReason" IS DISTINCT FROM NEW."AbsenceEventReason" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."HoursAbsent" IS DISTINCT FROM NEW."HoursAbsent") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -52057,7 +51064,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -52078,10 +51085,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52123,10 +51126,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52168,10 +51167,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffAncestryEthnicOrigin_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52233,23 +51228,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Cohort_DocumentId" IS DISTINCT FROM NEW."Cohort_DocumentId" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."StudentRecordAccess" IS DISTINCT FROM NEW."StudentRecordAccess") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -52258,7 +51251,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -52279,10 +51272,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffCredential_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52344,23 +51333,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_ReferentialIde
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -52369,7 +51356,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -52390,10 +51377,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociationDisciplineIn_078c18e75f"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52455,23 +51438,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociatio_81
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StaffUniqueId_Unified" IS DISTINCT FROM NEW."StaffUniqueId_Unified" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Credential_CredentialIdentifier" IS DISTINCT FROM NEW."Credential_CredentialIdentifier" OR OLD."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."StaffClassificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffClassificationDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."FullTimeEquivalency" IS DISTINCT FROM NEW."FullTimeEquivalency" OR OLD."OrderOfAssignment" IS DISTINCT FROM NEW."OrderOfAssignment" OR OLD."PositionTitle" IS DISTINCT FROM NEW."PositionTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -52480,7 +51461,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -52521,23 +51502,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_R_9d
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."AddressAddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressAddressTypeDescriptor_DescriptorId" OR OLD."AddressLocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressLocaleDescriptor_DescriptorId" OR OLD."AddressStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressStateAbbreviationDescriptor_DescriptorId" OR OLD."ContactTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContactTypeDescriptor_DescriptorId" OR OLD."AddressApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."AddressApartmentRoomSuiteNumber" OR OLD."AddressBuildingSiteNumber" IS DISTINCT FROM NEW."AddressBuildingSiteNumber" OR OLD."AddressCity" IS DISTINCT FROM NEW."AddressCity" OR OLD."AddressCongressionalDistrict" IS DISTINCT FROM NEW."AddressCongressionalDistrict" OR OLD."AddressCountyFIPSCode" IS DISTINCT FROM NEW."AddressCountyFIPSCode" OR OLD."AddressDoNotPublishIndicator" IS DISTINCT FROM NEW."AddressDoNotPublishIndicator" OR OLD."AddressLatitude" IS DISTINCT FROM NEW."AddressLatitude" OR OLD."AddressLongitude" IS DISTINCT FROM NEW."AddressLongitude" OR OLD."AddressNameOfCounty" IS DISTINCT FROM NEW."AddressNameOfCounty" OR OLD."AddressPostalCode" IS DISTINCT FROM NEW."AddressPostalCode" OR OLD."AddressStreetNumberName" IS DISTINCT FROM NEW."AddressStreetNumberName" OR OLD."ContactTitle" IS DISTINCT FROM NEW."ContactTitle" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -52546,7 +51525,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -52567,10 +51546,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_Stam
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociationPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52612,10 +51587,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociationPerio
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociationTe_b9e27b971d"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52677,23 +51648,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociatio_05
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Credential_CredentialIdentifier" IS DISTINCT FROM NEW."Credential_CredentialIdentifier" OR OLD."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."EmploymentStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."EmploymentStatusDescriptor_DescriptorId" OR OLD."SeparationDescriptor_DescriptorId" IS DISTINCT FROM NEW."SeparationDescriptor_DescriptorId" OR OLD."SeparationReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."SeparationReasonDescriptor_DescriptorId" OR OLD."AnnualWage" IS DISTINCT FROM NEW."AnnualWage" OR OLD."Department" IS DISTINCT FROM NEW."Department" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."FullTimeEquivalency" IS DISTINCT FROM NEW."FullTimeEquivalency" OR OLD."HireDate" IS DISTINCT FROM NEW."HireDate" OR OLD."HourlyWage" IS DISTINCT FROM NEW."HourlyWage" OR OLD."OfferDate" IS DISTINCT FROM NEW."OfferDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -52702,7 +51671,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -52723,10 +51692,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociation_S
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffElectronicMail_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52768,10 +51733,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffElectronicMail_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52813,10 +51774,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffIdentificationCode_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffIdentificationDocument_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52858,10 +51815,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffIdentificationDocument_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52903,10 +51856,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffInternationalAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffLanguage_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -52948,10 +51897,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffLanguage_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffLanguageUs_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53013,23 +51958,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffLeave_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffLeave_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."StaffLeaveEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffLeaveEventCategoryDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Reason" IS DISTINCT FROM NEW."Reason" OR OLD."SubstituteAssigned" IS DISTINCT FROM NEW."SubstituteAssigned") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -53038,7 +51981,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -53059,10 +52002,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffLeave_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffOtherName_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53104,10 +52043,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffOtherName_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffPersonalIdentificationDocument_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53169,23 +52104,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."StudentRecordAccess" IS DISTINCT FROM NEW."StudentRecordAccess") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -53194,7 +52127,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -53215,10 +52148,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffRace_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53260,10 +52189,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffRace_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffRecognition_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53325,23 +52250,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."Calendar_DocumentId" IS DISTINCT FROM NEW."Calendar_DocumentId" OR OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."ProgramAssignmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramAssignmentDescriptor_DescriptorId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -53350,7 +52273,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -53371,10 +52294,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSchoolAssociationAcademicSubject_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53416,10 +52335,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffSchoolAssociationAcademicSubject_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSchoolAssociationGradeLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53481,23 +52396,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."ClassroomPositionDescriptor_DescriptorId" IS DISTINCT FROM NEW."ClassroomPositionDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."HighlyQualifiedTeacher" IS DISTINCT FROM NEW."HighlyQualifiedTeacher" OR OLD."PercentageContribution" IS DISTINCT FROM NEW."PercentageContribution" OR OLD."TeacherStudentDataLinkExclusion" IS DISTINCT FROM NEW."TeacherStudentDataLinkExclusion") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -53506,7 +52419,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -53527,10 +52440,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53572,10 +52481,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffTelephone_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffTribalAffiliation_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53617,10 +52522,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StaffTribalAffiliation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StaffVisa_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53735,23 +52636,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgencyId" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -53760,7 +52659,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -53781,10 +52680,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyAccountability_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53826,10 +52721,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyAccountability_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53871,10 +52762,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyAddressPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53916,10 +52803,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyAddressPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyCategory_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -53961,10 +52844,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyCategory_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyFederalFunds_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54006,10 +52885,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyFederalFunds_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyIdentificationCode_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54051,10 +52926,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyIdentificationCode_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyIndicator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54096,10 +52967,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyIndicator_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyIndicatorPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54141,10 +53008,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyIndicatorPeriod_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyInstitutionTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54186,10 +53049,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgencyInstitutionTelephone_Stamp"()
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgencyInternationalAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54251,23 +53110,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Person_DocumentId" IS DISTINCT FROM NEW."Person_DocumentId" OR OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."BirthCountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."BirthCountryDescriptor_DescriptorId" OR OLD."BirthSexDescriptor_DescriptorId" IS DISTINCT FROM NEW."BirthSexDescriptor_DescriptorId" OR OLD."BirthStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."BirthStateAbbreviationDescriptor_DescriptorId" OR OLD."CitizenshipStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CitizenshipStatusDescriptor_DescriptorId" OR OLD."BirthCity" IS DISTINCT FROM NEW."BirthCity" OR OLD."BirthDate" IS DISTINCT FROM NEW."BirthDate" OR OLD."BirthInternationalProvince" IS DISTINCT FROM NEW."BirthInternationalProvince" OR OLD."DateEnteredUS" IS DISTINCT FROM NEW."DateEnteredUS" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."MaidenName" IS DISTINCT FROM NEW."MaidenName" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."MultipleBirthStatus" IS DISTINCT FROM NEW."MultipleBirthStatus" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix" OR OLD."PreferredFirstName" IS DISTINCT FROM NEW."PreferredFirstName" OR OLD."PreferredLastSurname" IS DISTINCT FROM NEW."PreferredLastSurname" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -54276,7 +53133,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -54317,23 +53174,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."CumulativeAttemptedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CumulativeAttemptedCreditTypeDescriptor_DescriptorId" OR OLD."CumulativeEarnedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CumulativeEarnedCreditTypeDescriptor_DescriptorId" OR OLD."SessionAttemptedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SessionAttemptedCreditTypeDescriptor_DescriptorId" OR OLD."SessionEarnedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SessionEarnedCreditTypeDescriptor_DescriptorId" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId" OR OLD."ClassRankingClassRank" IS DISTINCT FROM NEW."ClassRankingClassRank" OR OLD."ClassRankingClassRankingDate" IS DISTINCT FROM NEW."ClassRankingClassRankingDate" OR OLD."ClassRankingPercentageRanking" IS DISTINCT FROM NEW."ClassRankingPercentageRanking" OR OLD."ClassRankingTotalNumberInClass" IS DISTINCT FROM NEW."ClassRankingTotalNumberInClass" OR OLD."CumulativeAttemptedCreditConversion" IS DISTINCT FROM NEW."CumulativeAttemptedCreditConversion" OR OLD."CumulativeAttemptedCredits" IS DISTINCT FROM NEW."CumulativeAttemptedCredits" OR OLD."CumulativeEarnedCreditConversion" IS DISTINCT FROM NEW."CumulativeEarnedCreditConversion" OR OLD."CumulativeEarnedCredits" IS DISTINCT FROM NEW."CumulativeEarnedCredits" OR OLD."ProjectedGraduationDate" IS DISTINCT FROM NEW."ProjectedGraduationDate" OR OLD."SessionAttemptedCreditConversion" IS DISTINCT FROM NEW."SessionAttemptedCreditConversion" OR OLD."SessionAttemptedCredits" IS DISTINCT FROM NEW."SessionAttemptedCredits" OR OLD."SessionEarnedCreditConversion" IS DISTINCT FROM NEW."SessionEarnedCreditConversion" OR OLD."SessionEarnedCredits" IS DISTINCT FROM NEW."SessionEarnedCredits") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -54342,7 +53197,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -54363,10 +53218,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecordAcademicHonor_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54408,10 +53259,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecordAcademicHonor_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecordDiploma_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54453,10 +53300,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecordDiploma_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecordGradePointAverage_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54498,10 +53341,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecordGradePointAverage_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecordRecognition_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54543,10 +53382,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecordRecognition_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAcademicRecordReportCard_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54608,23 +53443,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessment_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessment_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."ReportedSchool_DocumentId" IS DISTINCT FROM NEW."ReportedSchool_DocumentId" OR OLD."ReportedSchool_SchoolId" IS DISTINCT FROM NEW."ReportedSchool_SchoolId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AdministrationEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrationEnvironmentDescriptor_DescriptorId" OR OLD."AdministrationLanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrationLanguageDescriptor_DescriptorId" OR OLD."EventCircumstanceDescriptor_DescriptorId" IS DISTINCT FROM NEW."EventCircumstanceDescriptor_DescriptorId" OR OLD."PeriodAssessmentPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."PeriodAssessmentPeriodDescriptor_DescriptorId" OR OLD."PlatformTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."PlatformTypeDescriptor_DescriptorId" OR OLD."ReasonNotTestedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonNotTestedDescriptor_DescriptorId" OR OLD."RetestIndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."RetestIndicatorDescriptor_DescriptorId" OR OLD."WhenAssessedGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."WhenAssessedGradeLevelDescriptor_DescriptorId" OR OLD."AdministrationDate" IS DISTINCT FROM NEW."AdministrationDate" OR OLD."AdministrationEndDate" IS DISTINCT FROM NEW."AdministrationEndDate" OR OLD."AssessedMinutes" IS DISTINCT FROM NEW."AssessedMinutes" OR OLD."EventDescription" IS DISTINCT FROM NEW."EventDescription" OR OLD."PeriodBeginDate" IS DISTINCT FROM NEW."PeriodBeginDate" OR OLD."PeriodEndDate" IS DISTINCT FROM NEW."PeriodEndDate" OR OLD."ReportedSchoolIdentifier" IS DISTINCT FROM NEW."ReportedSchoolIdentifier" OR OLD."SerialNumber" IS DISTINCT FROM NEW."SerialNumber" OR OLD."StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessmentIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -54633,7 +53466,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -54654,10 +53487,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessment_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentAccommodation_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54719,23 +53548,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociat_01
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."StudentAssessment_AssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_AssessmentIdentifier" OR OLD."StudentAssessment_Namespace" IS DISTINCT FROM NEW."StudentAssessment_Namespace" OR OLD."StudentAssessment_StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_StudentAssessmentIdentifier" OR OLD."StudentAssessment_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessment_StudentUniqueId" OR OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -54744,7 +53571,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -54765,10 +53592,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociation
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentItem_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54810,10 +53633,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentItem_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentPerformanceLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54875,23 +53694,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_ReferentialIdentity
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StudentUniqueId_Unified" IS DISTINCT FROM NEW."StudentUniqueId_Unified" OR OLD."AssessmentAdministration_DocumentId" IS DISTINCT FROM NEW."AssessmentAdministration_DocumentId" OR OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."ReportingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ReportingEducationOrganization_DocumentId" OR OLD."ReportingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ReportingEducationOrganization_EducationOrganizationId" OR OLD."ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea" IS DISTINCT FROM NEW."ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea" OR OLD."ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" IS DISTINCT FROM NEW."ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" OR OLD."ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1" IS DISTINCT FROM NEW."ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."StudentEducationOrganizationAssociation_EducationOrganizationId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_EducationOrganizationId" OR OLD."StudentSchoolAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSchoolAssociation_DocumentId" OR OLD."StudentSchoolAssociation_EntryDate" IS DISTINCT FROM NEW."StudentSchoolAssociation_EntryDate" OR OLD."StudentSchoolAssociation_SchoolId" IS DISTINCT FROM NEW."StudentSchoolAssociation_SchoolId" OR OLD."TestingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."TestingEducationOrganization_DocumentId" OR OLD."TestingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."TestingEducationOrganization_EducationOrganizationId" OR OLD."AssessmentGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentGradeLevelDescriptor_DescriptorId" OR OLD."PlatformTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."PlatformTypeDescriptor_DescriptorId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -54900,7 +53717,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -54921,10 +53738,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationAssessmentAccommo_c7cc4bf9ae"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -54966,10 +53779,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationAssessmentAccommo_c7
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationAssessmentCustomi_551bae4273"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55031,23 +53840,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssoci_e4
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."AssessmentBatteryPart_DocumentId" IS DISTINCT FROM NEW."AssessmentBatteryPart_DocumentId" OR OLD."AssessmentBatteryPart_AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPart_AssessmentBatteryPartName" OR OLD."StudentAssessmentRegistration_DocumentId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_DocumentId" OR OLD."StudentAssessmentRegistration_AdministrationIdentifier" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AdministrationIdentifier" OR OLD."StudentAssessmentRegistration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId" OR OLD."StudentAssessmentRegistration_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_EducationOrganizationId" OR OLD."StudentAssessmentRegistration_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_StudentUniqueId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -55056,7 +53863,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -55077,10 +53884,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssociati
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssoci_7b90266720"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55122,10 +53925,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssoci_7b
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentScoreResult_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55167,10 +53966,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentScoreResult_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentStudentObjectiveAssessment_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55212,10 +54007,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentStudentObjectiveAssessment_Stamp
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentStudentObjectiveAssessmentPer_ae161ed762"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55257,10 +54048,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentStudentObjectiveAssessmentPer_ae
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentAssessmentStudentObjectiveAssessmentSco_6f9cc931d7"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55345,23 +54132,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_ReferentialIdentity"
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."TechnicalSkillsAssessmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."TechnicalSkillsAssessmentDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."NonTraditionalGenderStatus" IS DISTINCT FROM NEW."NonTraditionalGenderStatus" OR OLD."PrivateCTEProgram" IS DISTINCT FROM NEW."PrivateCTEProgram" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -55370,7 +54155,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -55391,10 +54176,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociationCteProgramService_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55436,10 +54217,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociationCteProgramService_Sta
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociationProgramParticipati_3ab70529b3"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55501,23 +54278,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Cohort_DocumentId" IS DISTINCT FROM NEW."Cohort_DocumentId" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -55526,7 +54301,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -55547,10 +54322,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCohortAssociationSection_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55612,23 +54383,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_ReferentialIdentity"()
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."GradingPeriodGradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_DocumentId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."ObjectiveCompetencyObjective_DocumentId" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_DocumentId" OR OLD."ObjectiveCompetencyObjective_EducationOrganizationId" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_EducationOrganizationId" OR OLD."ObjectiveCompetencyObjective_Objective" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_Objective" OR OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."CompetencyLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."CompetencyLevelDescriptor_DescriptorId" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -55637,7 +54406,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -55658,10 +54427,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCompetencyObjectiveGeneralStudentProgra_5d076680c8"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55703,10 +54468,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentCompetencyObjectiveGeneralStudentProgra_5d
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCompetencyObjectiveStudentSectionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55768,23 +54529,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentContactAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentContactAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Contact_ContactUniqueId" IS DISTINCT FROM NEW."Contact_ContactUniqueId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."RelationDescriptor_DescriptorId" IS DISTINCT FROM NEW."RelationDescriptor_DescriptorId" OR OLD."ContactPriority" IS DISTINCT FROM NEW."ContactPriority" OR OLD."ContactRestrictions" IS DISTINCT FROM NEW."ContactRestrictions" OR OLD."EmergencyContactStatus" IS DISTINCT FROM NEW."EmergencyContactStatus" OR OLD."LegalGuardian" IS DISTINCT FROM NEW."LegalGuardian" OR OLD."LivesWith" IS DISTINCT FROM NEW."LivesWith" OR OLD."PrimaryContactStatus" IS DISTINCT FROM NEW."PrimaryContactStatus") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -55793,7 +54552,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -55834,23 +54593,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_R_06
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."BehaviorDescriptor_DescriptorId" IS DISTINCT FROM NEW."BehaviorDescriptor_DescriptorId" OR OLD."BehaviorDetailedDescription" IS DISTINCT FROM NEW."BehaviorDetailedDescription") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -55859,7 +54616,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -55880,10 +54637,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_Stam
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociationDi_9f00780528"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55925,10 +54678,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociationDi_9f
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociationWeapon_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -55990,23 +54739,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociatio_6a
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -56015,7 +54762,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -56036,10 +54783,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociation_S
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociatio_f684a3b574"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56101,23 +54844,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommod_de
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommodation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -56126,7 +54867,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -56147,10 +54888,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommodati
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommod_e78486e8f5"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56212,23 +54949,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Refere_35
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."BarrierToInternetAccessInResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."BarrierToInternetAccessInResidenceDescriptor_DescriptorId" OR OLD."InternetAccessTypeInResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."InternetAccessTypeInResidenceDescriptor_DescriptorId" OR OLD."InternetPerformanceInResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."InternetPerformanceInResidenceDescriptor_DescriptorId" OR OLD."LimitedEnglishProficiencyDescriptor_DescriptorId" IS DISTINCT FROM NEW."LimitedEnglishProficiencyDescriptor_DescriptorId" OR OLD."PrimaryLearningDeviceAccessDescriptor_DescriptorId" IS DISTINCT FROM NEW."PrimaryLearningDeviceAccessDescriptor_DescriptorId" OR OLD."PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId" IS DISTINCT FROM NEW."PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId" OR OLD."PrimaryLearningDeviceProviderDescriptor_DescriptorId" IS DISTINCT FROM NEW."PrimaryLearningDeviceProviderDescriptor_DescriptorId" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId" OR OLD."SupporterMilitaryConnectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."SupporterMilitaryConnectionDescriptor_DescriptorId" OR OLD."GenderIdentity" IS DISTINCT FROM NEW."GenderIdentity" OR OLD."HispanicLatinoEthnicity" IS DISTINCT FROM NEW."HispanicLatinoEthnicity" OR OLD."InternetAccessInResidence" IS DISTINCT FROM NEW."InternetAccessInResidence" OR OLD."LoginId" IS DISTINCT FROM NEW."LoginId" OR OLD."ProfileThumbnail" IS DISTINCT FROM NEW."ProfileThumbnail") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -56237,7 +54972,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -56258,10 +54993,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationAddress_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56303,10 +55034,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationAddress_St
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationAddress_78f23bfbfa"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56348,10 +55075,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationAddress_78
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationAncestr_b69548bd7c"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56393,10 +55116,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationAncestr_b6
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationCohortYear_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56438,10 +55157,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationCohortYear
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationDisability_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56483,10 +55198,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationDisability
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationDisabil_c32a214b06"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56528,10 +55239,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationDisabil_c3
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationDisplac_39bcd7a7cf"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56573,10 +55280,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationDisplac_39
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationElectro_c0dce1d99a"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56618,10 +55321,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationElectro_c0
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationInterna_2a64cb72d7"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56663,10 +55362,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationInterna_2a
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationLanguage_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56708,10 +55403,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationLanguage_S
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationLanguageUs_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56753,10 +55444,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationLanguageUs
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationRace_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56798,10 +55485,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationRace_Stamp
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_989c14e3d1"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56843,10 +55526,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_98
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_6ba30ca686"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56888,10 +55567,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_6b
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_25f77313f2"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56933,10 +55608,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_25
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_18f8567c6d"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -56978,10 +55649,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_18
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_68758f811b"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57023,10 +55690,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationStudent_68
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationTelephone_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57068,10 +55731,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationTelephone_
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociationTribalA_12cb8c874a"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57133,23 +55792,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_01
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_a1b8c7881b"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ResponsibilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResponsibilityDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -57158,7 +55815,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -57199,23 +55856,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."GradebookEntry_DocumentId" IS DISTINCT FROM NEW."GradebookEntry_DocumentId" OR OLD."GradebookEntry_GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntry_GradebookEntryIdentifier" OR OLD."GradebookEntry_Namespace" IS DISTINCT FROM NEW."GradebookEntry_Namespace" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AssignmentLateStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssignmentLateStatusDescriptor_DescriptorId" OR OLD."CompetencyLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."CompetencyLevelDescriptor_DescriptorId" OR OLD."SubmissionStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."SubmissionStatusDescriptor_DescriptorId" OR OLD."DateFulfilled" IS DISTINCT FROM NEW."DateFulfilled" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement" OR OLD."LetterGradeEarned" IS DISTINCT FROM NEW."LetterGradeEarned" OR OLD."NumericGradeEarned" IS DISTINCT FROM NEW."NumericGradeEarned" OR OLD."PointsEarned" IS DISTINCT FROM NEW."PointsEarned" OR OLD."TimeFulfilled" IS DISTINCT FROM NEW."TimeFulfilled") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -57224,7 +55879,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -57265,23 +55920,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHealth_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHealth_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."NonMedicalImmunizationExemptionDescriptor_DescriptorId" IS DISTINCT FROM NEW."NonMedicalImmunizationExemptionDescriptor_DescriptorId" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."NonMedicalImmunizationExemptionDate" IS DISTINCT FROM NEW."NonMedicalImmunizationExemptionDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -57290,7 +55943,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -57311,10 +55964,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHealth_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHealthAdditionalImmunization_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57356,10 +56005,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHealthAdditionalImmunization_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHealthAdditionalImmunizationDate_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57401,10 +56046,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHealthAdditionalImmunizationDate_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHealthRequiredImmunization_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57446,10 +56087,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHealthRequiredImmunization_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHealthRequiredImmunizationDate_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57534,23 +56171,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_ReferentialIden
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."AwaitingFosterCare" IS DISTINCT FROM NEW."AwaitingFosterCare" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."HomelessUnaccompaniedYouth" IS DISTINCT FROM NEW."HomelessUnaccompaniedYouth" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -57559,7 +56194,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -57580,10 +56215,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociationHomelessProgr_845cc61f3c"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57625,10 +56256,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociationHomelessProgr_84
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociationProgramPartic_149ef1a68e"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57670,10 +56297,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociationProgramPartic_14
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentIdentificationDocument_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57735,23 +56358,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_ReferentialIdentit
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CohortCohort_DocumentId" IS DISTINCT FROM NEW."CohortCohort_DocumentId" OR OLD."CohortCohort_CohortIdentifier" IS DISTINCT FROM NEW."CohortCohort_CohortIdentifier" OR OLD."CohortCohort_EducationOrganizationId" IS DISTINCT FROM NEW."CohortCohort_EducationOrganizationId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement" OR OLD."Dosage" IS DISTINCT FROM NEW."Dosage") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -57760,7 +56381,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -57781,10 +56402,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentInterventionAssociationInterventionEffe_4927dea138"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -57846,23 +56463,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_ReferentialIde
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."InterventionDuration" IS DISTINCT FROM NEW."InterventionDuration") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -57871,7 +56486,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -57935,23 +56550,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_R_df
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Dosage" IS DISTINCT FROM NEW."Dosage" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."EnglishLearnerParticipation" IS DISTINCT FROM NEW."EnglishLearnerParticipation" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -57960,7 +56573,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -57981,10 +56594,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_Stam
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociationEn_0f9b061968"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58026,10 +56635,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociationEn_0f
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociationLa_d379c8f838"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58071,10 +56676,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociationLa_d3
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociationPr_90c96a9385"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58159,23 +56760,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Refe_6d
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ContinuationOfServicesReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContinuationOfServicesReasonDescriptor_DescriptorId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EligibilityExpirationDate" IS DISTINCT FROM NEW."EligibilityExpirationDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."LastQualifyingMove" IS DISTINCT FROM NEW."LastQualifyingMove" OR OLD."PriorityForServices" IS DISTINCT FROM NEW."PriorityForServices" OR OLD."QualifyingArrivalDate" IS DISTINCT FROM NEW."QualifyingArrivalDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession" OR OLD."StateResidencyDate" IS DISTINCT FROM NEW."StateResidencyDate" OR OLD."UsInitialEntry" IS DISTINCT FROM NEW."UsInitialEntry" OR OLD."UsInitialSchoolEntry" IS DISTINCT FROM NEW."UsInitialSchoolEntry" OR OLD."UsMostRecentEntry" IS DISTINCT FROM NEW."UsMostRecentEntry") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -58184,7 +56783,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -58205,10 +56804,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Stamp"(
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociationMigra_1da4766771"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58250,10 +56845,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociationMigra_1d
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociationProgr_4ca3490588"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58338,23 +56929,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d4
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ElaProgressLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."ElaProgressLevelDescriptor_DescriptorId" OR OLD."MathematicsProgressLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."MathematicsProgressLevelDescriptor_DescriptorId" OR OLD."NeglectedOrDelinquentProgramDescriptor_DescriptorId" IS DISTINCT FROM NEW."NeglectedOrDelinquentProgramDescriptor_DescriptorId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -58363,7 +56952,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -58384,10 +56973,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_St
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_35d35d911b"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58429,10 +57014,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_35
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_f3badb64c4"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58474,10 +57055,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_f3
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentOtherName_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58519,10 +57096,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentOtherName_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentPersonalIdentificationDocument_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58607,23 +57180,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -58632,7 +57203,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -58653,10 +57224,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAssociationProgramParticipationStatus_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58698,10 +57265,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociationProgramParticipationStat
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAssociationService_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58763,23 +57326,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_ReferentialIdentity
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."ProgramAttendanceDuration" IS DISTINCT FROM NEW."ProgramAttendanceDuration") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -58788,7 +57349,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -58829,23 +57390,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluation_DocumentId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" OR OLD."StaffEvaluatorStaff_DocumentId" IS DISTINCT FROM NEW."StaffEvaluatorStaff_DocumentId" OR OLD."StaffEvaluatorStaff_StaffUniqueId" IS DISTINCT FROM NEW."StaffEvaluatorStaff_StaffUniqueId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."SummaryEvaluationRatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."SummaryEvaluationRatingLevelDescriptor_DescriptorId" OR OLD."EvaluationDate" IS DISTINCT FROM NEW."EvaluationDate" OR OLD."EvaluationDuration" IS DISTINCT FROM NEW."EvaluationDuration" OR OLD."SummaryEvaluationComment" IS DISTINCT FROM NEW."SummaryEvaluationComment" OR OLD."SummaryEvaluationNumericRating" IS DISTINCT FROM NEW."SummaryEvaluationNumericRating") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -58854,7 +57413,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -58875,10 +57434,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramEvaluationExternalEvaluator_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58920,10 +57475,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluationExternalEvaluator_Stamp"(
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramEvaluationStudentEvaluationElement_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -58965,10 +57516,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluationStudentEvaluationElement_
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramEvaluationStudentEvaluationObjective_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59030,23 +57577,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."Calendar_DocumentId" IS DISTINCT FROM NEW."Calendar_DocumentId" OR OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."ClassOfSchoolYear_DocumentId" IS DISTINCT FROM NEW."ClassOfSchoolYear_DocumentId" OR OLD."ClassOfSchoolYear_ClassOfSchoolYear" IS DISTINCT FROM NEW."ClassOfSchoolYear_ClassOfSchoolYear" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."GraduationPlan_EducationOrganizationId" IS DISTINCT FROM NEW."GraduationPlan_EducationOrganizationId" OR OLD."GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" OR OLD."GraduationPlan_GraduationSchoolYear" IS DISTINCT FROM NEW."GraduationPlan_GraduationSchoolYear" OR OLD."NextYearSchool_DocumentId" IS DISTINCT FROM NEW."NextYearSchool_DocumentId" OR OLD."NextYearSchool_SchoolId" IS DISTINCT FROM NEW."NextYearSchool_SchoolId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."EnrollmentTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EnrollmentTypeDescriptor_DescriptorId" OR OLD."EntryGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."EntryGradeLevelDescriptor_DescriptorId" OR OLD."EntryGradeLevelReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."EntryGradeLevelReasonDescriptor_DescriptorId" OR OLD."EntryTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EntryTypeDescriptor_DescriptorId" OR OLD."ExitWithdrawTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ExitWithdrawTypeDescriptor_DescriptorId" OR OLD."NextYearGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."NextYearGradeLevelDescriptor_DescriptorId" OR OLD."ResidencyStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResidencyStatusDescriptor_DescriptorId" OR OLD."SchoolChoiceBasisDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolChoiceBasisDescriptor_DescriptorId" OR OLD."EmployedWhileEnrolled" IS DISTINCT FROM NEW."EmployedWhileEnrolled" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate" OR OLD."ExitWithdrawDate" IS DISTINCT FROM NEW."ExitWithdrawDate" OR OLD."FullTimeEquivalency" IS DISTINCT FROM NEW."FullTimeEquivalency" OR OLD."PrimarySchool" IS DISTINCT FROM NEW."PrimarySchool" OR OLD."RepeatGradeIndicator" IS DISTINCT FROM NEW."RepeatGradeIndicator" OR OLD."SchoolChoice" IS DISTINCT FROM NEW."SchoolChoice" OR OLD."SchoolChoiceTransfer" IS DISTINCT FROM NEW."SchoolChoiceTransfer" OR OLD."TermCompletionIndicator" IS DISTINCT FROM NEW."TermCompletionIndicator") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -59055,7 +57600,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -59076,10 +57621,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociationAlternativeGraduationPlan_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59121,10 +57662,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociationAlternativeGraduationPlan
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociationEducationPlan_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59186,23 +57723,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_ReferentialIdentity"
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."ArrivalTime" IS DISTINCT FROM NEW."ArrivalTime" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."DepartureTime" IS DISTINCT FROM NEW."DepartureTime" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."SchoolAttendanceDuration" IS DISTINCT FROM NEW."SchoolAttendanceDuration") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -59211,7 +57746,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -59275,23 +57810,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Ref_6b
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."DirectCertification" IS DISTINCT FROM NEW."DirectCertification" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -59300,7 +57833,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -59321,10 +57854,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Stamp"
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociationProg_19fbea0790"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59366,10 +57895,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociationProg_19
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociationScho_a44d9a549c"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59454,23 +57979,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_ReferentialId
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."Section504DisabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."Section504DisabilityDescriptor_DescriptorId" OR OLD."AccommodationPlan" IS DISTINCT FROM NEW."AccommodationPlan" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Section504Eligibility" IS DISTINCT FROM NEW."Section504Eligibility" OR OLD."Section504EligibilityDecisionDate" IS DISTINCT FROM NEW."Section504EligibilityDecisionDate" OR OLD."Section504MeetingDate" IS DISTINCT FROM NEW."Section504MeetingDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -59479,7 +58002,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -59500,10 +58023,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociationProgramPart_9f8f0843de"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59565,23 +58084,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DualCreditEducationOrganization_DocumentId" IS DISTINCT FROM NEW."DualCreditEducationOrganization_DocumentId" OR OLD."DualCreditEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."DualCreditEducationOrganization_EducationOrganizationId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttemptStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttemptStatusDescriptor_DescriptorId" OR OLD."DualCreditInstitutionDescriptor_DescriptorId" IS DISTINCT FROM NEW."DualCreditInstitutionDescriptor_DescriptorId" OR OLD."DualCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DualCreditTypeDescriptor_DescriptorId" OR OLD."RepeatIdentifierDescriptor_DescriptorId" IS DISTINCT FROM NEW."RepeatIdentifierDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."DualCreditIndicator" IS DISTINCT FROM NEW."DualCreditIndicator" OR OLD."DualHighSchoolCreditIndicator" IS DISTINCT FROM NEW."DualHighSchoolCreditIndicator" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."HomeroomIndicator" IS DISTINCT FROM NEW."HomeroomIndicator" OR OLD."TeacherStudentDataLinkExclusion" IS DISTINCT FROM NEW."TeacherStudentDataLinkExclusion") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -59590,7 +58107,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -59611,10 +58128,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAssociationProgram_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59676,23 +58189,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_ReferentialIdentity
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."ArrivalTime" IS DISTINCT FROM NEW."ArrivalTime" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."DepartureTime" IS DISTINCT FROM NEW."DepartureTime" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."SectionAttendanceDuration" IS DISTINCT FROM NEW."SectionAttendanceDuration") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -59701,7 +58212,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -59722,10 +58233,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEventClassPeriod_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59810,23 +58317,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Refe_db
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."SpecialEducationExitReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."SpecialEducationExitReasonDescriptor_DescriptorId" OR OLD."SpecialEducationSettingDescriptor_DescriptorId" IS DISTINCT FROM NEW."SpecialEducationSettingDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."IdeaEligibility" IS DISTINCT FROM NEW."IdeaEligibility" OR OLD."IepBeginDate" IS DISTINCT FROM NEW."IepBeginDate" OR OLD."IepEndDate" IS DISTINCT FROM NEW."IepEndDate" OR OLD."IepReviewDate" IS DISTINCT FROM NEW."IepReviewDate" OR OLD."LastEvaluationDate" IS DISTINCT FROM NEW."LastEvaluationDate" OR OLD."MedicallyFragile" IS DISTINCT FROM NEW."MedicallyFragile" OR OLD."MultiplyDisabled" IS DISTINCT FROM NEW."MultiplyDisabled" OR OLD."ReductionInHoursPerWeekComparedToPeers" IS DISTINCT FROM NEW."ReductionInHoursPerWeekComparedToPeers" OR OLD."SchoolHoursPerWeek" IS DISTINCT FROM NEW."SchoolHoursPerWeek" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession" OR OLD."ShortenedSchoolDayIndicator" IS DISTINCT FROM NEW."ShortenedSchoolDayIndicator" OR OLD."SpecialEducationExitDate" IS DISTINCT FROM NEW."SpecialEducationExitDate" OR OLD."SpecialEducationExitExplained" IS DISTINCT FROM NEW."SpecialEducationExitExplained" OR OLD."SpecialEducationHoursPerWeek" IS DISTINCT FROM NEW."SpecialEducationHoursPerWeek") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -59835,7 +58340,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -59856,10 +58361,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Stamp"(
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationDisability_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59901,10 +58402,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationDisabili
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationDisab_e9e4e1dfcd"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59946,10 +58443,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationDisab_e9
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationProgr_473a4f0dcd"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -59991,10 +58484,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationProgr_47
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationServi_d316079a51"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60036,10 +58525,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationServi_d3
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationSpeci_4d05f414ea"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60081,10 +58566,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationSpeci_4d
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociationSpeci_647edcb86d"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60146,23 +58627,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_89
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_866b819ed0"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."EligibilityDelayReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."EligibilityDelayReasonDescriptor_DescriptorId" OR OLD."EligibilityEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EligibilityEvaluationTypeDescriptor_DescriptorId" OR OLD."EvaluationDelayReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationDelayReasonDescriptor_DescriptorId" OR OLD."IdeaPartDescriptor_DescriptorId" IS DISTINCT FROM NEW."IdeaPartDescriptor_DescriptorId" OR OLD."ConsentToEvaluationDate" IS DISTINCT FROM NEW."ConsentToEvaluationDate" OR OLD."ConsentToEvaluationReceivedDate" IS DISTINCT FROM NEW."ConsentToEvaluationReceivedDate" OR OLD."EligibilityConferenceDate" IS DISTINCT FROM NEW."EligibilityConferenceDate" OR OLD."EligibilityDeterminationDate" IS DISTINCT FROM NEW."EligibilityDeterminationDate" OR OLD."EligibilityEvaluationDate" IS DISTINCT FROM NEW."EligibilityEvaluationDate" OR OLD."EvaluationCompleteIndicator" IS DISTINCT FROM NEW."EvaluationCompleteIndicator" OR OLD."EvaluationDelayDays" IS DISTINCT FROM NEW."EvaluationDelayDays" OR OLD."EvaluationLateReason" IS DISTINCT FROM NEW."EvaluationLateReason" OR OLD."IdeaIndicator" IS DISTINCT FROM NEW."IdeaIndicator" OR OLD."OriginalECIServicesDate" IS DISTINCT FROM NEW."OriginalECIServicesDate" OR OLD."TransitionConferenceDate" IS DISTINCT FROM NEW."TransitionConferenceDate" OR OLD."TransitionNotificationDate" IS DISTINCT FROM NEW."TransitionNotificationDate") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60171,7 +58650,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60235,23 +58714,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_ReferentialI
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."TitleIPartAParticipantDescriptor_DescriptorId" IS DISTINCT FROM NEW."TitleIPartAParticipantDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60260,7 +58737,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60281,10 +58758,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociationProgramPar_98d5bd2e1e"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60326,10 +58799,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociationProgramPar_98
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociationTitleIPart_2d2eaf08ab"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60391,23 +58860,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentTransportation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTransportation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."TransportationEducationOrganization_DocumentId" IS DISTINCT FROM NEW."TransportationEducationOrganization_DocumentId" OR OLD."TransportationEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."TransportationEducationOrganization_EducationOrganizationId" OR OLD."StudentBusDetailsBusRouteDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentBusDetailsBusRouteDescriptor_DescriptorId" OR OLD."TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652" IS DISTINCT FROM NEW."TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652" OR OLD."TransportationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TransportationTypeDescriptor_DescriptorId" OR OLD."SpecialAccomodationRequirements" IS DISTINCT FROM NEW."SpecialAccomodationRequirements" OR OLD."StudentBusDetailsBusNumber" IS DISTINCT FROM NEW."StudentBusDetailsBusNumber" OR OLD."StudentBusDetailsMileage" IS DISTINCT FROM NEW."StudentBusDetailsMileage") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60416,7 +58883,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60437,10 +58904,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentTransportation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTransportationTravelDayofWeek_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60482,10 +58945,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentTransportationTravelDayofWeek_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTransportationTravelDirection_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60527,10 +58986,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentTransportationTravelDirection_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentVisa_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60592,23 +59047,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_Survey_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Survey_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."Session_SchoolId" IS DISTINCT FROM NEW."Session_SchoolId" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."SurveyCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."SurveyCategoryDescriptor_DescriptorId" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."NumberAdministered" IS DISTINCT FROM NEW."NumberAdministered" OR OLD."SurveyIdentifier" IS DISTINCT FROM NEW."SurveyIdentifier" OR OLD."SurveyTitle" IS DISTINCT FROM NEW."SurveyTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60617,7 +59070,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60658,23 +59111,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Course_CourseCode" IS DISTINCT FROM NEW."Course_CourseCode" OR OLD."Course_EducationOrganizationId" IS DISTINCT FROM NEW."Course_EducationOrganizationId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60683,7 +59134,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60724,23 +59175,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."Program_EducationOrganizationId" IS DISTINCT FROM NEW."Program_EducationOrganizationId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName" OR OLD."Program_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Program_ProgramTypeDescriptor_DescriptorId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60749,7 +59198,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60790,23 +59239,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestion_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestion_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveySection_DocumentId" IS DISTINCT FROM NEW."SurveySection_DocumentId" OR OLD."SurveySection_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySection_SurveySectionTitle" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."QuestionFormDescriptor_DescriptorId" IS DISTINCT FROM NEW."QuestionFormDescriptor_DescriptorId" OR OLD."QuestionCode" IS DISTINCT FROM NEW."QuestionCode" OR OLD."QuestionText" IS DISTINCT FROM NEW."QuestionText") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60815,7 +59262,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60836,10 +59283,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestion_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestionMatrice_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60901,23 +59344,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyQuestion_DocumentId" IS DISTINCT FROM NEW."SurveyQuestion_DocumentId" OR OLD."SurveyQuestion_QuestionCode" IS DISTINCT FROM NEW."SurveyQuestion_QuestionCode" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier" OR OLD."Comment" IS DISTINCT FROM NEW."Comment" OR OLD."NoResponse" IS DISTINCT FROM NEW."NoResponse") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -60926,7 +59367,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -60947,10 +59388,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestionResponseChoice_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -60992,10 +59429,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponseChoice_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestionResponseSurveyQuestionMatrixElem_ec567146b7"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -61037,10 +59470,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponseSurveyQuestionMatrixElem_ec
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyQuestionResponseValue_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -61102,23 +59531,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponse_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponse_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SurveyResponderChoiceContact_DocumentId" IS DISTINCT FROM NEW."SurveyResponderChoiceContact_DocumentId" OR OLD."SurveyResponderChoiceContact_ContactUniqueId" IS DISTINCT FROM NEW."SurveyResponderChoiceContact_ContactUniqueId" OR OLD."SurveyResponderChoiceStaff_DocumentId" IS DISTINCT FROM NEW."SurveyResponderChoiceStaff_DocumentId" OR OLD."SurveyResponderChoiceStaff_StaffUniqueId" IS DISTINCT FROM NEW."SurveyResponderChoiceStaff_StaffUniqueId" OR OLD."SurveyResponderChoiceStudent_DocumentId" IS DISTINCT FROM NEW."SurveyResponderChoiceStudent_DocumentId" OR OLD."SurveyResponderChoiceStudent_StudentUniqueId" IS DISTINCT FROM NEW."SurveyResponderChoiceStudent_StudentUniqueId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress" OR OLD."FullName" IS DISTINCT FROM NEW."FullName" OR OLD."Location" IS DISTINCT FROM NEW."Location" OR OLD."ResponseDate" IS DISTINCT FROM NEW."ResponseDate" OR OLD."ResponseTime" IS DISTINCT FROM NEW."ResponseTime" OR OLD."SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponseIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61127,7 +59554,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -61168,23 +59595,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_c2
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_b5eabc71b9"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61193,7 +59618,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -61234,23 +59659,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_ReferentialI
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61259,7 +59682,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -61280,10 +59703,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveyResponseSurveyLevel_Stamp"()
 RETURNS TRIGGER AS $func$
-DECLARE
-    _stampedDocumentId bigint;
-    _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         WITH stamped AS (
@@ -61345,23 +59764,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveySection_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySection_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61370,7 +59787,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -61411,23 +59828,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61436,7 +59851,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -61477,23 +59892,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponse_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponse_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier" OR OLD."SurveySection_DocumentId" IS DISTINCT FROM NEW."SurveySection_DocumentId" OR OLD."SurveySection_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySection_SurveySectionTitle" OR OLD."SectionRating" IS DISTINCT FROM NEW."SectionRating") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61502,7 +59915,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -61524,23 +59937,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponse_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponseEducationOrganizationTarg_e4563c7667"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SurveySectionResponse_DocumentId" IS DISTINCT FROM NEW."SurveySectionResponse_DocumentId" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61549,7 +59960,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
@@ -61609,23 +60020,21 @@ EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Re_a3
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
-    _stampedDocumentId bigint;
     _stampedContentVersion bigint;
     _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."SurveySectionResponse_DocumentId" IS DISTINCT FROM NEW."SurveySectionResponse_DocumentId" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion", "ContentLastModifiedAt"
+        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
@@ -61634,7 +60043,7 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt" INTO _stampedDocumentId, _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
