@@ -35,7 +35,7 @@ internal sealed class AvailableChangeVersionsHandler(ILogger<AvailableChangeVers
         // than letting GetRequiredService throw an opaque missing-service exception.
         if (changeQueryRepository is null)
         {
-            logger.LogError(
+            logger.LogWarning(
                 "IChangeQueryRepository is not registered; Change Queries require the relational backend - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
