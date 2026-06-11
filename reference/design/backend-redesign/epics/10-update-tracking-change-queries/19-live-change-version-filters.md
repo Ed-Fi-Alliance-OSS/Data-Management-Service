@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1182
 
 Add `minChangeVersion` and `maxChangeVersion` support to live resource and descriptor GET-many endpoints.
 
-For regular resources, page selection filters the concrete root table's mirrored `ContentVersion` directly. For descriptors, page selection filters `dms.Descriptor.ContentVersion` with the descriptor `Discriminator` predicate. The change-version predicate must not join to `dms.Document`.
+For regular resources, page selection filters the concrete root table's mirrored `ContentVersion` directly, and the change-version predicate must not join to `dms.Document`. For descriptors, page selection roots on `dms.Document` and filters `dms.Document.ContentVersion`, scoping the descriptor type with the project-qualified `ResourceKeyId` predicate — the same type authority descriptor GET-by-id uses. The DMS-1173 stamping triggers keep the descriptor mirror in lock-step with `dms.Document.ContentVersion`, so filtering the canonical document column is equivalent and keeps the predicate on the page-keyset root.
 
 Response metadata remains sourced from `dms.Document` for now.
 
@@ -18,7 +18,7 @@ Response metadata remains sourced from `dms.Document` for now.
 - Live regular resource GET-many endpoints accept `minChangeVersion` and `maxChangeVersion`.
 - Live descriptor GET-many endpoints accept `minChangeVersion` and `maxChangeVersion`.
 - Regular resource page-selection SQL filters the concrete root alias by mirrored `ContentVersion`.
-- Descriptor page-selection SQL filters `dms.Descriptor.ContentVersion` and includes the descriptor `Discriminator` predicate.
+- Descriptor page-selection SQL roots on `dms.Document`, filters `dms.Document.ContentVersion`, and includes the project-qualified `ResourceKeyId` predicate.
 - The change-version predicate does not require a `dms.Document` join for regular resource page selection.
 - The planner uses this path for every resource with a `MirroredContentVersion` column and has no non-mirror fallback for in-scope relational tables.
 - Pagination and totalCount apply after the change-version filter.

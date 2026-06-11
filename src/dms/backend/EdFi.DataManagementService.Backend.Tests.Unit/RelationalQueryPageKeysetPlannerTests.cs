@@ -379,9 +379,30 @@ public class Given_RelationalQueryPageKeysetPlanner
                         "underscore",
                         new PreprocessedRelationalQueryValue.Raw("underscore")
                     ),
+                    CreateElement(
+                        "minChangeVersion",
+                        "$.minChangeVersionQueryField",
+                        "string",
+                        new RelationalQueryFieldTarget.RootColumn(
+                            new DbColumnName("MinChangeVersionQueryField")
+                        ),
+                        "min collision",
+                        new PreprocessedRelationalQueryValue.Raw("min collision")
+                    ),
+                    CreateElement(
+                        "maxChangeVersion",
+                        "$.maxChangeVersionQueryField",
+                        "string",
+                        new RelationalQueryFieldTarget.RootColumn(
+                            new DbColumnName("MaxChangeVersionQueryField")
+                        ),
+                        "max collision",
+                        new PreprocessedRelationalQueryValue.Raw("max collision")
+                    ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
         result.ParameterValues.Keys.Should().Contain("offset");
@@ -394,6 +415,20 @@ public class Given_RelationalQueryPageKeysetPlanner
         result.Plan.PageDocumentIdSql.Should().Contain("@limit_2");
         result.Plan.PageDocumentIdSql.Should().Contain("@school_id");
         result.Plan.PageDocumentIdSql.Should().Contain("@school_id_2");
+        // The change-version window keeps the bare reserved names; the colliding query fields are
+        // suffixed so the window predicates and the query predicates never share a parameter.
+        result.ParameterValues["minChangeVersion"].Should().Be(100L);
+        result.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        result.ParameterValues["minChangeVersion_2"].Should().Be("min collision");
+        result.ParameterValues["maxChangeVersion_2"].Should().Be("max collision");
+        result.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        result.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        result
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.\"MinChangeVersionQueryField\" = @minChangeVersion_2");
+        result
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.\"MaxChangeVersionQueryField\" = @maxChangeVersion_2");
     }
 
     [Test]
@@ -557,8 +592,262 @@ public class Given_RelationalQueryPageKeysetPlanner
         );
     }
 
+    [Test]
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"ContentVersion\" >= @minChangeVersion",
+        "r.\"ContentVersion\" <= @maxChangeVersion"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[ContentVersion] >= @minChangeVersion",
+        "r.[ContentVersion] <= @maxChangeVersion"
+    )]
+    public void It_should_filter_the_root_mirrored_content_version_when_both_change_version_bounds_are_supplied(
+        SqlDialect dialect,
+        string expectedMinPredicateFragment,
+        string expectedMaxPredicateFragment
+    )
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(dialect);
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, 200L)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedMinPredicateFragment);
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedMaxPredicateFragment);
+        // The change-version predicate filters the concrete root alias only; no dms.Document join.
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("INNER JOIN");
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql.Should().Contain(expectedMinPredicateFragment);
+        keyset.Plan.TotalCountSql.Should().Contain(expectedMaxPredicateFragment);
+        keyset.Plan.TotalCountSql.Should().NotContain("INNER JOIN");
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset
+            .Plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("minChangeVersion", "maxChangeVersion", "offset", "limit");
+        keyset
+            .Plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("minChangeVersion", "maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_emit_only_the_min_bound_predicate_when_max_change_version_is_absent()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, null)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_emit_only_the_max_bound_predicate_when_min_change_version_is_absent()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(null, 200L)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.ParameterValues.Keys.Should().NotContain("minChangeVersion");
+    }
+
+    [Test]
+    public void It_should_leave_the_plan_unchanged_when_no_change_version_bounds_are_supplied()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var paginationParameters = new PaginationParameters(
+            Limit: 25,
+            Offset: 0,
+            TotalCount: true,
+            MaximumPageSize: 500
+        );
+        var withoutRange = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            paginationParameters
+        );
+
+        var withNoneRange = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            paginationParameters,
+            changeVersionRange: ChangeVersionRange.None
+        );
+
+        withNoneRange.Plan.PageDocumentIdSql.Should().Be(withoutRange.Plan.PageDocumentIdSql);
+        withNoneRange.Plan.TotalCountSql.Should().Be(withoutRange.Plan.TotalCountSql);
+        withNoneRange.Plan.PageDocumentIdSql.Should().NotContain("ContentVersion");
+        withNoneRange.ParameterValues.Keys.Should().NotContain("minChangeVersion");
+        withNoneRange.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_compose_the_change_version_window_with_query_filters_and_authorization()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql);
+        var authorizationParameterization = new AuthorizationClaimEducationOrganizationIdParameterization(
+            AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar,
+            "ClaimEducationOrganizationIds",
+            [111L],
+            ["ClaimEducationOrganizationIds_0"]
+        );
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "schoolId",
+                        "$.schoolId",
+                        "number",
+                        new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolId")),
+                        "456",
+                        new PreprocessedRelationalQueryValue.Raw("456")
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            authorization: new PageDocumentIdAuthorizationSpec(
+                [
+                    new PageDocumentIdAuthorizationStrategy(
+                        "RelationshipsWithEdOrgsOnly",
+                        [
+                            new PageDocumentIdAuthorizationEdOrgSubject(
+                                new DbTableName(new DbSchemaName("edfi"), "AcademicWeek"),
+                                new DbColumnName("SchoolId"),
+                                RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                                    RelationshipAuthorizationHierarchyDirection.Normal
+                                ),
+                                []
+                            ),
+                        ]
+                    ),
+                ],
+                authorizationParameterization
+            ),
+            changeVersionRange: new ChangeVersionRange(100L, 200L)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.[SchoolId] = @schoolId");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.[ContentVersion] >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.[ContentVersion] <= @maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("@ClaimEducationOrganizationIds_0");
+        keyset.ParameterValues["schoolId"].Should().Be(456);
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.ParameterValues["ClaimEducationOrganizationIds_0"].Should().Be(111L);
+    }
+
+    [Test]
+    public void It_should_throw_when_a_change_version_bound_is_supplied_and_the_root_table_has_no_content_version_column()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var act = () =>
+            planner.Plan(
+                CreateRootTable(contentVersionColumn: null),
+                new RelationalQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.Continue(),
+                    []
+                ),
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+                changeVersionRange: new ChangeVersionRange(100L, null)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*mirrored Int64 'ContentVersion'*no non-mirror fallback*");
+    }
+
+    [Test]
+    public void It_should_throw_when_the_content_version_column_is_not_a_mirror_column()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var act = () =>
+            planner.Plan(
+                CreateRootTable(
+                    CreateColumn(
+                        "ContentVersion",
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.Int64)
+                    )
+                ),
+                new RelationalQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.Continue(),
+                    []
+                ),
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+                changeVersionRange: new ChangeVersionRange(null, 200L)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ColumnKind.MirroredContentVersion*");
+    }
+
+    [Test]
+    public void It_should_throw_when_the_mirrored_content_version_column_is_not_int64()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var act = () =>
+            planner.Plan(
+                CreateRootTable(
+                    CreateColumn(
+                        "ContentVersion",
+                        ColumnKind.MirroredContentVersion,
+                        new RelationalScalarType(ScalarKind.Int32)
+                    )
+                ),
+                new RelationalQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.Continue(),
+                    []
+                ),
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+                changeVersionRange: new ChangeVersionRange(100L, 200L)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*mirrored Int64 'ContentVersion'*");
+    }
+
     private static DbTableModel CreateRootTable()
     {
+        return CreateRootTable(
+            CreateColumn(
+                "ContentVersion",
+                ColumnKind.MirroredContentVersion,
+                new RelationalScalarType(ScalarKind.Int64)
+            )
+        );
+    }
+
+    private static DbTableModel CreateRootTable(DbColumnModel? contentVersionColumn)
+    {
+        DbColumnModel[] contentVersionColumns = contentVersionColumn is null ? [] : [contentVersionColumn];
+
         return new DbTableModel(
             new DbTableName(new DbSchemaName("edfi"), "AcademicWeek"),
             new JsonPathExpression("$", []),
@@ -567,6 +856,7 @@ public class Given_RelationalQueryPageKeysetPlanner
                 [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
             ),
             [
+                .. contentVersionColumns,
                 CreateColumn(
                     "DocumentId",
                     ColumnKind.ParentKeyPart,
@@ -614,6 +904,16 @@ public class Given_RelationalQueryPageKeysetPlanner
                 ),
                 CreateColumn(
                     "SchoolIdUnderscore",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                CreateColumn(
+                    "MinChangeVersionQueryField",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                CreateColumn(
+                    "MaxChangeVersionQueryField",
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75)
                 ),

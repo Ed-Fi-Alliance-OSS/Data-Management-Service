@@ -271,9 +271,28 @@ public class Given_DescriptorQueryPageKeysetPlanner
                         new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate")),
                         new PreprocessedDescriptorQueryValue.DateOnlyValue(new DateOnly(2026, 6, 30))
                     ),
+                    CreateElement(
+                        "minChangeVersion",
+                        "$.minChangeVersionQueryField",
+                        "min collision",
+                        "string",
+                        new DescriptorQueryFieldTarget.Description(new DbColumnName("Description")),
+                        new PreprocessedDescriptorQueryValue.Raw("min collision")
+                    ),
+                    CreateElement(
+                        "maxChangeVersion",
+                        "$.maxChangeVersionQueryField",
+                        "cccccccc-1111-2222-3333-dddddddddddd",
+                        "string",
+                        new DescriptorQueryFieldTarget.DocumentUuid(),
+                        new PreprocessedDescriptorQueryValue.DocumentUuid(
+                            Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+                        )
+                    ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
         keyset.ParameterValues.Keys.Should().Contain("resourceKeyId");
@@ -289,6 +308,19 @@ public class Given_DescriptorQueryPageKeysetPlanner
         keyset.Plan.PageDocumentIdSql.Should().Contain("@limit_2");
         keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id");
         keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id_2");
+        // The change-version window keeps the bare reserved names; the colliding query fields are
+        // suffixed so the window predicates and the query predicates never share a parameter.
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.ParameterValues["minChangeVersion_2"].Should().Be("min collision");
+        keyset
+            .ParameterValues["maxChangeVersion_2"]
+            .Should()
+            .Be(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("d.\"Description\" = @minChangeVersion_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"DocumentUuid\" = @maxChangeVersion_2");
     }
 
     [Test]
@@ -637,6 +669,162 @@ public class Given_DescriptorQueryPageKeysetPlanner
         keyset.Plan.PageDocumentIdSql.Should().NotContain("Namespace");
         keyset.Plan.PageDocumentIdSql.Should().NotContain("namespacePrefixes");
         keyset.ParameterValues.Keys.Should().NotContain("namespacePrefixes");
+    }
+
+    [Test]
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"ContentVersion\" >= @minChangeVersion",
+        "r.\"ContentVersion\" <= @maxChangeVersion"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[ContentVersion] >= @minChangeVersion",
+        "r.[ContentVersion] <= @maxChangeVersion"
+    )]
+    public void It_should_filter_document_content_version_alongside_the_resource_key_predicate(
+        SqlDialect dialect,
+        string expectedMinPredicateFragment,
+        string expectedMaxPredicateFragment
+    )
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(dialect);
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, 200L)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedMinPredicateFragment);
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedMaxPredicateFragment);
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ResourceKeyId");
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql.Should().Contain(expectedMinPredicateFragment);
+        keyset.Plan.TotalCountSql.Should().Contain(expectedMaxPredicateFragment);
+        keyset.Plan.TotalCountSql.Should().Contain("ResourceKeyId");
+        keyset.ParameterValues["resourceKeyId"].Should().Be((short)13);
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+    }
+
+    [Test]
+    public void It_should_emit_only_the_min_bound_predicate_when_max_change_version_is_absent()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, null)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_emit_only_the_max_bound_predicate_when_min_change_version_is_absent()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(null, 200L)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.ParameterValues.Keys.Should().NotContain("minChangeVersion");
+    }
+
+    [Test]
+    public void It_should_leave_descriptor_page_sql_unchanged_when_no_change_version_bounds_are_supplied()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var paginationParameters = new PaginationParameters(
+            Limit: 25,
+            Offset: 0,
+            TotalCount: true,
+            MaximumPageSize: 500
+        );
+        var withoutRange = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            paginationParameters
+        );
+
+        var withNoneRange = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            paginationParameters,
+            changeVersionRange: ChangeVersionRange.None
+        );
+
+        withNoneRange.Plan.PageDocumentIdSql.Should().Be(withoutRange.Plan.PageDocumentIdSql);
+        withNoneRange.Plan.TotalCountSql.Should().Be(withoutRange.Plan.TotalCountSql);
+        withNoneRange.Plan.PageDocumentIdSql.Should().NotContain("ContentVersion");
+        withNoneRange.Plan.TotalCountSql.Should().NotContain("ContentVersion");
+        withNoneRange.ParameterValues.Keys.Should().NotContain("minChangeVersion");
+        withNoneRange.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_compose_the_change_version_window_with_namespace_authorization_for_descriptor_queries()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var authorization = CreateNamespaceAuthorization(SqlDialect.Pgsql, ["uri://ed-fi.org/"]);
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            authorization,
+            new ChangeVersionRange(100L, 200L)
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("(d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))");
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.ParameterValues.Should().ContainKey("namespacePrefixes");
+    }
+
+    [Test]
+    public void It_should_reject_a_descriptor_resource_whose_project_is_not_in_the_mapping_set()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        // The type predicate is the project-qualified ResourceKeyId: a same-named descriptor under a
+        // different project must not resolve to this mapping set's SchoolTypeDescriptor key.
+        var act = () =>
+            planner.Plan(
+                RelationalAccessTestData.CreateMappingSet(_requestResource),
+                new QualifiedResourceName("Other-Project", "SchoolTypeDescriptor"),
+                new DescriptorQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.Continue(),
+                    []
+                ),
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            );
+
+        act.Should().Throw<KeyNotFoundException>().WithMessage("*Other-Project.SchoolTypeDescriptor*");
     }
 
     private static PageDocumentIdAuthorizationSpec CreateNamespaceAuthorization(

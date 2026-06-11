@@ -107,6 +107,29 @@ public class Given_Descriptor_Read_Contracts
         request.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
         request.ReadableProfileProjectionContext.Should().BeSameAs(readableProfileProjectionContext);
         request.TraceId.Should().Be(traceId);
+        request.ChangeVersionRange.Should().Be(ChangeVersionRange.None);
+    }
+
+    [Test]
+    public void It_carries_a_supplied_change_version_range_on_descriptor_query_requests()
+    {
+        var mappingSet = RelationalAccessTestData.CreateMappingSet(
+            new QualifiedResourceName("Ed-Fi", "Student")
+        );
+        var changeVersionRange = new ChangeVersionRange(100L, 200L);
+
+        var request = new DescriptorQueryRequest(
+            mappingSet,
+            _descriptorResource,
+            [],
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            [],
+            null,
+            new TraceId("trace-id"),
+            changeVersionRange: changeVersionRange
+        );
+
+        request.ChangeVersionRange.Should().BeSameAs(changeVersionRange);
     }
 
     private static ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>

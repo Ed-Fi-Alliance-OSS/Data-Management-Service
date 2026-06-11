@@ -326,6 +326,72 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
     }
 
+    [Test]
+    public async Task It_returns_only_descriptors_inside_the_change_version_window()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+        var middleContentVersion = contentVersions[PagingSecondSeed.DocumentUuid.Value];
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-change-version-window",
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(middleContentVersion, middleContentVersion)
+        );
+
+        AssertDescriptorPage(result, [PagingSecondSeed], expectedTotalCount: 1);
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_when_the_change_version_window_excludes_all_descriptors()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+
+        var result = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-change-version-exclusion",
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(contentVersions.Values.Max() + 1, null)
+        );
+
+        AssertEmptyPage(result, expectedTotalCount: 0);
+    }
+
+    [Test]
+    public async Task It_scopes_the_change_version_window_to_the_requested_descriptor_type()
+    {
+        await SeedDescriptorsAsync([PagingFirstSeed]);
+        await MssqlDescriptorReadTestSupport.SeedDescriptorAsync(
+            _database,
+            _mappingSet,
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+            new DescriptorReadSeed(
+                DocumentUuid: new DocumentUuid(Guid.Parse("40000000-0000-0000-0000-000000000209")),
+                Namespace: "uri://ed-fi.org/GradeLevelDescriptor",
+                CodeValue: "Ninth grade",
+                ShortDescription: "Ninth grade"
+            )
+        );
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+
+        // The window spans every seeded descriptor of every type; the project-qualified ResourceKeyId
+        // predicate keeps the other descriptor type out of the SchoolTypeDescriptor page and its
+        // total count.
+        var result = await ExecuteQueryAsync(
+            [],
+            "mssql-descriptor-query-change-version-resource-key-scope",
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(
+                contentVersions.Values.Min(),
+                contentVersions.Values.Max()
+            )
+        );
+
+        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 1);
+    }
+
     private static IEnumerable<TestCaseData> SupportedFilterCases()
     {
         yield return new TestCaseData(
@@ -437,7 +503,8 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         string traceId,
         bool totalCount = false,
         int limit = 25,
-        int offset = 0
+        int offset = 0,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -456,12 +523,29 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
                 TotalCount: totalCount,
                 MaximumPageSize: MaximumPageSize
             ),
-            TraceId: new TraceId(traceId)
+            TraceId: new TraceId(traceId),
+            ChangeVersionRange: changeVersionRange
         );
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .QueryDocuments(request);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, long>> ReadDescriptorContentVersionsByDocumentUuidAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT doc.[DocumentUuid], descriptor.[ContentVersion]
+            FROM [dms].[Descriptor] descriptor
+            INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = descriptor.[DocumentId];
+            """
+        );
+
+        return rows.ToDictionary(
+            row => (Guid)row["DocumentUuid"]!,
+            row => Convert.ToInt64(row["ContentVersion"], System.Globalization.CultureInfo.InvariantCulture)
+        );
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)

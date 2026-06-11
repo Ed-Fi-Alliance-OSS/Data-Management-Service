@@ -210,7 +210,8 @@ internal sealed record PersistedQuerySchool(
     long DocumentId,
     Guid DocumentUuid,
     int SchoolId,
-    string NameOfInstitution
+    string NameOfInstitution,
+    long ContentVersion
 );
 
 [TestFixture]
@@ -417,6 +418,118 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
+    [Test]
+    public async Task It_returns_only_resources_inside_the_change_version_window()
+    {
+        // The stamping triggers assign strictly increasing ContentVersion values in insert order,
+        // so a window spanning only the middle school's stamp excludes the first and last.
+        var middleSchool = _persistedSchoolsInDocumentOrder[1];
+
+        var result = await ExecuteQueryAsync(
+            [],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "pg-query-change-version-window",
+            changeVersionRange: new ChangeVersionRange(
+                middleSchool.ContentVersion,
+                middleSchool.ContentVersion
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success.EdfiDocs.Should().HaveCount(1);
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(middleSchool.DocumentUuid.ToString());
+        AssertPageMaterialization(middleSchool.DocumentId);
+    }
+
+    [Test]
+    public async Task It_returns_resources_at_or_above_min_change_version_and_excludes_older_resources()
+    {
+        var lastSchool = _persistedSchoolsInDocumentOrder[^1];
+
+        var result = await ExecuteQueryAsync(
+            [],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "pg-query-change-version-min-only",
+            changeVersionRange: new ChangeVersionRange(lastSchool.ContentVersion, null)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success.EdfiDocs.Should().HaveCount(1);
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(lastSchool.DocumentUuid.ToString());
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_when_the_change_version_window_excludes_all_resources()
+    {
+        var lastSchool = _persistedSchoolsInDocumentOrder[^1];
+
+        var result = await ExecuteQueryAsync(
+            [],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "pg-query-change-version-exclusion",
+            changeVersionRange: new ChangeVersionRange(lastSchool.ContentVersion + 1, null)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(0);
+        success.EdfiDocs.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_composes_the_change_version_window_with_a_query_filter()
+    {
+        // The window covers every seeded school; the scalar filter then narrows to one. A second
+        // query keeps the filter but shrinks the window below the match, proving both predicates apply.
+        var middleSchool = _persistedSchoolsInDocumentOrder[1];
+        var allVersionsWindow = new ChangeVersionRange(
+            _persistedSchoolsInDocumentOrder[0].ContentVersion,
+            _persistedSchoolsInDocumentOrder[^1].ContentVersion
+        );
+
+        var matchingResult = await ExecuteQueryAsync(
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "pg-query-change-version-composed-match",
+            changeVersionRange: allVersionsWindow
+        );
+
+        var matchingSuccess = matchingResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        matchingSuccess.TotalCount.Should().Be(1);
+        matchingSuccess.EdfiDocs.Should().HaveCount(1);
+        matchingSuccess.EdfiDocs[0]!["id"]!
+            .GetValue<string>()
+            .Should()
+            .Be(middleSchool.DocumentUuid.ToString());
+
+        _recorder.Reset();
+
+        var excludedResult = await ExecuteQueryAsync(
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            traceId: "pg-query-change-version-composed-excluded",
+            changeVersionRange: new ChangeVersionRange(null, middleSchool.ContentVersion - 1)
+        );
+
+        var excludedSuccess = excludedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        excludedSuccess.TotalCount.Should().Be(0);
+        excludedSuccess.EdfiDocs.Should().BeEmpty();
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
@@ -615,7 +728,8 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         int? limit,
         int? offset,
         bool totalCount,
-        string traceId
+        string traceId,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -634,7 +748,8 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 TotalCount: totalCount,
                 MaximumPageSize: MaximumPageSize
             ),
-            TraceId: new TraceId(traceId)
+            TraceId: new TraceId(traceId),
+            ChangeVersionRange: changeVersionRange
         );
 
         return await scope
@@ -652,7 +767,8 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 doc."DocumentId",
                 doc."DocumentUuid",
                 school."SchoolId",
-                school."NameOfInstitution"
+                school."NameOfInstitution",
+                school."ContentVersion"
             FROM "dms"."Document" doc
             INNER JOIN "{physicalSchema}"."School" school
                 ON school."DocumentId" = doc."DocumentId"
@@ -668,7 +784,8 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 DocumentId: GetRequiredInt64(row, "DocumentId"),
                 DocumentUuid: GetRequiredGuid(row, "DocumentUuid"),
                 SchoolId: GetRequiredInt32(row, "SchoolId"),
-                NameOfInstitution: GetRequiredString(row, "NameOfInstitution")
+                NameOfInstitution: GetRequiredString(row, "NameOfInstitution"),
+                ContentVersion: GetRequiredInt64(row, "ContentVersion")
             )),
         ];
     }

@@ -252,14 +252,16 @@ internal sealed class DescriptorReadHandler(
         }
 
         // Descriptor queries are namespace-only, but the page query still composes the namespace prefix
-        // list with the query filter, paging, and ResourceKeyId parameters. Fail closed if that exceeds
-        // SQL Server's per-command parameter ceiling rather than letting the query fail at execution.
+        // list with the query filter, paging, ResourceKeyId, and change-version parameters. Fail closed
+        // if that exceeds SQL Server's per-command parameter ceiling rather than letting the query fail
+        // at execution.
         if (
             BuildDescriptorQueryParameterBudgetFailure(
                 request.MappingSet.Key.Dialect,
                 request.Resource,
                 proceed.NamespacePrefixParameterization,
-                preprocessingResult.QueryElementsInOrder.Count
+                preprocessingResult.QueryElementsInOrder.Count,
+                CountChangeVersionParameters(request.ChangeVersionRange)
             ) is
             { } parameterBudgetFailure
         )
@@ -313,22 +315,32 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
+    /// Counts the change-version parameters the descriptor page query will bind: one per supplied
+    /// bound (minChangeVersion / maxChangeVersion), zero when no window applies.
+    /// </summary>
+    private static int CountChangeVersionParameters(ChangeVersionRange changeVersionRange) =>
+        (changeVersionRange.MinChangeVersion is null ? 0 : 1)
+        + (changeVersionRange.MaxChangeVersion is null ? 0 : 1);
+
+    /// <summary>
     /// Returns a security-configuration failure when the descriptor page query's namespace prefix
-    /// parameters, plus its query filter, paging, and ResourceKeyId parameters, exceed SQL Server's
-    /// per-command parameter ceiling; otherwise <see langword="null"/>. The dialect gate lives in
-    /// <see cref="AuthorizationParameterBudget.ExceedsCommandParameterLimit"/>.
+    /// parameters, plus its query filter, paging, ResourceKeyId, and change-version parameters, exceed
+    /// SQL Server's per-command parameter ceiling; otherwise <see langword="null"/>. The dialect gate
+    /// lives in <see cref="AuthorizationParameterBudget.ExceedsCommandParameterLimit"/>.
     /// </summary>
     private static QueryResult? BuildDescriptorQueryParameterBudgetFailure(
         SqlDialect dialect,
         QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
-        int queryFilterParameterCount
+        int queryFilterParameterCount,
+        int changeVersionParameterCount
     )
     {
         var nonAuthorizationParameterCount =
             queryFilterParameterCount
             + AuthorizationParameterBudget.PaginationParameterCount
-            + DescriptorQueryResourceKeyParameterCount;
+            + DescriptorQueryResourceKeyParameterCount
+            + changeVersionParameterCount;
 
         if (
             !AuthorizationParameterBudget.ExceedsCommandParameterLimit(
@@ -377,7 +389,8 @@ internal sealed class DescriptorReadHandler(
             request.Resource,
             preprocessingResult,
             request.PaginationParameters,
-            authorizationSpec
+            authorizationSpec,
+            request.ChangeVersionRange
         );
         var command = BuildQueryCommand(request.MappingSet.Key.Dialect, plannedQuery);
 

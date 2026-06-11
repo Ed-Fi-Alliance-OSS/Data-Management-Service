@@ -61,6 +61,10 @@ internal record QueryRequest(
 /// <param name="ReadableProfileProjectionContext">
 /// Optional readable-profile projection inputs when a readable profile applies to the request.
 /// </param>
+/// <param name="ChangeVersionRange">
+/// Optional validated minChangeVersion / maxChangeVersion window. Null is normalized to
+/// <see cref="External.Model.ChangeVersionRange.None"/> on the relational seam.
+/// </param>
 internal sealed record RelationalQueryRequest(
     ResourceInfo ResourceInfo,
     RelationalAuthorizationContext AuthorizationContext,
@@ -70,7 +74,8 @@ internal sealed record RelationalQueryRequest(
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     PaginationParameters PaginationParameters,
     TraceId TraceId,
-    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
+    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
+    ChangeVersionRange? ChangeVersionRange = null
 )
     : QueryRequest(
         ResourceInfo: ResourceInfo,
@@ -80,4 +85,8 @@ internal sealed record RelationalQueryRequest(
         PaginationParameters: PaginationParameters,
         TraceId: TraceId
     ),
-        IRelationalQueryRequest;
+        IRelationalQueryRequest
+{
+    ChangeVersionRange IRelationalQueryRequest.ChangeVersionRange =>
+        ChangeVersionRange ?? External.Model.ChangeVersionRange.None;
+}

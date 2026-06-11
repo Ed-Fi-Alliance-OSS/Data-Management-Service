@@ -10,10 +10,28 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
+/// <summary>
+/// The change-version filter column and SQL parameter names shared by the relational and
+/// descriptor page keyset planners. Both planners bind the same validated window, so the
+/// parameter names must stay byte-identical between them; a one-sided rename would silently
+/// break the change-version filter on the other path.
+/// </summary>
+internal static class ChangeVersionFilterConstants
+{
+    public const string ContentVersionColumnName = "ContentVersion";
+    public const string MinChangeVersionParameterName = "minChangeVersion";
+    public const string MaxChangeVersionParameterName = "maxChangeVersion";
+}
+
 internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 {
     private const string OffsetParameterName = "offset";
     private const string LimitParameterName = "limit";
+    private const string ContentVersionColumnName = ChangeVersionFilterConstants.ContentVersionColumnName;
+    private const string MinChangeVersionParameterName =
+        ChangeVersionFilterConstants.MinChangeVersionParameterName;
+    private const string MaxChangeVersionParameterName =
+        ChangeVersionFilterConstants.MaxChangeVersionParameterName;
 
     private readonly PageDocumentIdSqlCompiler _sqlCompiler = new(dialect);
 
@@ -22,7 +40,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         RelationalQueryPreprocessingResult preprocessingResult,
         PaginationParameters paginationParameters,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
-        PageDocumentIdAuthorizationSpec? authorization = null
+        PageDocumentIdAuthorizationSpec? authorization = null,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         var plannedQuery = PlanOrEmptyPage(
@@ -31,7 +50,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             paginationParameters,
             authorization,
             out var emptyPageReason,
-            comparisonOperatorResolver
+            comparisonOperatorResolver,
+            changeVersionRange
         );
 
         return plannedQuery
@@ -47,7 +67,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         out PageKeysetSpec.Query? plannedQuery,
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
-        PageDocumentIdAuthorizationSpec? authorization = null
+        PageDocumentIdAuthorizationSpec? authorization = null,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         plannedQuery = PlanOrEmptyPage(
@@ -56,7 +77,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             paginationParameters,
             authorization,
             out emptyPageReason,
-            comparisonOperatorResolver
+            comparisonOperatorResolver,
+            changeVersionRange
         );
 
         return plannedQuery is not null;
@@ -68,7 +90,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         PaginationParameters paginationParameters,
         PageDocumentIdAuthorizationSpec? authorization,
         out string? emptyPageReason,
-        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null
+        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         ArgumentNullException.ThrowIfNull(rootTable);
@@ -94,7 +117,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             preprocessingResult.QueryElementsInOrder,
             authorization
         );
-        var predicates = new QueryValuePredicate[preprocessingResult.QueryElementsInOrder.Count];
+        var predicates = new List<QueryValuePredicate>(preprocessingResult.QueryElementsInOrder.Count + 2);
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
         {
             [OffsetParameterName] = (long)(paginationParameters.Offset ?? 0),
@@ -128,9 +151,17 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 return null;
             }
 
-            predicates[index] = plannedPredicate.Predicate;
+            predicates.Add(plannedPredicate.Predicate);
             parameterValues[parameterName] = plannedPredicate.ParameterValue;
         }
+
+        AppendChangeVersionPredicates(
+            rootTable,
+            rootColumnsByName,
+            changeVersionRange,
+            predicates,
+            parameterValues
+        );
 
         if (authorizationClaimParameterization is not null)
         {
@@ -314,6 +345,69 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Appends mirrored <c>ContentVersion</c> range predicates for the validated change-version window.
+    /// Filtering targets only the root-table mirror column maintained by the stamping triggers; there is
+    /// no non-mirror fallback, so a missing or mis-typed mirror fails planning instead of emitting bad SQL.
+    /// </summary>
+    private static void AppendChangeVersionPredicates(
+        DbTableModel rootTable,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
+        ChangeVersionRange? changeVersionRange,
+        List<QueryValuePredicate> predicates,
+        Dictionary<string, object?> parameterValues
+    )
+    {
+        if (
+            changeVersionRange is not { } range
+            || (range.MinChangeVersion is null && range.MaxChangeVersion is null)
+        )
+        {
+            return;
+        }
+
+        var contentVersionColumn = new DbColumnName(ContentVersionColumnName);
+
+        if (
+            !rootColumnsByName.TryGetValue(contentVersionColumn, out var columnModel)
+            || columnModel.Kind != ColumnKind.MirroredContentVersion
+            || columnModel.ScalarType?.Kind != ScalarKind.Int64
+        )
+        {
+            throw new InvalidOperationException(
+                $"Relational query planning requires a mirrored Int64 '{ContentVersionColumnName}' column "
+                    + $"(ColumnKind.{nameof(ColumnKind.MirroredContentVersion)}) on root table '{rootTable.Table}' "
+                    + "to apply change-version filters. Change-version filtering has no non-mirror fallback."
+            );
+        }
+
+        if (range.MinChangeVersion is { } minChangeVersion)
+        {
+            predicates.Add(
+                new QueryValuePredicate(
+                    contentVersionColumn,
+                    QueryComparisonOperator.GreaterThanOrEqual,
+                    MinChangeVersionParameterName,
+                    ScalarKind.Int64
+                )
+            );
+            parameterValues[MinChangeVersionParameterName] = minChangeVersion;
+        }
+
+        if (range.MaxChangeVersion is { } maxChangeVersion)
+        {
+            predicates.Add(
+                new QueryValuePredicate(
+                    contentVersionColumn,
+                    QueryComparisonOperator.LessThanOrEqual,
+                    MaxChangeVersionParameterName,
+                    ScalarKind.Int64
+                )
+            );
+            parameterValues[MaxChangeVersionParameterName] = maxChangeVersion;
+        }
+    }
+
     private static IReadOnlyList<string> DeriveParameterNames(
         IReadOnlyList<PreprocessedRelationalQueryElement> queryElementsInOrder,
         PageDocumentIdAuthorizationSpec? authorization
@@ -338,6 +432,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             [
                 OffsetParameterName,
                 LimitParameterName,
+                MinChangeVersionParameterName,
+                MaxChangeVersionParameterName,
                 .. QueryParameterNameAllocator.CollectAuthorizationParameterNames(authorization),
             ]
         );
