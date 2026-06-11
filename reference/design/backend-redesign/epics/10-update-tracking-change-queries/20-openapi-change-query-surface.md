@@ -39,6 +39,8 @@ Resource-scoped Change Query paths stay with the resource, descriptor, and profi
 
 Because OpenAPI `$ref` targets are document-local, the tracked-change response schemas for resource-scoped `/deletes` and `/keyChanges` must also stay in the owning resource, descriptor, or profile fragment `components.schemas`; the standalone `changeQueries` base document should not receive resource-scoped paths or tracked-change schemas.
 
+Snapshot OpenAPI cleanup is intentionally included in this story's MetaEd implementation even though snapshot support is out of scope for DMS v1.0 and is not listed as a separate acceptance criterion. The DMS OpenAPI output should omit the legacy ODS `Use-Snapshot` header parameter and `NotFoundUseSnapshot` response from affected resources, descriptors, profiles, and Change-Queries documents so the advertised contract does not include unsupported snapshot behavior. Snapshot OpenAPI support should be revisited by the deferred snapshot story.
+
 ## Out of Scope
 
 - Implementing the endpoint runtime behavior.
