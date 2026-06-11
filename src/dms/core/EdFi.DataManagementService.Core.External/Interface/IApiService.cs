@@ -43,6 +43,11 @@ public interface IApiService
     Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest);
 
     /// <summary>
+    /// DMS entry point for the Change Queries availableChangeVersions request
+    /// </summary>
+    Task<IFrontendResponse> GetAvailableChangeVersions(FrontendRequest frontendRequest);
+
+    /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
     IList<IDataModelInfo> GetDataModelInfo();

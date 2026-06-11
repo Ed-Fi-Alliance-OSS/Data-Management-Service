@@ -11,9 +11,10 @@ using static EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 /// <summary>
-/// Endpoint module for OAuth token introspection
+/// Endpoint module for the Change Queries availableChangeVersions endpoint. This is a fixed DMS
+/// route: it is not generated from ApiSchema.json and is not gated by OpenAPI path presence.
 /// </summary>
-public class TokenInfoModule(IOptions<AppSettings> appSettings) : IEndpointModule
+public class ChangeQueriesEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -22,6 +23,9 @@ public class TokenInfoModule(IOptions<AppSettings> appSettings) : IEndpointModul
             appSettings.Value.MultiTenancy
         );
 
-        endpoints.MapPost($"{routePattern}/oauth/token_info", GetTokenInfo);
+        endpoints.MapGet(
+            $"{routePattern}/changeQueries/v1/availableChangeVersions",
+            GetAvailableChangeVersions
+        );
     }
 }
