@@ -31,6 +31,14 @@ This ticket is intentionally cross-project because the API contract is split acr
 - Tests cover OpenAPI generation for core resources, including `SchoolYearType` as a regular Change Query resource, extension-defined resources, and descriptors.
 - DMS tests cover startup/loading of the updated OpenAPI and verify that advertised Change Query resource and descriptor paths align with model-driven route classification.
 
+## MetaEd Implementation Notes
+
+MetaEd emits `projectSchema.openApiBaseDocuments.changeQueries` only from the core/data-standard ApiSchema package. This standalone Change Queries base document contains only the ODS-style `/availableChangeVersions` path. DMS serves that document with the route-qualified `/changeQueries/v1` server base, producing the runtime route `/changeQueries/v1/availableChangeVersions`.
+
+Resource-scoped Change Query paths stay with the resource, descriptor, and profile OpenAPI fragments. That means `/deletes`, `/keyChanges`, and live GET-many `minChangeVersion` / `maxChangeVersion` parameters are emitted in the same documents as their owning resources or descriptors. MetaEd should not create `openApiFragments.changeQueries` or compose all resource-level tracked-change endpoints into the standalone `changeQueries` document unless a future product decision explicitly changes this contract.
+
+Because OpenAPI `$ref` targets are document-local, the tracked-change response schemas for resource-scoped `/deletes` and `/keyChanges` must also stay in the owning resource, descriptor, or profile fragment `components.schemas`; the standalone `changeQueries` base document should not receive resource-scoped paths or tracked-change schemas.
+
 ## Out of Scope
 
 - Implementing the endpoint runtime behavior.
