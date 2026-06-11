@@ -379,9 +379,30 @@ public class Given_RelationalQueryPageKeysetPlanner
                         "underscore",
                         new PreprocessedRelationalQueryValue.Raw("underscore")
                     ),
+                    CreateElement(
+                        "minChangeVersion",
+                        "$.minChangeVersionQueryField",
+                        "string",
+                        new RelationalQueryFieldTarget.RootColumn(
+                            new DbColumnName("MinChangeVersionQueryField")
+                        ),
+                        "min collision",
+                        new PreprocessedRelationalQueryValue.Raw("min collision")
+                    ),
+                    CreateElement(
+                        "maxChangeVersion",
+                        "$.maxChangeVersionQueryField",
+                        "string",
+                        new RelationalQueryFieldTarget.RootColumn(
+                            new DbColumnName("MaxChangeVersionQueryField")
+                        ),
+                        "max collision",
+                        new PreprocessedRelationalQueryValue.Raw("max collision")
+                    ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
         result.ParameterValues.Keys.Should().Contain("offset");
@@ -394,6 +415,20 @@ public class Given_RelationalQueryPageKeysetPlanner
         result.Plan.PageDocumentIdSql.Should().Contain("@limit_2");
         result.Plan.PageDocumentIdSql.Should().Contain("@school_id");
         result.Plan.PageDocumentIdSql.Should().Contain("@school_id_2");
+        // The change-version window keeps the bare reserved names; the colliding query fields are
+        // suffixed so the window predicates and the query predicates never share a parameter.
+        result.ParameterValues["minChangeVersion"].Should().Be(100L);
+        result.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        result.ParameterValues["minChangeVersion_2"].Should().Be("min collision");
+        result.ParameterValues["maxChangeVersion_2"].Should().Be("max collision");
+        result.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        result.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        result
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.\"MinChangeVersionQueryField\" = @minChangeVersion_2");
+        result
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.\"MaxChangeVersionQueryField\" = @maxChangeVersion_2");
     }
 
     [Test]
@@ -869,6 +904,16 @@ public class Given_RelationalQueryPageKeysetPlanner
                 ),
                 CreateColumn(
                     "SchoolIdUnderscore",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                CreateColumn(
+                    "MinChangeVersionQueryField",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                CreateColumn(
+                    "MaxChangeVersionQueryField",
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75)
                 ),

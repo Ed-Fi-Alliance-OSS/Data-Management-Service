@@ -271,9 +271,28 @@ public class Given_DescriptorQueryPageKeysetPlanner
                         new DescriptorQueryFieldTarget.EffectiveEndDate(new DbColumnName("EffectiveEndDate")),
                         new PreprocessedDescriptorQueryValue.DateOnlyValue(new DateOnly(2026, 6, 30))
                     ),
+                    CreateElement(
+                        "minChangeVersion",
+                        "$.minChangeVersionQueryField",
+                        "min collision",
+                        "string",
+                        new DescriptorQueryFieldTarget.Description(new DbColumnName("Description")),
+                        new PreprocessedDescriptorQueryValue.Raw("min collision")
+                    ),
+                    CreateElement(
+                        "maxChangeVersion",
+                        "$.maxChangeVersionQueryField",
+                        "cccccccc-1111-2222-3333-dddddddddddd",
+                        "string",
+                        new DescriptorQueryFieldTarget.DocumentUuid(),
+                        new PreprocessedDescriptorQueryValue.DocumentUuid(
+                            Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")
+                        )
+                    ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
         keyset.ParameterValues.Keys.Should().Contain("resourceKeyId");
@@ -289,6 +308,19 @@ public class Given_DescriptorQueryPageKeysetPlanner
         keyset.Plan.PageDocumentIdSql.Should().Contain("@limit_2");
         keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id");
         keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id_2");
+        // The change-version window keeps the bare reserved names; the colliding query fields are
+        // suffixed so the window predicates and the query predicates never share a parameter.
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.ParameterValues["minChangeVersion_2"].Should().Be("min collision");
+        keyset
+            .ParameterValues["maxChangeVersion_2"]
+            .Should()
+            .Be(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("d.\"Description\" = @minChangeVersion_2");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"DocumentUuid\" = @maxChangeVersion_2");
     }
 
     [Test]
