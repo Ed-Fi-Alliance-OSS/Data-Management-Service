@@ -140,7 +140,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     # Scenario (a): gate passes when /authorizationMetadata contains every
     # expected claim set + resource claim URI + action
     # ===========================================================================
-    Context "Scenario (a) — gate passes with full matching metadata" {
+    Context "Scenario (a) - gate passes with full matching metadata" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -200,7 +200,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     # Scenario (b): fails when resource claim URI or action is absent even
     # though the claim set exists
     # ===========================================================================
-    Context "Scenario (b) — fails when resource claim URI is absent" {
+    Context "Scenario (b) - fails when resource claim URI is absent" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -245,7 +245,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
         }
     }
 
-    Context "Scenario (b) — fails when action is absent even though claim set and resource URI exist" {
+    Context "Scenario (b) - fails when action is absent even though claim set and resource URI exist" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -294,7 +294,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     # Scenario (c): fails when only EdFiSandbox is present but the check
     # references a different claim set
     # ===========================================================================
-    Context "Scenario (c) — fails when only EdFiSandbox is present but check expects another claim set" {
+    Context "Scenario (c) - fails when only EdFiSandbox is present but check expects another claim set" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -341,7 +341,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     # Scenario (d): fails when manifest is present but expectedVerificationChecks
     # is missing or empty
     # ===========================================================================
-    Context "Scenario (d) — fails when expectedVerificationChecks is missing from manifest" {
+    Context "Scenario (d) - fails when expectedVerificationChecks is missing from manifest" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -380,7 +380,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
         }
     }
 
-    Context "Scenario (d) — fails when expectedVerificationChecks is empty" {
+    Context "Scenario (d) - fails when expectedVerificationChecks is empty" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -424,7 +424,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     # The module does NOT call /v2/claimSets; all verification is against
     # /authorizationMetadata. A claimSets presence alone cannot rescue a failing gate.
     # ===========================================================================
-    Context "Scenario (e) — /v2/claimSets presence does not rescue failing /authorizationMetadata" {
+    Context "Scenario (e) - /v2/claimSets presence does not rescue failing /authorizationMetadata" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -439,7 +439,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:claimSetsCalled_e = $false
 
             # /v2/claimSets returns the claim set (passing) but /authorizationMetadata returns
-            # an empty claims array (failing) — the gate must still fail.
+            # an empty claims array (failing) - the gate must still fail.
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
                 if ($Uri -match "/v2/claimSets") {
@@ -449,7 +449,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
                     )
                 }
                 if ($Uri -match "/authorizationMetadata") {
-                    # Claim set exists but has NO claims — must fail the gate
+                    # Claim set exists but has NO claims - must fail the gate
                     return New-AuthMetadataResponse -ClaimSetName "EdFiSandbox" -Claims @()
                 }
             }
@@ -480,10 +480,10 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     }
 
     # ===========================================================================
-    # Scenario (f): token fallback path — dedicated client unavailable → bootstrap
-    # admin token — still verifies claims correctly
+    # Scenario (f): token fallback path - dedicated client unavailable -> bootstrap
+    # admin token - still verifies claims correctly
     # ===========================================================================
-    Context "Scenario (f) — token fallback: dedicated client fails, admin client succeeds" {
+    Context "Scenario (f) - token fallback: dedicated client fails, admin client succeeds" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -518,7 +518,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
                         return [pscustomobject]@{ access_token = "admin-fallback-token" }
                     }
 
-                    # Unknown client — also fail
+                    # Unknown client - also fail
                     throw [System.Net.WebException]::new("Unknown client in token request.")
                 }
 
@@ -544,7 +544,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             }
         }
 
-        It "does not throw — gate passes after admin token fallback" {
+        It "does not throw - gate passes after admin token fallback" {
             $script:error_f | Should -BeNullOrEmpty
         }
 
@@ -568,14 +568,14 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     }
 
     # ===========================================================================
-    # Scenario (g): response-shape contract regression — the gate must navigate
+    # Scenario (g): response-shape contract regression - the gate must navigate
     # the REAL CMS serialization (claims[].name + authorizationId joined to
     # authorizations[].id -> actions[].name per AuthorizationMetadataResponse.cs),
     # and must NOT pass against the pre-fix fantasy shape (claims[].claimName with
     # inline claims[].actions). Mocked suites cannot catch a shape drift unless a
     # fixture pins the serialized contract literally, so this context does both.
     # ===========================================================================
-    Context "Scenario (g) — gate passes against the literal CMS /authorizationMetadata serialization" {
+    Context "Scenario (g) - gate passes against the literal CMS /authorizationMetadata serialization" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -633,7 +633,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
         }
     }
 
-    Context "Scenario (g) — gate FAILS against the pre-fix fantasy shape (claimName + inline actions)" {
+    Context "Scenario (g) - gate FAILS against the pre-fix fantasy shape (claimName + inline actions)" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -681,7 +681,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             }
         }
 
-        It "throws — the fantasy shape has no claims[].name so the resource claim cannot match" {
+        It "throws - the fantasy shape has no claims[].name so the resource claim cannot match" {
             $script:error_g2 | Should -Not -BeNullOrEmpty
         }
 
@@ -691,13 +691,13 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     }
 
     # ===========================================================================
-    # Scenario (h): parent-claim deferral — checks marked isParent target parent
+    # Scenario (h): parent-claim deferral - checks marked isParent target parent
     # fragment resource claims whose grants materialize on leaf descendants via
     # hierarchy lineage. /authorizationMetadata serializes leaf claims only, so
     # the gate defers parent checks (warning) instead of false-failing, but must
     # still fail when NOTHING is verifiable (all checks deferred).
     # ===========================================================================
-    Context "Scenario (h) — parent-claim checks are deferred while leaf checks still verify" {
+    Context "Scenario (h) - parent-claim checks are deferred while leaf checks still verify" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -712,7 +712,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
 
             $script:authMetadataCalls_h1 = 0
 
-            # Response carries ONLY the leaf claim — the parent name is never serialized,
+            # Response carries ONLY the leaf claim - the parent name is never serialized,
             # mirroring the live CMS contract.
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
@@ -741,7 +741,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             }
         }
 
-        It "does not throw — the leaf check verifies and the parent check is deferred" {
+        It "does not throw - the leaf check verifies and the parent check is deferred" {
             $script:error_h1 | Should -BeNullOrEmpty
         }
 
@@ -754,7 +754,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
         }
     }
 
-    Context "Scenario (h) — gate fails when ALL checks are parent-claim deferrals" {
+    Context "Scenario (h) - gate fails when ALL checks are parent-claim deferrals" {
         BeforeAll {
             Import-Module $script:moduleUnderTest -Force
 
@@ -786,7 +786,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             }
         }
 
-        It "throws — nothing was verifiable against /authorizationMetadata" {
+        It "throws - nothing was verifiable against /authorizationMetadata" {
             $script:error_h2 | Should -Not -BeNullOrEmpty
         }
 

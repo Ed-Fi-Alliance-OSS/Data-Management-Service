@@ -111,7 +111,7 @@ function Read-ClaimsGateManifest {
     return $manifest
 }
 
-function Read-ExpectedVerificationChecks {
+function Read-ExpectedVerificationCheckList {
     <#
     .SYNOPSIS
     Extracts claims.expectedVerificationChecks from the manifest hashtable. Throws with an
@@ -307,7 +307,7 @@ function Get-ClaimsGateToken {
     return $token
 }
 
-function Get-AuthorizationMetadata {
+function Get-AuthorizationMetadataResponse {
     <#
     .SYNOPSIS
     Calls CMS GET /authorizationMetadata?claimSetName=<name> and returns the parsed response.
@@ -392,7 +392,7 @@ function Assert-SingleVerificationCheck {
     }
 
     # Query CMS for the authorization metadata filtered to the expected claim set.
-    $metadata = Get-AuthorizationMetadata `
+    $metadata = Get-AuthorizationMetadataResponse `
         -CmsBaseUrl $CmsBaseUrl `
         -AccessToken $AccessToken `
         -ClaimSetName $claimSetName
@@ -575,10 +575,10 @@ function Test-CmsClaimsReady {
         return
     }
 
-    # Extract expectedVerificationChecks — throws with actionable message when missing/empty.
+    # Extract expectedVerificationChecks - throws with actionable message when missing/empty.
     # Re-wrap: PowerShell unwraps a single-element array on return, and .Count on the bare
     # hashtable would report its key count (3) instead of the check count (1).
-    $checks = @(Read-ExpectedVerificationChecks -Manifest $manifest -ManifestPath $resolvedManifestPath)
+    $checks = @(Read-ExpectedVerificationCheckList -Manifest $manifest -ManifestPath $resolvedManifestPath)
 
     # Resolve env-file values (needed for CMS base URL and token endpoint).
     $envValues = $null
@@ -619,7 +619,7 @@ function Test-CmsClaimsReady {
     #
     # Checks marked isParent are DEFERRED, not asserted: parent (isParent=true) fragment
     # resource claims attach grants that materialize on leaf descendants via hierarchy
-    # lineage, and /authorizationMetadata serializes leaf resource claims only — the parent
+    # lineage, and /authorizationMetadata serializes leaf resource claims only - the parent
     # name itself never appears in claims[]. Composed-hierarchy verification of parent
     # grants is owned by the staged-claims activation work (DMS-1154+).
     $checkIndex = 0
@@ -647,11 +647,11 @@ function Test-CmsClaimsReady {
 
         if ($isParentCheck) {
             $deferredCount++
-            Write-Warning "Claims gate: check $checkIndex/$($checks.Count) targets parent resource claim '$(Format-ClaimsGateLogSafeText $logResourceClaim)' (claimSet=$(Format-ClaimsGateLogSafeText $logClaimSet)); parent grants are not directly observable in /authorizationMetadata leaf claims — deferring to composed-hierarchy verification."
+            Write-Warning "Claims gate: check $checkIndex/$($checks.Count) targets parent resource claim '$(Format-ClaimsGateLogSafeText $logResourceClaim)' (claimSet=$(Format-ClaimsGateLogSafeText $logClaimSet)); parent grants are not directly observable in /authorizationMetadata leaf claims - deferring to composed-hierarchy verification."
             continue
         }
 
-        Write-Information "Claims gate: verifying check $checkIndex/$($checks.Count) — claimSet=$(Format-ClaimsGateLogSafeText $logClaimSet) resourceClaim=$(Format-ClaimsGateLogSafeText $logResourceClaim) action=$(Format-ClaimsGateLogSafeText $logAction)." -InformationAction Continue
+        Write-Information "Claims gate: verifying check $checkIndex/$($checks.Count) - claimSet=$(Format-ClaimsGateLogSafeText $logClaimSet) resourceClaim=$(Format-ClaimsGateLogSafeText $logResourceClaim) action=$(Format-ClaimsGateLogSafeText $logAction)." -InformationAction Continue
 
         Assert-SingleVerificationCheck `
             -CmsBaseUrl $resolvedCmsBaseUrl `
@@ -662,7 +662,7 @@ function Test-CmsClaimsReady {
     }
 
     if ($verifiedCount -eq 0) {
-        throw "Claims-ready gate FAILED: all $deferredCount verification check(s) were parent-claim deferrals; nothing was verifiable against /authorizationMetadata. At minimum the leaf baseline probe must be present — run prepare-dms-claims.ps1 to regenerate the manifest."
+        throw "Claims-ready gate FAILED: all $deferredCount verification check(s) were parent-claim deferrals; nothing was verifiable against /authorizationMetadata. At minimum the leaf baseline probe must be present - run prepare-dms-claims.ps1 to regenerate the manifest."
     }
 
     $deferredSuffix = if ($deferredCount -gt 0) { " ($deferredCount parent-claim check(s) deferred)" } else { "" }

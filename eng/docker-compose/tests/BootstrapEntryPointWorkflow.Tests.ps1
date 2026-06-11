@@ -245,7 +245,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
     }
 
     # =========================================================================
-    # R1 — start-local-dms.ps1 parameter surface (DmsBaseUrl added; old flags gone)
+    # R1 - start-local-dms.ps1 parameter surface (DmsBaseUrl added; old flags gone)
     # =========================================================================
     Context "start-local-dms.ps1 parameter surface" {
         It "declares -DmsBaseUrl" {
@@ -259,10 +259,6 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             # The script throws before any Docker or module activity when DmsBaseUrl is
             # provided without InfraOnly, so we can dot-source the param block to exercise
             # the early validation path. We inject a stub for the modules it would load.
-            $startScriptContent = Get-Content -LiteralPath (
-                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
-            ) -Raw
-
             # Extract only the early validation block (before module imports) as a scriptblock
             # by checking the raw script for the throw pattern, then verify it via a temp
             # wrapper that calls the script with invalid args.
@@ -281,7 +277,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
     }
 
     # =========================================================================
-    # R2 — bootstrap-local-dms.ps1 and bootstrap-published-dms.ps1 param surfaces
+    # R2 - bootstrap-local-dms.ps1 and bootstrap-published-dms.ps1 param surfaces
     # =========================================================================
     Context "wrapper entry-script parameter surfaces" {
         It "bootstrap-local-dms.ps1 declares -InfraOnly and -DmsBaseUrl" {
@@ -302,7 +298,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
     }
 
     # =========================================================================
-    # R3 — Wrapper rejects -DmsBaseUrl without -InfraOnly
+    # R3 - Wrapper rejects -DmsBaseUrl without -InfraOnly
     # =========================================================================
     Context "wrapper IDE workflow fail-fast validation" {
         It "rejects -DmsBaseUrl without -InfraOnly before any phase invocation" {
@@ -336,7 +332,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
     }
 
     # =========================================================================
-    # R4 — Wrapper -InfraOnly shape: configure + provision, no -DmsOnly, IDE guidance
+    # R4 - Wrapper -InfraOnly shape: configure + provision, no -DmsOnly, IDE guidance
     # =========================================================================
     Context "wrapper -InfraOnly pre-DMS terminal shape" {
         It "runs configure and provision, does not invoke -DmsOnly start, and prints IDE guidance" {
@@ -392,7 +388,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
 
-            # Must not throw — -AddSmokeTestCredentials with -InfraOnly (no -DmsBaseUrl) is valid
+            # Must not throw - -AddSmokeTestCredentials with -InfraOnly (no -DmsBaseUrl) is valid
             { & $script:repo.WrapperScript `
                 -EnvironmentFile $script:repo.EnvFile `
                 -InfraOnly `
@@ -410,10 +406,10 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
     }
 
     # =========================================================================
-    # R5 — Wrapper -InfraOnly -DmsBaseUrl: call-graph proof
+    # R5 - Wrapper -InfraOnly -DmsBaseUrl: call-graph proof
     #   Story Req 2: first start invocation has -InfraOnly but NOT -DmsBaseUrl;
     #   second (health-wait) start invocation carries -DmsBaseUrl;
-    #   order: start-infra → configure → provision → start-infra-healthwait
+    #   order: start-infra -> configure -> provision -> start-infra-healthwait
     # =========================================================================
     Context "wrapper -InfraOnly -DmsBaseUrl call-graph ordering" {
         It "first start invocation does not carry -DmsBaseUrl; health-wait invocation carries it AFTER provision" {
@@ -481,7 +477,7 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
     }
 
     # =========================================================================
-    # R6 — Regression D3: NEED_DATABASE_SETUP forced false when manifest present
+    # R6 - Regression D3: NEED_DATABASE_SETUP forced false when manifest present
     #   The BootstrapSchemaDeploymentSafety suite already checks the conditional
     #   block text ("if ($bootstrapManifestPresent)"). Here we extend coverage to
     #   verify the actual assignment ($env:NEED_DATABASE_SETUP = "false") is present
