@@ -14,15 +14,16 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
 {
     private const string OffsetParameterName = "offset";
     private const string LimitParameterName = "limit";
-    private const string DiscriminatorParameterName = "discriminator";
-    private const string DiscriminatorColumnName = "Discriminator";
+    private const string ResourceKeyIdParameterName = "resourceKeyId";
     private const string ContentVersionColumnName = "ContentVersion";
     private const string MinChangeVersionParameterName = "minChangeVersion";
     private const string MaxChangeVersionParameterName = "maxChangeVersion";
-    private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
+    private static readonly DbColumnName _documentUuidColumn = new("DocumentUuid");
+    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private readonly PageDocumentIdSqlCompiler _sqlCompiler = new(dialect);
 
     public PageKeysetSpec.Query Plan(
+        MappingSet mappingSet,
         QualifiedResourceName requestResource,
         DescriptorQueryPreprocessingResult preprocessingResult,
         PaginationParameters paginationParameters,
@@ -30,6 +31,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         ChangeVersionRange? changeVersionRange = null
     )
     {
+        ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(preprocessingResult);
 
         if (preprocessingResult.Outcome is not RelationalQueryPreprocessingOutcome.Continue)
@@ -45,24 +47,24 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             authorization
         );
         var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder, parameterNamesByIndex);
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, requestResource);
 
-        // The page keyset roots on the shared dms.Descriptor table so the discriminator and
-        // change-version predicates filter (Discriminator, ContentVersion) directly without a
-        // dms.Document join; only ?id= filtering joins dms.Document for DocumentUuid.
+        // The page keyset roots on dms.Document so the descriptor type predicate filters on the
+        // project-qualified ResourceKeyId — the same type authority descriptor GET-by-id uses.
+        // Descriptor field filters join dms.Descriptor through the page SQL compiler.
         List<QueryValuePredicate> predicates =
         [
             new QueryValuePredicate(
-                new DbColumnName(DiscriminatorColumnName),
+                new DbColumnName("ResourceKeyId"),
                 QueryComparisonOperator.Equal,
-                DiscriminatorParameterName,
-                ScalarKind.String
+                ResourceKeyIdParameterName
             ),
             .. queryPredicates,
         ];
         AppendChangeVersionPredicates(changeVersionRange, predicates);
 
         var pageQuerySpec = new PageDocumentIdQuerySpec(
-            RootTable: _descriptorTable,
+            RootTable: _documentTable,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
             OffsetParameterName: OffsetParameterName,
@@ -72,7 +74,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         );
         var sqlPlan = _sqlCompiler.Compile(pageQuerySpec);
         var parameterValues = BuildParameterValues(
-            requestResource.ResourceName,
+            resourceKeyId,
             preprocessingResult.QueryElementsInOrder,
             parameterNamesByIndex,
             paginationParameters,
@@ -84,8 +86,9 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Appends shared <c>dms.Descriptor.ContentVersion</c> range predicates for the validated
-    /// change-version window. The column is guaranteed by the core DDL pass for every descriptor.
+    /// Appends <c>dms.Document.ContentVersion</c> range predicates for the validated change-version
+    /// window. The DMS-1173 stamping triggers keep the descriptor mirror in lock-step, so filtering
+    /// the canonical document column is equivalent and stays on the page keyset root.
     /// </summary>
     private static void AppendChangeVersionPredicates(
         ChangeVersionRange? changeVersionRange,
@@ -154,7 +157,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         return queryElement.SupportedField.ValueKind switch
         {
             DescriptorQueryValueKind.DocumentUuid => new QueryValuePredicate(
-                new QueryPredicateTarget.DocumentUuid(),
+                _documentUuidColumn,
                 QueryComparisonOperator.Equal,
                 parameterName
             ),
@@ -186,10 +189,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                     + $"'{supportedField.QueryFieldName}' with value kind '{supportedField.ValueKind}'."
             );
 
-        // Descriptor field filters bind to the dms.Descriptor root alias directly; the page keyset
-        // roots on the shared descriptor table, so no descriptor join is involved.
         return new QueryValuePredicate(
-            descriptorColumn,
+            new QueryPredicateTarget.DescriptorColumn(descriptorColumn),
             QueryComparisonOperator.Equal,
             parameterName,
             scalarKind
@@ -222,7 +223,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     private static IReadOnlyDictionary<string, object?> BuildParameterValues(
-        string discriminator,
+        short resourceKeyId,
         IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder,
         IReadOnlyList<string> parameterNamesByIndex,
         PaginationParameters paginationParameters,
@@ -232,7 +233,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     {
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
         {
-            [DiscriminatorParameterName] = discriminator,
+            [ResourceKeyIdParameterName] = resourceKeyId,
             [OffsetParameterName] = (long)(paginationParameters.Offset ?? 0),
             [LimitParameterName] = (long)(paginationParameters.Limit ?? paginationParameters.MaximumPageSize),
         };
@@ -296,7 +297,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         return QueryParameterNameAllocator.Allocate(
             seeds,
             [
-                DiscriminatorParameterName,
+                ResourceKeyIdParameterName,
                 OffsetParameterName,
                 LimitParameterName,
                 MinChangeVersionParameterName,

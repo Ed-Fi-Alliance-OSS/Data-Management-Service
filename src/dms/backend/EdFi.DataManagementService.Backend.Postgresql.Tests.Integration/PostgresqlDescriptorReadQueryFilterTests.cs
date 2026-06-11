@@ -265,7 +265,7 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
     }
 
     [Test]
-    public async Task It_excludes_document_rows_without_descriptor_rows_from_descriptor_query_pages_and_total_count()
+    public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
     {
         await SeedDescriptorsAsync([PagingFirstSeed]);
 
@@ -279,11 +279,41 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             resourceKeyId
         );
 
-        // The descriptor page keyset roots on dms.Descriptor, so a dms.Document row without a
-        // descriptor row (corruption) is never selected and never counted.
-        var result = await ExecuteQueryAsync([], "pg-descriptor-query-corrupt-excluded", totalCount: true);
+        var result = await ExecuteQueryAsync(
+            [],
+            "pg-descriptor-query-corrupt-outside-page",
+            totalCount: true,
+            limit: 1,
+            offset: 0
+        );
 
-        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 1);
+        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 2);
+    }
+
+    [Test]
+    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_query_document_has_no_descriptor_row()
+    {
+        await SeedDescriptorsAsync([PagingFirstSeed]);
+
+        var resourceKeyId = DescriptorReadIntegrationTestSupport.GetDescriptorResourceKeyIdOrThrow(
+            _mappingSet,
+            SchoolTypeDescriptorResource
+        );
+        var corruptDocumentId = await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
+            _database,
+            new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000208")),
+            resourceKeyId
+        );
+
+        var result = await ExecuteQueryAsync([], "pg-descriptor-query-corrupt-selected", limit: 1, offset: 1);
+
+        var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain($"DocumentId {corruptDocumentId}");
+        // The row reader treats Namespace as nullable so a stored null can flow into the
+        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
+        // required column, so the reader's invariant message names it when the LEFT JOIN
+        // finds no descriptor row.
+        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
     }
 
     [Test]
@@ -336,11 +366,12 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
         );
         var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
 
-        // The window spans every seeded descriptor of every type; the Discriminator predicate keeps
-        // the other descriptor type out of the SchoolTypeDescriptor page and its total count.
+        // The window spans every seeded descriptor of every type; the project-qualified ResourceKeyId
+        // predicate keeps the other descriptor type out of the SchoolTypeDescriptor page and its
+        // total count.
         var result = await ExecuteQueryAsync(
             [],
-            "pg-descriptor-query-change-version-discriminator-scope",
+            "pg-descriptor-query-change-version-resource-key-scope",
             totalCount: true,
             changeVersionRange: new ChangeVersionRange(
                 contentVersions.Values.Min(),

@@ -503,46 +503,6 @@ public class Given_PageDocumentIdSqlCompiler_with_namespace_authorization
     }
 
     [Test]
-    public void It_binds_the_namespace_check_to_the_root_alias_without_a_self_join_when_the_query_roots_on_dms_Descriptor()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);
-        var spec = new PageDocumentIdQuerySpec(
-            RootTable: _descriptorTable,
-            Predicates: [],
-            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            IncludeTotalCountSql: true,
-            Authorization: new PageDocumentIdAuthorizationSpec(
-                Strategies: [],
-                NamespaceChecks:
-                [
-                    new NamespaceAuthorizationCheckSpec(
-                        0,
-                        NamespaceAuthorizationCheckValueSource.Stored,
-                        _descriptorTable,
-                        _namespaceColumn
-                    ),
-                ],
-                NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
-                    SqlDialect.Pgsql,
-                    ["uri://ed-fi.org/"],
-                    "namespacePrefixes"
-                )
-            )
-        );
-
-        var plan = compiler.Compile(spec);
-
-        plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
-        plan.PageDocumentIdSql.Should().NotContain("INNER JOIN \"dms\".\"Descriptor\" d");
-        plan.PageDocumentIdSql.Should()
-            .Contain("(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes))");
-        plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql!.Should().NotContain("INNER JOIN \"dms\".\"Descriptor\" d");
-        plan.TotalCountSql.Should()
-            .Contain("(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes))");
-    }
-
-    [Test]
     public void It_still_throws_when_a_namespace_check_targets_a_table_that_is_neither_the_query_root_nor_dms_Descriptor()
     {
         var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql);

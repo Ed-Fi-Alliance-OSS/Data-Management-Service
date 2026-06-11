@@ -16,7 +16,8 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 /// Asserts the change-version page-selection SQL shape (DMS-1182) against real authoritative
 /// mapping sets: regular resources filter the concrete root table's mirrored
 /// <c>ContentVersion</c> with no <c>dms.Document</c> join, and descriptor resources filter
-/// <c>dms.Descriptor.ContentVersion</c> scoped by the <c>Discriminator</c> predicate.
+/// <c>dms.Document.ContentVersion</c> scoped by the project-qualified <c>ResourceKeyId</c>
+/// predicate.
 /// </summary>
 [TestFixture]
 public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
@@ -78,30 +79,32 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
     }
 
     [Test]
-    public void It_filters_shared_descriptor_content_version_with_the_discriminator_predicate_for_descriptor_resources()
+    public void It_filters_document_content_version_with_the_resource_key_predicate_for_descriptor_resources()
     {
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
         _ds52MappingSet.TryGetDescriptorResourceModel(descriptorResource, out _).Should().BeTrue();
 
         var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
         var keyset = planner.Plan(
+            _ds52MappingSet,
             descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
             _paginationParameters,
             changeVersionRange: _changeVersionRange
         );
 
-        keyset.Plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"Discriminator\" = @discriminator");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Document\" r");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
-        keyset.Plan.PageDocumentIdSql.Should().NotContain("\"dms\".\"Document\"");
         keyset.Plan.TotalCountSql.Should().NotBeNull();
-        keyset.Plan.TotalCountSql.Should().Contain("r.\"Discriminator\" = @discriminator");
+        keyset.Plan.TotalCountSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
-        keyset.Plan.TotalCountSql.Should().NotContain("\"dms\".\"Document\"");
-        keyset.ParameterValues["discriminator"].Should().Be("AcademicSubjectDescriptor");
+        keyset
+            .ParameterValues["resourceKeyId"]
+            .Should()
+            .Be(_ds52MappingSet.ResourceKeyIdByResource[descriptorResource]);
         keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
         keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
     }
