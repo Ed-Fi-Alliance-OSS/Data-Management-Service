@@ -10,13 +10,28 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
+/// <summary>
+/// The change-version filter column and SQL parameter names shared by the relational and
+/// descriptor page keyset planners. Both planners bind the same validated window, so the
+/// parameter names must stay byte-identical between them; a one-sided rename would silently
+/// break the change-version filter on the other path.
+/// </summary>
+internal static class ChangeVersionFilterConstants
+{
+    public const string ContentVersionColumnName = "ContentVersion";
+    public const string MinChangeVersionParameterName = "minChangeVersion";
+    public const string MaxChangeVersionParameterName = "maxChangeVersion";
+}
+
 internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 {
     private const string OffsetParameterName = "offset";
     private const string LimitParameterName = "limit";
-    private const string ContentVersionColumnName = "ContentVersion";
-    private const string MinChangeVersionParameterName = "minChangeVersion";
-    private const string MaxChangeVersionParameterName = "maxChangeVersion";
+    private const string ContentVersionColumnName = ChangeVersionFilterConstants.ContentVersionColumnName;
+    private const string MinChangeVersionParameterName =
+        ChangeVersionFilterConstants.MinChangeVersionParameterName;
+    private const string MaxChangeVersionParameterName =
+        ChangeVersionFilterConstants.MaxChangeVersionParameterName;
 
     private readonly PageDocumentIdSqlCompiler _sqlCompiler = new(dialect);
 

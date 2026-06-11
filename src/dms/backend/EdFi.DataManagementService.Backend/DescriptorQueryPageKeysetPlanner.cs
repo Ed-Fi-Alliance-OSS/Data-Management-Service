@@ -15,9 +15,11 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     private const string OffsetParameterName = "offset";
     private const string LimitParameterName = "limit";
     private const string ResourceKeyIdParameterName = "resourceKeyId";
-    private const string ContentVersionColumnName = "ContentVersion";
-    private const string MinChangeVersionParameterName = "minChangeVersion";
-    private const string MaxChangeVersionParameterName = "maxChangeVersion";
+    private const string ContentVersionColumnName = ChangeVersionFilterConstants.ContentVersionColumnName;
+    private const string MinChangeVersionParameterName =
+        ChangeVersionFilterConstants.MinChangeVersionParameterName;
+    private const string MaxChangeVersionParameterName =
+        ChangeVersionFilterConstants.MaxChangeVersionParameterName;
     private static readonly DbColumnName _documentUuidColumn = new("DocumentUuid");
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private readonly PageDocumentIdSqlCompiler _sqlCompiler = new(dialect);

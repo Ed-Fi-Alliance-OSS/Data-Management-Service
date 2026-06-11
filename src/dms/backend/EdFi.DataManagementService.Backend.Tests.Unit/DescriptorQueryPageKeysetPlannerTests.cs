@@ -717,6 +717,39 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_leave_descriptor_page_sql_unchanged_when_no_change_version_bounds_are_supplied()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var paginationParameters = new PaginationParameters(
+            Limit: 25,
+            Offset: 0,
+            TotalCount: true,
+            MaximumPageSize: 500
+        );
+        var withoutRange = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            paginationParameters
+        );
+
+        var withNoneRange = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            paginationParameters,
+            changeVersionRange: ChangeVersionRange.None
+        );
+
+        withNoneRange.Plan.PageDocumentIdSql.Should().Be(withoutRange.Plan.PageDocumentIdSql);
+        withNoneRange.Plan.TotalCountSql.Should().Be(withoutRange.Plan.TotalCountSql);
+        withNoneRange.Plan.PageDocumentIdSql.Should().NotContain("ContentVersion");
+        withNoneRange.Plan.TotalCountSql.Should().NotContain("ContentVersion");
+        withNoneRange.ParameterValues.Keys.Should().NotContain("minChangeVersion");
+        withNoneRange.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
+    }
+
+    [Test]
     public void It_should_compose_the_change_version_window_with_namespace_authorization_for_descriptor_queries()
     {
         var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
