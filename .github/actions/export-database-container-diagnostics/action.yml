@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Export database container diagnostics
+description: Exports Docker stats, database storage usage, and container logs.
+
+inputs:
+  container-name:
+    description: The database container name or id.
+    required: true
+  data-path:
+    description: The database data directory inside the container.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Export database container diagnostics
+      shell: pwsh
+      env:
+        CONTAINER_NAME: ${{ inputs.container-name }}
+        DATA_PATH: ${{ inputs.data-path }}
+      run: |
+        docker stats $env:CONTAINER_NAME --no-stream 2>$null
+        docker exec $env:CONTAINER_NAME df -h $env:DATA_PATH 2>$null
+        docker exec $env:CONTAINER_NAME du -sh $env:DATA_PATH 2>$null
+        docker logs $env:CONTAINER_NAME

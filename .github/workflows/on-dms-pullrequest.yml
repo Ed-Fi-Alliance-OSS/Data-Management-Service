@@ -35,6 +35,14 @@ concurrency:
 
 env:
   CONFIGURATION: "Release"
+  MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2022-latest"
+  MSSQL_CONTAINER_MEMORY: "10g"
+  MSSQL_MEMORY_LIMIT_MB: "4096"
+  MSSQL_TMPFS_SIZE: "4g"
+  POSTGRES_INTEGRATION_IMAGE: "postgres:16.3-alpine"
+  POSTGRES_CONTAINER_MEMORY: "4g"
+  POSTGRES_TMPFS_SIZE: "2g"
+  POSTGRES_USE_TMPFS: "true"
 
 permissions: read-all
 
@@ -214,35 +222,13 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Start MSSQL Container
-        run: |
-          $mssqlPassword = "Aa1!$([Guid]::NewGuid().ToString('N'))"
-
-          "MSSQL_SA_PASSWORD=$mssqlPassword" >> $env:GITHUB_ENV
-          "ConnectionStrings__MssqlAdmin=Server=localhost,1433;User Id=sa;Password=$mssqlPassword;TrustServerCertificate=true;" >> $env:GITHUB_ENV
-
-          docker run --detach --name dms-ci-mssql `
-            --env ACCEPT_EULA=Y `
-            --env MSSQL_SA_PASSWORD=$mssqlPassword `
-            --env MSSQL_PID=Developer `
-            --publish 1433:1433 `
-            mcr.microsoft.com/mssql/server:2022-latest | Out-Null
-
-      - name: Wait for MSSQL
-        run: |
-          $maxAttempts = 30
-
-          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            docker exec dms-ci-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "SELECT 1" -C -b
-
-            if ($LASTEXITCODE -eq 0) {
-              exit 0
-            }
-
-            Start-Sleep -Seconds 5
-          }
-
-          docker logs dms-ci-mssql
-          throw "SQL Server did not become ready within the timeout period."
+        uses: ./.github/actions/start-mssql-test-container
+        with:
+          container-name: dms-ci-mssql
+          container-memory: ${{ env.MSSQL_CONTAINER_MEMORY }}
+          sql-memory-limit-mb: ${{ env.MSSQL_MEMORY_LIMIT_MB }}
+          tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
+          image: ${{ env.MSSQL_IMAGE }}
 
       - name: Restore Backend MSSQL Integration Tests
         run: |
@@ -272,7 +258,10 @@ jobs:
 
       - name: Export MSSQL Logs
         if: failure()
-        run: docker logs dms-ci-mssql
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-mssql
+          data-path: /var/opt/mssql
 
       - name: Teardown MSSQL Container
         if: always()
@@ -304,35 +293,13 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Start MSSQL Container
-        run: |
-          $mssqlPassword = "Aa1!$([Guid]::NewGuid().ToString('N'))"
-
-          "MSSQL_SA_PASSWORD=$mssqlPassword" >> $env:GITHUB_ENV
-          "ConnectionStrings__MssqlAdmin=Server=localhost,1433;User Id=sa;Password=$mssqlPassword;TrustServerCertificate=true;" >> $env:GITHUB_ENV
-
-          docker run --detach --name dms-ci-api-mssql `
-            --env ACCEPT_EULA=Y `
-            --env MSSQL_SA_PASSWORD=$mssqlPassword `
-            --env MSSQL_PID=Developer `
-            --publish 1433:1433 `
-            mcr.microsoft.com/mssql/server:2022-latest | Out-Null
-
-      - name: Wait for MSSQL
-        run: |
-          $maxAttempts = 30
-
-          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            docker exec dms-ci-api-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "SELECT 1" -C -b
-
-            if ($LASTEXITCODE -eq 0) {
-              exit 0
-            }
-
-            Start-Sleep -Seconds 5
-          }
-
-          docker logs dms-ci-api-mssql
-          throw "SQL Server did not become ready within the timeout period."
+        uses: ./.github/actions/start-mssql-test-container
+        with:
+          container-name: dms-ci-api-mssql
+          container-memory: ${{ env.MSSQL_CONTAINER_MEMORY }}
+          sql-memory-limit-mb: ${{ env.MSSQL_MEMORY_LIMIT_MB }}
+          tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
+          image: ${{ env.MSSQL_IMAGE }}
 
       - name: Restore DMS API MSSQL Integration Tests
         run: |
@@ -363,7 +330,10 @@ jobs:
 
       - name: Export MSSQL Logs
         if: failure()
-        run: docker logs dms-ci-api-mssql
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-api-mssql
+          data-path: /var/opt/mssql
 
       - name: Teardown MSSQL Container
         if: always()
@@ -377,18 +347,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    services:
-      postgres:
-        image: postgres:16.3-alpine
-        options: >-
-          --health-cmd="pg_isready"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -406,10 +364,13 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Increase PostgreSQL lock budget
-        uses: ./.github/actions/increase-pg-lock-budget
+      - name: Start PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
         with:
-          container-id: ${{ job.services.postgres.id }}
+          container-name: dms-ci-postgresql
+          container-memory: ${{ env.POSTGRES_CONTAINER_MEMORY }}
+          tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
       - name: Restore Backend PostgreSQL Integration Tests
         run: |
@@ -437,6 +398,17 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
+      - name: Export PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql
+          data-path: /var/lib/postgresql/data
+
+      - name: Teardown PostgreSQL Container
+        if: always()
+        run: docker rm -f dms-ci-postgresql
+
   run-dms-api-postgresql-integration-tests:
     name: Run DMS API PostgreSQL Integration Tests
     runs-on: ubuntu-latest
@@ -445,18 +417,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    services:
-      postgres:
-        image: postgres:16.3-alpine
-        options: >-
-          --health-cmd="pg_isready"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
     env:
       ConnectionStrings__DatabaseConnection: "Host=localhost;Port=5432;Username=postgres;Database=edfi_dms_backend_integration;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=50;Application Name=EdFi.DataManagementService;NoResetOnClose=true;"
     steps:
@@ -476,10 +436,13 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Increase PostgreSQL lock budget
-        uses: ./.github/actions/increase-pg-lock-budget
+      - name: Start PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
         with:
-          container-id: ${{ job.services.postgres.id }}
+          container-name: dms-ci-postgresql
+          container-memory: ${{ env.POSTGRES_CONTAINER_MEMORY }}
+          tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
       - name: Restore DMS API PostgreSQL Integration Tests
         run: |
@@ -508,6 +471,17 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
+      - name: Export PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql
+          data-path: /var/lib/postgresql/data
+
+      - name: Teardown PostgreSQL Container
+        if: always()
+        run: docker rm -f dms-ci-postgresql
+
   run-old-postgresql-integration-tests:
     name: Run Old PostgreSQL Integration Tests
     runs-on: ubuntu-latest
@@ -516,18 +490,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    services:
-      postgres:
-        image: postgres:16.3-alpine
-        options: >-
-          --health-cmd="pg_isready"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -545,10 +507,13 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Increase PostgreSQL lock budget
-        uses: ./.github/actions/increase-pg-lock-budget
+      - name: Start PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
         with:
-          container-id: ${{ job.services.postgres.id }}
+          container-name: dms-ci-postgresql
+          container-memory: ${{ env.POSTGRES_CONTAINER_MEMORY }}
+          tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
       - name: Restore Old PostgreSQL Integration Tests
         run: |
@@ -576,6 +541,17 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
+      - name: Export PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql
+          data-path: /var/lib/postgresql/data
+
+      - name: Teardown PostgreSQL Container
+        if: always()
+        run: docker rm -f dms-ci-postgresql
+
   run-cli-integration-tests:
     name: Run CLI Integration Tests (${{ matrix.cli }})
     runs-on: ubuntu-latest
@@ -597,28 +573,16 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    services:
-      postgres:
-        image: postgres:16.3-alpine
-        options: >-
-          --health-cmd="pg_isready"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
     steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Install go-sqlcmd
         run: |
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
           sudo add-apt-repository "$(wget -qO- https://packages.microsoft.com/config/ubuntu/22.04/prod.list)"
           sudo apt-get update
           sudo apt-get install -y sqlcmd
-
-      - name: Checkout the Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Cache Nuget packages
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
@@ -633,41 +597,22 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Start MSSQL Container
-        run: |
-          $mssqlPassword = "Aa1!$([Guid]::NewGuid().ToString('N'))"
-
-          "MSSQL_SA_PASSWORD=$mssqlPassword" >> $env:GITHUB_ENV
-          "ConnectionStrings__MssqlAdmin=Server=localhost,1433;User Id=sa;Password=$mssqlPassword;TrustServerCertificate=true;" >> $env:GITHUB_ENV
-
-          docker run --detach --name dms-ci-mssql `
-            --env ACCEPT_EULA=Y `
-            --env MSSQL_SA_PASSWORD=$mssqlPassword `
-            --env MSSQL_PID=Developer `
-            --publish 1433:1433 `
-            mcr.microsoft.com/mssql/server:2022-latest | Out-Null
-
-      - name: Wait for MSSQL
-        run: |
-          $maxAttempts = 30
-
-          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "SELECT 1" -C -b
-
-            if ($LASTEXITCODE -eq 0) {
-              exit 0
-            }
-
-            Start-Sleep -Seconds 5
-          }
-
-          docker logs dms-ci-mssql
-          throw "SQL Server did not become ready within the timeout period."
-
-      - name: Increase PostgreSQL lock budget
-        uses: ./.github/actions/increase-pg-lock-budget
+      - name: Start PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
         with:
-          container-id: ${{ job.services.postgres.id }}
+          container-name: dms-ci-postgresql
+          container-memory: ${{ env.POSTGRES_CONTAINER_MEMORY }}
+          tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
+
+      - name: Start MSSQL Container
+        uses: ./.github/actions/start-mssql-test-container
+        with:
+          container-name: dms-ci-mssql
+          container-memory: ${{ env.MSSQL_CONTAINER_MEMORY }}
+          sql-memory-limit-mb: ${{ env.MSSQL_MEMORY_LIMIT_MB }}
+          tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
+          image: ${{ env.MSSQL_IMAGE }}
 
       - name: Restore CLI Integration Tests
         run: |
@@ -704,13 +649,27 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
+      - name: Export PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql
+          data-path: /var/lib/postgresql/data
+
       - name: Export MSSQL Logs
         if: failure()
-        run: docker logs dms-ci-mssql
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-mssql
+          data-path: /var/opt/mssql
 
       - name: Teardown MSSQL Container
         if: always()
         run: docker rm -f dms-ci-mssql
+
+      - name: Teardown PostgreSQL Container
+        if: always()
+        run: docker rm -f dms-ci-postgresql
 
   run-e2e-tests:
     name: Run PostgreSQL Relational E2E (${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
@@ -810,6 +769,13 @@ jobs:
           foreach ($container in $containers) {
               $logPath = Join-Path $logDir "$container.log"
               docker logs $container > $logPath 2>&1
+
+              if ($container -eq "dms-postgresql") {
+                  $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
+                  docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
+                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              }
           }
         shell: pwsh
 
@@ -937,6 +903,13 @@ jobs:
               Write-Host "Capturing logs for container: $container" -ForegroundColor Yellow
               $logPath = Join-Path $logDir "$container.log"
               docker logs $container > $logPath 2>&1
+
+              if ($container -eq "dms-postgresql") {
+                  $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
+                  docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
+                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              }
 
               # Also display DMS logs in the workflow output for easier debugging
               if ($container -eq "dms-local-dms") {
@@ -1137,6 +1110,13 @@ jobs:
           foreach ($container in $containers) {
             $logPath = Join-Path $diagnosticsDir "$container.log"
             docker logs $container > $logPath 2>&1
+
+            if ($container -eq "dms-postgresql") {
+              $postgresDiagnosticsPath = Join-Path $diagnosticsDir "$container.storage.txt"
+              docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
+              docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+            }
 
             if ($container -eq $dmsContainer) {
               Write-Host "`n========== ${container} logs =========="
