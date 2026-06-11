@@ -20,7 +20,7 @@ public sealed class RelationalChangeQueryRepository(IRelationalCommandExecutor c
 
     public Task<long> GetNewestChangeVersion(CancellationToken cancellationToken = default) =>
         _commandExecutor.ExecuteReaderAsync(
-            new RelationalCommand("SELECT dms.GetMaxChangeVersion() AS NewestChangeVersion"),
+            new RelationalCommand("SELECT dms.GetMaxChangeVersion() AS \"NewestChangeVersion\""),
             static async (reader, ct) =>
             {
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
