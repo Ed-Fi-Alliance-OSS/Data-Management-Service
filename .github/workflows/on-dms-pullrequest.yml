@@ -1081,7 +1081,7 @@ jobs:
           New-Item -ItemType Directory -Path $diagnosticsDir -Force | Out-Null
 
           $containers = docker ps -a --format "{{.Names}}" | Where-Object {
-            $_ -like "dms-local-*"
+            $_ -like "dms-local-*" -or $_ -eq "dms-postgresql"
           } | Sort-Object
 
           if (@($containers).Count -eq 0) {
