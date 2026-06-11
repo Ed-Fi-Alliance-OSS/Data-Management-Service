@@ -11,6 +11,7 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_Provisioned_Pgsql_Database_When_Introspecting_Schema
 {
     private string _databaseName = null!;

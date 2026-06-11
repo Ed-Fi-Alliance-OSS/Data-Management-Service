@@ -40,8 +40,8 @@ env:
   MSSQL_MEMORY_LIMIT_MB: "4096"
   MSSQL_TMPFS_SIZE: "4g"
   POSTGRES_INTEGRATION_IMAGE: "postgres:16.3-alpine"
-  POSTGRES_CONTAINER_MEMORY: "4g"
-  POSTGRES_TMPFS_SIZE: "2g"
+  POSTGRES_CONTAINER_MEMORY: "10g"
+  POSTGRES_TMPFS_SIZE: "4g"
   POSTGRES_USE_TMPFS: "true"
 
 permissions: read-all
@@ -564,15 +564,182 @@ jobs:
           - cli: ApiSchemaDownloader
             project: ./src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.csproj
             trx: EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.trx
+            test-filter: ""
           - cli: OpenApiGenerator
             project: ./src/dms/clis/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj
             trx: EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.trx
+            test-filter: ""
           - cli: SchemaTools
             project: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj
-            trx: EdFi.DataManagementService.SchemaTools.Tests.Integration.trx
+            trx: EdFi.DataManagementService.SchemaTools.Tests.Integration.NoDatabase.trx
+            test-filter: "Category!=DatabaseIntegration"
     defaults:
       run:
         shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore CLI Integration Tests
+        run: |
+          dotnet restore ${{ matrix.project }} --verbosity:normal
+
+      - name: Build CLI Integration Test Project
+        run: |
+          dotnet build ${{ matrix.project }} `
+            -c ${{ env.CONFIGURATION }} `
+            --no-restore `
+            -v normal `
+            --nologo
+
+      - name: Run CLI Integration Tests
+        if: success() && matrix.test-filter == ''
+        run: |
+          dotnet test ${{ matrix.project }} `
+            -c ${{ env.CONFIGURATION }} `
+            --no-build `
+            --no-restore `
+            -v normal `
+            --logger "trx;LogFileName=${{ matrix.trx }}" `
+            --logger "console" `
+            --nologo
+
+      - name: Run CLI Integration Tests
+        if: success() && matrix.test-filter != ''
+        run: |
+          dotnet test ${{ matrix.project }} `
+            -c ${{ env.CONFIGURATION }} `
+            --no-build `
+            --no-restore `
+            -v normal `
+            --filter "${{ matrix.test-filter }}" `
+            --logger "trx;LogFileName=${{ matrix.trx }}" `
+            --logger "console" `
+            --nologo
+
+      - name: Upload CLI Integration Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: CLI Integration Tests (${{ matrix.cli }})
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+  run-schematools-postgresql-integration-tests:
+    name: Run SchemaTools PostgreSQL Integration Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      SCHEMATOOLS_PROJECT: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install PostgreSQL client
+        run: |
+          if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          }
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Start PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
+        with:
+          container-name: dms-ci-postgresql
+          container-memory: ${{ env.POSTGRES_CONTAINER_MEMORY }}
+          tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
+
+      - name: Restore SchemaTools PostgreSQL Integration Tests
+        run: |
+          dotnet restore ${{ env.SCHEMATOOLS_PROJECT }} --verbosity:normal
+
+      - name: Build SchemaTools PostgreSQL Integration Test Project
+        run: |
+          dotnet build ${{ env.SCHEMATOOLS_PROJECT }} `
+            -c ${{ env.CONFIGURATION }} `
+            --no-restore `
+            -v normal `
+            --nologo
+
+      - name: Run SchemaTools PostgreSQL Integration Tests
+        if: success()
+        run: |
+          dotnet test ${{ env.SCHEMATOOLS_PROJECT }} `
+            -c ${{ env.CONFIGURATION }} `
+            --no-build `
+            --no-restore `
+            -v normal `
+            --filter "Category=PostgresqlIntegration" `
+            --logger "trx;LogFileName=EdFi.DataManagementService.SchemaTools.Tests.Integration.Postgresql.trx" `
+            --logger "console" `
+            --nologo
+
+      - name: Upload SchemaTools PostgreSQL Integration Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: SchemaTools PostgreSQL Integration Tests
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Export PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql
+          data-path: /var/lib/postgresql/data
+
+      - name: Teardown PostgreSQL Container
+        if: always()
+        run: docker rm -f dms-ci-postgresql
+
+  run-schematools-mssql-integration-tests:
+    name: Run SchemaTools MSSQL Integration Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      SCHEMATOOLS_PROJECT: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -597,14 +764,6 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Start PostgreSQL Container
-        uses: ./.github/actions/start-postgresql-test-container
-        with:
-          container-name: dms-ci-postgresql
-          container-memory: ${{ env.POSTGRES_CONTAINER_MEMORY }}
-          tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
-          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
-
       - name: Start MSSQL Container
         uses: ./.github/actions/start-mssql-test-container
         with:
@@ -614,47 +773,41 @@ jobs:
           tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
           image: ${{ env.MSSQL_IMAGE }}
 
-      - name: Restore CLI Integration Tests
+      - name: Restore SchemaTools MSSQL Integration Tests
         run: |
-          dotnet restore ${{ matrix.project }} --verbosity:normal
+          dotnet restore ${{ env.SCHEMATOOLS_PROJECT }} --verbosity:normal
 
-      - name: Build CLI Integration Test Project
+      - name: Build SchemaTools MSSQL Integration Test Project
         run: |
-          dotnet build ${{ matrix.project }} `
+          dotnet build ${{ env.SCHEMATOOLS_PROJECT }} `
             -c ${{ env.CONFIGURATION }} `
             --no-restore `
             -v normal `
             --nologo
 
-      - name: Run CLI Integration Tests
+      - name: Run SchemaTools MSSQL Integration Tests
         if: success()
         run: |
-          dotnet test ${{ matrix.project }} `
+          dotnet test ${{ env.SCHEMATOOLS_PROJECT }} `
             -c ${{ env.CONFIGURATION }} `
             --no-build `
             --no-restore `
             -v normal `
-            --logger "trx;LogFileName=${{ matrix.trx }}" `
+            --filter "Category=MssqlIntegration" `
+            --logger "trx;LogFileName=EdFi.DataManagementService.SchemaTools.Tests.Integration.Mssql.trx" `
             --logger "console" `
             --nologo
 
-      - name: Upload CLI Integration Test Results
+      - name: Upload SchemaTools MSSQL Integration Test Results
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
-          name: CLI Integration Tests (${{ matrix.cli }})
+          name: SchemaTools MSSQL Integration Tests
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
-
-      - name: Export PostgreSQL Logs
-        if: failure()
-        uses: ./.github/actions/export-database-container-diagnostics
-        with:
-          container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Export MSSQL Logs
         if: failure()
@@ -666,10 +819,6 @@ jobs:
       - name: Teardown MSSQL Container
         if: always()
         run: docker rm -f dms-ci-mssql
-
-      - name: Teardown PostgreSQL Container
-        if: always()
-        run: docker rm -f dms-ci-postgresql
 
   run-e2e-tests:
     name: Run PostgreSQL Relational E2E (${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
@@ -1253,6 +1402,8 @@ jobs:
         run-dms-api-mssql-integration-tests,
         run-old-postgresql-integration-tests,
         run-cli-integration-tests,
+        run-schematools-postgresql-integration-tests,
+        run-schematools-mssql-integration-tests,
         validate-resources-spec,
         validate-descriptors-spec,
         validate-discovery-spec,

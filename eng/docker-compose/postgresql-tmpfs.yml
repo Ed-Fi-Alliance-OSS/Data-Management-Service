@@ -5,9 +5,9 @@
 
 services:
   db:
-    mem_limit: ${POSTGRES_CONTAINER_MEMORY:-4g}
-    memswap_limit: ${POSTGRES_CONTAINER_MEMORY:-4g}
+    mem_limit: ${POSTGRES_CONTAINER_MEMORY:-10g}
+    memswap_limit: ${POSTGRES_CONTAINER_MEMORY:-10g}
     tmpfs:
-      - /var/lib/postgresql/data:rw,size=${POSTGRES_TMPFS_SIZE:-2g},mode=0700
+      - /var/lib/postgresql/data:rw,size=${POSTGRES_TMPFS_SIZE:-4g},mode=0700
     volumes: !override
       - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh

@@ -173,14 +173,14 @@ $postgresqlTmpfsComposeFile = "postgresql-tmpfs.yml"
 if ($usePostgresqlTmpfs) {
     $postgresqlTmpfsSize =
         if ([string]::IsNullOrWhiteSpace($env:POSTGRES_TMPFS_SIZE)) {
-            "2g"
+            "4g"
         }
         else {
             $env:POSTGRES_TMPFS_SIZE
         }
     $postgresqlContainerMemory =
         if ([string]::IsNullOrWhiteSpace($env:POSTGRES_CONTAINER_MEMORY)) {
-            "4g"
+            "10g"
         }
         else {
             $env:POSTGRES_CONTAINER_MEMORY
