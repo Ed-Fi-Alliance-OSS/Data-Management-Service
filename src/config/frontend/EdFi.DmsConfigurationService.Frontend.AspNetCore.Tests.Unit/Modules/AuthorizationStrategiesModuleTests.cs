@@ -105,7 +105,7 @@ public class AuthorizationStrategiesModuleTests
             client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
-            _response = await client.GetAsync("/authorizationStrategies");
+            _response = await client.GetAsync("/v3/authorizationStrategies");
             var responseString = await _response.Content.ReadAsStringAsync();
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
@@ -128,7 +128,7 @@ public class AuthorizationStrategiesModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            _response = await client.GetAsync("/authorizationStrategies");
+            _response = await client.GetAsync("/v3/authorizationStrategies");
 
             // Assert
             _response!.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -165,7 +165,7 @@ public class AuthorizationStrategiesModuleTests
             client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
-            _response = await client.GetAsync("/authorizationStrategies");
+            _response = await client.GetAsync("/v3/authorizationStrategies");
 
             // Assert
             _response!.StatusCode.Should().Be(HttpStatusCode.Forbidden);

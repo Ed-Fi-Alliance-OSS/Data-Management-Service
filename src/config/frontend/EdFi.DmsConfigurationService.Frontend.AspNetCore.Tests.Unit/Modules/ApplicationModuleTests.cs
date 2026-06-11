@@ -186,7 +186,7 @@ public class ApplicationModuleTests
             using var client = SetUpClient();
 
             var addResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -202,10 +202,10 @@ public class ApplicationModuleTests
                 )
             );
 
-            var getResponse = await client.GetAsync("/v2/applications?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/applications/1");
+            var getResponse = await client.GetAsync("/v3/applications?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/applications/1");
             var updateResponse = await client.PutAsync(
-                "/v2/applications/1",
+                "/v3/applications/1",
                 new StringContent(
                     """
                     {
@@ -221,8 +221,8 @@ public class ApplicationModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/applications/1");
-            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var deleteResponse = await client.DeleteAsync("/v3/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -264,7 +264,7 @@ public class ApplicationModuleTests
 
             // Act
             var addResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -335,12 +335,12 @@ public class ApplicationModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(invalidBody, Encoding.UTF8, "application/json")
             );
 
             var addResponseForInvalidClaimSetName = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(invalidClaimSetName, Encoding.UTF8, "application/json")
             );
 
@@ -424,7 +424,7 @@ public class ApplicationModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(invalidProfileId, Encoding.UTF8, "application/json")
             );
 
@@ -493,9 +493,9 @@ public class ApplicationModuleTests
             using var client = SetUpClient();
 
             //Act
-            var getByIdResponse = await client.GetAsync("/v2/applications/1");
+            var getByIdResponse = await client.GetAsync("/v3/applications/1");
             var updateResponse = await client.PutAsync(
-                "/v2/applications/1",
+                "/v3/applications/1",
                 new StringContent(
                     """
                     {
@@ -511,8 +511,8 @@ public class ApplicationModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/applications/1");
-            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var deleteResponse = await client.DeleteAsync("/v3/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             //Assert
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -596,7 +596,7 @@ public class ApplicationModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -611,10 +611,10 @@ public class ApplicationModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/applications?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/applications/1");
+            var getResponse = await client.GetAsync("/v3/applications?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/applications/1");
             var updateResponse = await client.PutAsync(
-                "/v2/applications/1",
+                "/v3/applications/1",
                 new StringContent(
                     """
                     {
@@ -630,8 +630,8 @@ public class ApplicationModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/applications/1");
-            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var deleteResponse = await client.DeleteAsync("/v3/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -699,7 +699,7 @@ public class ApplicationModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -715,10 +715,10 @@ public class ApplicationModuleTests
                 )
             );
 
-            var getResponse = await client.GetAsync("/v2/applications?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/applications/1");
+            var getResponse = await client.GetAsync("/v3/applications?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/applications/1");
             var updateResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -733,7 +733,7 @@ public class ApplicationModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+            var deleteResponse = await client.DeleteAsync("/v3/applications/1");
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -808,7 +808,7 @@ public class ApplicationModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -855,7 +855,7 @@ public class ApplicationModuleTests
 
             //Act
             var updateResponse = await client.PutAsync(
-                "/v2/applications/1",
+                "/v3/applications/1",
                 new StringContent(
                     """
                     {
@@ -974,7 +974,7 @@ public class ApplicationModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -1022,7 +1022,7 @@ public class ApplicationModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/applications/1",
+                "/v3/applications/1",
                 new StringContent(
                     """
                     {
@@ -1164,7 +1164,7 @@ public class ApplicationModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -1212,7 +1212,7 @@ public class ApplicationModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/applications/1",
+                "/v3/applications/1",
                 new StringContent(
                     """
                     {
@@ -1331,7 +1331,7 @@ public class ApplicationModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/applications",
+                "/v3/applications",
                 new StringContent(
                     """
                     {
@@ -1380,7 +1380,7 @@ public class ApplicationModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/applications/1",
+                "/v3/applications/1",
                 new StringContent(
                     """
                     {
@@ -1447,7 +1447,7 @@ public class ApplicationModuleTests
             using var client = SetUpClient();
 
             // Act
-            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             // Assert
             resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1468,7 +1468,7 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationApiClientsResult.Success([]));
 
             // Act
-            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             // Assert
             resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -1481,7 +1481,7 @@ public class ApplicationModuleTests
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.FailureClientNotFound("Client not found"));
 
-            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
@@ -1497,7 +1497,7 @@ public class ApplicationModuleTests
                     )
                 );
 
-            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             resetResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         }
@@ -1517,7 +1517,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_orderBy_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/applications?orderBy=invalidField");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1525,7 +1525,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_direction_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?orderBy=id&direction=SIDEWAYS");
+            var response = await client.GetAsync("/v3/applications?orderBy=id&direction=SIDEWAYS");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1533,7 +1533,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_offset_is_negative()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?offset=-1");
+            var response = await client.GetAsync("/v3/applications?offset=-1");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1541,7 +1541,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_limit_is_zero()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?limit=0");
+            var response = await client.GetAsync("/v3/applications?limit=0");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1549,7 +1549,7 @@ public class ApplicationModuleTests
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?orderBy=applicationName&direction=ASC");
+            var response = await client.GetAsync("/v3/applications?orderBy=applicationName&direction=ASC");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1557,7 +1557,7 @@ public class ApplicationModuleTests
         public async Task Should_return_200_when_ids_is_valid_list()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?ids=1,2,3");
+            var response = await client.GetAsync("/v3/applications?ids=1,2,3");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1565,7 +1565,7 @@ public class ApplicationModuleTests
         public async Task Should_return_200_when_ids_has_whitespace()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?ids=1%2C+2+%2C+3");
+            var response = await client.GetAsync("/v3/applications?ids=1%2C+2+%2C+3");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1573,7 +1573,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_ids_contains_non_integer()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?ids=1%2Cabc%2C3");
+            var response = await client.GetAsync("/v3/applications?ids=1%2Cabc%2C3");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("The 'ids' query parameter must be a comma-separated list of integers.");
@@ -1583,7 +1583,7 @@ public class ApplicationModuleTests
         public async Task Should_return_200_when_ids_is_single_value()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?ids=42");
+            var response = await client.GetAsync("/v3/applications?ids=42");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1591,7 +1591,7 @@ public class ApplicationModuleTests
         public async Task Should_return_200_when_filter_applicationName_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?applicationName=MyApp");
+            var response = await client.GetAsync("/v3/applications?applicationName=MyApp");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1599,7 +1599,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_id_and_ids_are_used_together()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?id=5&ids=1,2,3");
+            var response = await client.GetAsync("/v3/applications?id=5&ids=1,2,3");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("'id' and 'ids' cannot be used together.");
@@ -1609,7 +1609,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_offset_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?offset=abc");
+            var response = await client.GetAsync("/v3/applications?offset=abc");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1617,7 +1617,7 @@ public class ApplicationModuleTests
         public async Task Should_return_400_when_limit_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?limit=xyz");
+            var response = await client.GetAsync("/v3/applications?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1625,7 +1625,7 @@ public class ApplicationModuleTests
         public async Task Should_return_200_when_orderBy_omitted_with_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/applications?direction=asc");
+            var response = await client.GetAsync("/v3/applications?direction=asc");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
@@ -1673,7 +1673,7 @@ public class ApplicationModuleTests
             using var client = SetUpClientWithEndpointDisabled();
 
             // Act
-            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+            var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             // Assert
             resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -1702,7 +1702,7 @@ public class ApplicationModuleTests
                 );
 
             // Act - Verify GET still works
-            var getResponse = await client.GetAsync("/v2/applications/1");
+            var getResponse = await client.GetAsync("/v3/applications/1");
 
             // Assert
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1736,7 +1736,7 @@ public class ApplicationModuleTests
             using var client = SetUpClient();
 
             // Act
-            var response = await client.GetAsync("/v2/applications?offset=0&limit=25");
+            var response = await client.GetAsync("/v3/applications?offset=0&limit=25");
             var body = await response.Content.ReadAsStringAsync();
             var json = JsonNode.Parse(body)!.AsArray();
 
@@ -1769,7 +1769,7 @@ public class ApplicationModuleTests
             using var client = SetUpClient();
 
             // Act
-            var response = await client.GetAsync("/v2/applications?offset=0&limit=25");
+            var response = await client.GetAsync("/v3/applications?offset=0&limit=25");
             var body = await response.Content.ReadAsStringAsync();
             var json = JsonNode.Parse(body)!.AsArray();
 
@@ -1802,7 +1802,7 @@ public class ApplicationModuleTests
             using var client = SetUpClient();
 
             // Act
-            var response = await client.GetAsync("/v2/applications/3");
+            var response = await client.GetAsync("/v3/applications/3");
             var body = await response.Content.ReadAsStringAsync();
             var json = JsonNode.Parse(body)!;
 

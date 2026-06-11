@@ -37,7 +37,7 @@ client_id={{sysAdminId}}
 #   </Profile>
 #
 # @name createSchoolWriteProfile
-POST http://localhost:{{configPort}}/v2/profiles/
+POST http://localhost:{{configPort}}/v3/profiles/
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -57,7 +57,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 4: Vendor
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -81,7 +81,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 5: DMS instance (relational backend)
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -96,7 +96,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 6: Application WITH profile
 # @name createAppWithProfile
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -114,7 +114,7 @@ Authorization: bearer {{configToken}}
 
 ### Step 7: Application WITHOUT profile (used to seed data and read unfiltered state)
 # @name createAppNoProfile
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 

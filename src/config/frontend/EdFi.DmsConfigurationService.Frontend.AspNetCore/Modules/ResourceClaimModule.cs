@@ -16,10 +16,10 @@ public class ResourceClaimModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/v2/resourceClaims", GetAll);
-        endpoints.MapSecuredGet("/v2/resourceClaims/{id}", GetById);
-        endpoints.MapSecuredGet("/v2/resourceClaimActions", GetActions);
-        endpoints.MapSecuredGet("/v2/resourceClaimActionAuthStrategies", GetActionAuthStrategies);
+        endpoints.MapSecuredGet("/v3/resourceClaims", GetAll);
+        endpoints.MapSecuredGet("/v3/resourceClaims/{id}", GetById);
+        endpoints.MapSecuredGet("/v3/resourceClaimActions", GetActions);
+        endpoints.MapSecuredGet("/v3/resourceClaimActionAuthStrategies", GetActionAuthStrategies);
     }
 
     private static async Task<IResult> GetAll(

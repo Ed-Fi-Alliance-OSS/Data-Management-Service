@@ -220,7 +220,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -235,11 +235,11 @@ public class ApiClientModuleTests
                 )
             );
 
-            var getAllResponse = await client.GetAsync("/v2/apiClients?offset=0&limit=25");
-            var getByClientIdResponse = await client.GetAsync("/v2/apiClients/test-client-id");
+            var getAllResponse = await client.GetAsync("/v3/apiClients?offset=0&limit=25");
+            var getByClientIdResponse = await client.GetAsync("/v3/apiClients/test-client-id");
 
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/1",
+                "/v3/apiClients/1",
                 new StringContent(
                     """
                     {
@@ -255,7 +255,7 @@ public class ApiClientModuleTests
                 )
             );
 
-            var deleteResponse = await client.DeleteAsync("/v2/apiClients/1");
+            var deleteResponse = await client.DeleteAsync("/v3/apiClients/1");
 
             // Assert
             insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -296,7 +296,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -342,7 +342,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -394,7 +394,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -446,7 +446,7 @@ public class ApiClientModuleTests
 
             // Act
             var resetResponse = await client.PutAsync(
-                "/v2/apiClients/1/reset-credential",
+                "/v3/apiClients/1/reset-credential",
                 new StringContent("{}", Encoding.UTF8, "application/json")
             );
 
@@ -470,7 +470,7 @@ public class ApiClientModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/1",
+                "/v3/apiClients/1",
                 new StringContent(
                     """
                     {
@@ -524,7 +524,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(invalidBody, Encoding.UTF8, "application/json")
             );
 
@@ -556,7 +556,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(invalidBody, Encoding.UTF8, "application/json")
             );
 
@@ -595,7 +595,7 @@ public class ApiClientModuleTests
             using var client = SetUpClient();
 
             // Act
-            var getResponse = await client.GetAsync("/v2/apiClients/nonexistent-client");
+            var getResponse = await client.GetAsync("/v3/apiClients/nonexistent-client");
 
             // Assert
             getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -609,7 +609,7 @@ public class ApiClientModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/999",
+                "/v3/apiClients/999",
                 new StringContent(
                     """
                     {
@@ -636,7 +636,7 @@ public class ApiClientModuleTests
             using var client = SetUpClient();
 
             // Act
-            var deleteResponse = await client.DeleteAsync("/v2/apiClients/999");
+            var deleteResponse = await client.DeleteAsync("/v3/apiClients/999");
 
             // Assert
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -650,7 +650,7 @@ public class ApiClientModuleTests
 
             // Act
             var resetResponse = await client.PutAsync(
-                "/v2/apiClients/999/reset-credential",
+                "/v3/apiClients/999/reset-credential",
                 new StringContent("{}", Encoding.UTF8, "application/json")
             );
 
@@ -772,7 +772,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -787,11 +787,11 @@ public class ApiClientModuleTests
                 )
             );
 
-            var getAllResponse = await client.GetAsync("/v2/apiClients?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/apiClients/test-client");
+            var getAllResponse = await client.GetAsync("/v3/apiClients?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/apiClients/test-client");
 
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/1",
+                "/v3/apiClients/1",
                 new StringContent(
                     """
                     {
@@ -807,7 +807,7 @@ public class ApiClientModuleTests
                 )
             );
 
-            var deleteResponse = await client.DeleteAsync("/v2/apiClients/1");
+            var deleteResponse = await client.DeleteAsync("/v3/apiClients/1");
 
             // Assert
             insertResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -855,7 +855,7 @@ public class ApiClientModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/1",
+                "/v3/apiClients/1",
                 new StringContent(
                     """
                     {
@@ -929,7 +929,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -976,7 +976,7 @@ public class ApiClientModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/1",
+                "/v3/apiClients/1",
                 new StringContent(
                     """
                     {
@@ -1079,7 +1079,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -1126,7 +1126,7 @@ public class ApiClientModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/1",
+                "/v3/apiClients/1",
                 new StringContent(
                     """
                     {
@@ -1265,7 +1265,7 @@ public class ApiClientModuleTests
 
             // Act
             var insertResponse = await client.PostAsync(
-                "/v2/apiClients",
+                "/v3/apiClients",
                 new StringContent(
                     """
                     {
@@ -1292,7 +1292,7 @@ public class ApiClientModuleTests
 
             // Act
             var updateResponse = await client.PutAsync(
-                "/v2/apiClients/1",
+                "/v3/apiClients/1",
                 new StringContent(
                     """
                     {
@@ -1347,7 +1347,7 @@ public class ApiClientModuleTests
 
             // Act
             var resetResponse = await client.PutAsync(
-                "/v2/apiClients/1/reset-credential",
+                "/v3/apiClients/1/reset-credential",
                 new StringContent("{}", Encoding.UTF8, "application/json")
             );
 
@@ -1374,7 +1374,7 @@ public class ApiClientModuleTests
 
             // Act
             var resetResponse = await client.PutAsync(
-                "/v2/apiClients/1/reset-credential",
+                "/v3/apiClients/1/reset-credential",
                 new StringContent("{}", Encoding.UTF8, "application/json")
             );
 
@@ -1397,7 +1397,7 @@ public class ApiClientModuleTests
 
             // Act
             var resetResponse = await client.PutAsync(
-                "/v2/apiClients/1/reset-credential",
+                "/v3/apiClients/1/reset-credential",
                 new StringContent("{}", Encoding.UTF8, "application/json")
             );
 
@@ -1416,7 +1416,7 @@ public class ApiClientModuleTests
 
             // Act
             var resetResponse = await client.PutAsync(
-                "/v2/apiClients/1/reset-credential",
+                "/v3/apiClients/1/reset-credential",
                 new StringContent("{}", Encoding.UTF8, "application/json")
             );
 
@@ -1435,7 +1435,7 @@ public class ApiClientModuleTests
 
             // Act
             var resetResponse = await client.PutAsync(
-                "/v2/apiClients/999/reset-credential",
+                "/v3/apiClients/999/reset-credential",
                 new StringContent("{}", Encoding.UTF8, "application/json")
             );
 
@@ -1458,7 +1458,7 @@ public class ApiClientModuleTests
         public async Task Should_return_400_when_orderBy_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/apiClients?orderBy=invalidField");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1466,7 +1466,7 @@ public class ApiClientModuleTests
         public async Task Should_return_400_when_direction_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?orderBy=id&direction=SIDEWAYS");
+            var response = await client.GetAsync("/v3/apiClients?orderBy=id&direction=SIDEWAYS");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1474,7 +1474,7 @@ public class ApiClientModuleTests
         public async Task Should_return_400_when_offset_is_negative()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?offset=-1");
+            var response = await client.GetAsync("/v3/apiClients?offset=-1");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1482,7 +1482,7 @@ public class ApiClientModuleTests
         public async Task Should_return_400_when_limit_is_zero()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?limit=0");
+            var response = await client.GetAsync("/v3/apiClients?limit=0");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1490,7 +1490,7 @@ public class ApiClientModuleTests
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?orderBy=name&direction=ASC");
+            var response = await client.GetAsync("/v3/apiClients?orderBy=name&direction=ASC");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1498,7 +1498,7 @@ public class ApiClientModuleTests
         public async Task Should_return_200_when_filter_applicationId_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?applicationid=1");
+            var response = await client.GetAsync("/v3/apiClients?applicationid=1");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1506,7 +1506,7 @@ public class ApiClientModuleTests
         public async Task Should_return_400_when_offset_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?offset=abc");
+            var response = await client.GetAsync("/v3/apiClients?offset=abc");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1514,7 +1514,7 @@ public class ApiClientModuleTests
         public async Task Should_return_400_when_limit_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?limit=xyz");
+            var response = await client.GetAsync("/v3/apiClients?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1522,7 +1522,7 @@ public class ApiClientModuleTests
         public async Task Should_return_200_when_orderBy_omitted_with_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/apiClients?direction=asc");
+            var response = await client.GetAsync("/v3/apiClients?direction=asc");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }

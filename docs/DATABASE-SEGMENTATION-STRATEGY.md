@@ -160,7 +160,7 @@ client_id={your_admin_client_id}
 Create a separate data store for each database you want to route to:
 
 ```http
-POST http://localhost:8081/v2/dataStores
+POST http://localhost:8081/v3/dataStores
 Authorization: bearer {config_token}
 Content-Type: application/json
 
@@ -179,7 +179,7 @@ For each data store, create route context entries that define how URL segments m
 to that data store:
 
 ```http
-POST http://localhost:8081/v2/dataStoreContexts
+POST http://localhost:8081/v3/dataStoreContexts
 Authorization: bearer {config_token}
 Content-Type: application/json
 
@@ -191,7 +191,7 @@ Content-Type: application/json
 ```
 
 ```http
-POST http://localhost:8081/v2/dataStoreContexts
+POST http://localhost:8081/v3/dataStoreContexts
 Authorization: bearer {config_token}
 Content-Type: application/json
 
@@ -210,7 +210,7 @@ context keys to match for routing to succeed.
 Create a vendor and application that has access to multiple instances:
 
 ```http
-POST http://localhost:8081/v2/vendors
+POST http://localhost:8081/v3/vendors
 Authorization: bearer {config_token}
 Content-Type: application/json
 
@@ -223,7 +223,7 @@ Content-Type: application/json
 ```
 
 ```http
-POST http://localhost:8081/v2/applications
+POST http://localhost:8081/v3/applications
 Authorization: bearer {config_token}
 Content-Type: application/json
 
@@ -384,21 +384,21 @@ Response: 404 Not Found or 400 Bad Request
 #### List All data stores
 
 ```http
-GET http://localhost:8081/v2/dataStores?offset=0&limit=25
+GET http://localhost:8081/v3/dataStores?offset=0&limit=25
 Authorization: bearer {config_token}
 ```
 
 #### List All Route Contexts
 
 ```http
-GET http://localhost:8081/v2/dataStoreContexts?offset=0&limit=25
+GET http://localhost:8081/v3/dataStoreContexts?offset=0&limit=25
 Authorization: bearer {config_token}
 ```
 
 #### Get Specific Data Store
 
 ```http
-GET http://localhost:8081/v2/dataStores/{id}
+GET http://localhost:8081/v3/dataStores/{id}
 Authorization: bearer {config_token}
 ```
 
@@ -409,6 +409,6 @@ If you're migrating from the Ed-Fi ODS/API platform that used `OdsContextRouteTe
 | ODS/API Feature | DMS Equivalent |
 |-----------------|----------------|
 | `OdsContextRouteTemplate` in ApiSettings | Route contexts defined via Configuration Service API |
-| `dbo.OdsInstances` table | `POST /v2/dataStores` endpoint |
-| `dbo.OdsInstanceContext` table | `POST /v2/dataStoreContexts` endpoint |
+| `dbo.OdsInstances` table | `POST /v3/dataStores` endpoint |
+| `dbo.OdsInstanceContext` table | `POST /v3/dataStoreContexts` endpoint |
 | ASP.NET route template syntax | Standard URL path segments |

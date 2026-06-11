@@ -46,7 +46,7 @@ client_id={{sysAdminId}}
 
 ### Create a new vendor
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -70,7 +70,7 @@ Authorization: bearer {{configToken}}
 
 ### Create a DMS instance
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -85,7 +85,7 @@ Authorization: bearer {{configToken}}
 
 ### Create a new application
 # @name createApplication
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -265,7 +265,7 @@ Authorization: bearer {{dmsToken}}
 
 ### Create a new application
 # @name createApplication2
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 

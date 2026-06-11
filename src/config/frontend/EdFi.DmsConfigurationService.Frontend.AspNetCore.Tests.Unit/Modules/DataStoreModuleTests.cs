@@ -168,7 +168,7 @@ public class DataStoreModuleTests
             using var client = SetUpClient();
 
             var insertResponse = await client.PostAsync(
-                "/v2/dataStores/",
+                "/v3/dataStores/",
                 new StringContent(
                     JsonSerializer.Serialize(
                         new DataStoreInsertCommand
@@ -183,10 +183,10 @@ public class DataStoreModuleTests
                 )
             );
 
-            var queryResponse = await client.GetAsync("/v2/dataStores/?offset=0&limit=25");
-            var getResponse = await client.GetAsync("/v2/dataStores/1");
+            var queryResponse = await client.GetAsync("/v3/dataStores/?offset=0&limit=25");
+            var getResponse = await client.GetAsync("/v3/dataStores/1");
             var updateResponse = await client.PutAsync(
-                "/v2/dataStores/1",
+                "/v3/dataStores/1",
                 new StringContent(
                     JsonSerializer.Serialize(
                         new DataStoreUpdateCommand
@@ -201,9 +201,9 @@ public class DataStoreModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/dataStores/1");
+            var deleteResponse = await client.DeleteAsync("/v3/dataStores/1");
             var queryApplicationsByDataStoreResponse = await client.GetAsync(
-                "/v2/dataStores/1/applications/?offset=0&limit=25"
+                "/v3/dataStores/1/applications/?offset=0&limit=25"
             );
 
             insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -219,7 +219,7 @@ public class DataStoreModuleTests
         {
             using var client = SetUpClient();
 
-            var getResponse = await client.GetAsync("/v2/dataStores/1");
+            var getResponse = await client.GetAsync("/v3/dataStores/1");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var responseContent = await getResponse.Content.ReadAsStringAsync();
@@ -243,7 +243,7 @@ public class DataStoreModuleTests
         {
             using var client = SetUpClient();
 
-            var getResponse = await client.GetAsync("/v2/dataStores/1");
+            var getResponse = await client.GetAsync("/v3/dataStores/1");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var responseContent = await getResponse.Content.ReadAsStringAsync();
@@ -301,12 +301,12 @@ public class DataStoreModuleTests
             );
 
             var postResponse = await client.PostAsync(
-                "/v2/dataStores/",
+                "/v3/dataStores/",
                 new StringContent(invalidPostBody, Encoding.UTF8, "application/json")
             );
 
             var putResponse = await client.PutAsync(
-                "/v2/dataStores/1",
+                "/v3/dataStores/1",
                 new StringContent(invalidPutBody, Encoding.UTF8, "application/json")
             );
 
@@ -320,7 +320,7 @@ public class DataStoreModuleTests
             using var client = SetUpClient();
 
             var response = await client.PutAsync(
-                "/v2/dataStores/1",
+                "/v3/dataStores/1",
                 new StringContent(
                     JsonSerializer.Serialize(
                         new DataStoreUpdateCommand
@@ -364,9 +364,9 @@ public class DataStoreModuleTests
         {
             using var client = SetUpClient();
 
-            var getResponse = await client.GetAsync("/v2/dataStores/999");
+            var getResponse = await client.GetAsync("/v3/dataStores/999");
             var updateResponse = await client.PutAsync(
-                "/v2/dataStores/999",
+                "/v3/dataStores/999",
                 new StringContent(
                     JsonSerializer.Serialize(
                         new DataStoreUpdateCommand
@@ -381,9 +381,9 @@ public class DataStoreModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/dataStores/999");
+            var deleteResponse = await client.DeleteAsync("/v3/dataStores/999");
             var queryApplicationsByDataStoreResponse = await client.GetAsync(
-                "/v2/dataStores/0/applications/?offset=0&limit=25"
+                "/v3/dataStores/0/applications/?offset=0&limit=25"
             );
 
             getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -407,7 +407,7 @@ public class DataStoreModuleTests
         public async Task Should_return_400_when_orderBy_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/dataStores?orderBy=invalidField");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -415,7 +415,7 @@ public class DataStoreModuleTests
         public async Task Should_return_400_when_direction_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?orderBy=id&direction=SIDEWAYS");
+            var response = await client.GetAsync("/v3/dataStores?orderBy=id&direction=SIDEWAYS");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -423,7 +423,7 @@ public class DataStoreModuleTests
         public async Task Should_return_400_when_offset_is_negative()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?offset=-1");
+            var response = await client.GetAsync("/v3/dataStores?offset=-1");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -431,7 +431,7 @@ public class DataStoreModuleTests
         public async Task Should_return_400_when_limit_is_zero()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?limit=0");
+            var response = await client.GetAsync("/v3/dataStores?limit=0");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -439,7 +439,7 @@ public class DataStoreModuleTests
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?orderBy=name&direction=ASC");
+            var response = await client.GetAsync("/v3/dataStores?orderBy=name&direction=ASC");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -447,7 +447,7 @@ public class DataStoreModuleTests
         public async Task Should_return_200_when_filter_name_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?name=MyInstance");
+            var response = await client.GetAsync("/v3/dataStores?name=MyInstance");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -455,7 +455,7 @@ public class DataStoreModuleTests
         public async Task Should_return_200_when_filter_dataStoreType_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?dataStoreType=SQL");
+            var response = await client.GetAsync("/v3/dataStores?dataStoreType=SQL");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -463,7 +463,7 @@ public class DataStoreModuleTests
         public async Task Should_return_400_when_offset_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?offset=abc");
+            var response = await client.GetAsync("/v3/dataStores?offset=abc");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -471,7 +471,7 @@ public class DataStoreModuleTests
         public async Task Should_return_400_when_limit_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?limit=xyz");
+            var response = await client.GetAsync("/v3/dataStores?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -479,7 +479,7 @@ public class DataStoreModuleTests
         public async Task Should_return_200_when_orderBy_omitted_with_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStores?direction=asc");
+            var response = await client.GetAsync("/v3/dataStores?direction=asc");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }

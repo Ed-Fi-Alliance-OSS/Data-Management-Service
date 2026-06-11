@@ -109,7 +109,7 @@ public static class ProfileAwareAuthorizationProvider
         );
 
         using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
-            "v2/profiles/",
+            "v3/profiles/",
             content
         );
 
@@ -138,7 +138,7 @@ public static class ProfileAwareAuthorizationProvider
             );
         }
 
-        // Location format: http://localhost:8081/v2/profiles/123
+        // Location format: http://localhost:8081/v3/profiles/123
         string[] segments = location.Split('/');
         string idString = segments[^1];
         if (!int.TryParse(idString, out int profileId))
@@ -157,7 +157,7 @@ public static class ProfileAwareAuthorizationProvider
     private static async Task<int> FindExistingProfile(string profileName)
     {
         using HttpResponseMessage response = await _configurationServiceClient.GetAsync(
-            $"v2/profiles/?limit=100&offset=0"
+            $"v3/profiles/?limit=100&offset=0"
         );
 
         if (!response.IsSuccessStatusCode)
@@ -238,7 +238,7 @@ public static class ProfileAwareAuthorizationProvider
         );
 
         using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
-            "v2/dataStores",
+            "v3/dataStores",
             content
         );
 
@@ -277,7 +277,7 @@ public static class ProfileAwareAuthorizationProvider
         );
 
         using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
-            "v2/vendors",
+            "v3/vendors",
             content
         );
 
@@ -372,7 +372,7 @@ public static class ProfileAwareAuthorizationProvider
         using StringContent content = new(requestJson, Encoding.UTF8, "application/json");
 
         using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
-            "v2/applications",
+            "v3/applications",
             content
         );
 

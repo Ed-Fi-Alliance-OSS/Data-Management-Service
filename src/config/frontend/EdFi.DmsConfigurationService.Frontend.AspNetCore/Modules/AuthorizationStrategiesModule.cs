@@ -13,7 +13,7 @@ public class AuthorizationStrategiesModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/authorizationStrategies", GetAuthorizationStrategies);
+        endpoints.MapSecuredGet("/v3/authorizationStrategies", GetAuthorizationStrategies);
     }
 
     public static async Task<IResult> GetAuthorizationStrategies(

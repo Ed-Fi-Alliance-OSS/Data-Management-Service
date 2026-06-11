@@ -110,7 +110,7 @@ public class ClaimsHierarchyModuleTests
         A.CallTo(() => _responseFactory.Create("ClaimSet1", claims))
             .Returns(suppliedAuthorizationMetadataResponse);
 
-        var responseMessage = await client.GetAsync("/authorizationMetadata?claimSetName=ClaimSet1");
+        var responseMessage = await client.GetAsync("/v3/authorizationMetadata?claimSetName=ClaimSet1");
         responseMessage.EnsureSuccessStatusCode();
         string responseContent = await responseMessage.Content.ReadAsStringAsync();
 

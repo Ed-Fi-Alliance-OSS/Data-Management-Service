@@ -21,7 +21,7 @@ application, the following defaults are automatically assigned:
 |------------------------------------------------|-----------------------------------------------------------------------------|
 | `edfi_admin_api/full_access`                   | Provides **full access** to all API endpoints (read and write operations). |
 | `edfi_admin_api/readonly_access`               | Grants **read-only** access to all `GET` endpoints.                        |
-| `edfi_admin_api/authMetadata_readonly_access`  | Allows read-only access to the `/authorizationMetadata` endpoint.         |
+| `edfi_admin_api/authMetadata_readonly_access`  | Allows read-only access to the `/v3/authorizationMetadata` endpoint.         |
 
 > [!NOTE]
 > Scopes define the level of access granted to a client. Assign

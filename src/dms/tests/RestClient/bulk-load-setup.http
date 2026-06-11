@@ -42,7 +42,7 @@ client_id={{sysAdminId}}
 
 ### Create a vendor. The namespace prefixes are required for Grand Bend dataset.
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -66,7 +66,7 @@ Authorization: bearer {{configToken}}
 
 ### Create a DMS instance
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -81,7 +81,7 @@ Authorization: bearer {{configToken}}
 
 ### Create an application for loading School Year.
 # @name createApplication
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -162,7 +162,7 @@ Content-Type: application/json
 
 ###
 # @name createSandboxApplication
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 

@@ -209,7 +209,7 @@ Steps (repeat per school year):
 Example for tenant `DistrictA` and school year `2024`:
 
 ```http
-POST http://localhost:8081/v2/tenants
+POST http://localhost:8081/v3/tenants
 Authorization: bearer {token}
 Content-Type: application/json
 
@@ -219,7 +219,7 @@ Content-Type: application/json
 ```
 
 ```http
-POST http://localhost:8081/v2/dataStores
+POST http://localhost:8081/v3/dataStores
 Authorization: bearer {token}
 Tenant: DistrictA
 Content-Type: application/json
@@ -232,7 +232,7 @@ Content-Type: application/json
 ```
 
 ```http
-POST http://localhost:8081/v2/dataStoreContexts
+POST http://localhost:8081/v3/dataStoreContexts
 Authorization: bearer {token}
 Tenant: DistrictA
 Content-Type: application/json
@@ -352,11 +352,11 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/v2/tenants/` | GET, POST | List/create tenants |
-| `/v2/dataStores` | GET, POST, PUT, DELETE | Manage data stores |
-| `/v2/dataStoreContexts` | GET, POST, PUT, DELETE | Manage data store contexts |
-| `/v2/vendors` | GET, POST, PUT, DELETE | Manage vendors |
-| `/v2/applications` | GET, POST, PUT, DELETE | Manage applications |
+| `/v3/tenants/` | GET, POST | List/create tenants |
+| `/v3/dataStores` | GET, POST, PUT, DELETE | Manage data stores |
+| `/v3/dataStoreContexts` | GET, POST, PUT, DELETE | Manage data store contexts |
+| `/v3/vendors` | GET, POST, PUT, DELETE | Manage vendors |
+| `/v3/applications` | GET, POST, PUT, DELETE | Manage applications |
 
 ### Tenant Header
 

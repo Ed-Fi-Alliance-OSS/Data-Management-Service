@@ -22,11 +22,11 @@ public class ApplicationModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/applications/", InsertApplication);
-        endpoints.MapSecuredGet("/v2/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
-        endpoints.MapSecuredGet($"/v2/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
-        endpoints.MapSecuredPut($"/v2/applications/{{id}}", Update);
-        endpoints.MapSecuredDelete($"/v2/applications/{{id}}", Delete);
+        endpoints.MapSecuredPost("/v3/applications/", InsertApplication);
+        endpoints.MapSecuredGet("/v3/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
+        endpoints.MapSecuredGet($"/v3/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
+        endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
 
         // Only register the reset-credential endpoint if the feature flag is enabled.
         // It is recommended to disable this endpoint when using multiple API clients for a single application.
@@ -38,7 +38,7 @@ public class ApplicationModule : IEndpointModule
 
         if (enableResetEndpoint)
         {
-            endpoints.MapSecuredPut($"/v2/applications/{{id}}/reset-credential", ResetCredential);
+            endpoints.MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential);
         }
     }
 

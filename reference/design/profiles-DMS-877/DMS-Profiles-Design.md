@@ -1237,7 +1237,7 @@ cached alongside them with the same TTL.
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │  Configuration Service (CMS)                                        │    │
 │  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │  GET /v2/applications/{id}/profiles                         │    │    │
+│  │  │  GET /v3/applications/{id}/profiles                         │    │    │
 │  │  │  Returns: Array of all profiles for the application         │    │    │
 │  │  └─────────────────────────────────────────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
@@ -1257,7 +1257,7 @@ cached alongside them with the same TTL.
                     │     ├── Cache hit: Lookup profile by name from cache    │
                     │     │                                                   │
                     │     └── Cache miss:                                     │
-                    │         a. Call CMS: GET /v2/applications/{id}/profiles │
+                    │         a. Call CMS: GET /v3/applications/{id}/profiles │
                     │         b. Parse all profile XMLs                       │
                     │         c. Build and cache parsed profile definitions and resource models (same TTL) │
                     │         d. Build/reset profile-specific API metadata/OpenAPI cache entries (pre-warm optional) │
@@ -1344,7 +1344,7 @@ polling mechanism in a future iteration.
    │                 │                   │   Cache miss     │                 │
    │                 │                   │<─────────────────│                 │
    │                 │                   │                  │                 │
-   │                 │                   │ GET /v2/applications/{id}/profiles│
+   │                 │                   │ GET /v3/applications/{id}/profiles│
    │                 │                   │────────────────────────────────────>
    │                 │                   │                  │                 │
    │                 │                   │                  │  [All Profiles] │

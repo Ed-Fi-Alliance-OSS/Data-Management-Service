@@ -3,7 +3,7 @@ Feature: DataStoreDerivatives endpoints
         Background:
             Given valid credentials
               And token received
-              And a POST request is made to "/v2/dataStores" with
+              And a POST request is made to "/v3/dataStores" with
                   """
                   {
                     "dataStoreType": "Production",
@@ -13,7 +13,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 02 Ensure clients can create a dataStoreDerivative with ReadReplica type
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -25,7 +25,7 @@ Feature: DataStoreDerivatives endpoints
               And the response headers include
                   """
                     {
-                        "location": "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+                        "location": "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
                     }
                   """
               And the record can be retrieved with a GET request
@@ -39,7 +39,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 03 Ensure clients can create a dataStoreDerivative with Snapshot type
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -59,7 +59,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 04 Verify retrieving a single dataStoreDerivative by ID
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -68,7 +68,7 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a GET request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a GET request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 200
               And the response body is
                   """
@@ -81,7 +81,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 05 Put an existing dataStoreDerivative
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -90,7 +90,7 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a PUT request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}" with
+             When a PUT request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}" with
                   """
                     {
                         "id": {dataStoreDerivativeId},
@@ -111,7 +111,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 06 Verify deleting a specific dataStoreDerivative by ID
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -120,11 +120,11 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a DELETE request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 204
 
         Scenario: 07 Verify error handling when trying to get an item that has already been deleted
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -133,13 +133,13 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a DELETE request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 204
-             When a GET request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a GET request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 404
 
         Scenario: 08 Verify error handling when trying to update an item that has already been deleted
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -148,9 +148,9 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a DELETE request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 204
-             When a PUT request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}" with
+             When a PUT request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}" with
                   """
                     {
                         "id": {dataStoreDerivativeId},
@@ -162,7 +162,7 @@ Feature: DataStoreDerivatives endpoints
              Then it should respond with 404
 
         Scenario: 09 Verify error handling when trying to delete an item that has already been deleted
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -171,21 +171,21 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a DELETE request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 204
-             When a DELETE request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a DELETE request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 404
 
         Scenario: 10 Verify error handling when trying to get a dataStoreDerivative using an invalid id
-             When a GET request is made to "/v2/dataStoreDerivatives/a"
+             When a GET request is made to "/v3/dataStoreDerivatives/a"
              Then it should respond with 400
 
         Scenario: 11 Verify error handling when trying to delete a dataStoreDerivative using an invalid id
-             When a DELETE request is made to "/v2/dataStoreDerivatives/b"
+             When a DELETE request is made to "/v3/dataStoreDerivatives/b"
              Then it should respond with 400
 
         Scenario: 12 Verify error handling when trying to update a dataStoreDerivative using an invalid id
-             When a PUT request is made to "/v2/dataStoreDerivatives/c" with
+             When a PUT request is made to "/v3/dataStoreDerivatives/c" with
                   """
                     {
                         "id": 1,
@@ -197,7 +197,7 @@ Feature: DataStoreDerivatives endpoints
              Then it should respond with 400
 
         Scenario: 13 Verify validation for invalid dataStoreId (foreign key violation)
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": 99999,
@@ -219,7 +219,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 14 Verify validation for invalid derivativeType
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": 1,
@@ -245,7 +245,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 15 Verify validation for empty derivativeType
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": 1,
@@ -272,7 +272,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 16 Verify validation for zero dataStoreId
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": 0,
@@ -298,7 +298,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 17 Verify validation connectionString too long
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": 1,
@@ -324,7 +324,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 18 Verify PUT request with mismatched IDs
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -333,7 +333,7 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a PUT request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}" with
+             When a PUT request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}" with
                   """
                     {
                         "id": 999,
@@ -360,7 +360,7 @@ Feature: DataStoreDerivatives endpoints
                   """
 
         Scenario: 19 Verify CASCADE DELETE when parent dataStore is deleted
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -369,7 +369,7 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -378,13 +378,13 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/dataStores/{dataStoreId}"
+             When a DELETE request is made to "/v3/dataStores/{dataStoreId}"
              Then it should respond with 204
-             When a GET request is made to "/v2/dataStoreDerivatives/{dataStoreDerivativeId}"
+             When a GET request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}"
              Then it should respond with 404
 
         Scenario: 20 Ensure clients can GET dataStoreDerivatives list with paging
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -393,7 +393,7 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a POST request is made to "/v2/dataStoreDerivatives" with
+             When a POST request is made to "/v3/dataStoreDerivatives" with
                   """
                     {
                         "dataStoreId": {dataStoreId},
@@ -402,5 +402,5 @@ Feature: DataStoreDerivatives endpoints
                     }
                   """
              Then it should respond with 201
-             When a GET request is made to "/v2/dataStoreDerivatives?offset=0&limit=1"
+             When a GET request is made to "/v3/dataStoreDerivatives?offset=0&limit=1"
              Then it should respond with 200

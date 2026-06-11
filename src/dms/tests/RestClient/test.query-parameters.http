@@ -35,7 +35,7 @@ client_id={{sysAdminId}}
 
 ### 2.1 Vendors
 # @name createVendorZulu
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -48,7 +48,7 @@ Authorization: bearer {{configToken}}
 
 ###
 # @name createVendorAlpha
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -71,7 +71,7 @@ Authorization: bearer {{configToken}}
 @vendorAlphaId={{getVendorAlpha.response.body.id}}
 
 # @name createVendorMango
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -85,7 +85,7 @@ Authorization: bearer {{configToken}}
 ###
 ### 2.2 DMS instances
 # @name createDataStoreZulu
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -97,7 +97,7 @@ Authorization: bearer {{configToken}}
 
 ###
 # @name createDataStoreAlpha
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -111,7 +111,7 @@ Authorization: bearer {{configToken}}
 @dataStoreAlphaId={{createDataStoreAlpha.response.body.id}}
 
 # @name createDataStoreMango
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -126,7 +126,7 @@ Authorization: bearer {{configToken}}
 
 ### 2.3 Claim sets
 # @name createClaimSetZulu
-POST http://localhost:{{configPort}}/v2/claimSets
+POST http://localhost:{{configPort}}/v3/claimSets
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -136,7 +136,7 @@ Authorization: bearer {{configToken}}
 
 ###
 # @name createClaimSetAlpha
-POST http://localhost:{{configPort}}/v2/claimSets
+POST http://localhost:{{configPort}}/v3/claimSets
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -146,7 +146,7 @@ Authorization: bearer {{configToken}}
 
 ###
 # @name createClaimSetMango
-POST http://localhost:{{configPort}}/v2/claimSets
+POST http://localhost:{{configPort}}/v3/claimSets
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -157,7 +157,7 @@ Authorization: bearer {{configToken}}
 ###
 ### 2.4 Applications and api clients
 # @name createApplicationZulu
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -171,7 +171,7 @@ Authorization: bearer {{configToken}}
 
 ###
 # @name createApplicationAlpha
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -185,7 +185,7 @@ Authorization: bearer {{configToken}}
 
 ###
 # @name createApplicationMango
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -203,27 +203,27 @@ Authorization: bearer {{configToken}}
 # -----------------------------------------------------------------------------
 
 ### 3.1 Vendors - sorted by company ascending, paged to the first 2 rows
-GET http://localhost:{{configPort}}/v2/vendors?offset=0&limit=2&orderBy=company&direction=ASC
+GET http://localhost:{{configPort}}/v3/vendors?offset=0&limit=2&orderBy=company&direction=ASC
 Authorization: bearer {{configToken}}
 
 ### 3.2 Vendors - sorted by company descending with offset
-GET http://localhost:{{configPort}}/v2/vendors?offset=1&limit=1&orderBy=company&direction=DESC
+GET http://localhost:{{configPort}}/v3/vendors?offset=1&limit=1&orderBy=company&direction=DESC
 Authorization: bearer {{configToken}}
 
 ### 3.3 Applications - sorted by applicationName ascending
-GET http://localhost:{{configPort}}/v2/applications?offset=0&limit=2&orderBy=applicationName&direction=ASC
+GET http://localhost:{{configPort}}/v3/applications?offset=0&limit=2&orderBy=applicationName&direction=ASC
 Authorization: bearer {{configToken}}
 
 ### 3.4 Api clients - sorted by name descending
-GET http://localhost:{{configPort}}/v2/apiClients?offset=0&limit=2&orderBy=name&direction=DESC
+GET http://localhost:{{configPort}}/v3/apiClients?offset=0&limit=2&orderBy=name&direction=DESC
 Authorization: bearer {{configToken}}
 
 ### 3.5 Data stores - sorted by name ascending
-GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=2&orderBy=name&direction=ASC
+GET http://localhost:{{configPort}}/v3/dataStores?offset=0&limit=2&orderBy=name&direction=ASC
 Authorization: bearer {{configToken}}
 
 ### 3.6 Claim sets - sorted by name descending
-GET http://localhost:{{configPort}}/v2/claimSets?offset=0&limit=2&orderBy=name&direction=DESC
+GET http://localhost:{{configPort}}/v3/claimSets?offset=0&limit=2&orderBy=name&direction=DESC
 Authorization: bearer {{configToken}}
 
 # -----------------------------------------------------------------------------
@@ -231,13 +231,13 @@ Authorization: bearer {{configToken}}
 # -----------------------------------------------------------------------------
 
 ### 4.1 Invalid offset is rejected
-GET http://localhost:{{configPort}}/v2/vendors?offset=-1
+GET http://localhost:{{configPort}}/v3/vendors?offset=-1
 Authorization: bearer {{configToken}}
 
 ### 4.2 Invalid limit is rejected
-GET http://localhost:{{configPort}}/v2/vendors?offset=0&limit=-1
+GET http://localhost:{{configPort}}/v3/vendors?offset=0&limit=-1
 Authorization: bearer {{configToken}}
 
 ### 4.3 Invalid orderBy field is rejected
-GET http://localhost:{{configPort}}/v2/vendors?orderBy=notARealField
+GET http://localhost:{{configPort}}/v3/vendors?orderBy=notARealField
 Authorization: bearer {{configToken}}

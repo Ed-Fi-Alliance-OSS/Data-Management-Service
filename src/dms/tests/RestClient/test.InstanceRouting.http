@@ -33,7 +33,7 @@ grant_type=client_credentials
 
 ### Create Data Store 1 - District 255901, School Year 2024
 # @name dataStore1
-POST {{configUrl}}/v2/dataStores/
+POST {{configUrl}}/v3/dataStores/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -49,7 +49,7 @@ Content-Type: application/json
 
 ### Create Data Store 2 - District 255901, School Year 2025
 # @name dataStore2
-POST {{configUrl}}/v2/dataStores/
+POST {{configUrl}}/v3/dataStores/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -65,7 +65,7 @@ Content-Type: application/json
 
 ### Create Data Store 3 - District 255902, School Year 2024
 # @name dataStore3
-POST {{configUrl}}/v2/dataStores/
+POST {{configUrl}}/v3/dataStores/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -84,7 +84,7 @@ Content-Type: application/json
 ###############################################################################
 
 ### Add context districtId=255901 to Data Store 1
-POST {{configUrl}}/v2/dataStoreContexts/
+POST {{configUrl}}/v3/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -97,7 +97,7 @@ Content-Type: application/json
 ###
 
 ### Add context schoolYear=2024 to Data Store 1
-POST {{configUrl}}/v2/dataStoreContexts/
+POST {{configUrl}}/v3/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -110,7 +110,7 @@ Content-Type: application/json
 ###
 
 ### Add context districtId=255901 to Data Store 2
-POST {{configUrl}}/v2/dataStoreContexts/
+POST {{configUrl}}/v3/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -123,7 +123,7 @@ Content-Type: application/json
 ###
 
 ### Add context schoolYear=2025 to Data Store 2
-POST {{configUrl}}/v2/dataStoreContexts/
+POST {{configUrl}}/v3/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -136,7 +136,7 @@ Content-Type: application/json
 ###
 
 ### Add context districtId=255902 to Data Store 3
-POST {{configUrl}}/v2/dataStoreContexts/
+POST {{configUrl}}/v3/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -149,7 +149,7 @@ Content-Type: application/json
 ###
 
 ### Add context schoolYear=2024 to Data Store 3
-POST {{configUrl}}/v2/dataStoreContexts/
+POST {{configUrl}}/v3/dataStoreContexts/
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -167,7 +167,7 @@ Content-Type: application/json
 
 ### Create vendor
 # @name vendor
-POST {{configUrl}}/v2/vendors
+POST {{configUrl}}/v3/vendors
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -196,7 +196,7 @@ Authorization: Bearer {{configAccessToken}}
 
 ### Create application
 # @name application
-POST {{configUrl}}/v2/applications
+POST {{configUrl}}/v3/applications
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 
@@ -217,7 +217,7 @@ Content-Type: application/json
 
 ### Create API client for testing
 # @name apiClient
-POST {{configUrl}}/v2/apiClients
+POST {{configUrl}}/v3/apiClients
 Authorization: Bearer {{configAccessToken}}
 Content-Type: application/json
 

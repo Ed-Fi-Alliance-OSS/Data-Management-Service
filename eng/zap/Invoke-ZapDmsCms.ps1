@@ -44,7 +44,7 @@ function New-DmsClient
         namespacePrefixes = "uri://ed-fi.org"
     } | ConvertTo-Json
 
-    $vendor = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v2/vendors" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $vendorBody
+    $vendor = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v3/vendors" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $vendorBody
 
     $instanceBody = @{
         dataStoreType = "Test"
@@ -52,7 +52,7 @@ function New-DmsClient
         connectionString = $ConnectionString
     } | ConvertTo-Json
 
-    $instance = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v2/dataStores" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $instanceBody
+    $instance = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v3/dataStores" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $instanceBody
 
     $applicationBody = @{
         vendorId = $vendor.id
@@ -62,7 +62,7 @@ function New-DmsClient
         dataStoreIds = @($instance.id)
     } | ConvertTo-Json
 
-    $application = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v2/applications" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $applicationBody
+    $application = Invoke-RestMethod -Method Post -Uri "$CmsBaseUrl/v3/applications" -Headers @{ Authorization = "Bearer $ConfigToken" } -ContentType "application/json" -Body $applicationBody
 
     return [pscustomobject]@{
         ClientId = $application.key
@@ -167,7 +167,7 @@ Write-Host "Requesting DMS token..."
 $dmsAuth = New-DmsToken -ClientId $client.ClientId -ClientSecret $client.ClientSecret
 
 Write-Host "Validating CMS access..."
-Invoke-RestMethod -Method Get -Uri "$CmsBaseUrl/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet" -Headers @{ Authorization = "Bearer $configToken" } | Out-Null
+Invoke-RestMethod -Method Get -Uri "$CmsBaseUrl/v3/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet" -Headers @{ Authorization = "Bearer $configToken" } | Out-Null
 
 Write-Host "Validating DMS access..."
 Invoke-RestMethod -Method Get -Uri "$($dmsAuth.DataApi)/ed-fi/gradeLevelDescriptors" -Headers @{ Authorization = "Bearer $($dmsAuth.Token)" } | Out-Null

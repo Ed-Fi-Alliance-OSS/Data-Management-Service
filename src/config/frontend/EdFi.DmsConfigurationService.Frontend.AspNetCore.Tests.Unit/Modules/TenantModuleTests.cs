@@ -131,11 +131,11 @@ public class TenantModuleTests
             {
                 // Arrange
                 using var client = SetUpClient(multiTenancyEnabled: true);
-                A.CallTo(() => _httpContext.Request.Path).Returns("/v2/tenants");
+                A.CallTo(() => _httpContext.Request.Path).Returns("/v3/tenants");
 
                 //Act
                 var addResponse = await client.PostAsync(
-                    "/v2/tenants/",
+                    "/v3/tenants/",
                     new StringContent(
                         """
                         {
@@ -146,12 +146,12 @@ public class TenantModuleTests
                         "application/json"
                     )
                 );
-                var getResponse = await client.GetAsync("/v2/tenants/?offset=0&limit=25");
-                var getByIdResponse = await client.GetAsync("/v2/tenants/1");
+                var getResponse = await client.GetAsync("/v3/tenants/?offset=0&limit=25");
+                var getByIdResponse = await client.GetAsync("/v3/tenants/1");
 
                 //Assert
                 addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-                addResponse.Headers.Location!.ToString().Should().EndWith("/v2/tenants/1");
+                addResponse.Headers.Location!.ToString().Should().EndWith("/v3/tenants/1");
                 getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
                 getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             }
@@ -163,7 +163,7 @@ public class TenantModuleTests
                 using var client = SetUpClient(multiTenancyEnabled: true);
 
                 // Act
-                var response = await client.GetAsync("/v2/tenants/?orderBy=invalidField");
+                var response = await client.GetAsync("/v3/tenants/?orderBy=invalidField");
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -187,7 +187,7 @@ public class TenantModuleTests
 
                 //Act
                 var addResponse = await client.PostAsync(
-                    "/v2/tenants/",
+                    "/v3/tenants/",
                     new StringContent(invalidPostBody, Encoding.UTF8, "application/json")
                 );
 
@@ -231,7 +231,7 @@ public class TenantModuleTests
 
                 //Act
                 var addResponse = await client.PostAsync(
-                    "/v2/tenants/",
+                    "/v3/tenants/",
                     new StringContent(invalidPostBody, Encoding.UTF8, "application/json")
                 );
 
@@ -260,7 +260,7 @@ public class TenantModuleTests
 
                 //Act
                 var addResponse = await client.PostAsync(
-                    "/v2/tenants/",
+                    "/v3/tenants/",
                     new StringContent(
                         """
                         {
@@ -298,7 +298,7 @@ public class TenantModuleTests
                 using var client = SetUpClient(multiTenancyEnabled: true);
 
                 //Act
-                var getByIdResponse = await client.GetAsync("/v2/tenants/1");
+                var getByIdResponse = await client.GetAsync("/v3/tenants/1");
 
                 //Assert
                 getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -313,7 +313,7 @@ public class TenantModuleTests
                 using var client = SetUpClient(multiTenancyEnabled: true);
 
                 //Act
-                var getByIdResponse = await client.GetAsync("/v2/tenants/a");
+                var getByIdResponse = await client.GetAsync("/v3/tenants/a");
 
                 //Assert
                 getByIdResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -344,7 +344,7 @@ public class TenantModuleTests
 
                 //Act
                 var addResponse = await client.PostAsync(
-                    "/v2/tenants/",
+                    "/v3/tenants/",
                     new StringContent(
                         """
                         {
@@ -355,8 +355,8 @@ public class TenantModuleTests
                         "application/json"
                     )
                 );
-                var getResponse = await client.GetAsync("/v2/tenants/?offset=0&limit=25");
-                var getByIdResponse = await client.GetAsync("/v2/tenants/1");
+                var getResponse = await client.GetAsync("/v3/tenants/?offset=0&limit=25");
+                var getByIdResponse = await client.GetAsync("/v3/tenants/1");
 
                 //Assert
                 addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -388,7 +388,7 @@ public class TenantModuleTests
 
                 //Act
                 var addResponse = await client.PostAsync(
-                    "/v2/tenants/",
+                    "/v3/tenants/",
                     new StringContent(
                         """
                         {
@@ -399,8 +399,8 @@ public class TenantModuleTests
                         "application/json"
                     )
                 );
-                var getResponse = await client.GetAsync("/v2/tenants/?offset=0&limit=25");
-                var getByIdResponse = await client.GetAsync("/v2/tenants/1");
+                var getResponse = await client.GetAsync("/v3/tenants/?offset=0&limit=25");
+                var getByIdResponse = await client.GetAsync("/v3/tenants/1");
 
                 //Assert
                 addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -421,7 +421,7 @@ public class TenantModuleTests
 
             //Act
             var response = await client.PostAsync(
-                "/v2/tenants/",
+                "/v3/tenants/",
                 new StringContent(
                     """
                     {
@@ -445,7 +445,7 @@ public class TenantModuleTests
             using var client = SetUpClient(multiTenancyEnabled: false);
 
             //Act
-            var response = await client.GetAsync("/v2/tenants/?offset=0&limit=25");
+            var response = await client.GetAsync("/v3/tenants/?offset=0&limit=25");
 
             //Assert
             // When multi-tenancy is disabled, the TenantModule is not registered at all
@@ -459,7 +459,7 @@ public class TenantModuleTests
             using var client = SetUpClient(multiTenancyEnabled: false);
 
             //Act
-            var response = await client.GetAsync("/v2/tenants/1");
+            var response = await client.GetAsync("/v3/tenants/1");
 
             //Assert
             // When multi-tenancy is disabled, the TenantModule is not registered at all
@@ -474,7 +474,7 @@ public class TenantModuleTests
 
             //Act
             await client.PostAsync(
-                "/v2/tenants/",
+                "/v3/tenants/",
                 new StringContent(
                     """
                     {
@@ -485,8 +485,8 @@ public class TenantModuleTests
                     "application/json"
                 )
             );
-            await client.GetAsync("/v2/tenants/?offset=0&limit=25");
-            await client.GetAsync("/v2/tenants/1");
+            await client.GetAsync("/v3/tenants/?offset=0&limit=25");
+            await client.GetAsync("/v3/tenants/1");
 
             //Assert
             A.CallTo(() => _tenantRepository.InsertTenant(A<TenantInsertCommand>.Ignored))

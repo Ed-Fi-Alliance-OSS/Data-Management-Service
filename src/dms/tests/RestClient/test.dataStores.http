@@ -1,6 +1,6 @@
 # DMS-1075: DMS Instances and Derivatives Encrypted Connection String Test
 #
-# This file exercises the /v2/dataStores and /v2/dataStoreDerivatives
+# This file exercises the /v3/dataStores and /v3/dataStoreDerivatives
 # CMS endpoints. As of DMS-1075, GET responses return the connectionString
 # field as a Base64-encoded AES-encrypted value rather than plain text.
 # Callers should expect the connectionString in GET responses to be an
@@ -51,7 +51,7 @@ client_id={{sysAdminId}}
 
 ### Create a DMS instance
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -65,22 +65,22 @@ Authorization: bearer {{configToken}}
 @dataStoreId={{createDataStore.response.body.id}}
 
 ###############################################################################
-# STEP 4: GET /v2/dataStores — list all instances
+# STEP 4: GET /v3/dataStores — list all instances
 # Expected: connectionString values are Base64-encoded AES-encrypted (DMS-1075).
 # The connectionString will NOT match the plain-text value sent in POST.
 ###############################################################################
 
 ### List all DMS instances
-GET http://localhost:{{configPort}}/v2/dataStores
+GET http://localhost:{{configPort}}/v3/dataStores
 Authorization: bearer {{configToken}}
 
 ###############################################################################
-# STEP 5: GET /v2/dataStores/{id} — get a single instance by ID
+# STEP 5: GET /v3/dataStores/{id} — get a single instance by ID
 # Expected: connectionString is Base64-encoded AES-encrypted (DMS-1075).
 ###############################################################################
 
 ### Get DMS instance by ID
-GET http://localhost:{{configPort}}/v2/dataStores/{{dataStoreId}}
+GET http://localhost:{{configPort}}/v3/dataStores/{{dataStoreId}}
 Authorization: bearer {{configToken}}
 
 ###############################################################################
@@ -89,7 +89,7 @@ Authorization: bearer {{configToken}}
 
 ### Create a DMS instance derivative (ReadReplica)
 # @name createDataStoreDerivative
-POST http://localhost:{{configPort}}/v2/dataStoreDerivatives
+POST http://localhost:{{configPort}}/v3/dataStoreDerivatives
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -103,35 +103,35 @@ Authorization: bearer {{configToken}}
 @dataStoreDerivativeId={{createDataStoreDerivative.response.body.id}}
 
 ###############################################################################
-# STEP 7: GET /v2/dataStoreDerivatives — list all derivatives
+# STEP 7: GET /v3/dataStoreDerivatives — list all derivatives
 # Expected: connectionString values are Base64-encoded AES-encrypted (DMS-1075).
 ###############################################################################
 
 ### List all DMS instance derivatives
-GET http://localhost:{{configPort}}/v2/dataStoreDerivatives
+GET http://localhost:{{configPort}}/v3/dataStoreDerivatives
 Authorization: bearer {{configToken}}
 
 ###############################################################################
-# STEP 8: GET /v2/dataStoreDerivatives/{id} — get a single derivative by ID
+# STEP 8: GET /v3/dataStoreDerivatives/{id} — get a single derivative by ID
 # Expected: connectionString is Base64-encoded AES-encrypted (DMS-1075).
 ###############################################################################
 
 ### Get DMS instance derivative by ID
-GET http://localhost:{{configPort}}/v2/dataStoreDerivatives/{{dataStoreDerivativeId}}
+GET http://localhost:{{configPort}}/v3/dataStoreDerivatives/{{dataStoreDerivativeId}}
 Authorization: bearer {{configToken}}
 
 ###############################################################################
-# STEP 9: DELETE /v2/dataStoreDerivatives/{id} — clean up derivative
+# STEP 9: DELETE /v3/dataStoreDerivatives/{id} — clean up derivative
 ###############################################################################
 
 ### Delete DMS instance derivative
-DELETE http://localhost:{{configPort}}/v2/dataStoreDerivatives/{{dataStoreDerivativeId}}
+DELETE http://localhost:{{configPort}}/v3/dataStoreDerivatives/{{dataStoreDerivativeId}}
 Authorization: bearer {{configToken}}
 
 ###############################################################################
-# STEP 10: DELETE /v2/dataStores/{id} — clean up instance
+# STEP 10: DELETE /v3/dataStores/{id} — clean up instance
 ###############################################################################
 
 ### Delete DMS instance
-DELETE http://localhost:{{configPort}}/v2/dataStores/{{dataStoreId}}
+DELETE http://localhost:{{configPort}}/v3/dataStores/{{dataStoreId}}
 Authorization: bearer {{configToken}}

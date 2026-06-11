@@ -45,7 +45,7 @@ public class ConfigServiceClient
         using var client = new HttpClient { BaseAddress = new Uri(_baseUrl) };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
-        var response = await client.PostAsJsonAsync("/v2/tenants/", request);
+        var response = await client.PostAsJsonAsync("/v3/tenants/", request);
 
         // If tenant already exists (400 Bad Request with duplicate name), try to get existing tenant
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
@@ -79,7 +79,7 @@ public class ConfigServiceClient
         using var client = new HttpClient { BaseAddress = new Uri(_baseUrl) };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
-        var response = await client.GetAsync("/v2/tenants/");
+        var response = await client.GetAsync("/v3/tenants/");
         response.EnsureSuccessStatusCode();
 
         var tenants =
@@ -117,7 +117,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.PostAsJsonAsync("/v2/vendors", request);
+        var response = await _httpClient.PostAsJsonAsync("/v3/vendors", request);
         response.EnsureSuccessStatusCode();
 
         // Try to get location header first
@@ -137,7 +137,7 @@ public class ConfigServiceClient
                 ?? throw new InvalidOperationException("Failed to deserialize vendor response");
 
             // Construct location from vendor ID
-            location = $"{_httpClient.BaseAddress}v2/vendors/{vendor.Id}";
+            location = $"{_httpClient.BaseAddress}v3/vendors/{vendor.Id}";
         }
 
         return (vendor, location);
@@ -173,7 +173,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.PostAsJsonAsync("/v2/dataStores", request);
+        var response = await _httpClient.PostAsJsonAsync("/v3/dataStores", request);
         response.EnsureSuccessStatusCode();
 
         var instance =
@@ -193,7 +193,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.PostAsJsonAsync("/v2/dataStoreContexts", request);
+        var response = await _httpClient.PostAsJsonAsync("/v3/dataStoreContexts", request);
         response.EnsureSuccessStatusCode();
 
         var routeContext =
@@ -213,7 +213,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.PostAsJsonAsync("/v2/applications", request);
+        var response = await _httpClient.PostAsJsonAsync("/v3/applications", request);
         response.EnsureSuccessStatusCode();
 
         var application =
@@ -233,7 +233,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.DeleteAsync($"/v2/dataStores/{dataStoreId}");
+        var response = await _httpClient.DeleteAsync($"/v3/dataStores/{dataStoreId}");
         response.EnsureSuccessStatusCode();
     }
 
@@ -247,7 +247,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.DeleteAsync($"/v2/applications/{applicationId}");
+        var response = await _httpClient.DeleteAsync($"/v3/applications/{applicationId}");
         response.EnsureSuccessStatusCode();
     }
 
@@ -261,7 +261,7 @@ public class ConfigServiceClient
             _accessToken
         );
 
-        var response = await _httpClient.DeleteAsync($"/v2/vendors/{vendorId}");
+        var response = await _httpClient.DeleteAsync($"/v3/vendors/{vendorId}");
         response.EnsureSuccessStatusCode();
     }
 }

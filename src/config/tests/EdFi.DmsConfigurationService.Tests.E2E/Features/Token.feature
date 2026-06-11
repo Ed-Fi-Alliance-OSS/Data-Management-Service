@@ -5,7 +5,7 @@ Feature: Token validation
               And token received
 
         Scenario: 01 Ensure clients can create a vendor
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 123",
@@ -18,7 +18,7 @@ Feature: Token validation
 
         Scenario: 02 Ensure clients cannot create a vendor when the token signature is manipulated
             Given token signature manipulated
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                         "company": "Test 456",
@@ -30,7 +30,7 @@ Feature: Token validation
              Then it should respond with 401
 
         Scenario: 03 Ensure a disabled API client cannot obtain a token
-             When a POST request is made to "/v2/vendors" with
+             When a POST request is made to "/v3/vendors" with
                   """
                     {
                       "company": "V-{scenarioRunId}",
@@ -40,7 +40,7 @@ Feature: Token validation
                     }
                   """
              Then it should respond with 201
-             When a POST request is made to "/v2/dataStores" with
+             When a POST request is made to "/v3/dataStores" with
                   """
                     {
                       "dataStoreType": "Test",
@@ -49,7 +49,7 @@ Feature: Token validation
                     }
                   """
              Then it should respond with 201
-             When a POST request is made to "/v2/applications" with
+             When a POST request is made to "/v3/applications" with
                   """
                     {
                       "vendorId": {vendorId},
@@ -60,7 +60,7 @@ Feature: Token validation
                     }
                   """
              Then it should respond with 201
-             When a POST request is made to "/v2/apiClients" with
+             When a POST request is made to "/v3/apiClients" with
                   """
                     {
                       "applicationId": {applicationId},

@@ -1,4 +1,4 @@
-# This file tests the /v2/dataStoreContexts endpoints.
+# This file tests the /v3/dataStoreContexts endpoints.
 @dmsPort=8080
 @configPort=8081
 
@@ -20,7 +20,7 @@ client_id={{sysAdminId}}
 
 ### Create a new dataStore
 # @name createDataStore
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -35,7 +35,7 @@ Authorization: bearer {{configToken}}
 
 ### Create a new data store context
 # @name createDataStoreContext
-POST http://localhost:{{configPort}}/v2/dataStoreContexts
+POST http://localhost:{{configPort}}/v3/dataStoreContexts
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -49,15 +49,15 @@ Authorization: bearer {{configToken}}
 @dataStoreContextId={{createDataStoreContext.response.body.id}}
 
 ### List all data store contexts
-GET http://localhost:{{configPort}}/v2/dataStoreContexts
+GET http://localhost:{{configPort}}/v3/dataStoreContexts
 Authorization: bearer {{configToken}}
 
 ### Get data store context by ID
-GET http://localhost:{{configPort}}/v2/dataStoreContexts/{{dataStoreContextId}}
+GET http://localhost:{{configPort}}/v3/dataStoreContexts/{{dataStoreContextId}}
 Authorization: bearer {{configToken}}
 
 ### Update data store context by ID
-PUT http://localhost:{{configPort}}/v2/dataStoreContexts/{{dataStoreContextId}}
+PUT http://localhost:{{configPort}}/v3/dataStoreContexts/{{dataStoreContextId}}
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -69,9 +69,9 @@ Authorization: bearer {{configToken}}
 }
 
 ### Delete data store context by ID
-DELETE http://localhost:{{configPort}}/v2/dataStoreContexts/{{dataStoreContextId}}
+DELETE http://localhost:{{configPort}}/v3/dataStoreContexts/{{dataStoreContextId}}
 Authorization: bearer {{configToken}}
 
 ### Get data store context by ID should return 404.
-GET http://localhost:{{configPort}}/v2/dataStoreContexts/{{dataStoreContextId}}
+GET http://localhost:{{configPort}}/v3/dataStoreContexts/{{dataStoreContextId}}
 Authorization: bearer {{configToken}}

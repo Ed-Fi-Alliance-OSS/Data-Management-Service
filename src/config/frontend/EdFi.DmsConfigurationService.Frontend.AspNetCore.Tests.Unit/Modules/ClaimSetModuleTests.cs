@@ -142,11 +142,11 @@ public class ClaimSetModuleTests
         {
             //Arrange
             using var client = SetUpClient();
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/claimSets");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/claimSets");
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/claimSets",
+                "/v3/claimSets",
                 new StringContent(
                     """
                     {
@@ -158,10 +158,10 @@ public class ClaimSetModuleTests
                 )
             );
 
-            var getResponse = await client.GetAsync("/v2/claimSets?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/claimSets/1");
+            var getResponse = await client.GetAsync("/v3/claimSets?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/claimSets/1");
             var updateResponse = await client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(
                     """
                     {
@@ -173,9 +173,9 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/claimSets/1");
+            var deleteResponse = await client.DeleteAsync("/v3/claimSets/1");
             var copyResponse = await client.PostAsync(
-                "/v2/claimSets/copy",
+                "/v3/claimSets/copy",
                 new StringContent(
                     """
                     {
@@ -187,9 +187,9 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var exportResponse = await client.GetAsync("/v2/claimSets/1/export");
+            var exportResponse = await client.GetAsync("/v3/claimSets/1/export");
             var importResponse = await client.PostAsync(
-                "/v2/claimSets/import",
+                "/v3/claimSets/import",
                 new StringContent(
                     """
                     {
@@ -203,7 +203,7 @@ public class ClaimSetModuleTests
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-            addResponse.Headers.Location!.ToString().Should().EndWith("/v2/claimSets/1");
+            addResponse.Headers.Location!.ToString().Should().EndWith("/v3/claimSets/1");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -282,27 +282,27 @@ public class ClaimSetModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/claimSets",
+                "/v3/claimSets",
                 new StringContent(invalidInsertBody, Encoding.UTF8, "application/json")
             );
 
             var addResponseWithInvalidName = await client.PostAsync(
-                "/v2/claimSets",
+                "/v3/claimSets",
                 new StringContent(claimSetNameWithWhiteSpace, Encoding.UTF8, "application/json")
             );
 
             var updateResponse = await client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(invalidPutBody, Encoding.UTF8, "application/json")
             );
 
             var importResponse = await client.PostAsync(
-                "/v2/claimSets/import",
+                "/v3/claimSets/import",
                 new StringContent(invalidImportBody, Encoding.UTF8, "application/json")
             );
 
             var copyResponse = await client.PostAsync(
-                "/v2/claimSets/copy",
+                "/v3/claimSets/copy",
                 new StringContent(invalidCopyBody, Encoding.UTF8, "application/json")
             );
 
@@ -435,7 +435,7 @@ public class ClaimSetModuleTests
 
             //Act
             var updateResponse = await client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(
                     """
                     {
@@ -497,9 +497,9 @@ public class ClaimSetModuleTests
             using var client = SetUpClient();
 
             //Act
-            var getByIdResponse = await client.GetAsync("/v2/claimSets/99");
+            var getByIdResponse = await client.GetAsync("/v3/claimSets/99");
             var updateResponse = await client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(
                     """
                     {
@@ -522,9 +522,9 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/claimSets/1");
+            var deleteResponse = await client.DeleteAsync("/v3/claimSets/1");
             var copyResponse = await client.PostAsync(
-                "/v2/claimSets/copy",
+                "/v3/claimSets/copy",
                 new StringContent(
                     """
                     {
@@ -536,7 +536,7 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var exportResponse = await client.GetAsync("/v2/claimSets/1/export");
+            var exportResponse = await client.GetAsync("/v3/claimSets/1/export");
 
             //Assert
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -601,7 +601,7 @@ public class ClaimSetModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/claimSets",
+                "/v3/claimSets",
                 new StringContent(
                     """
                     {
@@ -613,10 +613,10 @@ public class ClaimSetModuleTests
                 )
             );
 
-            var getResponse = await client.GetAsync("/v2/claimSets?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/claimSets/1");
+            var getResponse = await client.GetAsync("/v3/claimSets?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/claimSets/1");
             var updateResponse = await client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(
                     """
                     {
@@ -639,9 +639,9 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/claimSets/1");
+            var deleteResponse = await client.DeleteAsync("/v3/claimSets/1");
             var copyResponse = await client.PostAsync(
-                "/v2/claimSets/copy",
+                "/v3/claimSets/copy",
                 new StringContent(
                     """
                     {
@@ -653,9 +653,9 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-            var exportResponse = await client.GetAsync("/v2/claimSets/1/export");
+            var exportResponse = await client.GetAsync("/v3/claimSets/1/export");
             var importResponse = await client.PostAsync(
-                "/v2/claimSets/import",
+                "/v3/claimSets/import",
                 new StringContent(
                     """
                     {
@@ -724,7 +724,7 @@ public class ClaimSetModuleTests
 
             //Act
             var addResponse = await _client.PostAsync(
-                "/v2/claimSets",
+                "/v3/claimSets",
                 new StringContent(
                     """
                     {
@@ -769,7 +769,7 @@ public class ClaimSetModuleTests
 
             //Act
             var addResponse = await _client.PutAsync(
-                "/v2/claimSets/333",
+                "/v3/claimSets/333",
                 new StringContent(
                     """
                     {
@@ -820,7 +820,7 @@ public class ClaimSetModuleTests
                 """;
 
             var importResponse = await _client.PostAsync(
-                "/v2/claimSets/import",
+                "/v3/claimSets/import",
                 new StringContent(importBody, Encoding.UTF8, "application/json")
             );
 
@@ -883,7 +883,7 @@ public class ClaimSetModuleTests
 
             // Act
             var response = await _client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(updateBody, Encoding.UTF8, "application/json")
             );
 
@@ -942,7 +942,7 @@ public class ClaimSetModuleTests
 
             // Act
             var response = await _client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(updateBody, Encoding.UTF8, "application/json")
             );
 
@@ -1001,7 +1001,7 @@ public class ClaimSetModuleTests
 
             // Act
             var response = await _client.PutAsync(
-                "/v2/claimSets/1",
+                "/v3/claimSets/1",
                 new StringContent(updateBody, Encoding.UTF8, "application/json")
             );
 
@@ -1040,7 +1040,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_400_when_orderBy_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/claimSets?orderBy=invalidField");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1048,7 +1048,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_400_when_direction_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?orderBy=id&direction=SIDEWAYS");
+            var response = await client.GetAsync("/v3/claimSets?orderBy=id&direction=SIDEWAYS");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1056,7 +1056,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_400_when_offset_is_negative()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?offset=-1");
+            var response = await client.GetAsync("/v3/claimSets?offset=-1");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1064,7 +1064,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_400_when_limit_is_zero()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?limit=0");
+            var response = await client.GetAsync("/v3/claimSets?limit=0");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1072,7 +1072,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?orderBy=name&direction=DESC");
+            var response = await client.GetAsync("/v3/claimSets?orderBy=name&direction=DESC");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1080,7 +1080,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_200_when_filter_name_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?name=MyClaimSet");
+            var response = await client.GetAsync("/v3/claimSets?name=MyClaimSet");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1088,7 +1088,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_200_when_filter_id_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?id=1");
+            var response = await client.GetAsync("/v3/claimSets?id=1");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -1096,7 +1096,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_400_when_offset_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?offset=abc");
+            var response = await client.GetAsync("/v3/claimSets?offset=abc");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1104,7 +1104,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_400_when_limit_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?limit=xyz");
+            var response = await client.GetAsync("/v3/claimSets?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -1112,7 +1112,7 @@ public class ClaimSetModuleTests
         public async Task Should_return_200_when_orderBy_omitted_with_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/claimSets?direction=asc");
+            var response = await client.GetAsync("/v3/claimSets?direction=asc");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }

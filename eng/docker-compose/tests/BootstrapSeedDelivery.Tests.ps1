@@ -1242,7 +1242,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             $script:capturedBody | Should -Be "client_id=the-key&client_secret=the-secret&grant_type=client_credentials"
         }
 
-        It "Remove-CmsApplication builds the DELETE URI as <CmsUrl>/v2/applications/<id>" {
+        It "Remove-CmsApplication builds the DELETE URI as <CmsUrl>/v3/applications/<id>" {
             Mock -ModuleName Dms-Management -CommandName Invoke-RestMethod -MockWith { return $null }
 
             Remove-CmsApplication `
@@ -1253,7 +1253,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             Should -Invoke `
                 -ModuleName Dms-Management `
                 -CommandName Invoke-RestMethod `
-                -ParameterFilter { $Uri -eq "http://localhost:8081/v2/applications/42" -and $Method -eq "Delete" } `
+                -ParameterFilter { $Uri -eq "http://localhost:8081/v3/applications/42" -and $Method -eq "Delete" } `
                 -Times 1 `
                 -Exactly
         }
@@ -1270,7 +1270,7 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             Should -Invoke `
                 -ModuleName Dms-Management `
                 -CommandName Invoke-RestMethod `
-                -ParameterFilter { $Headers["Tenant"] -eq "edfi-tenant" -and $Uri -eq "http://localhost:8081/v2/applications/7" } `
+                -ParameterFilter { $Headers["Tenant"] -eq "edfi-tenant" -and $Uri -eq "http://localhost:8081/v3/applications/7" } `
                 -Times 1 `
                 -Exactly
         }

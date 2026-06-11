@@ -404,7 +404,7 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext();
-            httpContext.Request.Path = "/v2/tenants";
+            httpContext.Request.Path = "/v3/tenants";
             // No Tenant header
 
             // Act
@@ -427,7 +427,7 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext();
-            httpContext.Request.Path = "/v2/tenants/123";
+            httpContext.Request.Path = "/v3/tenants/123";
             // No Tenant header
 
             // Act

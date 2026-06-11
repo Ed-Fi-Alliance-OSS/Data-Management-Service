@@ -37,7 +37,7 @@ client_id={{sysAdminId}}
 
 ### Create a new vendor
 # @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
+POST http://localhost:{{configPort}}/v3/vendors
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
@@ -66,7 +66,7 @@ Authorization: bearer {{configToken}}
 
 ### Create Data Store 1 - District 255901, School Year 2024
 # @name createDataStore1
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -81,7 +81,7 @@ Content-Type: application/json
 
 ### Create Route Context for Data Store 1 - districtId
 # @name createRouteContext1A
-POST http://localhost:{{configPort}}/v2/dataStoreContexts
+POST http://localhost:{{configPort}}/v3/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -93,7 +93,7 @@ Content-Type: application/json
 
 ### Create Route Context for Data Store 1 - schoolYear
 # @name createRouteContext1B
-POST http://localhost:{{configPort}}/v2/dataStoreContexts
+POST http://localhost:{{configPort}}/v3/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -107,7 +107,7 @@ Content-Type: application/json
 ### ============================================================================
 ### Create Data Store 2 - District 255901, School Year 2025
 # @name createDataStore2
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -122,7 +122,7 @@ Content-Type: application/json
 
 ### Create Route Context for Data Store 2 - districtId
 # @name createRouteContext2A
-POST http://localhost:{{configPort}}/v2/dataStoreContexts
+POST http://localhost:{{configPort}}/v3/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -134,7 +134,7 @@ Content-Type: application/json
 
 ### Create Route Context for Data Store 2 - schoolYear
 # @name createRouteContext2B
-POST http://localhost:{{configPort}}/v2/dataStoreContexts
+POST http://localhost:{{configPort}}/v3/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -148,7 +148,7 @@ Content-Type: application/json
 ### ============================================================================
 ### Create Data Store 3 - District 255902, School Year 2024
 # @name createDataStore3
-POST http://localhost:{{configPort}}/v2/dataStores
+POST http://localhost:{{configPort}}/v3/dataStores
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -163,7 +163,7 @@ Content-Type: application/json
 
 ### Create Route Context for Data Store 3 - districtId
 # @name createRouteContext3A
-POST http://localhost:{{configPort}}/v2/dataStoreContexts
+POST http://localhost:{{configPort}}/v3/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -175,7 +175,7 @@ Content-Type: application/json
 
 ### Create Route Context for Data Store 3 - schoolYear
 # @name createRouteContext3B
-POST http://localhost:{{configPort}}/v2/dataStoreContexts
+POST http://localhost:{{configPort}}/v3/dataStoreContexts
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -191,15 +191,15 @@ Content-Type: application/json
 ### ============================================================================
 
 ### List all data stores
-GET http://localhost:{{configPort}}/v2/dataStores?offset=0&limit=25
+GET http://localhost:{{configPort}}/v3/dataStores?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 ### Get specific data store by ID
-GET http://localhost:{{configPort}}/v2/dataStores/{{dataStore1Id}}
+GET http://localhost:{{configPort}}/v3/dataStores/{{dataStore1Id}}
 Authorization: bearer {{configToken}}
 
 ### List all Data Store Contexts
-GET http://localhost:{{configPort}}/v2/dataStoreContexts?offset=0&limit=25
+GET http://localhost:{{configPort}}/v3/dataStoreContexts?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
 
@@ -209,7 +209,7 @@ Authorization: bearer {{configToken}}
 
 ### Create Application
 # @name createApplication
-POST http://localhost:{{configPort}}/v2/applications
+POST http://localhost:{{configPort}}/v3/applications
 Authorization: bearer {{configToken}}
 Content-Type: application/json
 
@@ -389,21 +389,21 @@ Authorization: bearer {{dmsToken}}
 ### ============================================================================
 
 ### Delete Data Store 1
-DELETE http://localhost:{{configPort}}/v2/dataStores/{{dataStore1Id}}
+DELETE http://localhost:{{configPort}}/v3/dataStores/{{dataStore1Id}}
 Authorization: bearer {{configToken}}
 
 ### Delete Data Store 2
-DELETE http://localhost:{{configPort}}/v2/dataStores/{{dataStore2Id}}
+DELETE http://localhost:{{configPort}}/v3/dataStores/{{dataStore2Id}}
 Authorization: bearer {{configToken}}
 
 ### Delete Data Store 3
-DELETE http://localhost:{{configPort}}/v2/dataStores/{{dataStore3Id}}
+DELETE http://localhost:{{configPort}}/v3/dataStores/{{dataStore3Id}}
 Authorization: bearer {{configToken}}
 
 ### Delete Application
-DELETE http://localhost:{{configPort}}/v2/applications/{{applicationId}}
+DELETE http://localhost:{{configPort}}/v3/applications/{{applicationId}}
 Authorization: bearer {{configToken}}
 
 ### Delete Vendor
-DELETE http://localhost:{{configPort}}/v2/vendors/{{vendorId}}
+DELETE http://localhost:{{configPort}}/v3/vendors/{{vendorId}}
 Authorization: bearer {{configToken}}

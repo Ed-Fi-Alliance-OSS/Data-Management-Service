@@ -82,18 +82,18 @@ public class MetadataModuleTests
 
         var collectionEndpoints = new[]
         {
-            "/v2/vendors",
-            "/v2/applications",
-            "/v2/apiClients",
-            "/v2/dataStores",
-            "/v2/claimSets",
-            "/v2/tenants",
-            "/v2/profiles",
-            "/v2/dataStoreDerivatives",
-            "/v2/dataStoreContexts",
-            "/v2/resourceClaims",
-            "/v2/resourceClaimActions",
-            "/v2/resourceClaimActionAuthStrategies",
+            "/v3/vendors",
+            "/v3/applications",
+            "/v3/apiClients",
+            "/v3/dataStores",
+            "/v3/claimSets",
+            "/v3/tenants",
+            "/v3/profiles",
+            "/v3/dataStoreDerivatives",
+            "/v3/dataStoreContexts",
+            "/v3/resourceClaims",
+            "/v3/resourceClaimActions",
+            "/v3/resourceClaimActionAuthStrategies",
         };
 
         var requiredParams = new[] { "offset", "limit", "orderby", "direction" };
@@ -192,14 +192,14 @@ public class MetadataModuleTests
             .EnumerateObject()
             .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
 
-        var profilesKey = "/v2/profiles".TrimEnd('/').ToLowerInvariant();
-        pathMap.Should().ContainKey(profilesKey, "path /v2/profiles should exist in OpenAPI spec");
+        var profilesKey = "/v3/profiles".TrimEnd('/').ToLowerInvariant();
+        pathMap.Should().ContainKey(profilesKey, "path /v3/profiles should exist in OpenAPI spec");
         var pathItem = pathMap[profilesKey];
-        pathItem.TryGetProperty("get", out var getOp).Should().BeTrue("GET /v2/profiles should exist");
+        pathItem.TryGetProperty("get", out var getOp).Should().BeTrue("GET /v3/profiles should exist");
         getOp
             .TryGetProperty("parameters", out var parameters)
             .Should()
-            .BeTrue("GET /v2/profiles should have parameters");
+            .BeTrue("GET /v3/profiles should have parameters");
 
         var paramMap = parameters
             .EnumerateArray()
@@ -209,11 +209,11 @@ public class MetadataModuleTests
         {
             paramMap
                 .Should()
-                .ContainKey(required, $"GET /v2/profiles should expose '{required}' as a query parameter");
+                .ContainKey(required, $"GET /v3/profiles should expose '{required}' as a query parameter");
             paramMap[required]
                 .TryGetProperty("description", out var description)
                 .Should()
-                .BeTrue($"GET /v2/profiles parameter '{required}' should have a description");
+                .BeTrue($"GET /v3/profiles parameter '{required}' should have a description");
             description.GetString().Should().NotBeNullOrWhiteSpace();
         }
 
@@ -221,13 +221,13 @@ public class MetadataModuleTests
         idSchema.TryGetProperty("type", out var idType).Should().BeTrue();
         TypeIncludes(idType, "integer")
             .Should()
-            .BeTrue("GET /v2/profiles parameter 'id' schema should include integer");
+            .BeTrue("GET /v3/profiles parameter 'id' schema should include integer");
 
         paramMap["name"].TryGetProperty("schema", out var nameSchema).Should().BeTrue();
         nameSchema.TryGetProperty("type", out var nameType).Should().BeTrue();
         TypeIncludes(nameType, "string")
             .Should()
-            .BeTrue("GET /v2/profiles parameter 'name' schema should include string");
+            .BeTrue("GET /v3/profiles parameter 'name' schema should include string");
     }
 
     [Test]
@@ -251,8 +251,8 @@ public class MetadataModuleTests
             .EnumerateObject()
             .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
 
-        var apiClientsPath = "/v2/apiClients".TrimEnd('/').ToLowerInvariant();
-        pathMap.Should().ContainKey(apiClientsPath, "path /v2/apiClients should exist in OpenAPI spec");
+        var apiClientsPath = "/v3/apiClients".TrimEnd('/').ToLowerInvariant();
+        pathMap.Should().ContainKey(apiClientsPath, "path /v3/apiClients should exist in OpenAPI spec");
         var pathItem = pathMap[apiClientsPath];
 
         // Assert
@@ -263,22 +263,22 @@ public class MetadataModuleTests
         var postProperties = ResolveJsonResponseSchemaProperties(doc, pathItem, "post", "201");
         postProperties.Should().ContainKeys("applicationId", "name", "key", "secret");
 
-        var apiClientByIdPath = "/v2/apiClients/{clientId}".TrimEnd('/').ToLowerInvariant();
+        var apiClientByIdPath = "/v3/apiClients/{clientId}".TrimEnd('/').ToLowerInvariant();
         pathMap
             .Should()
-            .ContainKey(apiClientByIdPath, "path /v2/apiClients/{clientId} should exist in OpenAPI spec");
+            .ContainKey(apiClientByIdPath, "path /v3/apiClients/{clientId} should exist in OpenAPI spec");
         var pathItemById = pathMap[apiClientByIdPath];
 
         var getByIdProperties = ResolveJsonResponseSchemaProperties(doc, pathItemById, "get", "200");
         getByIdProperties.Should().ContainKey("name");
         getByIdProperties.Should().ContainKey("clientUuid");
 
-        var resetCredentialPath = "/v2/apiClients/{id}/reset-credential".TrimEnd('/').ToLowerInvariant();
+        var resetCredentialPath = "/v3/apiClients/{id}/reset-credential".TrimEnd('/').ToLowerInvariant();
         pathMap
             .Should()
             .ContainKey(
                 resetCredentialPath,
-                "path /v2/apiClients/{id}/reset-credential should exist in OpenAPI spec"
+                "path /v3/apiClients/{id}/reset-credential should exist in OpenAPI spec"
             );
         var pathItemResetCred = pathMap[resetCredentialPath];
 
@@ -347,21 +347,21 @@ public class MetadataModuleTests
             .EnumerateObject()
             .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
 
-        pathMap.Should().ContainKey("/v2/vendors", "path /v2/vendors should exist in OpenAPI spec");
-        var pathItem = pathMap["/v2/vendors"];
+        pathMap.Should().ContainKey("/v3/vendors", "path /v3/vendors should exist in OpenAPI spec");
+        var pathItem = pathMap["/v3/vendors"];
 
-        pathItem.TryGetProperty("post", out var postOp).Should().BeTrue("POST /v2/vendors should exist");
+        pathItem.TryGetProperty("post", out var postOp).Should().BeTrue("POST /v3/vendors should exist");
         var responses = postOp.GetProperty("responses");
 
         responses
             .TryGetProperty("201", out _)
             .Should()
-            .BeTrue("POST /v2/vendors should define a 201 response for new resources");
+            .BeTrue("POST /v3/vendors should define a 201 response for new resources");
 
         responses
             .TryGetProperty("200", out _)
             .Should()
-            .BeTrue("POST /v2/vendors should define a 200 response for updated resources");
+            .BeTrue("POST /v3/vendors should define a 200 response for updated resources");
 
         foreach (var code in new[] { "201", "200" })
         {

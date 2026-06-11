@@ -65,7 +65,7 @@ public class ConfigurationServiceProfileProvider(
                 applicationId
             );
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v2/applications/{applicationId}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/applications/{applicationId}");
             SetRequestHeaders(request, token, tenantId);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
@@ -143,7 +143,7 @@ public class ConfigurationServiceProfileProvider(
 
             logger.LogDebug("Fetching profile for profileId: {ProfileId}", profileId);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v2/profiles/{profileId}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/profiles/{profileId}");
             SetRequestHeaders(request, token, tenantId);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
@@ -219,7 +219,7 @@ public class ConfigurationServiceProfileProvider(
 
             logger.LogDebug("Fetching profile catalog from CMS");
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/v2/profiles");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/v3/profiles");
             SetRequestHeaders(request, token, tenantId);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);

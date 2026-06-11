@@ -18,9 +18,9 @@ public class TenantModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v2/tenants/", InsertTenant);
-        endpoints.MapSecuredGet("/v2/tenants/", GetAll);
-        endpoints.MapSecuredGet($"/v2/tenants/{{id}}", GetById);
+        endpoints.MapSecuredPost("/v3/tenants/", InsertTenant);
+        endpoints.MapSecuredGet("/v3/tenants/", GetAll);
+        endpoints.MapSecuredGet($"/v3/tenants/{{id}}", GetById);
     }
 
     private static async Task<IResult> InsertTenant(

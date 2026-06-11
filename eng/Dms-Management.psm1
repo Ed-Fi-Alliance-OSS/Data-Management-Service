@@ -17,7 +17,7 @@
         The base URL of the API (e.g., https://dms.ed-fi.com).
 
     .PARAMETER RelativeUrl
-        The relative endpoint path (e.g., /v2/vendors).
+        The relative endpoint path (e.g., /v3/vendors).
 
     .PARAMETER Method
         The HTTP method to use: Get or Post.
@@ -32,12 +32,12 @@
         Optional hashtable of HTTP headers (e.g., @{ Authorization = "Bearer ..." }).
 
     .EXAMPLE
-        Invoke-Api -BaseUrl "https://dms.ed-fi.com" -RelativeUrl "/v2/vendors" -Method Get -ContentType "application/json"
+        Invoke-Api -BaseUrl "https://dms.ed-fi.com" -RelativeUrl "/v3/vendors" -Method Get -ContentType "application/json"
 
     .EXAMPLE
         $body = @{ name = "Vendor" } | ConvertTo-Json
         $headers = @{ Authorization = "Bearer token" }
-        Invoke-Api -BaseUrl "https://dms.ed-fi.com" -RelativeUrl "/v2/vendors" -Method Post -ContentType "application/json" -Body $body -Headers $headers
+        Invoke-Api -BaseUrl "https://dms.ed-fi.com" -RelativeUrl "/v3/vendors" -Method Post -ContentType "application/json" -Body $body -Headers $headers
 #>
 function Invoke-Api {
     [CmdletBinding()]
@@ -485,7 +485,7 @@ function Add-Vendor {
         $headers["Tenant"] = $Tenant
     }
 
-    $fullUri = "$($CmsUrl.TrimEnd('/'))/v2/vendors"
+    $fullUri = "$($CmsUrl.TrimEnd('/'))/v3/vendors"
 
     $webRequestParams = @{
         Uri         = $fullUri
@@ -583,7 +583,7 @@ function Add-Application {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/applications"
+        RelativeUrl  = "v3/applications"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $applicationData -Depth 10
@@ -784,7 +784,7 @@ function Add-DataStore {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/dataStores"
+        RelativeUrl  = "v3/dataStores"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $dataStoreData -Depth 10
@@ -848,7 +848,7 @@ function Get-DataStore {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/dataStores?offset=$Offset&limit=$Limit"
+        RelativeUrl  = "v3/dataStores?offset=$Offset&limit=$Limit"
         Method       = "Get"
         ContentType  = "application/json"
         Headers      = $headers
@@ -928,7 +928,7 @@ function Add-DataStoreContext {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/dataStoreContexts"
+        RelativeUrl  = "v3/dataStoreContexts"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $routeContextData -Depth 10
@@ -1112,7 +1112,7 @@ function Add-Tenant {
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
-        RelativeUrl  = "v2/tenants"
+        RelativeUrl  = "v3/tenants"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $tenantData -Depth 10
@@ -1184,7 +1184,7 @@ function Get-SeedLoaderNamespacePrefixes {
     Looks up an existing CMS application by name and vendor ID.
 
 .DESCRIPTION
-    GETs v2/vendors/{vendorId}/applications and filters by applicationName client-side.
+    GETs v3/vendors/{vendorId}/applications and filters by applicationName client-side.
     Returns the matching application ID or $null. When multiple matches are found the first
     is returned and a warning is written.
 
@@ -1235,7 +1235,7 @@ function Find-CmsApplicationIdsByNameAndVendor {
 
     $invokeParams = @{
         BaseUrl     = $CmsUrl
-        RelativeUrl = "v2/vendors/$VendorId/applications"
+        RelativeUrl = "v3/vendors/$VendorId/applications"
         Method      = "Get"
         ContentType = "application/json"
         Headers     = $headers
@@ -1252,7 +1252,7 @@ function Find-CmsApplicationIdsByNameAndVendor {
     Deletes a CMS application by ID.
 
 .DESCRIPTION
-    Sends DELETE v2/applications/{id}. Treats 404 as already-deleted (warns instead of throwing).
+    Sends DELETE v3/applications/{id}. Treats 404 as already-deleted (warns instead of throwing).
 
 .PARAMETER CmsUrl
     The base URL of the Config server. Defaults to http://localhost:8081.
@@ -1290,7 +1290,7 @@ function Remove-CmsApplication {
         $headers["Tenant"] = $Tenant
     }
 
-    $fullUri = [uri]::new($CmsUrl, "v2/applications/$ApplicationId").AbsoluteUri
+    $fullUri = [uri]::new($CmsUrl, "v3/applications/$ApplicationId").AbsoluteUri
 
     try {
         Invoke-RestMethod -Uri $fullUri -Method Delete -Headers $headers | Out-Null
@@ -1467,7 +1467,7 @@ function New-SeedLoaderCredentials {
     Add-Application stores the ClaimSetName as a string. A stale Config image that predates
     DMS-1152's embedded Claims.json would accept the application creation but then BulkLoadClient
     would surface confusing 401/403 noise on the first call because the runtime grant resolution
-    can't find the SeedLoader claim set. This fail-fast preflight queries /v2/claimSets and throws
+    can't find the SeedLoader claim set. This fail-fast preflight queries /v3/claimSets and throws
     with a clear remediation message when the claim set is absent.
 
 .PARAMETER CmsUrl
@@ -1504,7 +1504,7 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
 
     $invokeParams = @{
         BaseUrl     = $CmsUrl
-        RelativeUrl = "v2/claimSets?offset=0&limit=500"
+        RelativeUrl = "v3/claimSets?offset=0&limit=500"
         Method      = "Get"
         ContentType = "application/json"
         Headers     = $headers

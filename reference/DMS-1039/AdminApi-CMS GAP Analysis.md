@@ -38,19 +38,19 @@ The CMS contract relies on specific status codes (for example `201 Created` for 
 
 | Resource    | Verb   | CMS endpoint                        | CMS Status | AdminApi endpoint                        | AdminApi Status | Notes |
 |-------------|--------|-------------------------------------|------------|-------------------------------------------|------------------|-------|
-| ApiClient   | PUT    | /v2/apiclients/{{apiclientsId}} | 204        | /v2/apiclients/{{apiclientsId}}   | 200              | |
-| ApiClient   | DELETE | /v2/apiclients/{{apiclientsId}}     | 204        | /v2/apiclients/{{apiclientsId}}           | 200              | AdminApi returns _{ "title": "ApiClient deleted successfully" }_ |
-| Application | PUT    | /v2/applications                   | 204        | /v2/applications                         | 200              | |
-| Application | DELETE | /v2/applications/{{applicationId}}  | 204        | /v2/applications/{{applicationId}}        | 200              | AdminApi returns _{ "title": "Application deleted successfully" }_ |
-| Instance      | PUT    | /v2/dataStores/{id}} | 204        | /v2/odsInstances/{{instanceId}} | 200              | |
-| Instance      | DELETE | /v2/dataStores{{id}} | 204        | /v2/odsInstances/{{instanceId}} | 200              | AdminApi returns _{ "title": "Vendor deleted successfully" }_ |
-| Instance Derivative | PUT    | /v2/dataStoreDerivatives/{instanceDerivativeId}} | 204        | /v2/odsInstanceDerivatives /{{instanceDerivativeId}} | 200              | |
-| Instance Derivative | DELETE | /v2/dataStoreDerivatives{{instanceDerivativeId}} | 204        | /v2/odsInstanceDerivatives /{{instanceDerivativeId}}                  | 200              |  |
-| Instance Route Context | PUT    | /v2/dataStoreContexts/{instanceDerivativeId}}            | 204        |  /v2/OdsInstanceContexts /{{instanceDerivativeId}} | 200              | |
-| Instance Route Context | DELETE | /v2/dataStoreContexts{{instanceDerivativeId}}            | 204        | /v2/OdsInstanceContexts /{{instanceDerivativeId}}  | 200              |  |
-| Vendor      | POST   | /v2/vendors                        | 201        | /v2/vendors                              | 200              | |
-| Vendor      | PUT    | /v2/vendors/{{vendorId}}            | 204        | /v2/vendors/{{vendorId}}                  | 200              | |
-| Vendor      | DELETE | /v2/vendors/{{vendorId}}            | 204        | /v2/vendors/{{vendorId}}                  | 200              | AdminApi returns _{ "title": "Vendor deleted successfully" }_ |
+| ApiClient   | PUT    | /v3/apiclients/{{apiclientsId}} | 204        | /v3/apiclients/{{apiclientsId}}   | 200              | |
+| ApiClient   | DELETE | /v3/apiclients/{{apiclientsId}}     | 204        | /v3/apiclients/{{apiclientsId}}           | 200              | AdminApi returns _{ "title": "ApiClient deleted successfully" }_ |
+| Application | PUT    | /v3/applications                   | 204        | /v3/applications                         | 200              | |
+| Application | DELETE | /v3/applications/{{applicationId}}  | 204        | /v3/applications/{{applicationId}}        | 200              | AdminApi returns _{ "title": "Application deleted successfully" }_ |
+| Instance      | PUT    | /v3/dataStores/{id}} | 204        | /v3/odsInstances/{{instanceId}} | 200              | |
+| Instance      | DELETE | /v3/dataStores{{id}} | 204        | /v3/odsInstances/{{instanceId}} | 200              | AdminApi returns _{ "title": "Vendor deleted successfully" }_ |
+| Instance Derivative | PUT    | /v3/dataStoreDerivatives/{instanceDerivativeId}} | 204        | /v3/odsInstanceDerivatives /{{instanceDerivativeId}} | 200              | |
+| Instance Derivative | DELETE | /v3/dataStoreDerivatives{{instanceDerivativeId}} | 204        | /v3/odsInstanceDerivatives /{{instanceDerivativeId}}                  | 200              |  |
+| Instance Route Context | PUT    | /v3/dataStoreContexts/{instanceDerivativeId}}            | 204        |  /v3/OdsInstanceContexts /{{instanceDerivativeId}} | 200              | |
+| Instance Route Context | DELETE | /v3/dataStoreContexts{{instanceDerivativeId}}            | 204        | /v3/OdsInstanceContexts /{{instanceDerivativeId}}  | 200              |  |
+| Vendor      | POST   | /v3/vendors                        | 201        | /v3/vendors                              | 200              | |
+| Vendor      | PUT    | /v3/vendors/{{vendorId}}            | 204        | /v3/vendors/{{vendorId}}                  | 200              | |
+| Vendor      | DELETE | /v3/vendors/{{vendorId}}            | 204        | /v3/vendors/{{vendorId}}                  | 200              | AdminApi returns _{ "title": "Vendor deleted successfully" }_ |
 
 ### `Location` header format
 
@@ -65,18 +65,18 @@ Location: /profiles/2
 CMS
 
 ```
-Location: http://localhost:8081/v2/profiles/2
+Location: http://localhost:8081/v3/profiles/2
 ```
 
 | Resource    | Verb   | CMS endpoint      | CMS Location      | AdminApi endpoint    | AdminApi Location       | Notes |
 |-------------|--------|-------------------|-------------------|----------------------|-------------------------|---------------------|
-| ApiClient     | POST   | /v2/apiClients/      | Location: <http://localhost:8081/v2/apiClients/1>   | /v2/apiclients/         | Location:  /apiclients/1    | |
-| Application     | POST   | /v2/applications/      | Location: <http://localhost:8081/v2/applications/1>   | /v2/applications/         | Location: /applications/1    | |
-| Instances     | POST   | /v2/dataStores      | Location: <http://localhost:8081/v2/dataStores/1>   | /v2/odsInstances         | Location: /odsInstances/1    | |
-| Instance Derivatives  | POST   | /v2/dataStoreDerivatives      | Location: <http://localhost:8081/v2/dataStoreDerivatives/1>   | /v2/odsInstanceDerivatives         | Location: /odsInstanceDerivatives/1    | |
-| Instance Route Context  | POST   | /v2/dataStoreContexts      | Location: <http://localhost:8081/v2/dataStoreContexts/1>   | /v2/odsInstanceContexts         | Location: /odsInstanceContexts/1    | |
-| Profile     | POST   | /v2/profiles/      | Location: <http://localhost:8081/v2/profiles/1>   | /v2/profiles/         | Location: /profiles/1    | |
-| Vendor     | POST   | /v2/vendors/      | Location: <http://localhost:8081/v2/vendors/1>       | /v2/vendors/         | Location: /vendors/1    | CMS returns { "id": 3, "status": 200, "title": "Vendor Sample Vendor has been updated successfully." } |
+| ApiClient     | POST   | /v3/apiClients/      | Location: <http://localhost:8081/v3/apiClients/1>   | /v3/apiclients/         | Location:  /apiclients/1    | |
+| Application     | POST   | /v3/applications/      | Location: <http://localhost:8081/v3/applications/1>   | /v3/applications/         | Location: /applications/1    | |
+| Instances     | POST   | /v3/dataStores      | Location: <http://localhost:8081/v3/dataStores/1>   | /v3/odsInstances         | Location: /odsInstances/1    | |
+| Instance Derivatives  | POST   | /v3/dataStoreDerivatives      | Location: <http://localhost:8081/v3/dataStoreDerivatives/1>   | /v3/odsInstanceDerivatives         | Location: /odsInstanceDerivatives/1    | |
+| Instance Route Context  | POST   | /v3/dataStoreContexts      | Location: <http://localhost:8081/v3/dataStoreContexts/1>   | /v3/odsInstanceContexts         | Location: /odsInstanceContexts/1    | |
+| Profile     | POST   | /v3/profiles/      | Location: <http://localhost:8081/v3/profiles/1>   | /v3/profiles/         | Location: /profiles/1    | |
+| Vendor     | POST   | /v3/vendors/      | Location: <http://localhost:8081/v3/vendors/1>       | /v3/vendors/         | Location: /vendors/1    | CMS returns { "id": 3, "status": 200, "title": "Vendor Sample Vendor has been updated successfully." } |
 
 ### Query Parameter Support (Sort/Limit)
 
@@ -92,7 +92,7 @@ The Admin API schema, DTOs, and query parameters consistently use the `odsInstan
 | odsInstanceRouteContexts| dataStoreContexts        |
 | odsInstanceDerivatives  | dataStoreDerivatives     |
 
-**Action: _GET /v2/dataStores_**
+**Action: _GET /v3/dataStores_**
 
 - Response Payload (CMS)
 
@@ -126,7 +126,7 @@ The Admin API schema, DTOs, and query parameters consistently use the `odsInstan
 
 Admin API trusts the identifier supplied in the URL. CMS additionally requires an `id` property in the request body and rejects the call when the values differ. Introducing this validation to Admin API would be a breaking change.
 
-**Action: _PUT /v2/vendors/{{vendorId}}_**
+**Action: _PUT /v3/vendors/{{vendorId}}_**
 
 - Request Payload (CMS)
 
@@ -151,7 +151,7 @@ Server: Kestrel
 
 NOTE: if the id is not sent it will fail: _"Request body id must match the id in the url."_
 
-**_PUT /v2/vendors/{{vendorId}}_**
+**_PUT /v3/vendors/{{vendorId}}_**
 
 - Request Payload (CMS)
 
@@ -236,7 +236,7 @@ Admin API accepts spaces in `claimSetName` when creating an application. CMS rej
 
 Admin API returns the full `applicationModel`, including `enabled`, `educationOrganizationIds`, `profileIds`, and `odsInstanceIds`. CMS exposes renames the instance array to `dataStoreIds`, so callers lose required context.
 
-**Action: _GET /v2/applications_**
+**Action: _GET /v3/applications_**
 
 - Response Payload (CMS)
 
@@ -278,13 +278,13 @@ Admin API returns the full `applicationModel`, including `enabled`, `educationOr
 
 ### API clients
 
-CMS camel-cases every route segment (`/v2/apiClients`), accepts both integers and strings for IDs, omits some fields and renames `odsInstanceIds` to `dataStoreIds`. Admin API also returns the newly issued key/secret on POST/PUT/reset, while CMS returns an empty `200`.
+CMS camel-cases every route segment (`/v3/apiClients`), accepts both integers and strings for IDs, omits some fields and renames `odsInstanceIds` to `dataStoreIds`. Admin API also returns the newly issued key/secret on POST/PUT/reset, while CMS returns an empty `200`.
 
 #### GET payload shape
 
 Admin API and CMS return different payloads for ApiClient records. CMS renames the instance array to `dataStoreIds` and omits some fields, so callers lose required context.
 
-**Action: _GET /v2/apiClients_**
+**Action: _GET /v3/apiClients_**
 
 - Response Payload (CMS):
 
@@ -331,7 +331,7 @@ Admin API filters by numeric application ID and includes `useSandbox`, `sandboxT
 
 Also, AdminAPI uses id to filter the GET apiClient but CMS uses the clientUuid.
 
-**Action: _GET /v2/apiclients_**
+**Action: _GET /v3/apiclients_**
 
 - Response Payload (CMS)
 
@@ -372,7 +372,7 @@ Also, AdminAPI uses id to filter the GET apiClient but CMS uses the clientUuid.
 
 Admin API returns an `applicationResult` (including `name` and `applicationId`) with `201 Created`. CMS only returns an object with `id`, `key`, and `secret`, so Admin UI flows that display the friendly name or store the numeric application ID cannot function.
 
-**Action: _POST /v2/ApiClients_**
+**Action: _POST /v3/ApiClients_**
 
 - Response payload (CMS)
 
@@ -400,7 +400,7 @@ Admin API returns an `applicationResult` (including `name` and `applicationId`) 
 
 Admin API emits the full resource-claim tree (actions, default strategies, overrides). CMS returns only a high-level claim set descriptor.
 
-**Action: _GET /v2/claimSets/{{id}}/export_**
+**Action: _GET /v3/claimSets/{{id}}/export_**
 
 - Response Payload (CMS)
 
@@ -451,7 +451,7 @@ Admin API emits the full resource-claim tree (actions, default strategies, overr
 
 Admin API models instances with `name`, `instanceType`, and optional details. CMS adds connection metadata but renames fields (`dataStoreType`, `name`) and nests derivative/context collections differently.
 
-**Action: AdminApi (_GET /v2/odsInstances_) and CMS (_GET /v2/dataStores_)
+**Action: AdminApi (_GET /v3/odsInstances_) and CMS (_GET /v3/dataStores_)
 
 - Response Payload (CMS)
 
@@ -483,27 +483,27 @@ Admin API models instances with `name`, `instanceType`, and optional details. CM
 
 #### Applications by instance
 
-`/v2/odsInstances/{odsInstanceId}/applications` in Admin API includes an `enabled` flag for each application. CMS omits that property, so Admin consoles cannot display or toggle application availability per instance. Add the field to the CMS response.
+`/v3/odsInstances/{odsInstanceId}/applications` in Admin API includes an `enabled` flag for each application. CMS omits that property, so Admin consoles cannot display or toggle application availability per instance. Add the field to the CMS response.
 
 ### Tenants differences
 
 Admin API exposes:
 
-- `/v2/tenants`
-- `/v2/tenants/{tenantName}`
-- `/v2/tenants/details`
+- `/v3/tenants`
+- `/v3/tenants/{tenantName}`
+- `/v3/tenants/details`
 
-CMS implements `/v2/tenants` and `/v2/tenants/{id}` but expects an integer identifier and omits the `details` summary. For parity:
+CMS implements `/v3/tenants` and `/v3/tenants/{id}` but expects an integer identifier and omits the `details` summary. For parity:
 
-1. Accept tenant name in the path to preserve the Admin natural key. It seems that `/v2/tenants` and `/v2/tenants/{id}` will be removed.
+1. Accept tenant name in the path to preserve the Admin natural key. It seems that `/v3/tenants` and `/v3/tenants/{id}` will be removed.
 2. Add the `details` projection (or move its payload into the instance endpoints as planned) so Admin tooling can render tenant-instance mappings.
 3. Support Admin query parameters (`offset`, `limit`, `orderBy`, `direction`).
 
 ### Resource claim metadata
 
-None of the `/v2/resourceClaims*` endpoints are present in CMS. These routes power the Admin UI pages used to browse claims/actions and configure overrides. We created a ticket previously [DMS-853](https://edfi.atlassian.net/browse/DMS-853)
+None of the `/v3/resourceClaims*` endpoints are present in CMS. These routes power the Admin UI pages used to browse claims/actions and configure overrides. We created a ticket previously [DMS-853](https://edfi.atlassian.net/browse/DMS-853)
 
-**Action: _GET /v2/resourceClaims_**
+**Action: _GET /v3/resourceClaims_**
 
 - CMS
 
@@ -542,7 +542,7 @@ Endpoint does not exist
 }
 ```
 
-**Action: _GET /v2/resourceClaimActionAuthStrategies_**
+**Action: _GET /v3/resourceClaimActionAuthStrategies_**
 
 - CMS: Endpoint does not exist.
 
@@ -637,7 +637,7 @@ CMS includes `/authorizationStrategies`, but Admin API does not. For parity we e
 
 Vendor POST in Admin API returns a `201 Created` with an empty body, while CMS emits a body with `id`, `status`, and `title`. Although the extra fields are not harmful, CMS should still send the Admin status codes and ensure the schema matches what clients expect. An example CMS payload today:
 
-**Action: POST _/v2/vendors_**
+**Action: POST _/v3/vendors_**
 
 - Response (CMS)
 
@@ -649,7 +649,7 @@ Connection: close
 Content-Type: application/json; charset=utf-8
 Date: Fri, 13 Feb 2026 15:36:56 GMT
 Server: Kestrel
-Location: http://localhost:8081/v2/vendors/1
+Location: http://localhost:8081/v3/vendors/1
 Transfer-Encoding: chunked
 ```
 
@@ -683,15 +683,15 @@ _Body_
 
 ## Upcoming Admin API Changes
 
-- **Tenant endpoints deprecation:** `/v2/tenants`, `/v2/tenants/{tenantName}`, and `/v2/tenants/details` are scheduled for removal once the instance detail payloads fully cover the same information. CMS consumers should treat these routes as legacy and plan to rely on the instance endpoints instead.
+- **Tenant endpoints deprecation:** `/v3/tenants`, `/v3/tenants/{tenantName}`, and `/v3/tenants/details` are scheduled for removal once the instance detail payloads fully cover the same information. CMS consumers should treat these routes as legacy and plan to rely on the instance endpoints instead.
 - **Education organization endpoints:** Admin API will expose new education-organization (`edOrg`) endpoints. The shape is still in progress, so parity work should wait for the finalized schema before backfilling or mapping CMS routes.
 
 ## Summary
 
 If an Admin API client simply switches its base URL to the CMS service without code changes:
 
-- **Non-existent routes return 404:** Any call to `/v2/resourceClaims*`, `/v2/claimSets/*/resourceClaimActions`, or `/v2/tenants/details` immediately fails because CMS does not expose those endpoints.
-- **Successful calls return incompatible payloads:** Requests to `/v2/applications`, `/v2/apiClients`, `/v2/odsInstances*`, and `/v2/claimSets/{id}/export` will still return `200 OK`, but the JSON shape differs (missing `enabled`, `odsInstanceIds`, sandbox metadata, resource-claim trees). Clients that deserialize Admin DTOs will either throw parsing errors or silently discard required data.
+- **Non-existent routes return 404:** Any call to `/v3/resourceClaims*`, `/v3/claimSets/*/resourceClaimActions`, or `/v3/tenants/details` immediately fails because CMS does not expose those endpoints.
+- **Successful calls return incompatible payloads:** Requests to `/v3/applications`, `/v3/apiClients`, `/v3/odsInstances*`, and `/v3/claimSets/{id}/export` will still return `200 OK`, but the JSON shape differs (missing `enabled`, `odsInstanceIds`, sandbox metadata, resource-claim trees). Clients that deserialize Admin DTOs will either throw parsing errors or silently discard required data.
 - **Error handling regresses:** CMS emits Problem Details bodies and often responds with `200` even for validation failures. Callers expecting Admin API status codes (`400/401/403/409`) and the `{ "title": "Validation failed", "errors": { ... } }` envelope will misinterpret failures as success.
-- **Tenant-aware automation stalls:** Logic that looks up tenants by name or relies on `/v2/tenants/details` will either receive 404s or incomplete payloads, causing instance provisioning and routing scripts to fail.
-- **`Location` headers cannot be parsed:** Admin clients extract new resource IDs from relative headers (for example `/profiles/2`). CMS returns absolute URLs (`http://localhost:8081/v2/profiles/2`), so lightweight HTTP clients that concatenate the base URI or regex the relative path will either duplicate segments or fail to capture the identifier.
+- **Tenant-aware automation stalls:** Logic that looks up tenants by name or relies on `/v3/tenants/details` will either receive 404s or incomplete payloads, causing instance provisioning and routing scripts to fail.
+- **`Location` headers cannot be parsed:** Admin clients extract new resource IDs from relative headers (for example `/profiles/2`). CMS returns absolute URLs (`http://localhost:8081/v3/profiles/2`), so lightweight HTTP clients that concatenate the base URI or regex the relative path will either duplicate segments or fail to capture the identifier.

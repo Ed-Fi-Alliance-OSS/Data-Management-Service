@@ -119,11 +119,11 @@ public class VendorModuleTests
         {
             // Arrange
             using var client = SetUpClient();
-            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/vendors");
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -137,10 +137,10 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/vendors/1");
+            var getResponse = await client.GetAsync("/v3/vendors?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/vendors/1");
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -155,12 +155,12 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/1");
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
             addResponse.Headers.Location!.IsAbsoluteUri.Should().BeTrue();
-            addResponse.Headers.Location!.ToString().Should().EndWith("/v2/vendors/1");
+            addResponse.Headers.Location!.ToString().Should().EndWith("/v3/vendors/1");
             var addBody = await addResponse.Content.ReadAsStringAsync();
             addBody.Should().BeEmpty();
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -186,7 +186,7 @@ public class VendorModuleTests
             using var client = SetUpClient();
 
             var response = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -203,7 +203,7 @@ public class VendorModuleTests
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Headers.Location!.IsAbsoluteUri.Should().BeTrue();
-            response.Headers.Location!.ToString().Should().EndWith("/v2/vendors/1");
+            response.Headers.Location!.ToString().Should().EndWith("/v3/vendors/1");
             var body = await response.Content.ReadAsStringAsync();
             body.Should().BeEmpty();
         }
@@ -225,7 +225,7 @@ public class VendorModuleTests
             using var client = SetUpClient();
 
             var response = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -279,12 +279,12 @@ public class VendorModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(invalidPostBody, Encoding.UTF8, "application/json")
             );
 
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(invalidPutBody, Encoding.UTF8, "application/json")
             );
 
@@ -360,7 +360,7 @@ public class VendorModuleTests
 
             //Act
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -407,9 +407,9 @@ public class VendorModuleTests
 
             //Act
 
-            var getByIdResponse = await client.GetAsync("/v2/vendors/1");
+            var getByIdResponse = await client.GetAsync("/v3/vendors/1");
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -424,7 +424,7 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/1");
 
             //Assert
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -439,9 +439,9 @@ public class VendorModuleTests
             using var client = SetUpClient();
 
             //Act
-            var getByIdResponse = await client.GetAsync("/v2/vendors/a");
+            var getByIdResponse = await client.GetAsync("/v3/vendors/a");
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/b",
+                "/v3/vendors/b",
                 new StringContent(
                     """
                     {
@@ -455,7 +455,7 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/c");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/c");
 
             //Assert
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -494,7 +494,7 @@ public class VendorModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -508,10 +508,10 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/vendors/1");
+            var getResponse = await client.GetAsync("/v3/vendors?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/vendors/1");
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -526,7 +526,7 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/1");
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -565,7 +565,7 @@ public class VendorModuleTests
 
             //Act
             var addResponse = await client.PostAsync(
-                "/v2/vendors",
+                "/v3/vendors",
                 new StringContent(
                     """
                     {
@@ -579,10 +579,10 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
-            var getByIdResponse = await client.GetAsync("/v2/vendors/1");
+            var getResponse = await client.GetAsync("/v3/vendors?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v3/vendors/1");
             var updateResponse = await client.PutAsync(
-                "/v2/vendors/1",
+                "/v3/vendors/1",
                 new StringContent(
                     """
                     {
@@ -597,7 +597,7 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+            var deleteResponse = await client.DeleteAsync("/v3/vendors/1");
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -665,7 +665,7 @@ public class VendorModuleTests
                 );
 
             // Act
-            var response = await client.GetAsync("/v2/vendors/1/applications");
+            var response = await client.GetAsync("/v3/vendors/1/applications");
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -685,7 +685,7 @@ public class VendorModuleTests
                 .Returns(new VendorApplicationsResult.Success([]));
 
             // Act
-            var response = await client.GetAsync("/v2/vendors/2/applications");
+            var response = await client.GetAsync("/v3/vendors/2/applications");
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -703,7 +703,7 @@ public class VendorModuleTests
                 .Returns(new VendorApplicationsResult.FailureNotExists());
 
             // Act
-            var response = await client.GetAsync("/v2/vendors/99/applications");
+            var response = await client.GetAsync("/v3/vendors/99/applications");
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -726,7 +726,7 @@ public class VendorModuleTests
         public async Task Should_return_400_when_orderBy_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/vendors?orderBy=invalidField");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -734,7 +734,7 @@ public class VendorModuleTests
         public async Task Should_return_400_when_direction_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?orderBy=id&direction=SIDEWAYS");
+            var response = await client.GetAsync("/v3/vendors?orderBy=id&direction=SIDEWAYS");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -742,7 +742,7 @@ public class VendorModuleTests
         public async Task Should_return_400_when_offset_is_negative()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?offset=-1");
+            var response = await client.GetAsync("/v3/vendors?offset=-1");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -750,7 +750,7 @@ public class VendorModuleTests
         public async Task Should_return_400_when_limit_is_zero()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?limit=0");
+            var response = await client.GetAsync("/v3/vendors?limit=0");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -758,7 +758,7 @@ public class VendorModuleTests
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?orderBy=company&direction=DESC");
+            var response = await client.GetAsync("/v3/vendors?orderBy=company&direction=DESC");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -766,7 +766,7 @@ public class VendorModuleTests
         public async Task Should_return_200_when_direction_is_asc()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?direction=asc");
+            var response = await client.GetAsync("/v3/vendors?direction=asc");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -774,7 +774,7 @@ public class VendorModuleTests
         public async Task Should_return_200_when_direction_is_ascending()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?direction=ascending");
+            var response = await client.GetAsync("/v3/vendors?direction=ascending");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -782,7 +782,7 @@ public class VendorModuleTests
         public async Task Should_return_200_when_direction_is_descending()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?direction=descending");
+            var response = await client.GetAsync("/v3/vendors?direction=descending");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -790,7 +790,7 @@ public class VendorModuleTests
         public async Task Should_return_400_with_correct_message_when_direction_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?direction=sideways");
+            var response = await client.GetAsync("/v3/vendors?direction=sideways");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
             content
@@ -802,7 +802,7 @@ public class VendorModuleTests
         public async Task Should_return_200_when_filter_id_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?id=1");
+            var response = await client.GetAsync("/v3/vendors?id=1");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -810,7 +810,7 @@ public class VendorModuleTests
         public async Task Should_return_200_when_filter_company_is_provided()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?company=Acme");
+            var response = await client.GetAsync("/v3/vendors?company=Acme");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -818,7 +818,7 @@ public class VendorModuleTests
         public async Task Should_return_200_when_limit_equals_maximum()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?limit=100");
+            var response = await client.GetAsync("/v3/vendors?limit=100");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
@@ -826,7 +826,7 @@ public class VendorModuleTests
         public async Task Should_return_400_when_offset_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?offset=abc");
+            var response = await client.GetAsync("/v3/vendors?offset=abc");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -834,7 +834,7 @@ public class VendorModuleTests
         public async Task Should_return_400_when_limit_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/vendors?limit=xyz");
+            var response = await client.GetAsync("/v3/vendors?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
     }

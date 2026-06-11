@@ -75,7 +75,7 @@ public class DataStoreContextModuleTests
         public async Task Should_return_400_when_orderBy_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStoreContexts?orderBy=invalidField");
+            var response = await client.GetAsync("/v3/dataStoreContexts?orderBy=invalidField");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -83,7 +83,7 @@ public class DataStoreContextModuleTests
         public async Task Should_return_400_when_direction_is_invalid()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStoreContexts?orderBy=id&direction=SIDEWAYS");
+            var response = await client.GetAsync("/v3/dataStoreContexts?orderBy=id&direction=SIDEWAYS");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -91,7 +91,7 @@ public class DataStoreContextModuleTests
         public async Task Should_return_400_when_offset_is_negative()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStoreContexts?offset=-1");
+            var response = await client.GetAsync("/v3/dataStoreContexts?offset=-1");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -99,7 +99,7 @@ public class DataStoreContextModuleTests
         public async Task Should_return_400_when_limit_is_zero()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStoreContexts?limit=0");
+            var response = await client.GetAsync("/v3/dataStoreContexts?limit=0");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -107,7 +107,7 @@ public class DataStoreContextModuleTests
         public async Task Should_return_400_when_offset_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStoreContexts?offset=abc");
+            var response = await client.GetAsync("/v3/dataStoreContexts?offset=abc");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
@@ -115,7 +115,7 @@ public class DataStoreContextModuleTests
         public async Task Should_return_400_when_limit_is_non_numeric()
         {
             using var client = SetUpClient();
-            var response = await client.GetAsync("/v2/dataStoreContexts?limit=xyz");
+            var response = await client.GetAsync("/v3/dataStoreContexts?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
     }

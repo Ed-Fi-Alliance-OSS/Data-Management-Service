@@ -5,7 +5,7 @@ Feature: Authorization Metadata endpoints
         And token received
 
     Scenario: 01 Ensure clients can GET authorization metadata for a specific claim set
-        When a GET request is made to "/authorizationMetadata?claimSetName=AssessmentRead"
+        When a GET request is made to "/v3/authorizationMetadata?claimSetName=AssessmentRead"
         Then it should respond with 200
         And the response body is an array with one object where
           | property       | value / condition |
@@ -14,14 +14,14 @@ Feature: Authorization Metadata endpoints
           | authorizations | non-empty array   |
 
     Scenario: 02 Ensure clients can GET authorization metadata for all claim sets when claimSetName is not specified
-        When a GET request is made to "/authorizationMetadata"
+        When a GET request is made to "/v3/authorizationMetadata"
         Then it should respond with 200
         And the response body is an array with more than one object where each object
           | property       | value / condition |
           | claimSetName   | non-empty string  |
 
     Scenario: 03 Ensure clients can GET authorization metadata for a non-existing claim set
-        When a GET request is made to "/authorizationMetadata?claimSetName=NotThere"
+        When a GET request is made to "/v3/authorizationMetadata?claimSetName=NotThere"
         Then it should respond with 200
         And the response body is
         """
