@@ -128,6 +128,10 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
                 ChangeVersionRange: requestInfo.ChangeVersionRange
             )
+            // ChangeVersionRange is intentionally omitted on the legacy branch: change-version
+            // filtering is relational-backend-only (epic 10). The legacy query handler accepts
+            // minChangeVersion/maxChangeVersion but does not filter, matching the ODS semantics
+            // established by DMS-1181.
             : new QueryRequest(
                 ResourceInfo: requestInfo.ResourceInfo,
                 QueryElements: requestInfo.QueryElements,
