@@ -8,10 +8,10 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1154
 ## Description
 
 Replace DMS runtime loading of ApiSchema DLL resources for the DMS-916 bootstrap path with loading from the
-normalized file-based ApiSchema asset workspace staged by Story 00. The current `ContentProvider`
-implementation searches `AppSettings:ApiSchemaPath` for `*.ApiSchema.dll`, loads assemblies, and serves
-metadata/specification JSON and XSD files from embedded manifest resources. That keeps DMS runtime coupled to
-DLL-backed ApiSchema packages even when bootstrap stages concrete JSON files.
+normalized file-based ApiSchema asset workspace staged by Story 00. Before DMS-1154, `ContentProvider`
+searched `AppSettings:ApiSchemaPath` for `*.ApiSchema.dll`, loaded assemblies, and served
+metadata/specification JSON and XSD files from embedded manifest resources. That pre-DMS-1154 behavior kept
+DMS runtime coupled to DLL-backed ApiSchema packages even when bootstrap staged concrete JSON files.
 
 This story removes that bootstrap-path coupling without making DMS runtime aware of NuGet packages. When DMS
 is configured with
@@ -51,12 +51,10 @@ both materialize to the same workspace before runtime starts.
 - Docker bootstrap startup activates staged DMS schema and staged CMS claims as one boundary:
   `.bootstrap/ApiSchema` is mounted/read by DMS, and `.bootstrap/claims` is mounted/read by Config Service for
   the same root bootstrap manifest.
-- Existing non-bootstrap behavior may keep a compatibility path for assembly-bundled content when
-  `UseApiSchemaPath=false`, but that path is not the DMS-916 bootstrap contract. That legacy path discovers
-  assemblies with a `*.ApiSchema.dll` glob and derives served filenames from the assembly name. Asset-only
-  Data-Standard-qualified packages contain no `*.ApiSchema.dll` assemblies for that glob to find, so consuming
-  those qualified packages relies on the file-based workspace contract delivered here, with package resolution
-  owned by Story 06.
+- Existing non-bootstrap behavior is file-based as well: when `UseApiSchemaPath=false`, DMS reads bundled
+  schema and schema-adjacent content from the application `ApiSchema` directory rather than from
+  assembly-bundled resources. Asset-only Data-Standard-qualified packages still rely on the file-based
+  workspace contract delivered here, with package resolution owned by Story 06.
 - Unit or integration coverage proves that metadata/specification JSON and XSD endpoints work from a
   file-based staged workspace with no `*.ApiSchema.dll` files present.
 
@@ -67,7 +65,7 @@ both materialize to the same workspace before runtime starts.
 2. Update `ContentProvider` so the `UseApiSchemaPath=true` path reads JSON and XSD content from
    manifest-relative file paths under the configured workspace.
 3. Preserve current endpoint behavior for missing optional static content without falling back to stale
-   assembly-packaged assets.
+   packaged assets.
 4. Validate all manifest-relative paths before opening files.
 5. Add tests covering:
    - metadata/specification JSON loading from files,

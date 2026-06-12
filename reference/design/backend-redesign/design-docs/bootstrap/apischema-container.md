@@ -6,28 +6,28 @@ design: DMS-916
 
 ## Purpose
 
-This note defines the preferred long-term shape for delivering ApiSchema runtime assets to DMS bootstrap.
-It addresses the current mismatch between the DMS-916 staged `ApiSchema*.json` workspace and the existing
-`ContentProvider` implementation, which still loads metadata and XSD content from `*.ApiSchema.dll`
-assemblies.
+This note defines the file-based shape for delivering ApiSchema runtime assets to DMS bootstrap. It was
+introduced to close the pre-DMS-1154 mismatch between the DMS-916 staged `ApiSchema*.json` workspace and the
+then-existing `ContentProvider` implementation, which loaded metadata and XSD content from
+`*.ApiSchema.dll` assemblies.
 
 The goal is to keep NuGet as a valid distribution mechanism without requiring schema assets to be bundled
 as .NET assemblies in published packages or at runtime. The target state drops ApiSchema DLLs completely.
 
-## Problem
+## Problem Addressed by DMS-1154
 
-The current design stages selected `ApiSchema*.json` files into:
+The original design staged selected `ApiSchema*.json` files into:
 
 ```text
 eng/docker-compose/.bootstrap/ApiSchema/
 ```
 
-That is enough for the core ApiSchema loader path, which can read JSON files directly. It is not enough for
-all current DMS schema-adjacent content paths. `ContentProvider` searches `AppSettings:ApiSchemaPath` for
-`*.ApiSchema.dll`, loads those assemblies, enumerates embedded manifest resources, and serves embedded JSON
-and XSD files from the assembly resource streams.
+That was enough for the core ApiSchema loader path, which could read JSON files directly. It was not enough
+for the pre-DMS-1154 DMS schema-adjacent content paths. `ContentProvider` searched
+`AppSettings:ApiSchemaPath` for `*.ApiSchema.dll`, loaded those assemblies, enumerated embedded manifest
+resources, and served embedded JSON and XSD files from the assembly resource streams.
 
-That means a JSON-only staged workspace can produce a split runtime:
+That meant a JSON-only staged workspace could produce a split runtime:
 
 - API surface and DDL validation use the selected staged JSON files.
 - Metadata, discovery, or XSD endpoints still require package assemblies, can fail, or can reflect stale

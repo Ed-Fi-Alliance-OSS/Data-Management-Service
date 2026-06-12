@@ -10,7 +10,7 @@
     This script is a convenience wrapper that runs start-local-dms.ps1 with the standard
     E2E testing configuration. It is the companion to teardown-local-dms.ps1.
 
-    Extension schema packages (Sample, Homograph) are loaded via DLL-backed SCHEMA_PACKAGES.
+    Extension schema packages (Sample, Homograph) are loaded through the file-based SCHEMA_PACKAGES path.
     The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
     claimset fragments are loaded from the AdditionalClaimsets directory mounted at
     /app/additional-claims. This is the non-bootstrap compatibility path; bootstrap mode
@@ -65,7 +65,7 @@ try {
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
-        Write-Output "Removing stale .bootstrap workspace before DLL-backed E2E startup..."
+        Write-Output "Removing stale .bootstrap workspace before file-based schema package E2E startup..."
         # Fail fast on cleanup errors: a stale manifest left here would trigger bootstrap mode
         # on the next start-local-dms.ps1 invocation and silently divert the E2E run.
         Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop
@@ -83,7 +83,7 @@ try {
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
 
-    Write-Output "Using DLL-backed schema packages for E2E (non-bootstrap compatibility path)."
+    Write-Output "Using file-based schema packages from $EnvironmentFile for E2E (non-bootstrap compatibility path)."
 
     # Run the start script with E2E configuration
     ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata
@@ -98,7 +98,7 @@ try {
     # Config Service is already healthy at this point (start-local-dms.ps1 with -EnableConfig waits
     # for CMS readiness before returning).
     #
-    # This DLL-backed E2E flow intentionally keeps the full start rather than the
+    # This non-bootstrap E2E flow intentionally keeps the full start rather than the
     # -InfraOnly/-DmsOnly split: -DmsOnly forces NEED_DATABASE_SETUP=false (DMS-1151 phase
     # contract), but this flow relies on .env.e2e legacy in-container provisioning. The DMS
     # container restarts until this step lands the data store (non-bootstrap compatibility flow).

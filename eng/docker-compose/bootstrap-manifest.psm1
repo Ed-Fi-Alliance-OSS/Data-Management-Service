@@ -642,12 +642,12 @@ function Invoke-BootstrapStartupConfiguration {
             Write-Host "Extension Security Metadata: bootstrap mode is active; staged claims from manifest govern (AddExtensionSecurityMetadata flag is ignored in bootstrap mode)."
         }
     } elseif ($AddExtensionSecurityMetadata) {
-        # DLL-backed mode: activate Hybrid claims so extension claimset fragments
+        # Non-bootstrap mode: activate Hybrid claims so extension claimset fragments
         # are loaded from /app/additional-claims (already mounted by the Config Service compose file).
         $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
         $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
         $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
-        Write-Host "Extension Security Metadata: Hybrid claims mode enabled (DLL-backed startup)."
+        Write-Host "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap startup)."
     }
 
     return $bootstrapMode

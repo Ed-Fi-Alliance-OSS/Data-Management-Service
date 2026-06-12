@@ -980,7 +980,7 @@ exit $ExitCode
 
         It "retains AddExtensionSecurityMetadata as a transitional non-bootstrap hybrid claims path" {
             # The -AddExtensionSecurityMetadata switch is kept in the startup wrappers and build script
-            # as a transitional helper for DLL-backed (non-bootstrap) E2E setups. It must be present
+            # as a transitional helper for non-bootstrap extension E2E setups. It must be present
             # in all three files.
             foreach ($path in @(
                 (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"),
@@ -1089,13 +1089,14 @@ exit $ExitCode
     }
 
     Context "E2E wrappers" {
-        It "keeps DataManagementService E2E setup on the DLL-backed schema path (non-bootstrap compatibility)" {
+        It "keeps DataManagementService E2E setup on file-based schema packages (non-bootstrap compatibility)" {
             $content = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
 
             $content | Should -Not -Match "UseBootstrapWorkspace"
             $content | Should -Not -Match "prepare-dms-schema"
             $content | Should -Not -Match "prepare-dms-claims"
-            $content | Should -Match "DLL-backed schema"
+            $content | Should -Match "file-based schema packages"
+            $content | Should -Match "SCHEMA_PACKAGES"
         }
 
         It "keeps InstanceManagement E2E setup on route-context file-based schema packages" {

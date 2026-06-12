@@ -78,7 +78,7 @@ also append `-v`. Examples:
 # Start everything
 ./start-local-dms.ps1
 
-# Start everything for E2E testing (DLL-backed schema packages)
+# Start everything for E2E testing (file-based schema packages)
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes
@@ -96,7 +96,7 @@ it can serve requests. Because `provision-relational-e2e-database.ps1`
 provisions inside the running `dms-postgresql` container, the sequence is:
 
 1. Start the Docker environment so PostgreSQL is up. The E2E setup wrapper uses
-   the DLL-backed `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):
+   the file-based `SCHEMA_PACKAGES` schema path (non-bootstrap compatibility path):
 
    ```pwsh
    ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e.relational
@@ -128,7 +128,7 @@ If you want to use Keycloak as the identity provider, pass the `-IdentityProvide
 # Start everything (Self-Contained/OpenIddict mode)
 ./start-local-dms.ps1 -IdentityProvider self-contained
 
-# Start everything for E2E testing (Self-Contained/OpenIddict mode, DLL-backed schema by default)
+# Start everything for E2E testing (Self-Contained/OpenIddict mode, file-based schema by default)
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1
 
 # Stop the services, keeping volumes (Self-Contained/OpenIddict mode)
@@ -252,9 +252,11 @@ none of which exist in the redesigned relational schema that bootstrap mode
 provisions. Use `-SkipConnectorSetup` when running non-bootstrap harnesses that
 create their own connectors after provisioning (e.g. Instance Management E2E).
 
-The DMS E2E setup wrappers stay on the prior DLL-backed `SCHEMA_PACKAGES` flow
-(non-bootstrap compatibility). They clear any stale `.bootstrap/` workspace
-before startup to prevent bootstrap mode from activating unintentionally.
+The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
+Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
+file-based ApiSchema package content, and the wrappers clear any stale
+`.bootstrap/` workspace before startup to prevent bootstrap mode from activating
+unintentionally.
 
 If `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
 fingerprint-mismatch teardown-guidance error after a branch switch or input
@@ -310,7 +312,7 @@ to the repository root on your machine.
 > **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at
 > the staged bootstrap workspace. With `UseApiSchemaPath=true`, DMS reads discovery/specification
 > JSON and XSD content from the staged workspace via the bootstrap asset manifest, with no
-> DLL-backed schema assemblies loaded on this path.
+> schema assemblies loaded on this path.
 
 ### Pre-DMS infrastructure setup
 

@@ -214,7 +214,7 @@ public class ContentProvider(
     {
         // Only discovery-spec JSON is served from the manifest.
         // Other section names (resources-spec, descriptors-spec) come from IApiService, not ContentProvider.
-        // For unknown JSON sections in file mode, throw the same failure shape as DLL mode.
+        // For unknown JSON sections in file mode, keep the legacy failure shape.
         if (!fileNamePattern.Equals("discovery-spec", StringComparison.OrdinalIgnoreCase))
         {
             var unknownError = $"Unable to read and parse {fileNamePattern}.json";
@@ -238,7 +238,7 @@ public class ContentProvider(
             }
         }
 
-        // No project provides a discovery spec — same failure shape as DLL mode
+        // No project provides a discovery spec: keep the legacy failure shape.
         var error = $"Couldn't load find the resource";
         _logger.LogCritical(error);
         throw new InvalidOperationException(error);
