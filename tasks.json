@@ -126,15 +126,16 @@
   },
   {
     "category": "Container Startup",
-    "description": "Medium: Clear generated ApiSchema package extraction directories before processing `SCHEMA_PACKAGES` so packages removed from the startup configuration do not remain active after a container restart.",
+    "description": "Medium: Clear generated ApiSchema package extraction directories before materializing the package-backed workspace so packages removed from `SCHEMA_PACKAGES` are omitted from the generated root `bootstrap-api-schema-manifest.json` after a container restart.",
     "acceptance-criteria": [
-      "The startup package-download path removes stale generated package extraction output under `AppSettings__ApiSchemaPath` before invoking the downloader for the current `SCHEMA_PACKAGES` list.",
+      "The startup package-download path removes stale generated package extraction output under `AppSettings__ApiSchemaPath` before invoking the downloader or manifest materializer for the current `SCHEMA_PACKAGES` list.",
       "Cleanup runs only when `SCHEMA_PACKAGES` contains package entries, so bootstrap runs with an empty package list do not attempt to write into the read-only mounted ApiSchema workspace.",
-      "Workspace files that are not generated package extraction output, such as `bootstrap-api-schema-manifest.json` and `JsonSchemaForApiSchema.json`, are preserved."
+      "Workspace files that are not generated package extraction output, such as `JsonSchemaForApiSchema.json`, are preserved.",
+      "The generated root `bootstrap-api-schema-manifest.json` contains only projects from the current `SCHEMA_PACKAGES` list."
     ],
     "steps-to-verify": [
-      "Add script-level or integration coverage that starts with stale `ApiSchema/Packages/<RemovedPackage>/package-manifest.json`, processes a package list that omits it, and verifies the removed package is no longer scanned.",
-      "Run the focused startup or downloader verification added for this behavior."
+      "Add script-level or integration coverage that starts with stale generated package extraction output for `<RemovedPackage>`, processes a package list that omits it, and verifies the generated root `bootstrap-api-schema-manifest.json` excludes `<RemovedPackage>`.",
+      "Run the focused startup, downloader, or manifest-materializer verification added for this behavior."
     ],
     "completed": false
   },
@@ -155,7 +156,7 @@
   },
   {
     "category": "Container Packaging",
-    "description": "High: Include `src/dms/Directory.Build.targets` in the Docker build context at `src/dms/Dockerfile:12` and copy published `ApiSchema/**` content recursively at `src/dms/Dockerfile:66` so bundled ApiSchema package assets and the root bundled manifest declared by `src/dms/Directory.Build.targets:30` survive into the final image.",
+    "description": "High: Include `src/dms/Directory.Build.targets` in the Docker build context at `src/dms/Dockerfile:12`, materialize a bundled root `ApiSchema/bootstrap-api-schema-manifest.json` during build or publish, and copy published `ApiSchema/**` content recursively at `src/dms/Dockerfile:66` so bundled ApiSchema content survives into the final image.",
     "acceptance-criteria": [
       "`src/dms/Dockerfile` copies `Directory.Build.targets` into `/source` before restore/publish so the package-content publish target participates in Docker builds.",
       "The final `src/dms/Dockerfile` image includes the published `ApiSchema/**` content recursively, including `ApiSchema/bootstrap-api-schema-manifest.json`, discovery/spec files, and XSD files.",
