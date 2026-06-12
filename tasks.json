@@ -93,6 +93,22 @@
     "completed": false
   },
   {
+    "category": "ApiSchema Downloader",
+    "description": "Medium: Validate `packageId` as a single safe path segment in `src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Services/ApiSchemaDownloader.cs:53` and `src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Services/ApiSchemaDownloader.cs:201` before using it to construct extraction directories or package filenames.",
+    "acceptance-criteria": [
+      "`ExtractApiSchemaFiles` rejects null, empty, rooted, separator-containing, current-directory, and parent-directory `packageId` values before calling `Path.Combine(outputDir, \"Packages\", packageId)`.",
+      "`DownloadNuGetPackageAsync` applies the same `packageId` validation before constructing the downloaded `.nupkg` file path.",
+      "Invalid `packageId` values fail with an `InvalidOperationException` or argument validation exception that identifies `packageId` as invalid.",
+      "Valid NuGet package IDs such as `EdFi.DataStandard52.ApiSchema` continue to download and extract into `ApiSchema/Packages/<packageId>`."
+    ],
+    "steps-to-verify": [
+      "Add `ApiSchemaDownloader` tests for `packageId` values containing `/`, `\\`, `..`, `.`, rooted paths, and whitespace, and assert extraction rejects them before creating directories outside the configured output directory.",
+      "Add `ApiSchemaDownloader` coverage showing `DownloadNuGetPackageAsync` rejects an invalid `packageId` before creating the `.nupkg` path.",
+      "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
     "category": "Seed Delivery",
     "description": "Medium: Enforce bootstrap workspace-relative path validation in `eng/docker-compose/load-dms-seed-data.ps1:1250` and `eng/docker-compose/load-dms-seed-data.ps1:1332` before reading the staged ApiSchema manifest or copying staged XSDs, so seed loading cannot read XSD content from outside `.bootstrap/ApiSchema`.",
     "acceptance-criteria": [
