@@ -36,7 +36,6 @@ public class WebApplicationBuilderExtensionsTests
         var configuration = new Dictionary<string, string?>
         {
             ["AppSettings:Datastore"] = datastore,
-            ["AppSettings:QueryHandler"] = "postgresql",
             ["AppSettings:MaskRequestBodyInLogs"] = "false",
             ["ConfigurationServiceSettings:BaseUrl"] = "https://example.org",
             ["ConfigurationServiceSettings:ClientId"] = "client-id",

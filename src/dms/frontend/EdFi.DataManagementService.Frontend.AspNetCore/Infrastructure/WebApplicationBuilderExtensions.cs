@@ -262,18 +262,8 @@ public static class WebApplicationBuilderExtensions
             return;
         }
 
-        var queryHandler = webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value;
-        if (string.Equals(queryHandler, "postgresql", StringComparison.OrdinalIgnoreCase))
-        {
-            logger.Information("Injecting PostgreSQL as the backend query handler");
-            webAppBuilder.Services.AddPostgresqlQueryHandler();
-        }
-        else
-        {
-            throw new InvalidOperationException(
-                $"Invalid QueryHandler value '{queryHandler ?? "<null>"}'. Only 'postgresql' is supported. Application startup aborted."
-            );
-        }
+        logger.Information("Injecting PostgreSQL as the backend query handler");
+        webAppBuilder.Services.AddPostgresqlQueryHandler();
     }
 
     private static void ConfigureRateLimit(WebApplicationBuilder webAppBuilder)

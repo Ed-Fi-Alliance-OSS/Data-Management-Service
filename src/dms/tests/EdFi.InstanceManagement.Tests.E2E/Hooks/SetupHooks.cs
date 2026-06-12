@@ -35,7 +35,6 @@ public class SetupHooks
         _logger = loggerFactory.CreateLogger<SetupHooks>();
 
         _logger.LogInformation("Starting Instance Management E2E Tests");
-        _logger.LogInformation("Query Handler: {QueryHandler}", AppSettings.QueryHandler);
         _logger.LogInformation(
             "Authentication Service: {AuthenticationService}",
             AppSettings.AuthenticationService
