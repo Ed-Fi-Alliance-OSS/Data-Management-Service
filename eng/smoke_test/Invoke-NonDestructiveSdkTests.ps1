@@ -45,7 +45,11 @@ if ($SdkPath) {
   $sdkDllPath = Get-ApiSdkDll
 }
 
-$path = Get-SmokeTestTool -PackageVersion '7.3.20162' -PreRelease
+# SmokeTest.Console 7.3.20162's SdkConfigurationFactory requires a
+# {SdkNamespace}.Client.HostConfiguration type that only SDKs from the newer
+# Ed-Fi SDK generator carry. The in-run DMS TestSdk (stock openapi-generator)
+# and the pinned EdFi.OdsApi.Sdk 7.3.10132 both lack it, so stay on 7.3.10008.
+$path = Get-SmokeTestTool -PackageVersion '7.3.10008' -PreRelease
 
 $parameters = @{
   BaseUrl = $BaseUrl
