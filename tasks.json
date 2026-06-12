@@ -1,0 +1,103 @@
+[
+  {
+    "category": "Metadata Content",
+    "description": "Medium: Make XSD content streaming validate the requested section and open the same validated manifest path that the section-specific file listing exposed, not the first matching bare filename across all projects.",
+    "acceptance-criteria": [
+      "`/metadata/xsd/{section}/{file}.xsd` returns 404 for an unknown section instead of falling back to core XSD files.",
+      "`XsdMetadataEndpointModule.GetXsdMetadataFileContent` passes the requested section, or an already resolved validated file path, into XSD content loading.",
+      "Duplicate XSD file names across extensions return the requested section's content; core XSD files remain available to extension sections.",
+      "Legacy prefixed XSD names normalize consistently for both section-specific listing and streaming."
+    ],
+    "steps-to-verify": [
+      "Add a frontend endpoint/unit test that requests an existing core XSD file through an unknown section and assert `/metadata/xsd/{section}/{file}.xsd` returns 404.",
+      "Add a frontend unit test with two extension projects that both contain the same XSD file name and assert `/metadata/xsd/{section}/{file}.xsd` returns the requested section's file content.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Metadata Content",
+    "description": "Medium: Treat a declared `discoverySpecPath` whose file is missing as an invalid ApiSchema workspace instead of silently skipping it and serving another project's discovery spec.",
+    "acceptance-criteria": [
+      "When a manifest project declares `discoverySpecPath`, a missing file causes `LoadJsonContent(\"discovery\", ...)` to throw an `InvalidOperationException` that identifies the invalid project or path.",
+      "Only an omitted `discoverySpecPath` is treated as absent optional content; a declared but missing path does not fall back to a later project.",
+      "Existing successful discovery-spec placeholder replacement behavior is unchanged."
+    ],
+    "steps-to-verify": [
+      "Add a `ContentProvider` unit test where the core project declares a missing `discoverySpecPath` and a later extension has an existing discovery spec; assert the provider throws instead of returning the extension spec.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~discovery\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Metadata Content",
+    "description": "Medium: Treat a declared `xsdDirectory` whose directory is missing as an invalid ApiSchema workspace instead of silently returning no XSD files.",
+    "acceptance-criteria": [
+      "When a manifest project declares `xsdDirectory`, a missing directory causes XSD listing or streaming resolution to throw an `InvalidOperationException` that identifies the invalid project or path.",
+      "Only an omitted `xsdDirectory` is treated as absent optional XSD content; a declared but missing directory does not make `/metadata/xsd/{section}` look like a valid empty section.",
+      "Existing successful XSD enumeration for present directories remains unchanged, including legacy file-name normalization."
+    ],
+    "steps-to-verify": [
+      "Add an `ApiSchemaAssetManifestProvider` or `ContentProvider` unit test where a project declares a missing `xsdDirectory` and assert XSD enumeration fails with a workspace validation error.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ApiSchemaAssetManifestProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Workspace Validation",
+    "description": "Medium: Make ApiSchema manifest path validation symlink-aware so schema-adjacent content cannot escape the configured workspace through linked files or directories.",
+    "acceptance-criteria": [
+      "Schema-adjacent content paths are checked against the canonical workspace root before file opens or XSD enumeration.",
+      "A symlinked manifest path or `xsdDirectory` that resolves outside the workspace is rejected with `InvalidOperationException`.",
+      "Normal in-workspace relative paths still resolve and stream successfully, and symlink tests are skipped on platforms where symlink creation is unavailable."
+    ],
+    "steps-to-verify": [
+      "Add unit coverage for an escaping symlink used as `discoverySpecPath` or `xsdDirectory` and assert the provider rejects it before opening or enumerating the target.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Container Startup",
+    "description": "Medium: Clear generated ApiSchema package extraction directories before processing `SCHEMA_PACKAGES` so packages removed from the startup configuration do not remain active after a container restart.",
+    "acceptance-criteria": [
+      "The startup package-download path removes stale generated package extraction output under `AppSettings__ApiSchemaPath` before invoking the downloader for the current `SCHEMA_PACKAGES` list.",
+      "Cleanup runs only when `SCHEMA_PACKAGES` contains package entries, so bootstrap runs with an empty package list do not attempt to write into the read-only mounted ApiSchema workspace.",
+      "Workspace files that are not generated package extraction output, such as `bootstrap-api-schema-manifest.json` and `JsonSchemaForApiSchema.json`, are preserved."
+    ],
+    "steps-to-verify": [
+      "Add script-level or integration coverage that starts with stale `ApiSchema/Packages/<RemovedPackage>/package-manifest.json`, processes a package list that omits it, and verifies the removed package is no longer scanned.",
+      "Run the focused startup or downloader verification added for this behavior."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Container Startup",
+    "description": "Medium: Skip default Debezium connector setup for full Docker-stack bootstrap starts, not only DMS-only starts.",
+    "acceptance-criteria": [
+      "`eng/docker-compose/start-local-dms.ps1` skips `setup-connectors.ps1` when bootstrap mode is active in the full-stack startup path.",
+      "`eng/docker-compose/start-published-dms.ps1` skips `setup-connectors.ps1` when bootstrap mode is active in the full-stack startup path.",
+      "Non-bootstrap full-stack starts still run connector setup unless `-SkipConnectorSetup` is supplied.",
+      "The existing DMS-only bootstrap connector skip behavior remains unchanged."
+    ],
+    "steps-to-verify": [
+      "Add or update Pester/static coverage that asserts the full-stack connector setup branch in both startup scripts is guarded by bootstrap mode.",
+      "Run the focused bootstrap startup script tests for `eng/docker-compose`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Container Packaging",
+    "description": "Medium: Copy bundled ApiSchema package content recursively into the final DMS Docker image so `UseApiSchemaPath=false` can load file-based package manifests, discovery content, and XSD files.",
+    "acceptance-criteria": [
+      "The final `src/dms/Dockerfile` image includes the published `ApiSchema/Packages/**` content, including each package's `package-manifest.json`, discovery/spec files, and XSD files.",
+      "Top-level bundled ApiSchema JSON files that are currently copied remain available in the image.",
+      "Running without `AppSettings:UseApiSchemaPath=true` can synthesize an ApiSchema asset manifest from bundled package manifests instead of failing because no package manifests exist."
+    ],
+    "steps-to-verify": [
+      "Add a Dockerfile or image-content verification that confirms recursive `ApiSchema` package content is copied into the final image.",
+      "Build or inspect the DMS image output and verify `/app/ApiSchema/Packages/<package>/package-manifest.json` and XSD files are present."
+    ],
+    "completed": false
+  }
+]
