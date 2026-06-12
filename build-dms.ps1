@@ -709,9 +709,30 @@ function Start-DockerEnvironment {
                 # the configure step below lands the data store (restart: unless-stopped).
                 # Story 04 moves this flow onto the staged bootstrap workspace and the ordered
                 # phase flow.
-                ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
-
                 if ($LoadSeedData) {
+                    # The database template must own dms schema creation: the env files used
+                    # here set NEED_DATABASE_SETUP=true, and startup provisioning would create
+                    # an empty dms schema before LoadSeedData runs - setup-database-template.psm1
+                    # skips the restore when the schema already exists, silently leaving an
+                    # unseeded database. Force startup provisioning off for this start (same
+                    # mechanism as the -DmsOnly phase contract); the template restore below
+                    # creates the schema and data, and the DMS container restarts until the
+                    # configure step lands the data store.
+                    $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
+                    $previousDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP")
+                    $previousAppSettingsDeployDatabaseOnStartup = [System.Environment]::GetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup")
+                    try {
+                        $env:NEED_DATABASE_SETUP = "false"
+                        $env:DMS_DEPLOY_DATABASE_ON_STARTUP = "false"
+                        $env:AppSettings__DeployDatabaseOnStartup = "false"
+                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    }
+                    finally {
+                        [System.Environment]::SetEnvironmentVariable("NEED_DATABASE_SETUP", $previousNeedDatabaseSetup)
+                        [System.Environment]::SetEnvironmentVariable("DMS_DEPLOY_DATABASE_ON_STARTUP", $previousDeployDatabaseOnStartup)
+                        [System.Environment]::SetEnvironmentVariable("AppSettings__DeployDatabaseOnStartup", $previousAppSettingsDeployDatabaseOnStartup)
+                    }
+
                     # Direct-SQL database-template seed path, relocated verbatim from the seed
                     # block de-scoped out of start-local-dms.ps1; its removal is gated on the
                     # bootstrap-design.md Section 6.4 Story-04 XSD-staging verification. The
@@ -725,6 +746,9 @@ function Start-DockerEnvironment {
                     if ($LASTEXITCODE -ne 0) {
                         throw "Failed to load initial data, with exit code $LASTEXITCODE."
                     }
+                }
+                else {
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
                 }
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);

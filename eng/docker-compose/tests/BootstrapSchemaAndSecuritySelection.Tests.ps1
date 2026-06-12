@@ -443,6 +443,11 @@ exit $ExitCode
                 Where-Object { $_.resourceClaim -eq "http://example.org/identity/claims/widget" })[0]
             $check.claimSetName | Should -Be "EdFiSandbox"
             $check.action | Should -Be "Read"
+            # DMS-1153: user-supplied fragment checks carry stagedOnly so the claims-ready
+            # gate defers them — CMS does not load the staged claims workspace until
+            # staged-claims activation (DMS-1154), so asserting them would fail a valid
+            # bootstrap whose fragments are staged but not yet active.
+            $check.stagedOnly | Should -BeTrue
         }
 
         It "records explicit parent claimSets readiness checks structurally" {
@@ -480,6 +485,9 @@ exit $ExitCode
             # defer them — parent grants materialize on leaf descendants via lineage and the
             # parent name never appears in /authorizationMetadata claims[].
             $check.isParent | Should -BeTrue
+            # User-supplied fragments additionally carry stagedOnly (not loaded by CMS
+            # until staged-claims activation, DMS-1154).
+            $check.stagedOnly | Should -BeTrue
         }
 
         It "records the embedded baseline probe against a leaf resource claim, not a domain parent" {

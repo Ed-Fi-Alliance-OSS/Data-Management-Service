@@ -209,7 +209,15 @@ function Add-ExpectedVerificationCheck {
         # observable in CMS /authorizationMetadata (which serializes leaf resource claims
         # only), so the claims-ready gate defers these instead of asserting them.
         [switch]
-        $IsParent
+        $IsParent,
+
+        # Marks a check extracted from a user-supplied (-ClaimsDirectoryPath) fragment.
+        # Story 00 stages these fragments into .bootstrap/claims, but startup does not
+        # activate the staged claims mount until staged-claims activation (DMS-1154) -
+        # CMS keeps loading the built-in AdditionalClaimsets mount, so these checks are
+        # not observable in /authorizationMetadata and the claims-ready gate defers them.
+        [switch]
+        $StagedOnly
     )
 
     if ([string]::IsNullOrWhiteSpace($ClaimSetName) -or
@@ -228,6 +236,9 @@ function Add-ExpectedVerificationCheck {
         if ($IsParent) {
             $check.isParent = $true
         }
+        if ($StagedOnly) {
+            $check.stagedOnly = $true
+        }
         $null = $Checks.Add($check)
     }
 }
@@ -245,7 +256,13 @@ function Assert-FragmentValidAndExtractCheck {
         $SeenChecks,
 
         [System.Collections.ArrayList]
-        $ExpectedVerificationChecks
+        $ExpectedVerificationChecks,
+
+        # Set for user-supplied (-ClaimsDirectoryPath) fragments: their checks are recorded
+        # in the manifest (Story 00 contract) but tagged stagedOnly so the claims-ready gate
+        # defers them until staged-claims activation (DMS-1154).
+        [switch]
+        $StagedOnly
     )
 
     $fragment = Read-JsonHashtable -Path $Path -ArtifactName "Claimset fragment"
@@ -330,7 +347,8 @@ function Assert-FragmentValidAndExtractCheck {
                     -ClaimSetName $claimSetName `
                     -ResourceClaim $resourceClaimName `
                     -Action $actionName `
-                    -IsParent:$isParent
+                    -IsParent:$isParent `
+                    -StagedOnly:$StagedOnly
             }
         }
 
@@ -370,7 +388,8 @@ function Assert-FragmentValidAndExtractCheck {
                 -Checks $ExpectedVerificationChecks `
                 -ClaimSetName $fragmentName `
                 -ResourceClaim $implicitVerificationCheck.ResourceClaim `
-                -Action $implicitVerificationCheck.Action
+                -Action $implicitVerificationCheck.Action `
+                -StagedOnly:$StagedOnly
         }
     }
 }
@@ -467,12 +486,26 @@ Add-ExpectedVerificationCheck `
     -ResourceClaim "http://ed-fi.org/identity/claims/ed-fi/schoolYearType" `
     -Action "Read"
 
+# User-supplied fragments are staged (Story 00 contract) and their checks recorded, but
+# tagged stagedOnly: CMS keeps loading the built-in AdditionalClaimsets mount until
+# staged-claims activation (DMS-1154), so the claims-ready gate cannot observe these
+# claims in /authorizationMetadata and defers them instead of failing the bootstrap.
+$userFragmentPathSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($userFragmentFile in $userFragmentFiles) {
+    $null = $userFragmentPathSet.Add($userFragmentFile)
+}
+
 foreach ($fragment in $fragments) {
     Assert-FragmentValidAndExtractCheck `
         -Path $fragment.SourcePath `
         -EffectiveClaimSetNames $effectiveClaimSetNames `
         -SeenChecks $seenChecks `
-        -ExpectedVerificationChecks $expectedVerificationChecks
+        -ExpectedVerificationChecks $expectedVerificationChecks `
+        -StagedOnly:($userFragmentPathSet.Contains($fragment.SourcePath))
+}
+
+if ($userFragmentFiles.Count -gt 0) {
+    Write-Warning "User-supplied claimset fragment(s) staged from ClaimsDirectoryPath. Their verification checks are recorded as stagedOnly: CMS does not load the staged claims workspace until staged-claims activation (DMS-1154), so the claims-ready gate defers verifying them."
 }
 
 $temporaryRoot = Join-Path (Join-Path $bootstrapRoot ".tmp") "claims-$([Guid]::NewGuid().ToString('N'))"

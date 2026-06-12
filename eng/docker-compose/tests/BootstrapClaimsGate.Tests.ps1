@@ -800,6 +800,72 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     }
 
     # ===========================================================================
+    # Scenario (h3): staged-only deferral - checks marked stagedOnly come from
+    # user-supplied (-ClaimsDirectoryPath) fragments. CMS does not load the staged
+    # claims workspace until staged-claims activation (DMS-1154); it keeps the
+    # built-in AdditionalClaimsets mount, so asserting these checks would fail a
+    # valid bootstrap. The gate defers them (warning) like parent-claim checks.
+    # ===========================================================================
+    Context "Scenario (h3) - staged-only checks are deferred while leaf checks still verify" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_h3 = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @(
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = $script:sandboxResourceClaim; action = $script:sandboxAction },
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = "http://example.org/identity/claims/customWidget"; action = "Read"; stagedOnly = $true }
+                ) `
+                -FileName "manifest-h3.json"
+
+            $script:authMetadataCalls_h3 = 0
+
+            # Response carries ONLY the baseline leaf claim - the user-staged claim is never
+            # loaded by CMS before staged-claims activation (DMS-1154).
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+                if ($Uri -match "/v3/authorizationMetadata") {
+                    $script:authMetadataCalls_h3++
+                    return New-AuthMetadataResponse `
+                        -ClaimSetName "EdFiSandbox" `
+                        -Claims @(
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") }
+                        )
+                }
+            }
+
+            $script:error_h3 = $null
+            $script:warnings_h3 = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -AccessToken $script:accessToken `
+                    -ManifestPath $script:manifestPath_h3 `
+                    -WarningVariable +warnings_h3 3>$null
+                $script:warnings_h3 = $warnings_h3
+            }
+            catch {
+                $script:error_h3 = $_.Exception.Message
+            }
+        }
+
+        It "does not throw - the leaf check verifies and the staged-only check is deferred" {
+            $script:error_h3 | Should -BeNullOrEmpty
+        }
+
+        It "queries /authorizationMetadata only for the leaf check (staged-only check is skipped)" {
+            $script:authMetadataCalls_h3 | Should -Be 1
+        }
+
+        It "emits a deferral warning naming the user-staged resource claim and DMS-1154" {
+            $joinedWarnings = @($script:warnings_h3) -join "`n"
+            $joinedWarnings | Should -Match "customWidget"
+            $joinedWarnings | Should -Match "DMS-1154"
+        }
+    }
+
+    # ===========================================================================
     # Scenario (i): multi-tenant CMS routing - the gate must forward the env-file
     # CONFIG_SERVICE_TENANT as the Tenant header on /authorizationMetadata calls
     # (the same pattern every CMS Admin API call in Dms-Management.psm1 uses),

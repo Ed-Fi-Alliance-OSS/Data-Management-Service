@@ -644,6 +644,11 @@ function Test-CmsClaimsReady {
     # lineage, and /authorizationMetadata serializes leaf resource claims only - the parent
     # name itself never appears in claims[]. Composed-hierarchy verification of parent
     # grants is owned by the staged-claims activation work (DMS-1154+).
+    #
+    # Checks marked stagedOnly are likewise DEFERRED: they come from user-supplied
+    # (-ClaimsDirectoryPath) fragments that are staged into .bootstrap/claims but not
+    # loaded by CMS until staged-claims activation (DMS-1154) - CMS keeps the built-in
+    # AdditionalClaimsets mount, so asserting these checks would fail a valid bootstrap.
     $checkIndex = 0
     $verifiedCount = 0
     $deferredCount = 0
@@ -657,6 +662,17 @@ function Test-CmsClaimsReady {
         }
         else {
             $null -ne $check.PSObject.Properties["isParent"] -and $true -eq $check.isParent
+        }
+
+        # stagedOnly checks come from user-supplied (-ClaimsDirectoryPath) fragments. The
+        # staged claims workspace is not activated until staged-claims activation (DMS-1154);
+        # CMS loads the built-in AdditionalClaimsets mount, so these claims are not observable
+        # in /authorizationMetadata and asserting them would fail a valid bootstrap.
+        $isStagedOnlyCheck = if ($check -is [System.Collections.IDictionary]) {
+            $check.Contains("stagedOnly") -and $true -eq $check["stagedOnly"]
+        }
+        else {
+            $null -ne $check.PSObject.Properties["stagedOnly"] -and $true -eq $check.stagedOnly
         }
 
         # Bracket indexing (not dot access) for log lines: missing keys on a malformed or
@@ -673,6 +689,12 @@ function Test-CmsClaimsReady {
             continue
         }
 
+        if ($isStagedOnlyCheck) {
+            $deferredCount++
+            Write-Warning "Claims gate: check $checkIndex/$($checks.Count) targets user-staged resource claim '$(Format-ClaimsGateLogSafeText $logResourceClaim)' (claimSet=$(Format-ClaimsGateLogSafeText $logClaimSet)); CMS does not load the staged claims workspace until staged-claims activation (DMS-1154) - deferring."
+            continue
+        }
+
         Write-Information "Claims gate: verifying check $checkIndex/$($checks.Count) - claimSet=$(Format-ClaimsGateLogSafeText $logClaimSet) resourceClaim=$(Format-ClaimsGateLogSafeText $logResourceClaim) action=$(Format-ClaimsGateLogSafeText $logAction)." -InformationAction Continue
 
         Assert-SingleVerificationCheck `
@@ -685,10 +707,10 @@ function Test-CmsClaimsReady {
     }
 
     if ($verifiedCount -eq 0) {
-        throw "Claims-ready gate FAILED: all $deferredCount verification check(s) were parent-claim deferrals; nothing was verifiable against /authorizationMetadata. At minimum the leaf baseline probe must be present - run prepare-dms-claims.ps1 to regenerate the manifest."
+        throw "Claims-ready gate FAILED: all $deferredCount verification check(s) were deferrals (parent-claim or staged-only); nothing was verifiable against /authorizationMetadata. At minimum the leaf baseline probe must be present - run prepare-dms-claims.ps1 to regenerate the manifest."
     }
 
-    $deferredSuffix = if ($deferredCount -gt 0) { " ($deferredCount parent-claim check(s) deferred)" } else { "" }
+    $deferredSuffix = if ($deferredCount -gt 0) { " ($deferredCount check(s) deferred: parent-claim or staged-only)" } else { "" }
     Write-Information "Claims gate PASSED: all $verifiedCount verifiable check(s) confirmed in CMS authorization metadata$deferredSuffix." -InformationAction Continue
 }
 

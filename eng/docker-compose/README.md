@@ -288,7 +288,7 @@ The artifact includes:
 | `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with the `CMSReadOnlyAccess` client secret; local-dev default `ValidClientSecret1234567890!Abcd`) |
 | `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
 | `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `DefaultEncryptionKey32CharactersX1`) |
-| `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema) |
+| `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
 | `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
 | `JwtAuthentication:Authority` | `http://localhost:8081` |
@@ -304,9 +304,11 @@ default `DefaultEncryptionKey32CharactersX1`). Replace `<repo-root>` with the ab
 to the repository root on your machine.
 
 > **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at
-> the staged bootstrap workspace. Runtime loading of staged schema content lands in Story 04
-> (DMS-1154). Until then, the DMS runtime falls back to its built-in DLL-backed schema assemblies
-> even when these keys are set.
+> the staged bootstrap workspace, which contains JSON/XSD content. Until Story 04 (DMS-1154)
+> lands the staged-content runtime loader, the frontend metadata endpoints (Discovery `/`,
+> OpenAPI specs, XSD downloads) only load `*.ApiSchema.dll` and fail against this path — there
+> is no DLL fallback when these keys are set. If you need those endpoints before Story 04,
+> set `UseApiSchemaPath` to `false` so DMS uses its built-in DLL-backed schema assemblies.
 
 ### Pre-DMS infrastructure setup
 
@@ -348,8 +350,11 @@ wait passes.
 > `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]`
 >
 > `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
-> used `-SchoolYearRange` (or otherwise created route-qualified data stores), re-supply the same
-> selection inputs on the follow-up run instead of `-NoDataStore`.
+> used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
+> wrapper — re-supplying `-SchoolYearRange` creates a new set of data stores instead of selecting
+> the existing ones. Use the explicit phase commands against the data stores the earlier run
+> created: `./start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>` for the health wait, then
+> `./load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...>` for seed loading.
 
 ```pwsh
 cd eng/docker-compose
