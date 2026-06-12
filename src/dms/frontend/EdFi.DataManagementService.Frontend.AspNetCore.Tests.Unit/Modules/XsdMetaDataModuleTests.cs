@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 using FakeItEasy;
 using FluentAssertions;
 using ImpromptuInterface;
@@ -233,6 +234,168 @@ public class XsdMetaDataModuleTests
         var response = await client.GetAsync("/metadata/xsd/ed-fi/not-exists.xsd");
 
         // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+}
+
+/// <summary>
+/// File-mode XSD metadata module tests. Uses a real ContentProvider wired to a faked
+/// IApiSchemaAssetManifestProvider backed by a temp-dir staged workspace. The faked manifest
+/// provider is pre-configured to serve the workspace content. IApiService is faked with
+/// ProjectName values matching the manifest projectName values so section routing works
+/// end-to-end. The approach keeps AppSettings untouched (no DI override) so the
+/// AppSettingsValidator is not disturbed.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_file_mode_xsd_metadata_endpoint
+{
+    private string _workspaceRoot = string.Empty;
+    private IApiService _apiService = null!;
+    private IContentProvider _fileModeContentProvider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        FileModeWorkspaceBuilder.BuildWorkspace(_workspaceRoot);
+
+        // Build a real ContentProvider backed by a real ApiSchemaAssetManifestProvider
+        // using Options.Create so no app-startup DI is involved.
+        (_fileModeContentProvider, _) = FileModeWorkspaceBuilder.BuildProvider(_workspaceRoot);
+
+        // Fake IApiService with ProjectName values matching the manifest projectName values.
+        // Section route values are ProjectName.ToLower() per XsdMetadataEndpointModule.
+        IDataModelInfo edFiModel = (
+            new
+            {
+                ProjectName = FileModeWorkspaceBuilder.CoreProjectName, // "Ed-Fi"
+                ProjectVersion = "5.0.0",
+                Description = "Ed-Fi data standard",
+                IsCoreProject = true,
+            }
+        ).ActLike<IDataModelInfo>();
+
+        IDataModelInfo sampleModel = (
+            new
+            {
+                ProjectName = FileModeWorkspaceBuilder.ExtensionProjectName, // "Sample"
+                ProjectVersion = "1.0.0",
+                Description = "Sample extension",
+                IsCoreProject = false,
+            }
+        ).ActLike<IDataModelInfo>();
+
+        _apiService = A.Fake<IApiService>();
+        A.CallTo(() => _apiService.GetDataModelInfo()).Returns(new[] { edFiModel, sampleModel });
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    private WebApplicationFactory<Program> CreateFactory()
+    {
+        var fileModeContentProvider = _fileModeContentProvider;
+        var apiService = _apiService;
+
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(x => apiService);
+                // Inject the pre-built file-mode ContentProvider directly; no AppSettings change.
+                collection.AddTransient(x => fileModeContentProvider);
+            });
+        });
+    }
+
+    [Test]
+    public async Task It_returns_sections_including_core_and_extension()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/metadata/xsd");
+        var content = await response.Content.ReadAsStringAsync();
+        var jsonContent = JsonNode.Parse(content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        jsonContent.Should().NotBeNull();
+        var names = jsonContent!.AsArray().Select(n => n!["name"]!.GetValue<string>()).ToList();
+        names.Should().Contain("ed-fi");
+        names.Should().Contain("sample");
+    }
+
+    [Test]
+    public async Task It_returns_bare_staged_file_names_with_full_urls_for_core_section()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/metadata/xsd/ed-fi/files");
+        var content = await response.Content.ReadAsStringAsync();
+        var files = JsonSerializer.Deserialize<List<string>>(content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        files.Should().NotBeNull();
+        // Each entry should be a URL containing the bare file name
+        files!.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile1));
+        files.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile2));
+        // Extension file should not appear in the core section listing
+        files.Should().NotContain(f => f.Contains(FileModeWorkspaceBuilder.ExtensionXsdFile));
+    }
+
+    [Test]
+    public async Task It_returns_blended_core_and_extension_files_for_extension_section()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/metadata/xsd/sample/files");
+        var content = await response.Content.ReadAsStringAsync();
+        var files = JsonSerializer.Deserialize<List<string>>(content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        files.Should().NotBeNull();
+        files!.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile1));
+        files.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile2));
+        files.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.ExtensionXsdFile));
+    }
+
+    [Test]
+    public async Task It_returns_application_xml_stream_for_bare_xsd_file_name()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Route: /metadata/xsd/{section}/{fileName}.xsd — bare staged name without extension in route
+        var bareNameWithoutExtension = Path.GetFileNameWithoutExtension(
+            FileModeWorkspaceBuilder.CoreXsdFile1
+        );
+        var response = await client.GetAsync($"/metadata/xsd/ed-fi/{bareNameWithoutExtension}.xsd");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
+    }
+
+    [Test]
+    public async Task It_returns_404_for_unknown_xsd_file()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/metadata/xsd/ed-fi/DoesNotExist.xsd");
+
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

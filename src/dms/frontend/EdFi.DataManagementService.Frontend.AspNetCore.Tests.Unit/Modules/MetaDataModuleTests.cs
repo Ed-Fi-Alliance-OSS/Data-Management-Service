@@ -7,13 +7,17 @@ using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -520,5 +524,167 @@ public class MetadataModuleTests
             .Should()
             .Be("/ed-fi/absenceEventCategoryDescriptors");
         jsonContent?[0]!["order"]?.GetValue<int>().Should().Be(1);
+    }
+}
+
+/// <summary>
+/// File-mode discovery-spec route tests. The /metadata/specifications/discovery-spec.json route
+/// calls contentProvider.LoadJsonContent("discovery", rootUrl, oAuthUrl) which in file mode
+/// reads the discovery-spec.json from the manifest workspace and applies HOST_URL replacement.
+/// The real ContentProvider is built outside DI using FileModeWorkspaceBuilder so AppSettings
+/// is not disturbed in the WebApplicationFactory host.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_file_mode_discovery_spec_route
+{
+    private string _workspaceRoot = string.Empty;
+    private IContentProvider _fileModeContentProvider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        FileModeWorkspaceBuilder.BuildWorkspace(_workspaceRoot);
+        (_fileModeContentProvider, _) = FileModeWorkspaceBuilder.BuildProvider(_workspaceRoot);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task It_returns_200_with_replaced_urls_for_discovery_spec()
+    {
+        var fileModeContentProvider = _fileModeContentProvider;
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                var apiService = A.Fake<IApiService>();
+                collection.AddTransient(x => apiService);
+                // Inject the pre-built file-mode ContentProvider; no AppSettings change.
+                collection.AddTransient(x => fileModeContentProvider);
+            });
+        });
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/metadata/specifications/discovery-spec.json");
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonNode.Parse(content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        json.Should().NotBeNull();
+        // HOST_URL placeholders in the staged file should be replaced with the request base URL
+        // The "host" field originally contains "HOST_URL/data/v3"
+        json!["host"]!.GetValue<string>().Should().NotContain("HOST_URL");
+        // The "token" field originally contains "HOST_URL/oauth/token"
+        json["token"]!.GetValue<string>().Should().NotContain("HOST_URL");
+    }
+}
+
+/// <summary>
+/// File-mode failure path: when no project in the manifest provides discoverySpecPath,
+/// the /metadata/specifications/discovery-spec.json route should produce an error
+/// matching DLL-mode behavior (InvalidOperationException surfaced as 500 or similar).
+/// The content provider is built standalone with a no-spec manifest so it throws on discovery.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_file_mode_missing_discovery_spec_route
+{
+    private string _workspaceRoot = string.Empty;
+    private IContentProvider _noSpecContentProvider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_workspaceRoot);
+
+        // Manifest with no discoverySpecPath on any project
+        var manifestJson = """
+            {
+              "version": 1,
+              "projects": [
+                {
+                  "projectName": "Ed-Fi",
+                  "projectEndpointName": "ed-fi",
+                  "isExtensionProject": false,
+                  "schemaPath": "schemas/Ed-Fi/ApiSchema.json"
+                }
+              ]
+            }
+            """;
+        File.WriteAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"), manifestJson);
+
+        var appSettings = Options.Create(
+            new CoreAppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = string.Empty,
+            }
+        );
+        var manifestLogger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
+        var manifestProvider = new ApiSchemaAssetManifestProvider(appSettings, manifestLogger);
+        var logger = A.Fake<ILogger<ContentProvider>>();
+        var assemblyLoader = A.Fake<IAssemblyLoader>();
+        _noSpecContentProvider = new ContentProvider(logger, appSettings, assemblyLoader, manifestProvider);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task It_returns_non_success_response_when_no_discovery_spec_exists()
+    {
+        var noSpecContentProvider = _noSpecContentProvider;
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                var apiService = A.Fake<IApiService>();
+                collection.AddTransient(x => apiService);
+                // Inject the no-spec content provider; LoadJsonContent("discovery",...) throws.
+                collection.AddTransient(x => noSpecContentProvider);
+            });
+        });
+        using var client = factory.CreateClient();
+
+        // Use ResponseHeadersRead so we get the status code before reading the body.
+        // The server throws InvalidOperationException which surfaces as a 500; some test
+        // transports may surface this as an HttpRequestException before the status is readable.
+        // Either outcome means the spec is absent — assert non-success.
+        try
+        {
+            var response = await client.GetAsync(
+                "/metadata/specifications/discovery-spec.json",
+                HttpCompletionOption.ResponseHeadersRead
+            );
+            // Missing discovery spec surfaces as a server-side error (500) matching DLL-mode failure shape
+            response.IsSuccessStatusCode.Should().BeFalse();
+        }
+        catch (HttpRequestException)
+        {
+            // Server-side exception surfaced as connection error — also non-success (expected)
+        }
     }
 }
