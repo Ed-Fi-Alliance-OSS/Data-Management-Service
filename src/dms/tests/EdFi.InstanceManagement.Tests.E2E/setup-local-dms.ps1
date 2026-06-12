@@ -10,7 +10,7 @@
     This script starts the Docker stack and creates the 3 test databases.
     Tenant, instance, and Kafka infrastructure creation is handled by the tests themselves.
 
-    Extension schema packages (Sample, Homograph) are loaded via DLL-backed SCHEMA_PACKAGES.
+    Extension schema packages (Sample, Homograph) are loaded through the file-based SCHEMA_PACKAGES path.
     The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
     claimset fragments are loaded from the AdditionalClaimsets directory mounted at
     /app/additional-claims. This is the non-bootstrap compatibility path; bootstrap mode
@@ -85,7 +85,7 @@ try {
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
-        Write-Output "Removing stale .bootstrap workspace before DLL-backed E2E startup..."
+        Write-Output "Removing stale .bootstrap workspace before file-based schema package E2E startup..."
         # Fail fast on cleanup errors: a stale manifest left here would trigger bootstrap mode
         # on the next start-local-dms.ps1 invocation and silently divert the E2E run.
         Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop
@@ -107,20 +107,20 @@ try {
     Write-Host "NOTE: Tenant, instance, and Kafka infrastructure will be created by tests" -ForegroundColor Yellow
     Write-Host ""
 
-    Write-Output "Using DLL-backed schema packages for E2E (non-bootstrap compatibility path)."
+    Write-Output "Using file-based schema packages from .env.routeContext.e2e for E2E (non-bootstrap compatibility path)."
 
     $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
     $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
     $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
     $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
     try {
-        # .env.routeContext.e2e carries the bootstrap loose-file schema settings, but this
-        # non-bootstrap E2E setup still runs from DLL-backed SCHEMA_PACKAGES. Process env
-        # values win over docker compose --env-file entries, so clear stale overrides
-        # left by teardown, force the bootstrap path off, and keep the DMS entrypoint
+        # .env.routeContext.e2e carries the file-based ApiSchema package settings. Process
+        # env values win over docker compose --env-file entries, so clear stale overrides
+        # left by teardown or earlier bootstrap runs and let the env file provide
+        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES. Keep the DMS entrypoint
         # installer off because this harness provisions the main database explicitly below.
-        $env:USE_API_SCHEMA_PATH = "false"
-        $env:API_SCHEMA_PATH = ""
+        $env:USE_API_SCHEMA_PATH = $null
+        $env:API_SCHEMA_PATH = $null
         $env:SCHEMA_PACKAGES = $null
         $env:NEED_DATABASE_SETUP = "false"
 
@@ -189,7 +189,7 @@ try {
 
     # Deploy the DMS schema into the main database so it can seed the per-instance test
     # databases below. This E2E harness is the non-bootstrap transitional path and uses
-    # DLL-backed schema packages, so it disables the DMS container entrypoint installer above
+    # file-based ApiSchema packages, so it disables the DMS container entrypoint installer above
     # and provisions the (legacy/relational-disabled) schema itself by running the same
     # Backend.Installer as a one-shot container on the shared 'dms' network. Without this,
     # every per-instance request 500s with "relation \"dms.document\" does not exist".

@@ -1089,17 +1089,25 @@ exit $ExitCode
     }
 
     Context "E2E wrappers" {
-        It "keeps E2E setup on the DLL-backed schema path (non-bootstrap compatibility)" {
-            foreach ($path in @(
-                (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
-                (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")
-            )) {
-                $content = Get-Content -LiteralPath $path -Raw
-                $content | Should -Not -Match "UseBootstrapWorkspace"
-                $content | Should -Not -Match "prepare-dms-schema"
-                $content | Should -Not -Match "prepare-dms-claims"
-                $content | Should -Match "DLL-backed schema"
-            }
+        It "keeps DataManagementService E2E setup on the DLL-backed schema path (non-bootstrap compatibility)" {
+            $content = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1") -Raw
+
+            $content | Should -Not -Match "UseBootstrapWorkspace"
+            $content | Should -Not -Match "prepare-dms-schema"
+            $content | Should -Not -Match "prepare-dms-claims"
+            $content | Should -Match "DLL-backed schema"
+        }
+
+        It "keeps InstanceManagement E2E setup on route-context file-based schema packages" {
+            $content = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1") -Raw
+
+            $content | Should -Not -Match "UseBootstrapWorkspace"
+            $content | Should -Not -Match "prepare-dms-schema"
+            $content | Should -Not -Match "prepare-dms-claims"
+            $content | Should -Match "file-based schema packages"
+            $content | Should -Match "USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES"
+            $content | Should -Not -Match '\$env:USE_API_SCHEMA_PATH\s*=\s*"false"'
+            $content | Should -Not -Match '\$env:API_SCHEMA_PATH\s*=\s*""'
         }
 
         It "passes AddExtensionSecurityMetadata in E2E setup scripts to enable Hybrid claims for extension schemas" {
@@ -1139,9 +1147,9 @@ exit $ExitCode
             $buildScript | Should -Match "start-published-dms\.ps1.*-d.*-v.*-RemoveBootstrap"
         }
 
-        It "E2E setup wrappers contain defensive .bootstrap removal step before DLL-backed startup" {
+        It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {
             # Confirm that both E2E setup wrappers defensively remove .bootstrap/ before invoking
-            # start-local-dms.ps1 so a stale bootstrap workspace cannot hijack the DLL-backed run
+            # start-local-dms.ps1 so a stale bootstrap workspace cannot hijack the non-bootstrap run
             # even when a developer skips teardown between sessions.
             foreach ($path in @(
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
