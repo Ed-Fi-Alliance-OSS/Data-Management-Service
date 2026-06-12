@@ -24,7 +24,7 @@
         <PackageReference Include="NUnit3TestAdapter" />
         <PackageReference Include="coverlet.msbuild" />
         <PackageReference Include="Microsoft.CodeAnalysis" />
-        <PackageReference Include="EdFi.DataStandard52.ApiSchema" />
+        <PackageReference Include="EdFi.DataStandard52.ApiSchema" GeneratePathProperty="true" />
     </ItemGroup>
     <ItemGroup>
         <None Include="ApiSchema/InvalidResourceSchemas.json">

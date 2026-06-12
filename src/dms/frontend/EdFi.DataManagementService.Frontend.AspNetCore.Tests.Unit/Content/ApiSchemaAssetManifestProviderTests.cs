@@ -60,7 +60,12 @@ public class Given_a_valid_manifest_workspace
         );
 
         var appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = _workspaceRoot, AllowIdentityUpdateOverrides = "" }
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
         );
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
@@ -152,6 +157,117 @@ public class Given_a_valid_manifest_workspace
 }
 
 [TestFixture]
+public class Given_package_manifests_without_a_bootstrap_manifest
+{
+    private string _workspaceRoot = string.Empty;
+    private IApiSchemaAssetManifestProvider _provider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_workspaceRoot);
+
+        var corePackageRoot = Path.Combine(_workspaceRoot, "Packages", "EdFi.DataStandard52.ApiSchema");
+        Directory.CreateDirectory(Path.Combine(corePackageRoot, "xsd"));
+        File.WriteAllText(Path.Combine(corePackageRoot, "ApiSchema.json"), "{}");
+        File.WriteAllText(Path.Combine(corePackageRoot, "discovery-spec.json"), "{}");
+        File.WriteAllText(Path.Combine(corePackageRoot, "xsd", "Ed-Fi-Core.xsd"), "<schema/>");
+        File.WriteAllText(
+            Path.Combine(corePackageRoot, "package-manifest.json"),
+            """
+            {
+              "version": 1,
+              "packageId": "EdFi.DataStandard52.ApiSchema",
+              "projectName": "Ed-Fi",
+              "projectEndpointName": "ed-fi",
+              "isExtensionProject": false,
+              "schemaPath": "ApiSchema.json",
+              "discoverySpecPath": "discovery-spec.json",
+              "xsdDirectory": "xsd"
+            }
+            """
+        );
+
+        var extensionPackageRoot = Path.Combine(
+            _workspaceRoot,
+            "Packages",
+            "EdFi.DataStandard52.TPDM.ApiSchema"
+        );
+        Directory.CreateDirectory(extensionPackageRoot);
+        File.WriteAllText(Path.Combine(extensionPackageRoot, "ApiSchema.json"), "{}");
+        File.WriteAllText(
+            Path.Combine(extensionPackageRoot, "package-manifest.json"),
+            """
+            {
+              "version": 1,
+              "packageId": "EdFi.DataStandard52.TPDM.ApiSchema",
+              "projectName": "TPDM",
+              "projectEndpointName": "tpdm",
+              "isExtensionProject": true,
+              "schemaPath": "ApiSchema.json",
+              "discoverySpecPath": null,
+              "xsdDirectory": null
+            }
+            """
+        );
+
+        var appSettings = Options.Create(
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
+        );
+        var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
+        _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_synthesizes_a_manifest_from_package_manifests()
+    {
+        var manifest = _provider.GetManifest();
+
+        manifest.Version.Should().Be(1);
+        manifest.Projects.Should().HaveCount(2);
+    }
+
+    [Test]
+    public void It_rewrites_package_relative_paths_as_workspace_relative_paths()
+    {
+        var manifest = _provider.GetManifest();
+        var core = manifest.Projects[0];
+
+        core.ProjectName.Should().Be("Ed-Fi");
+        core.SchemaPath.Should().Be("Packages/EdFi.DataStandard52.ApiSchema/ApiSchema.json");
+        core.DiscoverySpecPath.Should().Be("Packages/EdFi.DataStandard52.ApiSchema/discovery-spec.json");
+        core.XsdDirectory.Should().Be("Packages/EdFi.DataStandard52.ApiSchema/xsd");
+    }
+
+    [Test]
+    public void It_enumerates_xsd_files_from_the_synthesized_manifest()
+    {
+        var manifest = _provider.GetManifest();
+        var core = manifest.Projects[0];
+
+        var xsdFiles = _provider.EnumerateValidatedXsdFiles(core).ToList();
+
+        xsdFiles.Should().ContainSingle();
+        xsdFiles[0].Should().EndWith(Path.Combine("xsd", "Ed-Fi-Core.xsd"));
+    }
+}
+
+[TestFixture]
 public class Given_a_manifest_with_explicit_null_optional_fields
 {
     private string _workspaceRoot = string.Empty;
@@ -182,7 +298,12 @@ public class Given_a_manifest_with_explicit_null_optional_fields
         File.WriteAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"), manifestJson);
 
         var appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = _workspaceRoot, AllowIdentityUpdateOverrides = "" }
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
         );
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
@@ -232,7 +353,12 @@ public class Given_a_missing_manifest_file
         Directory.CreateDirectory(_workspaceRoot);
 
         var appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = _workspaceRoot, AllowIdentityUpdateOverrides = "" }
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
         );
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
@@ -277,7 +403,12 @@ public class Given_a_malformed_manifest_file
         );
 
         var appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = _workspaceRoot, AllowIdentityUpdateOverrides = "" }
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
         );
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
@@ -330,7 +461,12 @@ public class Given_a_manifest_with_unsupported_version
         File.WriteAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"), manifestJson);
 
         var appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = _workspaceRoot, AllowIdentityUpdateOverrides = "" }
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
         );
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
@@ -376,7 +512,12 @@ public class Given_a_manifest_with_zero_projects
         File.WriteAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"), manifestJson);
 
         var appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = _workspaceRoot, AllowIdentityUpdateOverrides = "" }
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
         );
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
@@ -429,7 +570,12 @@ public class Given_path_validation_in_manifest_provider
         File.WriteAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"), manifestJson);
 
         var appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = _workspaceRoot, AllowIdentityUpdateOverrides = "" }
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
         );
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);

@@ -1,0 +1,38 @@
+<Project>
+    <ItemGroup>
+        <ApiSchemaPackageContent
+            Include="$(PkgEdFi_DataStandard52_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+            Condition="'$(PkgEdFi_DataStandard52_ApiSchema)' != ''"
+        >
+            <PackageId>EdFi.DataStandard52.ApiSchema</PackageId>
+        </ApiSchemaPackageContent>
+        <ApiSchemaPackageContent
+            Include="$(PkgEdFi_DataStandard52_Homograph_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+            Condition="'$(PkgEdFi_DataStandard52_Homograph_ApiSchema)' != ''"
+        >
+            <PackageId>EdFi.DataStandard52.Homograph.ApiSchema</PackageId>
+        </ApiSchemaPackageContent>
+        <ApiSchemaPackageContent
+            Include="$(PkgEdFi_DataStandard52_Sample_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+            Condition="'$(PkgEdFi_DataStandard52_Sample_ApiSchema)' != ''"
+        >
+            <PackageId>EdFi.DataStandard52.Sample.ApiSchema</PackageId>
+        </ApiSchemaPackageContent>
+        <ApiSchemaPackageContent
+            Include="$(PkgEdFi_DataStandard52_TPDM_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+            Condition="'$(PkgEdFi_DataStandard52_TPDM_ApiSchema)' != ''"
+        >
+            <PackageId>EdFi.DataStandard52.TPDM.ApiSchema</PackageId>
+        </ApiSchemaPackageContent>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content
+            Include="@(ApiSchemaPackageContent)"
+            Link="ApiSchema/Packages/%(PackageId)/%(RecursiveDir)%(Filename)%(Extension)"
+            CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest"
+            Visible="false"
+        />
+    </ItemGroup>
+</Project>

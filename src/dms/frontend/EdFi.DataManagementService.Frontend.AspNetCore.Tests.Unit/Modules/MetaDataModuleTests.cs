@@ -637,8 +637,7 @@ public class Given_file_mode_missing_discovery_spec_route
         var manifestLogger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         var manifestProvider = new ApiSchemaAssetManifestProvider(appSettings, manifestLogger);
         var logger = A.Fake<ILogger<ContentProvider>>();
-        var assemblyLoader = A.Fake<IAssemblyLoader>();
-        _noSpecContentProvider = new ContentProvider(logger, appSettings, assemblyLoader, manifestProvider);
+        _noSpecContentProvider = new ContentProvider(logger, manifestProvider);
     }
 
     [TearDown]

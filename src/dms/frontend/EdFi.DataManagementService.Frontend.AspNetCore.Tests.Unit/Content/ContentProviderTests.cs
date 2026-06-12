@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
@@ -20,74 +19,47 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 [Parallelizable]
 public class ContentProviderTests
 {
-    private ILogger<ContentProvider>? _logger;
-    private IOptions<AppSettings> _appSettings;
-    private Assembly _assembly;
-    private IAssemblyLoader _iAssemblyLoader;
-    private IApiSchemaAssetManifestProvider _manifestProvider;
+    private string _workspaceRoot = string.Empty;
+    private ContentProvider _contentProvider = null!;
 
     [SetUp]
     public void Setup()
     {
-        _assembly = A.Fake<Assembly>();
-        _iAssemblyLoader = A.Fake<IAssemblyLoader>();
-        _manifestProvider = A.Fake<IApiSchemaAssetManifestProvider>();
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        FileModeWorkspaceBuilder.BuildWorkspace(_workspaceRoot);
+        (_contentProvider, _) = FileModeWorkspaceBuilder.BuildProvider(_workspaceRoot);
+    }
 
-        var resources = new string[]
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
         {
-            "EdFi.DataStandard52.ApiSchema.ApiSchema.json",
-            "Interchange-AssessmentMetadata.xsd",
-            "Interchange-Descriptors.xsd",
-        };
-
-        A.CallTo(() => _assembly.GetManifestResourceNames()).Returns(resources);
-        A.CallTo(() => _iAssemblyLoader.Load(A<string>._)).Returns(_assembly);
-
-        _logger = A.Fake<ILogger<ContentProvider>>();
-
-        _appSettings = Options.Create(
-            new AppSettings { ApiSchemaPath = "some/valid/path", AllowIdentityUpdateOverrides = "" }
-        );
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
     }
 
     [Test]
     public void Returns_Expected_Json_Files()
     {
-        // Arrange
-        var contentProvider = new ContentProvider(
-            _logger!,
-            _appSettings,
-            _iAssemblyLoader,
-            _manifestProvider
-        );
-
         // Act
-        var response = contentProvider.Files("ApiSchema", ".json", "ed-fi");
+        var response = _contentProvider.Files("ApiSchema", ".json", "ed-fi");
 
         // Assert
         response.Should().NotBeNull();
-        response.Count().Should().Be(1);
-        response.First().Should().Be("EdFi.DataStandard52.ApiSchema.ApiSchema.json");
+        response.Should().BeEmpty();
     }
 
     [Test]
     public void Returns_Expected_Xsd_Files()
     {
-        // Arrange
-        var contentProvider = new ContentProvider(
-            _logger!,
-            _appSettings,
-            _iAssemblyLoader,
-            _manifestProvider
-        );
-
         // Act
-        var response = contentProvider.Files("Interchange", ".xsd", "ed-fi");
+        var response = _contentProvider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi");
 
         // Assert
         response.Should().NotBeNull();
         response.Count().Should().Be(2);
-        response.Should().Contain("Interchange-AssessmentMetadata.xsd");
+        response.Should().Contain(FileModeWorkspaceBuilder.CoreXsdFile1);
     }
 
     [Test]
@@ -124,38 +96,14 @@ public class ContentProviderTests
     [Test]
     public void Returns_Error_With_Not_Existing_File()
     {
-        // Arrange
-        var contentProvider = new ContentProvider(
-            _logger!,
-            _appSettings,
-            _iAssemblyLoader,
-            _manifestProvider
-        );
-
         // Act
-        Action action = () => contentProvider.LoadJsonContent("not-exists", string.Empty, string.Empty);
+        Action action = () => _contentProvider.LoadJsonContent("not-exists", string.Empty, string.Empty);
 
         // Assert
-        action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load find the resource");
-    }
-
-    [Test]
-    public void Returns_Error_With_Null_Stream()
-    {
-        // Arrange
-        A.CallTo(() => _assembly!.GetManifestResourceStream(A<string>.Ignored)).Returns(null);
-        var contentProvider = new ContentProvider(
-            _logger!,
-            _appSettings,
-            _iAssemblyLoader,
-            _manifestProvider
-        );
-
-        // Act
-        Action action = () => contentProvider.LoadJsonContent("file1", string.Empty, string.Empty);
-
-        // Assert
-        action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load find the resource");
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Unable to read and parse not-exists.json");
     }
 
     [Test]
@@ -189,7 +137,7 @@ public class ContentProviderTests
 
 /// <summary>
 /// Helper that builds a real staged workspace for file-mode ContentProvider tests.
-/// Contains ZERO *.ApiSchema.dll files. Uses real ApiSchemaAssetManifestProvider so
+/// Uses real ApiSchemaAssetManifestProvider so
 /// provider+reader integration is exercised end-to-end.
 /// Manifest layout:
 ///   - "Ed-Fi"   core project: discoverySpecPath + xsdDirectory (two XSD files)
@@ -300,8 +248,7 @@ internal static class FileModeWorkspaceBuilder
         var manifestProvider = new ApiSchemaAssetManifestProvider(appSettings, manifestLogger);
 
         var logger = A.Fake<ILogger<ContentProvider>>();
-        var assemblyLoader = A.Fake<IAssemblyLoader>();
-        var provider = new ContentProvider(logger, appSettings, assemblyLoader, manifestProvider);
+        var provider = new ContentProvider(logger, manifestProvider);
 
         return (provider, manifestProvider);
     }
@@ -390,8 +337,7 @@ public class Given_file_mode_discovery_spec_load
             var manifestLogger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
             var manifestProvider = new ApiSchemaAssetManifestProvider(appSettings, manifestLogger);
             var logger = A.Fake<ILogger<ContentProvider>>();
-            var assemblyLoader = A.Fake<IAssemblyLoader>();
-            var provider = new ContentProvider(logger, appSettings, assemblyLoader, manifestProvider);
+            var provider = new ContentProvider(logger, manifestProvider);
 
             Action action = () => provider.LoadJsonContent("discovery", string.Empty, string.Empty);
 
@@ -686,8 +632,7 @@ public class Given_file_mode_path_escape_rejection
         var manifestLogger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
         var manifestProvider = new ApiSchemaAssetManifestProvider(appSettings, manifestLogger);
         var logger = A.Fake<ILogger<ContentProvider>>();
-        var assemblyLoader = A.Fake<IAssemblyLoader>();
-        var provider = new ContentProvider(logger, appSettings, assemblyLoader, manifestProvider);
+        var provider = new ContentProvider(logger, manifestProvider);
 
         // Requesting files for core section triggers EnumerateValidatedXsdFiles which validates the path
         Action action = () => provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi").ToList();

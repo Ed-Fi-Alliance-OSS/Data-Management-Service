@@ -61,11 +61,11 @@ try
         Console.WriteLine($"Package downloaded to: {packagePath}");
         logger.LogInformation("Package downloaded to: {PackagePath}", packagePath);
 
-        // Extract the API schema
-        downloader.ExtractApiSchemaJsonFromAssembly(packageId, packagePath, options.ApiSchemaFolder);
-        Console.WriteLine($"ApiSchema.json extracted to folder: {options.ApiSchemaFolder}");
+        // Extract the API schema package content
+        downloader.ExtractApiSchemaFiles(packageId, packagePath, options.ApiSchemaFolder);
+        Console.WriteLine($"ApiSchema files extracted to folder: {options.ApiSchemaFolder}");
         logger.LogInformation(
-            "ApiSchema.json extracted to folder: {ApiSchemaFolder}",
+            "ApiSchema files extracted to folder: {ApiSchemaFolder}",
             options.ApiSchemaFolder
         );
     });

@@ -3,13 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
-using System.Runtime.Loader;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
-using EdFi.DataManagementService.Core.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 
@@ -53,19 +48,12 @@ public interface IContentProvider
 /// </summary>
 public class ContentProvider(
     ILogger<ContentProvider> _logger,
-    IOptions<AppSettings> appSettings,
-    IAssemblyLoader assemblyLoader,
     IApiSchemaAssetManifestProvider manifestProvider
 ) : IContentProvider
 {
     public IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section)
     {
-        if (appSettings.Value.UseApiSchemaPath)
-        {
-            return FilesFromManifest(fileNamePattern, fileExtension, section);
-        }
-
-        return FilesFromAssemblies(fileNamePattern, fileExtension);
+        return FilesFromManifest(fileNamePattern, fileExtension, section);
     }
 
     private IEnumerable<string> FilesFromManifest(
@@ -150,44 +138,6 @@ public class ContentProvider(
         return fileNames.Where(f => f.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase));
     }
 
-    private IEnumerable<string> FilesFromAssemblies(string fileNamePattern, string fileExtension)
-    {
-        string apiSchemaPath = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
-        string[] assemblies;
-        var files = new List<string>();
-
-        assemblies = Directory
-            .EnumerateFiles(apiSchemaPath, "*.*", SearchOption.AllDirectories)
-            .Where(f => Path.GetFileName(f).EndsWith(".ApiSchema.dll", StringComparison.OrdinalIgnoreCase))
-            .GroupBy(Path.GetFileName)
-            .Select(g => g.First())
-            .OrderBy(f => f)
-            .ToArray();
-
-        foreach (var assemblyPath in assemblies)
-        {
-            _logger.LogInformation("assemblyPath is {AssemblyPath}", assemblyPath);
-            var assembly = assemblyLoader.Load(assemblyPath);
-            foreach (string resourceName in assembly.GetManifestResourceNames())
-            {
-                if (
-                    Regex.IsMatch(resourceName, fileNamePattern, RegexOptions.IgnoreCase)
-                    && resourceName.EndsWith(fileExtension)
-                )
-                {
-                    var fileName = resourceName.Replace($"{assembly.GetName().Name}.xsd.", string.Empty);
-                    if (!files.Contains(fileName))
-                    {
-                        files.Add(fileName);
-                    }
-                    _logger.LogInformation("fileName is {FileName}", fileName);
-                }
-            }
-        }
-
-        return files;
-    }
-
     public JsonNode LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl)
     {
         var jsonNodeFromFile = LoadJsonContent(fileNamePattern);
@@ -240,12 +190,7 @@ public class ContentProvider(
 
     public Stream GetStream(string fileNamePattern, string fileExtension)
     {
-        if (appSettings.Value.UseApiSchemaPath)
-        {
-            return GetStreamFromManifest(fileNamePattern, fileExtension);
-        }
-
-        return GetStreamFromAssemblies(fileNamePattern, fileExtension);
+        return GetStreamFromManifest(fileNamePattern, fileExtension);
     }
 
     private Stream GetStreamFromManifest(string fileNamePattern, string fileExtension)
@@ -322,39 +267,6 @@ public class ContentProvider(
         throw new InvalidOperationException(error);
     }
 
-    private Stream GetStreamFromAssemblies(string fileNamePattern, string fileExtension)
-    {
-        string apiSchemaPath = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
-
-        var searchPattern = "*.ApiSchema.dll";
-        var assemblies = Directory.GetFiles(apiSchemaPath, searchPattern, SearchOption.AllDirectories);
-        assemblies = assemblies.GroupBy(Path.GetFileName).Select(g => g.First()).ToArray();
-
-        foreach (var assemblyPath in assemblies)
-        {
-            var assembly = assemblyLoader.Load(assemblyPath);
-            var resourceName = assembly
-                .GetManifestResourceNames()
-                .SingleOrDefault(str =>
-                    str.Contains(fileNamePattern, StringComparison.OrdinalIgnoreCase)
-                    && str.EndsWith(fileExtension)
-                );
-
-            if (resourceName != null)
-            {
-                var stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream != null)
-                {
-                    return stream;
-                }
-            }
-        }
-
-        var error = $"Couldn't load find the resource";
-        _logger.LogCritical(error);
-        throw new InvalidOperationException(error);
-    }
-
     /// <summary>
     /// Normalizes a file-name argument to the staged bare XSD file name.
     /// Legacy assembly-resource-prefixed values look like:
@@ -400,28 +312,5 @@ public class ContentProvider(
                 )
                 .ToArray()
         );
-    }
-}
-
-/// <summary>
-/// Returns ApiSchemaAssemblyLoadContext for loading Assembly Context
-/// </summary>
-public class ApiSchemaAssemblyLoadContext : AssemblyLoadContext
-{
-    public ApiSchemaAssemblyLoadContext()
-        : base(isCollectible: true) { }
-}
-
-public interface IAssemblyLoader
-{
-    Assembly Load(string path);
-}
-
-public class ApiSchemaAssemblyLoader : IAssemblyLoader
-{
-    public Assembly Load(string path)
-    {
-        var requestData = new ApiSchemaAssemblyLoadContext();
-        return requestData.LoadFromAssemblyPath(path);
     }
 }

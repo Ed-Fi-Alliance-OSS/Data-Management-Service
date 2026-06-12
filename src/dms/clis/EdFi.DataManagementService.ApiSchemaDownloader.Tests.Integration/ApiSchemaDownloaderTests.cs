@@ -111,7 +111,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
         public class Given_An_Invalid_Package : ApiSchemaDownloaderTests
         {
             [Test]
-            public void Should_Throw_Exception_When_Package_Does_Not_Contain_DLL()
+            public void Should_Throw_Exception_When_Package_Does_Not_Contain_ApiSchema_Content()
             {
                 // Arrange
                 var packagePath = Path.Combine(_tempDirectory, "invalidPackage.nupkg");
@@ -119,12 +119,12 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
 
                 // Act & Assert
                 var ex = Assert.Throws<Exception>(() =>
-                    _downloader.ExtractApiSchemaJsonFromAssembly("TestPackage", packagePath, _tempDirectory)
+                    _downloader.ExtractApiSchemaFiles("TestPackage", packagePath, _tempDirectory)
                 );
 
                 Assert.That(
                     ex?.Message,
-                    Is.EqualTo("An error occurred while extracting ApiSchema Json From Assembly.")
+                    Is.EqualTo("An error occurred while extracting ApiSchema files from package.")
                 );
             }
         }
@@ -133,7 +133,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
         public class Given_A_Valid_Package : ApiSchemaDownloaderTests
         {
             [Test]
-            public async Task Should_Extract_Embedded_Resources_Correctly()
+            public async Task Should_Extract_ApiSchema_Content_Files_Correctly()
             {
                 // Arrange
                 string packageId = "EdFi.DataStandard52.ApiSchema";
@@ -150,11 +150,22 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
                 );
 
                 // Act
-                _downloader.ExtractApiSchemaJsonFromAssembly(
-                    "EdFi.DataStandard52.ApiSchema",
-                    packagePath,
-                    _tempDirectory
-                );
+                _downloader.ExtractApiSchemaFiles(packageId, packagePath, _tempDirectory);
+
+                // Assert
+                string packageOutputDir = Path.Combine(_tempDirectory, "Packages", packageId);
+                Assert.Multiple(() =>
+                {
+                    Assert.That(File.Exists(Path.Combine(packageOutputDir, "ApiSchema.json")), Is.True);
+                    Assert.That(
+                        File.Exists(Path.Combine(packageOutputDir, "package-manifest.json")),
+                        Is.True
+                    );
+                    Assert.That(
+                        File.Exists(Path.Combine(packageOutputDir, "xsd", "Ed-Fi-Core.xsd")),
+                        Is.True
+                    );
+                });
             }
         }
     }
