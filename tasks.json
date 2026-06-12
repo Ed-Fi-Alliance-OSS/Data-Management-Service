@@ -83,7 +83,7 @@
       "`ApiSchemaAssetManifestProvider.GetManifest` reads only the root `bootstrap-api-schema-manifest.json` from the configured or bundled ApiSchema workspace and no longer recursively scans for `package-manifest.json` files.",
       "The build or publish path materializes `ApiSchema/bootstrap-api-schema-manifest.json` for bundled ApiSchema package content, with project paths relative to the bundled `ApiSchema` directory.",
       "Running with `UseApiSchemaPath=false` loads bundled schema, discovery spec, and XSD content through the same manifest path validation used when `UseApiSchemaPath=true`.",
-      "A stray nested `package-manifest.json` under the ApiSchema workspace is ignored unless it is referenced by the generated root bootstrap manifest."
+      "A stray nested `package-manifest.json` under the ApiSchema workspace is ignored; runtime content loading is driven only by projects and paths declared in the root `bootstrap-api-schema-manifest.json`."
     ],
     "steps-to-verify": [
       "Add or update frontend unit coverage for `ApiSchemaAssetManifestProvider` showing that a missing root `bootstrap-api-schema-manifest.json` fails even when a nested `package-manifest.json` exists.",
