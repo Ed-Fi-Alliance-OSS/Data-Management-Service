@@ -256,19 +256,14 @@ function Get-SampleData {
     Diagnostic override of the repo pin.
 #>
 function Get-BulkLoadClient {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidDefaultValueSwitchParameter', '', Justification = 'The pinned BulkLoadClient build is published to the dev feed view before promotion to EdFi@Release, so resolution must default to the dev view; the exact three-part pin keeps the result deterministic and -PreRelease:$false restores release-view resolution.')]
     param (
         # Diagnostic override of the repo-pinned version. Defaults to the shared pin.
         [string]
         $PackageVersion = $script:PinnedBulkLoadClientVersion,
 
-        # Resolve from the dev (EdFi) feed view by default: the pinned build is
-        # published there but not yet promoted to the EdFi@Release view. The dev view
-        # is a superset of the release view and the exact three-part pin cannot float,
-        # so resolution stays deterministic. Pass -PreRelease:$false to require the
-        # release view once the pinned version has been promoted.
+        # Enable usage of prereleases
         [Switch]
-        $PreRelease = $true
+        $PreRelease
     )
 
     Get-NugetPackage -PackageName "EdFi.Suite3.BulkLoadClient.Console" `
