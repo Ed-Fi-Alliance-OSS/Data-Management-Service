@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("SecurityConfiguration")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Backend_Security_Configuration_Authorization_Fixture
 {
     private const long ClaimEducationOrganizationId =

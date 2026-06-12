@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Start MSSQL test container
+description: Starts a resource-limited SQL Server test container and exports its admin connection string.
+
+inputs:
+  container-name:
+    description: The SQL Server container name.
+    required: true
+  container-memory:
+    description: Docker memory and memory-swap limit.
+    required: true
+  sql-memory-limit-mb:
+    description: SQL Server memory limit in megabytes.
+    required: true
+  tmpfs-size:
+    description: tmpfs size for /var/opt/mssql.
+    required: true
+  image:
+    description: SQL Server container image.
+    required: true
+  host-port:
+    description: Host port to publish to SQL Server port 1433.
+    required: false
+    default: "1433"
+
+runs:
+  using: composite
+  steps:
+    - name: Start MSSQL test container
+      shell: pwsh
+      env:
+        CONTAINER_NAME: ${{ inputs.container-name }}
+        CONTAINER_MEMORY: ${{ inputs.container-memory }}
+        HOST_PORT: ${{ inputs.host-port }}
+        MSSQL_IMAGE: ${{ inputs.image }}
+        MSSQL_SQL_MEMORY_LIMIT_MB: ${{ inputs.sql-memory-limit-mb }}
+        MSSQL_TMPFS_SIZE: ${{ inputs.tmpfs-size }}
+      run: |
+        $mssqlPassword = "Aa1!$([Guid]::NewGuid().ToString('N'))"
+
+        "MSSQL_SA_PASSWORD=$mssqlPassword" >> $env:GITHUB_ENV
+        "ConnectionStrings__MssqlAdmin=Server=localhost,$($env:HOST_PORT);User Id=sa;Password=$mssqlPassword;TrustServerCertificate=true;" >> $env:GITHUB_ENV
+
+        $containerId = docker run --detach --name $env:CONTAINER_NAME `
+          --memory $env:CONTAINER_MEMORY `
+          --memory-swap $env:CONTAINER_MEMORY `
+          --tmpfs "/var/opt/mssql:rw,size=$($env:MSSQL_TMPFS_SIZE),mode=1777" `
+          --env ACCEPT_EULA=Y `
+          --env MSSQL_SA_PASSWORD=$mssqlPassword `
+          --env "MSSQL_MEMORY_LIMIT_MB=$env:MSSQL_SQL_MEMORY_LIMIT_MB" `
+          --env MSSQL_PID=Developer `
+          --publish "$($env:HOST_PORT):1433" `
+          $env:MSSQL_IMAGE
+
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to start SQL Server container $env:CONTAINER_NAME."
+        }
+
+        Write-Output "Started SQL Server container $env:CONTAINER_NAME ($containerId)."
+
+        for ($attempt = 1; $attempt -le 30; $attempt++) {
+          docker exec $env:CONTAINER_NAME /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$mssqlPassword" -Q "SELECT 1" -C -b
+
+          if ($LASTEXITCODE -eq 0) {
+            exit 0
+          }
+
+          Start-Sleep -Seconds 5
+        }
+
+        docker logs $env:CONTAINER_NAME
+        throw "SQL Server did not become ready within the timeout period."

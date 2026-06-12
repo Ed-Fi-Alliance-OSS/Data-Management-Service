@@ -9,6 +9,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 [TestFixture]
 [Category("CompatibilityGate")]
+[Category(MssqlCiShards.Shard4)]
 public class MssqlCompatibilityGateAuthoritativeDs52TpdmTests : MssqlCompatibilityGateTestsBase
 {
     protected override string FixtureRelativePath => "src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm";

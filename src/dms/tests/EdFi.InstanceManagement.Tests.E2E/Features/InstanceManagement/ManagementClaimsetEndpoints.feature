@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup
+@InstanceCleanup @instance-management-ci-shard-2
 Feature: Management Claimset Endpoints
     Verify that the claimset management endpoints (view-claimsets and reload-claimsets)
     are tenant-aware in multi-tenant deployments.

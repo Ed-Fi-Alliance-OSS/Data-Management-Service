@@ -69,6 +69,7 @@ file sealed class MssqlCollectionAlignedExtNoOpUpdateCascadeHandler : IUpdateCas
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Sponsor_Reference
 {
     private const string FixtureRelativePath =

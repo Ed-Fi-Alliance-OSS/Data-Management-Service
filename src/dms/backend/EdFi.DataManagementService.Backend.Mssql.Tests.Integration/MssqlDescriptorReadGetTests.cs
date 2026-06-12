@@ -27,6 +27,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_DescriptorRead_Get_Request
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

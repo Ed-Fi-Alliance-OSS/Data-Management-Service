@@ -73,6 +73,7 @@ file sealed class MssqlAuthorizationNoOpUpdateCascadeHandler : IUpdateCascadeHan
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

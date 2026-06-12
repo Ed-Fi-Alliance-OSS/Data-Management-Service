@@ -900,24 +900,56 @@ function Wait-ForPostgreSQL {
 # which creates Kafka connectors via setup-data-store-kafka-connectors.ps1
 
 function RunInstanceE2E {
+    param (
+        [string]
+        $TestFilter
+    )
+
     # Run only the instance management E2E tests
     $testProject = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj"
-    $trxFile = "$testResults/EdFi.InstanceManagement.Tests.E2E.trx"
+    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
+    $resultNameSuffix =
+        if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*instance-management-ci-shard-(\d+)\b') {
+            ".instance-shard-$($Matches[1])"
+        }
+        else {
+            ""
+        }
+    $trxFile = "$testResults/EdFi.InstanceManagement.Tests.E2E$resultNameSuffix.trx"
+
+    if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter) -and $normalizedTestFilter -ne $TestFilter) {
+        Write-Output "Normalized test filter for VSTest: '$TestFilter' -> '$normalizedTestFilter'"
+    }
+
+    $dotNetTestArguments = @(
+        $testProject,
+        "--configuration",
+        $Configuration,
+        "--logger",
+        "trx;LogFileName=$trxFile",
+        "--logger",
+        "console",
+        "--verbosity",
+        "normal",
+        "--nologo"
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
+        $dotNetTestArguments += @("--filter", $normalizedTestFilter)
+    }
 
     Invoke-Execute {
-        dotnet test $testProject `
-            --configuration $Configuration `
-            --logger "trx;LogFileName=$trxFile" `
-            --logger "console" `
-            --verbosity normal `
-            --nologo
+        dotnet test @dotNetTestArguments
     }
 }
 
 function InstanceE2ETests {
     param (
         [switch]
-        $SkipDockerBuild
+        $SkipDockerBuild,
+
+        [string]
+        $TestFilter
     )
 
     # Instance management tests require the DMS environment to be started with route qualifiers
@@ -952,7 +984,7 @@ function InstanceE2ETests {
     Write-Host "  - 3 PostgreSQL databases with DMS schema" -ForegroundColor Gray
 
     # Run the instance management E2E tests
-    Invoke-Step { RunInstanceE2E }
+    Invoke-Step { RunInstanceE2E -TestFilter $TestFilter }
 
     Write-Host "`nTests complete!" -ForegroundColor Green
 }
@@ -1126,7 +1158,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter }
-        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild } }
+        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

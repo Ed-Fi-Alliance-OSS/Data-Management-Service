@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("Authorization")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_EdOrg_Fixture
 {
     private const long ClaimEducationOrganizationId = 900;
@@ -675,6 +676,7 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category("PeopleRelationship")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_PeopleRelationship_Crud_Authorization_Matrix
 {
     private const long ClaimEducationOrganizationId =
@@ -1244,6 +1246,7 @@ public class Given_A_Mssql_PeopleRelationship_Crud_Authorization_Matrix
 [Category("Authorization")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_An_Unmappable_AUTH1_Payload
 {
     private const long ClaimEducationOrganizationId =

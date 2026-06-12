@@ -491,6 +491,7 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape
     : MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
 {
@@ -576,6 +577,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape
     : MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
 {
@@ -683,6 +685,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put
     : MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
 {
@@ -762,6 +765,7 @@ internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Put
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 internal class Given_A_Mssql_Relational_Profile_Stale_Guarded_No_Op_Post_As_Update
     : MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
 {
@@ -1074,6 +1078,7 @@ internal abstract class MssqlCollectionShapeProfileGuardedNoOpFixtureBase
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_Table_Shape
     : MssqlSeparateTableShapeProfileGuardedNoOpFixtureBase
 {
@@ -1209,6 +1214,7 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape
     : MssqlCollectionShapeProfileGuardedNoOpFixtureBase
 {

@@ -250,6 +250,7 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_Column_Preservation
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -403,6 +404,7 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_Column_Preservation
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Post_Create_New_For_Root_Only_Resource
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -540,6 +542,7 @@ public class Given_A_Mssql_Profiled_Post_Create_New_For_Root_Only_Resource
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
 {
     private static readonly DocumentUuid SeedDocumentUuid = new(
@@ -697,6 +700,7 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Shape_Succeeds
 {
     private const string RequestBodyJson = """

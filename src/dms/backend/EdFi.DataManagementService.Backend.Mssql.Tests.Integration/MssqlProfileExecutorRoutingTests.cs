@@ -175,6 +175,7 @@ file static class MssqlProfileRoutingTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 {
     private const string FixtureRelativePath =
@@ -310,6 +311,7 @@ public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
 {
     private const string FixtureRelativePath =
@@ -500,6 +502,7 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Root_Extension_Scope
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_With_Root_Extension_Scope
 {
     private const string FixtureRelativePath =

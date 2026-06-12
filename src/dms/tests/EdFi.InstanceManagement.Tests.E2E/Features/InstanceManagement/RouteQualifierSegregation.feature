@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup
+@InstanceCleanup @instance-management-ci-shard-1
 Feature: Route Qualifier Data Segregation
     Verify that data is properly segregated between instances using route qualifiers
     within the same tenant. Each route qualifier maps to a separate database instance.

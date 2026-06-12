@@ -25,6 +25,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_MssqlDescriptorWriteHandler
 {
     private MssqlReferenceResolverTestDatabase _database = null!;

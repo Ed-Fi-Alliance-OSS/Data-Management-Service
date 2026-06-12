@@ -9,6 +9,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 [TestFixture]
 [Category("CompatibilityGate")]
+[Category(MssqlCiShards.Shard4)]
 public class MssqlCompatibilityGateFocusedTests : MssqlCompatibilityGateTestsBase
 {
     protected override string FixtureRelativePath =>

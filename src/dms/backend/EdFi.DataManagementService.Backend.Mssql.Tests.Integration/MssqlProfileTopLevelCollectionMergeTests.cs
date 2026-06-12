@@ -633,6 +633,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_TopLevelCollection_Merge
 {
     private const long SchoolId = 255901;

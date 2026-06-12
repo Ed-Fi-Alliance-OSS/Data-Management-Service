@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup @kafka
+@InstanceCleanup @kafka @instance-management-ci-shard-1
 Feature: Kafka Topic-Per-Instance Segregation
     Verify that Kafka messages are published to instance-specific topics
     and that no cross-instance data leakage occurs within a tenant

@@ -309,6 +309,7 @@ file static class MssqlProfileIfMatchEtagTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_Using_The_Current_Profiled_Get_Etag
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -487,6 +488,7 @@ public class Given_A_Mssql_Profiled_Put_Using_The_Current_Profiled_Get_Etag
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_With_A_Stale_Profiled_Etag_After_A_Hidden_Field_Change
 {
     private static readonly DocumentUuid DocumentUuid = new(

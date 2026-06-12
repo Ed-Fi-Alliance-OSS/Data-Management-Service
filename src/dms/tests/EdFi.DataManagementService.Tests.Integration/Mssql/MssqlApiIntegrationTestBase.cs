@@ -26,12 +26,9 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
     [OneTimeSetUp]
     public void GuardConnectionStringPresent()
     {
-        if (!MssqlTestDatabaseHelper.IsConfigured())
-        {
-            Assert.Ignore(
-                "MssqlAdmin is not configured (set ConnectionStrings__MssqlAdmin or add it to appsettings.Test.json); skipping SQL Server API integration tests."
-            );
-        }
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "MssqlAdmin is not configured (set ConnectionStrings__MssqlAdmin or add it to appsettings.Test.json); skipping SQL Server API integration tests."
+        );
     }
 
     protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)

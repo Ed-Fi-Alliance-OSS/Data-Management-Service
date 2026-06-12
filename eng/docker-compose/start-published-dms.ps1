@@ -159,9 +159,40 @@ if (-not $d) {
         throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
     }
 }
+$usePostgresqlTmpfs = [string]::Equals(
+    $env:POSTGRES_USE_TMPFS,
+    "true",
+    [System.StringComparison]::OrdinalIgnoreCase
+)
+$postgresqlTmpfsComposeFile = "postgresql-tmpfs.yml"
+if ($usePostgresqlTmpfs) {
+    $postgresqlTmpfsSize =
+        if ([string]::IsNullOrWhiteSpace($env:POSTGRES_TMPFS_SIZE)) {
+            "4g"
+        }
+        else {
+            $env:POSTGRES_TMPFS_SIZE
+        }
+    $postgresqlContainerMemory =
+        if ([string]::IsNullOrWhiteSpace($env:POSTGRES_CONTAINER_MEMORY)) {
+            "10g"
+        }
+        else {
+            $env:POSTGRES_CONTAINER_MEMORY
+        }
+    Write-Output "Using PostgreSQL tmpfs data directory (POSTGRES_TMPFS_SIZE=$postgresqlTmpfsSize, POSTGRES_CONTAINER_MEMORY=$postgresqlContainerMemory)."
+}
+
 $files = @(
     "-f",
-    "postgresql.yml",
+    "postgresql.yml"
+)
+
+if ($usePostgresqlTmpfs) {
+    $files += @("-f", $postgresqlTmpfsComposeFile)
+}
+
+$files += @(
     "-f",
     "published-dms.yml",
     "-f",

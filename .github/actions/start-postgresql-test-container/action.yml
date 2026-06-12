@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Start PostgreSQL test container
+description: Starts a resource-limited PostgreSQL test container with tmpfs-backed data storage.
+
+inputs:
+  container-name:
+    description: The PostgreSQL container name.
+    required: true
+  container-memory:
+    description: Docker memory and memory-swap limit.
+    required: true
+  tmpfs-size:
+    description: tmpfs size for /var/lib/postgresql/data.
+    required: true
+  image:
+    description: PostgreSQL container image.
+    required: true
+  host-port:
+    description: Host port to publish to PostgreSQL port 5432.
+    required: false
+    default: "5432"
+
+runs:
+  using: composite
+  steps:
+    - name: Start PostgreSQL test container
+      shell: pwsh
+      env:
+        CONTAINER_NAME: ${{ inputs.container-name }}
+        CONTAINER_MEMORY: ${{ inputs.container-memory }}
+        HOST_PORT: ${{ inputs.host-port }}
+        POSTGRES_IMAGE: ${{ inputs.image }}
+        POSTGRES_TMPFS_SIZE: ${{ inputs.tmpfs-size }}
+      run: |
+        $containerId = docker run --detach --name $env:CONTAINER_NAME `
+          --memory $env:CONTAINER_MEMORY `
+          --memory-swap $env:CONTAINER_MEMORY `
+          --tmpfs "/var/lib/postgresql/data:rw,size=$($env:POSTGRES_TMPFS_SIZE),mode=0700" `
+          --env POSTGRES_HOST_AUTH_METHOD=trust `
+          --publish "$($env:HOST_PORT):5432" `
+          $env:POSTGRES_IMAGE `
+          postgres `
+          -c `
+          max_locks_per_transaction=256
+
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to start PostgreSQL container $env:CONTAINER_NAME."
+        }
+
+        Write-Output "Started PostgreSQL container $env:CONTAINER_NAME ($containerId)."
+
+        for ($attempt = 1; $attempt -le 30; $attempt++) {
+          docker exec $env:CONTAINER_NAME pg_isready -U postgres
+
+          if ($LASTEXITCODE -eq 0) {
+            exit 0
+          }
+
+          Start-Sleep -Seconds 2
+        }
+
+        docker logs $env:CONTAINER_NAME
+        throw "PostgreSQL did not become ready within the timeout period."

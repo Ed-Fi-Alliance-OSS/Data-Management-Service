@@ -13,6 +13,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_MssqlReferenceResolverTestDatabase
 {
     private MssqlReferenceResolverTestDatabase _database = null!;

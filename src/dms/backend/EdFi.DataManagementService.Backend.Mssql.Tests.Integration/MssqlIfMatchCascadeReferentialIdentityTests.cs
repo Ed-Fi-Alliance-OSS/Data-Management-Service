@@ -180,6 +180,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
 {
     private const string OriginalStudentBodyJson = """

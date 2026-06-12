@@ -555,6 +555,7 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge
 {
     private const long SchoolId = 255902;

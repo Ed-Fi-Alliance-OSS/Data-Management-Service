@@ -308,6 +308,7 @@ internal sealed record MssqlStudentArtProgramAssociationPersistedState(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture
 {
     private const long EducationOrganizationId = 100;

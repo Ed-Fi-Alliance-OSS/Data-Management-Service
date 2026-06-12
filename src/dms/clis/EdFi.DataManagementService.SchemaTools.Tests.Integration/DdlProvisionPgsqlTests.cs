@@ -11,6 +11,7 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
 {
     private string _databaseName = null!;
@@ -137,6 +138,7 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_Provisioning_Rerun_On_Same_Database
 {
     private string _databaseName = null!;
@@ -213,6 +215,7 @@ public class Given_Provisioning_Rerun_On_Same_Database
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_Db
 {
     private string _databaseName = null!;
@@ -256,6 +259,7 @@ public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_D
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_Provisioning_Without_Create_Database_Against_Missing_Db
 {
     private string _databaseName = null!;
@@ -296,6 +300,7 @@ public class Given_Provisioning_Without_Create_Database_Against_Missing_Db
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_Create_Database_Flag_With_Existing_Database
 {
     private string _databaseName = null!;
@@ -347,6 +352,7 @@ public class Given_Create_Database_Flag_With_Existing_Database
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_Schema_Hash_Mismatch_On_Provisioning
 {
     private string _databaseName = null!;
@@ -445,6 +451,7 @@ public class Given_Schema_Hash_Mismatch_On_Provisioning
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_ResourceKey_Tampered_After_Provisioning
 {
     private string _databaseName = null!;
@@ -549,6 +556,7 @@ public class Given_ResourceKey_Tampered_After_Provisioning
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_SchemaComponent_Tampered_After_Provisioning
 {
     private string _databaseName = null!;
@@ -655,6 +663,7 @@ public class Given_SchemaComponent_Tampered_After_Provisioning
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_ResourceKey_Table_Dropped_After_Provisioning
 {
     private string _databaseName = null!;
@@ -733,6 +742,7 @@ public class Given_ResourceKey_Table_Dropped_After_Provisioning
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_SchemaComponent_Table_Dropped_After_Provisioning
 {
     private string _databaseName = null!;
@@ -811,6 +821,7 @@ public class Given_SchemaComponent_Table_Dropped_After_Provisioning
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 public class Given_EffectiveSchema_Table_Exists_But_Singleton_Row_Missing
 {
     private string _databaseName = null!;

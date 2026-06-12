@@ -69,6 +69,7 @@ file sealed class MssqlResourceLinksFlagNoOpUpdateCascadeHandler : IUpdateCascad
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_Across_Restart
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

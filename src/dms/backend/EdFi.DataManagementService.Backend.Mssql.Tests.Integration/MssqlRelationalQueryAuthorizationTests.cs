@@ -2413,6 +2413,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 [Category("Authorization")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Query_Authorization_With_Direct_EdOrg_Claim_Match
 {
     private const long ClaimEducationOrganizationId =
@@ -2512,6 +2513,7 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_Direct_EdOrg_Clai
 [Category("Authorization")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative_Ds52_School_Fixture
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
@@ -2921,6 +2923,7 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative
 [Category("Authorization")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Query_Authorization_With_A_Synthetic_EdOrg_Fixture
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/synthetic/authorization-query";

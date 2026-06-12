@@ -27,6 +27,7 @@ internal sealed record MssqlDocumentStampState(long ContentVersion, DateTime Con
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key_Fixture_For_Smoke_Coverage
 {
     private static readonly string FixtureRelativePath = Path.Combine(
@@ -220,10 +221,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         schoolAfter.ContentVersion.Should().BeGreaterThan(schoolBefore.ContentVersion);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
-            .Be(
-                1L,
-                "a multi-row child update of one root document must allocate exactly one content stamp"
-            );
+            .Be(1L, "a multi-row child update of one root document must allocate exactly one content stamp");
         await AssertSchoolMirrorMatchesDocumentAsync(_seedData.SchoolDocumentId);
     }
 

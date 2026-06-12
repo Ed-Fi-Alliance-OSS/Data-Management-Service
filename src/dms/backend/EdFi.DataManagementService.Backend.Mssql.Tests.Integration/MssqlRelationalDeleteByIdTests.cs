@@ -61,6 +61,7 @@ file sealed class MssqlDeleteByIdNoOpUpdateCascadeHandler : IUpdateCascadeHandle
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Relational_Delete_By_Id
 {
     private const string FixtureRelativePath =

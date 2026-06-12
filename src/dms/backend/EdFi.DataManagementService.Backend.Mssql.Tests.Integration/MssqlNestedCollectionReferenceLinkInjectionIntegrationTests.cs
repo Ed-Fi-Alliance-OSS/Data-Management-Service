@@ -67,6 +67,7 @@ file sealed class MssqlNestedCollectionNoOpUpdateCascadeHandler : IUpdateCascade
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_References
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

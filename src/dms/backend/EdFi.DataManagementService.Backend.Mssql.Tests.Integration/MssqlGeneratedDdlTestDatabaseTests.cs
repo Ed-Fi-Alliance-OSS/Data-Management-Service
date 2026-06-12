@@ -33,6 +33,7 @@ internal sealed record MssqlGeneratedDdlDocumentState(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_MssqlGeneratedDdlTestDatabase
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

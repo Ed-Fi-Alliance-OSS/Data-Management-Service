@@ -60,6 +60,7 @@ public abstract class Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Simple_Ascii_Name : Uuidv5ParityTestBase
 {
     private const string Name = "hello world";
@@ -89,6 +90,7 @@ public class Given_Simple_Ascii_Name : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_EdFi_Identity_String : Uuidv5ParityTestBase
 {
     // Mimics a realistic ReferentialIdCalculator input:
@@ -110,6 +112,7 @@ public class Given_EdFi_Identity_String : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Multi_Part_Identity_String : Uuidv5ParityTestBase
 {
     // Multi-element identity with '#' separator as used by DocumentIdentityString
@@ -131,6 +134,7 @@ public class Given_Multi_Part_Identity_String : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Empty_Name
 {
     /// <summary>
@@ -158,6 +162,7 @@ public class Given_Empty_Name
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Unicode_Name : Uuidv5ParityTestBase
 {
     // Non-ASCII: accented characters, CJK, and emoji
@@ -178,6 +183,7 @@ public class Given_Unicode_Name : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Whitespace_And_Special_Characters : Uuidv5ParityTestBase
 {
     // Tabs, newlines, leading/trailing spaces, and punctuation
@@ -198,6 +204,7 @@ public class Given_Whitespace_And_Special_Characters : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Numeric_Identity_Values : Uuidv5ParityTestBase
 {
     // Numeric identity parts (school IDs, dates, decimals, leading zeros)
@@ -218,6 +225,7 @@ public class Given_Numeric_Identity_Values : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Alternate_Namespace : Uuidv5ParityTestBase
 {
     // Verifies parity is not hard-coded to the Ed-Fi namespace
@@ -238,6 +246,7 @@ public class Given_Alternate_Namespace : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Long_Name : Uuidv5ParityTestBase
 {
     private static readonly string _longName = new('x', 10_000);
@@ -257,6 +266,7 @@ public class Given_Long_Name : Uuidv5ParityTestBase
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Formatting_Edge_Cases : Uuidv5ParityTestBase
 {
     // Dates, decimals, leading zeros, trailing whitespace — all in one string
@@ -281,6 +291,7 @@ public class Given_Formatting_Edge_Cases : Uuidv5ParityTestBase
 /// Determinism test: calling the function twice with the same inputs produces the same result.
 /// </summary>
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Same_Input_Called_Twice
 {
     private Guid _firstCall;

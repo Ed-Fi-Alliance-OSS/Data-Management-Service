@@ -68,6 +68,7 @@ file sealed class MssqlOrphanedRefNoOpUpdateCascadeHandler : IUpdateCascadeHandl
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

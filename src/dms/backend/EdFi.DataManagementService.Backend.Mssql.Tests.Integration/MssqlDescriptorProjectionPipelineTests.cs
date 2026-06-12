@@ -203,6 +203,7 @@ internal static class MssqlDescriptorProjectionPipelineFixture
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Mssql_Reconstitution_With_Both_Descriptor_Fks_Set
 {
     private string _databaseName = null!;
@@ -313,6 +314,7 @@ public class Given_Mssql_Reconstitution_With_Both_Descriptor_Fks_Set
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Mssql_Reconstitution_With_Optional_Descriptor_Fk_Null
 {
     private string _databaseName = null!;
