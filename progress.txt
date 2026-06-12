@@ -3,3 +3,9 @@ Key decisions: Runtime manifest provider now requires root bootstrap-api-schema-
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ApiSchemaAssetManifestProviderTests.cs; src/dms/Directory.Build.targets; src/dms/run.sh; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; tasks.json.
 Verification: dotnet csharpier format provider/tests; dotnet build --no-restore frontend; dotnet test --no-restore frontend tests with filters FullyQualifiedName~Content and FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider; Pester BootstrapSchemaAndSecuritySelection; bash -n src/dms/run.sh; dotnet publish frontend to /tmp/dms-frontend-publish-check and checked root manifest plus schema/discovery/XSD files.
 Blockers/notes: Dockerfile final-image recursive ApiSchema copy remains separate Container Packaging task.
+
+Task completed: Container Packaging - preserve bundled ApiSchema content in DMS Docker image for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Docker build stage copies src/dms/Directory.Build.targets before restore so publish materializes bundled root manifest/package content. Final image copies published /app/Frontend/ApiSchema recursively; no Dockerfile manifest synthesis.
+Files changed: src/dms/Dockerfile; eng/docker-compose/tests/BootstrapContainerPackaging.Tests.ps1; tasks.json; progress.txt.
+Verification: Invoke-Pester BootstrapContainerPackaging passed. docker buildx build from src/dms with parentdir context passed. docker run image check found /app/ApiSchema/bootstrap-api-schema-manifest.json, core ApiSchema.json, discovery-spec.json, and 34 XSD files.
+Blockers/notes: none.

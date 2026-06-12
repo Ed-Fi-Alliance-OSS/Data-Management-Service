@@ -10,6 +10,7 @@ WORKDIR /source
 # Named context support https://github.com/hadolint/hadolint/issues/830
 # hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
+COPY Directory.Build.targets ./
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/*.csproj ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/*.csproj ./core/EdFi.DataManagementService.Core/
@@ -63,7 +64,7 @@ WORKDIR /app
 
 COPY --from=build /app/Frontend/*.dll ./
 COPY --from=build /app/Installer/*.* ./Installer/
-COPY --from=build /app/Frontend/ApiSchema/*.json ./ApiSchema/
+COPY --from=build /app/Frontend/ApiSchema/ ./ApiSchema/
 COPY --from=build /app/Frontend/*.pdb ./
 COPY --from=build /app/Frontend/appsettings.json ./
 COPY --from=build /app/Frontend/*runtimeconfig.json ./

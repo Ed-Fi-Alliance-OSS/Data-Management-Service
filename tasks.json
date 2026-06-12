@@ -170,6 +170,6 @@
       "Add a Dockerfile or image-content verification that confirms recursive `ApiSchema` content is copied into the final image.",
       "Build or inspect the DMS image output and verify `/app/ApiSchema/bootstrap-api-schema-manifest.json`, discovery/spec files, and XSD files are present."
     ],
-    "completed": false
+    "completed": true
   }
 ]
