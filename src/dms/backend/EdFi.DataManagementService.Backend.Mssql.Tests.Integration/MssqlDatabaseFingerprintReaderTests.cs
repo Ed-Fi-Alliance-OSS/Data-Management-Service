@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_MssqlDatabaseFingerprintReaderTests_A_Provisioned_Core_Dms_Schema
 {
     private static readonly string _qualifiedEffectiveSchemaTable = SqlIdentifierQuoter.QuoteTableName(

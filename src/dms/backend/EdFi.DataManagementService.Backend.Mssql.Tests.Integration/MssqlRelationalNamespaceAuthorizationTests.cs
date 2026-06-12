@@ -30,6 +30,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category("RelationalNamespace")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Namespace_Authorization_With_A_Synthetic_Fixture
 {
     private const long ClaimEducationOrganizationId =

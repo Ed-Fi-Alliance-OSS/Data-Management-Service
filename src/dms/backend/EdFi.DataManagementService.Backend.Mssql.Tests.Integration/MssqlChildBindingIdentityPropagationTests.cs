@@ -25,6 +25,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class MssqlChildBindingIdentityPropagationTests
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

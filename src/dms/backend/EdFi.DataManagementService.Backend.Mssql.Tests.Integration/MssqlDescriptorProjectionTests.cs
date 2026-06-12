@@ -210,6 +210,7 @@ internal static class MssqlDescriptorProjectionFixture
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Required_Descriptor_FK_Resolves_To_URI_Mssql
 {
     private string _databaseName = null!;
@@ -324,6 +325,7 @@ public class Given_Required_Descriptor_FK_Resolves_To_URI_Mssql
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Null_Descriptor_FK_Omits_Property_From_Reconstituted_Document_Mssql
 {
     private string _databaseName = null!;
@@ -427,6 +429,7 @@ public class Given_Null_Descriptor_FK_Omits_Property_From_Reconstituted_Document
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Page_With_Multiple_Documents_And_Distinct_Descriptors_Mssql
 {
     private string _databaseName = null!;
@@ -578,6 +581,7 @@ public class Given_Page_With_Multiple_Documents_And_Distinct_Descriptors_Mssql
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Descriptor_FK_Cleared_To_Null_Omits_Property_From_Reconstituted_Document_Mssql
 {
     private string _databaseName = null!;
@@ -683,6 +687,7 @@ public class Given_Descriptor_FK_Cleared_To_Null_Omits_Property_From_Reconstitut
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Multi_Document_Page_Created_Via_Query_Keyset_Returns_All_Descriptor_URIs_Mssql
 {
     private string _databaseName = null!;

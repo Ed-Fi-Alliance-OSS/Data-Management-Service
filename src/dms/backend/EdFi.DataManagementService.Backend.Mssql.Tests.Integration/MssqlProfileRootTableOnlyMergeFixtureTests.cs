@@ -623,6 +623,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Root_Scope
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -765,6 +766,7 @@ public class Given_A_Mssql_Profiled_Put_With_Hidden_Inlined_PreservedText_On_Roo
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_Clearable_And_Preserves_Hidden
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -909,6 +911,7 @@ public class Given_A_Mssql_Profiled_Put_With_VisibleAbsent_Inlined_Scope_Clears_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropagatedIdentity
 {
     private static readonly Guid ItemDocumentUuid = Guid.Parse("bb100004-0000-0000-0000-000000000004");
@@ -1085,6 +1088,7 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
 {
     private static readonly Guid ItemDocumentUuid = Guid.Parse("bb100004-0000-0000-0000-000000000004");

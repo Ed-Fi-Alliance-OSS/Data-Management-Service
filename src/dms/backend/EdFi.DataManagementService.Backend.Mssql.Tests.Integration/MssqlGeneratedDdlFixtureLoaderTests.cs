@@ -11,6 +11,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 [TestFixture]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_MssqlGeneratedDdlFixtureLoader
 {
     private const string AuthoritativeFixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

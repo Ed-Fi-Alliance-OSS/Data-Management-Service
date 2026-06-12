@@ -28,6 +28,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_ProfiledUpdate_With_VisibleAbsent_SeparateTableScope_DeletesIt
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -150,6 +151,7 @@ public class Given_A_Mssql_ProfiledUpdate_With_VisibleAbsent_SeparateTableScope_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_ProfiledUpdate_With_Hidden_Extension_Row_PreservesIt
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -280,6 +282,7 @@ public class Given_A_Mssql_ProfiledUpdate_With_Hidden_Extension_Row_PreservesIt
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScope_Rejects
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -403,6 +406,7 @@ public class Given_A_Mssql_ProfiledUpsert_With_Creatable_False_ForNewSeparateTab
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_ProfiledUpdate_WithExistingSeparateTableScope_And_Creatable_False_AllowsUpdate
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -537,6 +541,7 @@ public class Given_A_Mssql_ProfiledUpdate_WithExistingSeparateTableScope_And_Cre
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_ProfiledUpdate_WithHiddenDescriptorFKOn_SeparateTable_PreservesFK
 {
     private static readonly DocumentUuid DocumentUuid = new(
@@ -689,6 +694,7 @@ public class Given_A_Mssql_ProfiledUpdate_WithHiddenDescriptorFKOn_SeparateTable
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_ProfiledUpdate_WithHiddenWholeSeparateTableScope_PreservesRow
 {
     private static readonly DocumentUuid DocumentUuid = new(

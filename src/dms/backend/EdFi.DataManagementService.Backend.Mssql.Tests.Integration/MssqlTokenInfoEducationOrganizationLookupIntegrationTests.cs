@@ -21,6 +21,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

@@ -53,6 +53,7 @@ public abstract class GetMaxChangeVersionTestBase
 
 [TestFixture]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Fresh_ChangeVersionSequence : GetMaxChangeVersionTestBase
 {
     [SetUp]
@@ -73,6 +74,7 @@ public class Given_Fresh_ChangeVersionSequence : GetMaxChangeVersionTestBase
 
 [TestFixture]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard4)]
 public class Given_ChangeVersionSequence_Advanced_Three_Times : GetMaxChangeVersionTestBase
 {
     [SetUp]
@@ -92,6 +94,7 @@ public class Given_ChangeVersionSequence_Advanced_Three_Times : GetMaxChangeVers
 
 [TestFixture]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard4)]
 public class Given_Two_Consecutive_Calls_Without_Advancing : GetMaxChangeVersionTestBase
 {
     private long _first;

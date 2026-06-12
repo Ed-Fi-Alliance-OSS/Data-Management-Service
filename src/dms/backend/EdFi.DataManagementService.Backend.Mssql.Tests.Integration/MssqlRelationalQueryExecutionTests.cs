@@ -173,6 +173,7 @@ internal sealed record PersistedQuerySchool(
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School_Fixture
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

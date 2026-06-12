@@ -62,6 +62,7 @@ file sealed class MssqlNoProfileAmbiguousStorageCollapsedNoOpUpdateCascadeHandle
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identities
 {
     // Exercises the no-profile path's flatten-time storage-collapsed uniqueness check.

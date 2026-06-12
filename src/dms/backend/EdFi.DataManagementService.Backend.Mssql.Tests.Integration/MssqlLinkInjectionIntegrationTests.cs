@@ -69,6 +69,7 @@ file sealed class MssqlLinkInjectionNoOpUpdateCascadeHandler : IUpdateCascadeHan
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_AcademicWeek_To_School_Reference_With_Link_Injection
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

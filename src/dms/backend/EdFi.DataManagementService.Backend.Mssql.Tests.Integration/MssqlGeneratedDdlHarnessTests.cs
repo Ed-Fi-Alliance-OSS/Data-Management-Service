@@ -12,6 +12,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =

@@ -15,6 +15,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Page_With_Multiple_Documents_Mssql
 {
     private string _databaseName = null!;
@@ -279,6 +280,7 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Single_DocumentId_Keyset_Mssql
 {
     private string _databaseName = null!;
@@ -431,6 +433,7 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Query_With_TotalCount_Requested_Mssql
 {
     private string _databaseName = null!;
@@ -568,6 +571,7 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
 }
 
 [TestFixture]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Reference_Bearing_Resource_Mssql
 {
     private string _databaseName = null!;

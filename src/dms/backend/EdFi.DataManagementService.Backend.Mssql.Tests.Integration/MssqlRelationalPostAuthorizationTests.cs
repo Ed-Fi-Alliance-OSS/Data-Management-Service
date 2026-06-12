@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category("RelationalPost")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_EdOrg_Fixture
 {
     private const long ClaimEducationOrganizationId =

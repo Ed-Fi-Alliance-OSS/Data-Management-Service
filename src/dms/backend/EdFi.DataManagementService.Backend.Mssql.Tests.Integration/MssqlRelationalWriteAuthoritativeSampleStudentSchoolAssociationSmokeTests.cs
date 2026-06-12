@@ -357,6 +357,7 @@ internal sealed record MssqlStudentSchoolAssociationDocumentMetadata(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture
 {
     private static readonly ContentTypeDefinition ReadableProfileContentType = new(

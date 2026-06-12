@@ -381,6 +381,7 @@ internal abstract class MssqlProfileNestedFixtureBase
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileNested_put_request_updating_visible_children_with_a_hidden_sibling_in_storage
     : MssqlProfileNestedFixtureBase
 {
@@ -481,6 +482,7 @@ internal class Given_a_ProfileNested_put_request_updating_visible_children_with_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileNested_put_request_omitting_visible_children_with_a_hidden_sibling_in_storage
     : MssqlProfileNestedFixtureBase
 {
@@ -563,6 +565,7 @@ internal class Given_a_ProfileNested_put_request_omitting_visible_children_with_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileNested_put_request_updating_root_extension_child_collection
     : MssqlProfileNestedFixtureBase
 {
@@ -667,6 +670,7 @@ internal class Given_a_ProfileNested_put_request_updating_root_extension_child_c
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scope_preserves_children
     : MssqlProfileNestedFixtureBase
 {
@@ -757,6 +761,7 @@ internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scop
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileNested_put_request_with_creatable_false_on_children_rejects_new_children
     : MssqlProfileNestedFixtureBase
 {
@@ -819,6 +824,7 @@ internal class Given_a_ProfileNested_put_request_with_creatable_false_on_childre
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileNested_put_request_omitting_all_visible_children_with_hidden_remaining
     : MssqlProfileNestedFixtureBase
 {
@@ -899,6 +905,7 @@ internal class Given_a_ProfileNested_put_request_omitting_all_visible_children_w
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileNested_put_request_with_a_hidden_member_path_on_a_visible_child
     : MssqlProfileNestedFixtureBase
 {

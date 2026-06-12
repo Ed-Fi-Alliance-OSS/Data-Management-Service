@@ -17,6 +17,7 @@ internal sealed record MssqlGeneratedDdlBaselineMutableCounts(
 );
 
 [TestFixture]
+[Category(MssqlCiShards.Shard4)]
 public class Given_MssqlGeneratedDdlBaselineSnapshotPath
 {
     [Test]
@@ -49,6 +50,7 @@ public class Given_MssqlGeneratedDdlBaselineSnapshotPath
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_MssqlGeneratedDdlBaselineDatabase
 {
     private const string FixtureRelativePath =

@@ -69,6 +69,7 @@ file sealed class MssqlAbstractRefNoOpUpdateCascadeHandler : IUpdateCascadeHandl
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";

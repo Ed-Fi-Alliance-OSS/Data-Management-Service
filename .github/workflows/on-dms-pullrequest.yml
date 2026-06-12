@@ -197,10 +197,26 @@ jobs:
           use-actions-summary: "true"
 
   run-backend-mssql-integration-tests:
-    name: Run Backend MSSQL Integration Tests
+    name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 1
+            shard-name: Authorization
+            shard-category: MssqlCiShard1
+          - shard: 2
+            shard-name: Profile
+            shard-category: MssqlCiShard2
+          - shard: 3
+            shard-name: Descriptor and Reference
+            shard-category: MssqlCiShard3
+          - shard: 4
+            shard-name: DDL and Utility
+            shard-category: MssqlCiShard4
     defaults:
       run:
         shell: pwsh
@@ -224,7 +240,7 @@ jobs:
       - name: Start MSSQL Container
         uses: ./.github/actions/start-mssql-test-container
         with:
-          container-name: dms-ci-mssql
+          container-name: dms-ci-mssql-${{ matrix.shard }}
           container-memory: ${{ env.MSSQL_CONTAINER_MEMORY }}
           sql-memory-limit-mb: ${{ env.MSSQL_MEMORY_LIMIT_MB }}
           tmpfs-size: ${{ env.MSSQL_TMPFS_SIZE }}
@@ -241,7 +257,8 @@ jobs:
             -c ${{ env.CONFIGURATION }} `
             --no-restore `
             -v normal `
-            --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Mssql.Tests.Integration.trx" `
+            --filter "Category=${{ matrix.shard-category }}" `
+            --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Shard${{ matrix.shard }}.trx" `
             --logger "console" `
             --nologo
 
@@ -249,7 +266,7 @@ jobs:
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
-          name: Backend MSSQL Integration Tests
+          name: Backend MSSQL Integration Tests (${{ matrix.shard-name }})
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
@@ -260,12 +277,12 @@ jobs:
         if: failure()
         uses: ./.github/actions/export-database-container-diagnostics
         with:
-          container-name: dms-ci-mssql
+          container-name: dms-ci-mssql-${{ matrix.shard }}
           data-path: /var/opt/mssql
 
       - name: Teardown MSSQL Container
         if: always()
-        run: docker rm -f dms-ci-mssql
+        run: docker rm -f dms-ci-mssql-${{ matrix.shard }}
 
   run-dms-api-mssql-integration-tests:
     name: Run DMS API MSSQL Integration Tests

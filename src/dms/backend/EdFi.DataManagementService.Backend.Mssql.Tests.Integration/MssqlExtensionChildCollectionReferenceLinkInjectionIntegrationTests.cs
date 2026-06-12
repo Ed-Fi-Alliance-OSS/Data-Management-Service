@@ -69,6 +69,7 @@ file sealed class MssqlExtensionChildCollectionNoOpUpdateCascadeHandler : IUpdat
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

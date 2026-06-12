@@ -271,6 +271,7 @@ internal static class MssqlCollectionDescriptorProjectionFixture
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Collection_Item_Descriptor_FK_Resolves_To_URI_Mssql
 {
     private string _databaseName = null!;
@@ -413,6 +414,7 @@ public class Given_Collection_Item_Descriptor_FK_Resolves_To_URI_Mssql
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [NonParallelizable]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Collection_Item_Null_Descriptor_FK_Omits_Property_Mssql
 {
     private string _databaseName = null!;

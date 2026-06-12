@@ -3,14 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using NUnit.Framework;
-
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-[TestFixture]
-[Category("CompatibilityGate")]
-[Category(MssqlCiShards.Shard4)]
-public class MssqlCompatibilityGateAuthoritativeSampleTests : MssqlCompatibilityGateTestsBase
+internal static class MssqlCiShards
 {
-    protected override string FixtureRelativePath => "src/dms/backend/Fixtures/authoritative/sample";
+    public const string Shard1 = "MssqlCiShard1";
+    public const string Shard2 = "MssqlCiShard2";
+    public const string Shard3 = "MssqlCiShard3";
+    public const string Shard4 = "MssqlCiShard4";
 }

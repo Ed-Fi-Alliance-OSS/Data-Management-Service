@@ -90,6 +90,7 @@ file sealed class MssqlProfileAmbiguousStorageCollapsedProjectionInvoker(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Profiled_Put_With_Storage_Collapsed_Sibling_Identities
 {
     // Reuses the stable-key-update-semantics fixture which defines School with

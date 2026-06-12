@@ -625,6 +625,7 @@ internal abstract class MssqlProfileCollectionAlignedExtensionFixtureBase
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_resource_with_a_visible_present_aligned_extension_scope
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -695,6 +696,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_resource_with_a_visible_absent_aligned_extension_scope
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -736,6 +738,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_resource_with_a_hidden_aligned_extension_scope_and_request_data
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -778,6 +781,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_for_a_re
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_visible_present_to_visible_present
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -832,6 +836,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_visible_present_to_visible_absent
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -881,6 +886,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_hidden_in_storage
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -935,6 +941,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_a_non_creatable_aligned_extension_scope_with_no_matching_stored_row
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1001,6 +1008,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_a_no
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_aligned_extension_child_collection_items
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1074,6 +1082,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_ali
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifying_an_aligned_extension_child_value
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1193,6 +1202,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1275,6 +1285,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1400,6 +1411,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_reorderi
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_nested_extension_children
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1501,6 +1513,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_create_request_with_nes
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifying_a_nested_extension_child_value
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1652,6 +1665,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_modifyin
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting_a_nested_extension_child
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {
@@ -1760,6 +1774,7 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_omitting
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard2)]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children
     : MssqlProfileCollectionAlignedExtensionFixtureBase
 {

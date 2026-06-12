@@ -15,6 +15,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 [TestFixture]
+[Category(MssqlCiShards.Shard3)]
 public class Given_Mssql_RelationalQuery_Parameter_Binding
 {
     private string _databaseName = null!;

@@ -28,6 +28,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// </summary>
 [TestFixture]
 [Category("CompatibilityGate")]
+[Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Database_Provisioned_With_Hash_A_When_Applying_DDL_For_Hash_B
 {
     private const string FixtureARelativePath =

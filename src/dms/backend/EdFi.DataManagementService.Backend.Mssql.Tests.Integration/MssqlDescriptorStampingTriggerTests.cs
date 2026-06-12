@@ -13,6 +13,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard3)]
 public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 {
     private static readonly string FixtureRelativePath = Path.Combine(

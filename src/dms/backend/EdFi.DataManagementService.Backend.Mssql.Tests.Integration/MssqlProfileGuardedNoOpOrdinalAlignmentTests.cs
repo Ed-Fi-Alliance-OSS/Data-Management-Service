@@ -33,6 +33,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
 internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Created_Via_No_Profile_Path
     : MssqlCollectionShapeProfileGuardedNoOpFixtureBase
 {
