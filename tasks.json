@@ -15,7 +15,7 @@
       "Add a frontend unit test with two extension projects that both contain the same XSD file name and assert `/metadata/xsd/{section}/{file}.xsd` returns the requested section's file content.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Metadata Content",

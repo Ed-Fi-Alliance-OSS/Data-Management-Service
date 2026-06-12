@@ -9,3 +9,9 @@ Key decisions: Docker build stage copies src/dms/Directory.Build.targets before 
 Files changed: src/dms/Dockerfile; eng/docker-compose/tests/BootstrapContainerPackaging.Tests.ps1; tasks.json; progress.txt.
 Verification: Invoke-Pester BootstrapContainerPackaging passed. docker buildx build from src/dms with parentdir context passed. docker run image check found /app/ApiSchema/bootstrap-api-schema-manifest.json, core ApiSchema.json, discovery-spec.json, and 34 XSD files.
 Blockers/notes: none.
+
+Task completed: Metadata Content - section-aware XSD listing and streaming for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: ContentProvider now resolves XSD paths through one section-selection path; unknown sections return no core fallback; extension sections prefer their own XSD files then core. Endpoint passes section into XSD streaming after section-scoped validation.
+Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/XsdMetadataEndpointModule.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/XsdMetaDataModuleTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format provider/endpoint/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Xsd; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~file_mode_xsd.
+Blockers/notes: none.

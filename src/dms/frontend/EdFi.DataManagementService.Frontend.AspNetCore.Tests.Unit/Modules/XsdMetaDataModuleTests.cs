@@ -181,7 +181,7 @@ public class XsdMetaDataModuleTests
             return ms;
         });
 
-        A.CallTo(() => _contentProvider!.LoadXsdContent(A<string>.Ignored)).Returns(_fileStream);
+        A.CallTo(() => _contentProvider!.LoadXsdContent(A<string>.Ignored, "ed-fi")).Returns(_fileStream);
 
         var files = new List<string> { "text.xsd" };
         A.CallTo(() => _contentProvider!.Files(A<string>.Ignored, ".xsd", "ed-fi")).Returns(files);
@@ -386,6 +386,53 @@ public class Given_file_mode_xsd_metadata_endpoint
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
+    }
+
+    [Test]
+    public async Task It_returns_404_when_existing_core_file_is_requested_from_unknown_section()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var bareNameWithoutExtension = Path.GetFileNameWithoutExtension(
+            FileModeWorkspaceBuilder.CoreXsdFile1
+        );
+        var response = await client.GetAsync($"/metadata/xsd/unknown/{bareNameWithoutExtension}.xsd");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task It_returns_requested_extension_content_for_duplicate_extension_file_name()
+    {
+        FileModeWorkspaceBuilder.AddXsdFile(
+            _workspaceRoot,
+            FileModeWorkspaceBuilder.ExtensionProjectName,
+            FileModeWorkspaceBuilder.DuplicateExtensionXsdFile,
+            FileModeWorkspaceBuilder.SampleDuplicateExtensionXsdContent
+        );
+        FileModeWorkspaceBuilder.AddExtensionProjectWithXsd(
+            _workspaceRoot,
+            "Second",
+            FileModeWorkspaceBuilder.DuplicateExtensionXsdFile,
+            FileModeWorkspaceBuilder.SecondDuplicateExtensionXsdContent
+        );
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var bareNameWithoutExtension = Path.GetFileNameWithoutExtension(
+            FileModeWorkspaceBuilder.DuplicateExtensionXsdFile
+        );
+        var sampleResponse = await client.GetAsync($"/metadata/xsd/sample/{bareNameWithoutExtension}.xsd");
+        var secondResponse = await client.GetAsync($"/metadata/xsd/second/{bareNameWithoutExtension}.xsd");
+        var sampleContent = await sampleResponse.Content.ReadAsStringAsync();
+        var secondContent = await secondResponse.Content.ReadAsStringAsync();
+
+        sampleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        sampleContent.Should().Be(FileModeWorkspaceBuilder.SampleDuplicateExtensionXsdContent);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        secondContent.Should().Be(FileModeWorkspaceBuilder.SecondDuplicateExtensionXsdContent);
     }
 
     [Test]

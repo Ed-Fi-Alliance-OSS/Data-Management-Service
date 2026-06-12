@@ -34,6 +34,14 @@ public interface IContentProvider
     Lazy<Stream> LoadXsdContent(string fileName);
 
     /// <summary>
+    /// Provides xsd file stream for the requested metadata section.
+    /// </summary>
+    /// <param name="fileName"></param>
+    /// <param name="section"></param>
+    /// <returns></returns>
+    Lazy<Stream> LoadXsdContent(string fileName, string section);
+
+    /// <summary>
     /// Provides list of files.
     /// </summary>
     /// <param name="fileNamePattern"></param>
@@ -80,46 +88,7 @@ public class ContentProvider(
             fileNamePattern.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)
             || fileNamePattern.EndsWith(".xsd?", StringComparison.OrdinalIgnoreCase);
 
-        var manifest = manifestProvider.GetManifest();
-
-        // Find the core project (not an extension)
-        var coreProject = manifest.Projects.FirstOrDefault(p => !p.IsExtensionProject);
-
-        // Find the section project by projectName (case-insensitive)
-        var sectionProject = manifest.Projects.FirstOrDefault(p =>
-            p.ProjectName.Equals(section, StringComparison.OrdinalIgnoreCase)
-        );
-
-        // Build candidate XSD file paths: core files, then extension files if section is extension
-        var candidatePaths = new List<string>();
-
-        if (coreProject is not null)
-        {
-            candidatePaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(coreProject));
-        }
-
-        if (
-            sectionProject is not null
-            && sectionProject.IsExtensionProject
-            && coreProject is not null
-            && !string.Equals(
-                sectionProject.ProjectName,
-                coreProject.ProjectName,
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
-        {
-            // Blend extension XSD files with core (extension section → core + extension)
-            candidatePaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(sectionProject));
-        }
-        else if (sectionProject is null && coreProject is null)
-        {
-            return [];
-        }
-        else if (sectionProject is not null && !sectionProject.IsExtensionProject)
-        {
-            // Core section: only core project files (already added above)
-        }
+        var candidatePaths = ResolveXsdPathsForSection(section);
 
         // Extract bare file names for the listing
         var fileNames = candidatePaths
@@ -186,6 +155,12 @@ public class ContentProvider(
     {
         _logger.LogDebug("Entering Xsd FileLoader");
         return new Lazy<Stream>(GetStream(fileName, ".xsd"));
+    }
+
+    public Lazy<Stream> LoadXsdContent(string fileName, string section)
+    {
+        _logger.LogDebug("Entering Xsd FileLoader");
+        return new Lazy<Stream>(GetXsdStreamFromManifest(fileName, section));
     }
 
     public Stream GetStream(string fileNamePattern, string fileExtension)
@@ -265,6 +240,63 @@ public class ContentProvider(
         var error = $"Couldn't load find the resource";
         _logger.LogCritical(error);
         throw new InvalidOperationException(error);
+    }
+
+    private Stream GetXsdStreamFromManifest(string fileNamePattern, string section)
+    {
+        var bareFileName = NormalizeToBareXsdFileName(fileNamePattern);
+        var matchedPath = ResolveXsdPathsForSection(section)
+            .FirstOrDefault(f =>
+                Path.GetFileName(f).Equals(bareFileName, StringComparison.OrdinalIgnoreCase)
+            );
+
+        if (matchedPath is not null)
+        {
+            return File.OpenRead(matchedPath);
+        }
+
+        var error = $"Couldn't load find the resource";
+        _logger.LogCritical(error);
+        throw new InvalidOperationException(error);
+    }
+
+    private IEnumerable<string> ResolveXsdPathsForSection(string section)
+    {
+        var manifest = manifestProvider.GetManifest();
+        var sectionProject = FindProjectForSection(manifest, section);
+
+        if (sectionProject is null)
+        {
+            return [];
+        }
+
+        if (!sectionProject.IsExtensionProject)
+        {
+            return manifestProvider.EnumerateValidatedXsdFiles(sectionProject);
+        }
+
+        var xsdPaths = manifestProvider.EnumerateValidatedXsdFiles(sectionProject).ToList();
+        var coreProject = manifest.Projects.FirstOrDefault(p => !p.IsExtensionProject);
+
+        if (coreProject is not null && !IsSameProject(sectionProject, coreProject))
+        {
+            xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(coreProject));
+        }
+
+        return xsdPaths;
+    }
+
+    private static ApiSchemaProject? FindProjectForSection(ApiSchemaAssetManifest manifest, string section)
+    {
+        return manifest.Projects.FirstOrDefault(p =>
+            p.ProjectName.Equals(section, StringComparison.OrdinalIgnoreCase)
+            || p.ProjectEndpointName.Equals(section, StringComparison.OrdinalIgnoreCase)
+        );
+    }
+
+    private static bool IsSameProject(ApiSchemaProject left, ApiSchemaProject right)
+    {
+        return left.ProjectName.Equals(right.ProjectName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

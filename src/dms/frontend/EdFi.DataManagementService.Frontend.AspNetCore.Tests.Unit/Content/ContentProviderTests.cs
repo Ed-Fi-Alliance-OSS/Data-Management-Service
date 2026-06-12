@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
@@ -153,10 +154,13 @@ internal static class FileModeWorkspaceBuilder
     public const string CoreXsdFile1 = "Ed-Fi-Core.xsd";
     public const string CoreXsdFile2 = "Interchange-Student.xsd";
     public const string ExtensionXsdFile = "Sample-Extension.xsd";
+    public const string DuplicateExtensionXsdFile = "Shared-Extension.xsd";
 
     public const string CoreXsdFile1Content = "<xs:schema id=\"core\"/>";
     public const string CoreXsdFile2Content = "<xs:schema id=\"interchange-student\"/>";
     public const string ExtensionXsdFileContent = "<xs:schema id=\"sample-extension\"/>";
+    public const string SampleDuplicateExtensionXsdContent = "<xs:schema id=\"sample-shared\"/>";
+    public const string SecondDuplicateExtensionXsdContent = "<xs:schema id=\"second-shared\"/>";
 
     public const string DiscoverySpecJson =
         """{"host":"HOST_URL/data/v3","token":"HOST_URL/oauth/token","version":"1.0"}""";
@@ -230,6 +234,44 @@ internal static class FileModeWorkspaceBuilder
         );
 
         return workspaceRoot;
+    }
+
+    public static void AddExtensionProjectWithXsd(
+        string workspaceRoot,
+        string projectName,
+        string fileName,
+        string content
+    )
+    {
+        var manifestPath = Path.Combine(workspaceRoot, "bootstrap-api-schema-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var projects = manifest["projects"]!.AsArray();
+        projects.Add(
+            new JsonObject
+            {
+                ["projectName"] = projectName,
+                ["projectEndpointName"] = projectName.ToLowerInvariant(),
+                ["isExtensionProject"] = true,
+                ["schemaPath"] = $"schemas/{projectName}/ApiSchema.json",
+                ["xsdDirectory"] = $"content/{projectName}/xsd",
+            }
+        );
+
+        File.WriteAllText(
+            manifestPath,
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+        );
+
+        Directory.CreateDirectory(Path.Combine(workspaceRoot, "schemas", projectName));
+        File.WriteAllText(Path.Combine(workspaceRoot, "schemas", projectName, "ApiSchema.json"), "{}");
+        AddXsdFile(workspaceRoot, projectName, fileName, content);
+    }
+
+    public static void AddXsdFile(string workspaceRoot, string projectName, string fileName, string content)
+    {
+        var xsdDirectory = Path.Combine(workspaceRoot, "content", projectName, "xsd");
+        Directory.CreateDirectory(xsdDirectory);
+        File.WriteAllText(Path.Combine(xsdDirectory, fileName), content);
     }
 
     public static (ContentProvider provider, IApiSchemaAssetManifestProvider manifestProvider) BuildProvider(
@@ -411,6 +453,14 @@ public class Given_file_mode_xsd_listing_for_core_section
         files.Should().ContainSingle();
         files[0].Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1);
     }
+
+    [Test]
+    public void It_returns_no_core_files_for_an_unknown_section()
+    {
+        var files = _provider.Files(FileModeWorkspaceBuilder.CoreXsdFile1, ".xsd", "unknown").ToList();
+
+        files.Should().BeEmpty();
+    }
 }
 
 [TestFixture]
@@ -526,11 +576,64 @@ public class Given_file_mode_xsd_stream_loading
     }
 
     [Test]
+    public void It_returns_core_file_stream_content_for_extension_section()
+    {
+        var lazy = _provider.LoadXsdContent(FileModeWorkspaceBuilder.CoreXsdFile1, "sample");
+        using var reader = new StreamReader(lazy.Value);
+        var content = reader.ReadToEnd();
+
+        content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
+    }
+
+    [Test]
+    public void It_returns_requested_extension_stream_content_for_duplicate_extension_file_name()
+    {
+        FileModeWorkspaceBuilder.AddXsdFile(
+            _workspaceRoot,
+            FileModeWorkspaceBuilder.ExtensionProjectName,
+            FileModeWorkspaceBuilder.DuplicateExtensionXsdFile,
+            FileModeWorkspaceBuilder.SampleDuplicateExtensionXsdContent
+        );
+        FileModeWorkspaceBuilder.AddExtensionProjectWithXsd(
+            _workspaceRoot,
+            "Second",
+            FileModeWorkspaceBuilder.DuplicateExtensionXsdFile,
+            FileModeWorkspaceBuilder.SecondDuplicateExtensionXsdContent
+        );
+
+        var sampleContent = ReadXsdContent(
+            _provider.LoadXsdContent(FileModeWorkspaceBuilder.DuplicateExtensionXsdFile, "sample")
+        );
+        var secondContent = ReadXsdContent(
+            _provider.LoadXsdContent(FileModeWorkspaceBuilder.DuplicateExtensionXsdFile, "second")
+        );
+
+        sampleContent.Should().Be(FileModeWorkspaceBuilder.SampleDuplicateExtensionXsdContent);
+        secondContent.Should().Be(FileModeWorkspaceBuilder.SecondDuplicateExtensionXsdContent);
+    }
+
+    [Test]
+    public void It_returns_section_stream_content_for_legacy_prefixed_file_name()
+    {
+        var legacyName = $"EdFi.Sample.ApiSchema.xsd.{FileModeWorkspaceBuilder.ExtensionXsdFile}";
+
+        var content = ReadXsdContent(_provider.LoadXsdContent(legacyName, "sample"));
+
+        content.Should().Be(FileModeWorkspaceBuilder.ExtensionXsdFileContent);
+    }
+
+    [Test]
     public void It_throws_for_unknown_xsd_file_name()
     {
         Action action = () => _provider.LoadXsdContent("DoesNotExist.xsd");
 
         action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load find the resource");
+    }
+
+    private static string ReadXsdContent(Lazy<Stream> xsdContent)
+    {
+        using var reader = new StreamReader(xsdContent.Value);
+        return reader.ReadToEnd();
     }
 }
 

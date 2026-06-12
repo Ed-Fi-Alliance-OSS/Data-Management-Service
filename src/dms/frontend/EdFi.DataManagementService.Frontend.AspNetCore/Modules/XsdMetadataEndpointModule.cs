@@ -146,7 +146,7 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         var files = contentProvider.Files(fileFullName, ".xsd", section);
         if (files.Any())
         {
-            var content = contentProvider.LoadXsdContent(fileFullName);
+            var content = contentProvider.LoadXsdContent(fileFullName, section);
             return Results.File(content.Value, "application/xml");
         }
         else
