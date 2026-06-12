@@ -27,7 +27,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-function Resolve-TrxFiles {
+function Resolve-TrxFile {
     param(
         [string[]]
         $CandidatePaths
@@ -66,7 +66,7 @@ function Resolve-TrxFiles {
         Sort-Object -Property FullName -Unique
 }
 
-function New-TrxNamespaceManager {
+function Get-TrxNamespaceManager {
     param(
         [xml]
         $Document
@@ -77,7 +77,7 @@ function New-TrxNamespaceManager {
     return ,$namespaceManager
 }
 
-function Select-TrxNodes {
+function Select-TrxNode {
     param(
         [xml]
         $Document,
@@ -180,10 +180,10 @@ function ConvertFrom-TrxFile {
     )
 
     [xml]$trx = Get-Content -LiteralPath $TrxFile.FullName -Raw
-    $namespaceManager = New-TrxNamespaceManager -Document $trx
+    $namespaceManager = Get-TrxNamespaceManager -Document $trx
     $definitions = @{}
 
-    $unitTestNodes = Select-TrxNodes `
+    $unitTestNodes = Select-TrxNode `
         -Document $trx `
         -NamespaceManager $namespaceManager `
         -NamespacedXPath "//trx:TestDefinitions/trx:UnitTest" `
@@ -208,7 +208,7 @@ function ConvertFrom-TrxFile {
         }
     }
 
-    $resultNodes = Select-TrxNodes `
+    $resultNodes = Select-TrxNode `
         -Document $trx `
         -NamespaceManager $namespaceManager `
         -NamespacedXPath "//trx:Results/trx:UnitTestResult" `
@@ -242,7 +242,7 @@ function ConvertFrom-TrxFile {
     }
 }
 
-function New-TimingMarkdown {
+function Format-TimingMarkdown {
     param(
         [object[]]
         $Results,
@@ -330,7 +330,7 @@ function New-TimingMarkdown {
     $lines -join [Environment]::NewLine
 }
 
-$trxFiles = @(Resolve-TrxFiles -CandidatePaths $Path)
+$trxFiles = @(Resolve-TrxFile -CandidatePaths $Path)
 
 if (-not (Test-Path -LiteralPath $OutputDirectory)) {
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -369,7 +369,7 @@ $sortedResults |
 ConvertTo-Json -InputObject $sortedResults -Depth 5 |
     Set-Content -LiteralPath $jsonPath -Encoding utf8
 
-$markdown = New-TimingMarkdown `
+$markdown = Format-TimingMarkdown `
     -Results $results `
     -Title $SuiteName `
     -MaxSlowTests $SlowTestCount `
