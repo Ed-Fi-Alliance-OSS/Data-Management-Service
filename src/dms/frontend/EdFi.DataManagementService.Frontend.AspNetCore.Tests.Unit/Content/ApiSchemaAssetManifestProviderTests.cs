@@ -578,3 +578,142 @@ public class Given_path_validation_in_manifest_provider
         resolved.Should().Be(expected);
     }
 }
+
+[TestFixture]
+public class Given_manifest_paths_that_are_symbolic_links
+{
+    private string _workspaceRoot = string.Empty;
+    private string _outsideRoot = string.Empty;
+    private IApiSchemaAssetManifestProvider _provider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        _outsideRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_workspaceRoot);
+        Directory.CreateDirectory(_outsideRoot);
+
+        var manifestJson = """
+            {
+              "version": 1,
+              "projects": [
+                {
+                  "projectName": "EdFi",
+                  "projectEndpointName": "ed-fi",
+                  "isExtensionProject": false,
+                  "schemaPath": "schemas/EdFi/ApiSchema.json",
+                  "discoverySpecPath": "content/EdFi/discovery-spec.json",
+                  "xsdDirectory": "content/EdFi/xsd"
+                }
+              ]
+            }
+            """;
+
+        File.WriteAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"), manifestJson);
+
+        var appSettings = Options.Create(
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
+        );
+        var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
+        _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+
+        if (Directory.Exists(_outsideRoot))
+        {
+            Directory.Delete(_outsideRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_rejects_a_discovery_spec_symlink_that_resolves_outside_the_workspace()
+    {
+        var contentDirectory = Path.Combine(_workspaceRoot, "content", "EdFi");
+        Directory.CreateDirectory(contentDirectory);
+
+        var outsideDiscoverySpecPath = Path.Combine(_outsideRoot, "discovery-spec.json");
+        File.WriteAllText(outsideDiscoverySpecPath, "{}");
+
+        var discoverySpecLinkPath = Path.Combine(contentDirectory, "discovery-spec.json");
+        CreateFileSymbolicLinkOrIgnore(discoverySpecLinkPath, outsideDiscoverySpecPath);
+
+        var project = _provider.GetManifest().Projects[0];
+        Action action = () => _provider.ResolveValidatedPath(project.DiscoverySpecPath!);
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*outside the configured workspace root*symbolic links*");
+    }
+
+    [Test]
+    public void It_rejects_an_xsd_directory_symlink_that_resolves_outside_the_workspace()
+    {
+        var contentDirectory = Path.Combine(_workspaceRoot, "content", "EdFi");
+        Directory.CreateDirectory(contentDirectory);
+
+        var outsideXsdDirectory = Path.Combine(_outsideRoot, "xsd");
+        Directory.CreateDirectory(outsideXsdDirectory);
+        File.WriteAllText(Path.Combine(outsideXsdDirectory, "Ed-Fi-Core.xsd"), "<schema/>");
+
+        var xsdDirectoryLinkPath = Path.Combine(contentDirectory, "xsd");
+        CreateDirectorySymbolicLinkOrIgnore(xsdDirectoryLinkPath, outsideXsdDirectory);
+
+        var project = _provider.GetManifest().Projects[0];
+        Action action = () => _provider.EnumerateValidatedXsdFiles(project).ToList();
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*outside the configured workspace root*symbolic links*");
+    }
+
+    private static void CreateFileSymbolicLinkOrIgnore(string linkPath, string targetPath)
+    {
+        try
+        {
+            File.CreateSymbolicLink(linkPath, targetPath);
+        }
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or NotSupportedException
+                        or PlatformNotSupportedException
+                        or UnauthorizedAccessException
+            )
+        {
+            Assert.Ignore($"Symbolic link creation is not available: {ex.Message}");
+        }
+    }
+
+    private static void CreateDirectorySymbolicLinkOrIgnore(string linkPath, string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+        }
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or NotSupportedException
+                        or PlatformNotSupportedException
+                        or UnauthorizedAccessException
+            )
+        {
+            Assert.Ignore($"Symbolic link creation is not available: {ex.Message}");
+        }
+    }
+}

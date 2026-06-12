@@ -74,7 +74,7 @@
       "Add unit coverage for an escaping symlink used as `discoverySpecPath` or `xsdDirectory` and assert the provider rejects it before opening or enumerating the target.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runtime Content Loading",

@@ -15,3 +15,9 @@ Key decisions: ContentProvider now resolves XSD paths through one section-select
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/XsdMetadataEndpointModule.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/XsdMetaDataModuleTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format provider/endpoint/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Xsd; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~file_mode_xsd.
 Blockers/notes: none.
+
+Task completed: Workspace Validation - symlink-aware ApiSchema asset path validation for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Manifest provider now resolves existing path components through symbolic links and compares asset paths against canonical workspace root. XSD enumeration revalidates each enumerated file path so linked files cannot escape before streaming.
+Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ApiSchemaAssetManifestProviderTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format provider/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Given_manifest_paths_that_are_symbolic_links; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Content.
+Blockers/notes: none.

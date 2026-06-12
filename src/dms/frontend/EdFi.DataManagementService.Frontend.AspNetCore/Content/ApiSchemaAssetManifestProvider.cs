@@ -53,6 +53,7 @@ public class ApiSchemaAssetManifestProvider(
     private const string BundledApiSchemaDirectoryName = "ApiSchema";
 
     private string? _resolvedWorkspaceRoot;
+    private string? _canonicalWorkspaceRoot;
 
     private string GetOrResolveWorkspaceRoot()
     {
@@ -75,6 +76,17 @@ public class ApiSchemaAssetManifestProvider(
 
         _resolvedWorkspaceRoot = Path.GetFullPath(path);
         return _resolvedWorkspaceRoot;
+    }
+
+    private string GetOrResolveCanonicalWorkspaceRoot()
+    {
+        if (_canonicalWorkspaceRoot is not null)
+        {
+            return _canonicalWorkspaceRoot;
+        }
+
+        _canonicalWorkspaceRoot = ResolveCanonicalPath(GetOrResolveWorkspaceRoot());
+        return _canonicalWorkspaceRoot;
     }
 
     public ApiSchemaAssetManifest GetManifest()
@@ -165,24 +177,9 @@ public class ApiSchemaAssetManifestProvider(
             );
         }
 
-        var workspaceRoot = GetOrResolveWorkspaceRoot();
-        var fullPath = Path.GetFullPath(Path.Combine(workspaceRoot, relativePath));
-        var relativeToWorkspace = Path.GetRelativePath(workspaceRoot, fullPath);
+        var fullPath = Path.GetFullPath(Path.Combine(GetOrResolveWorkspaceRoot(), relativePath));
 
-        if (
-            Path.IsPathRooted(relativeToWorkspace)
-            || relativeToWorkspace == ".."
-            || relativeToWorkspace.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-            || relativeToWorkspace.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Resolved path '{fullPath}' is outside the configured workspace root '{workspaceRoot}'. "
-                    + "Manifest paths must remain within the workspace."
-            );
-        }
-
-        return fullPath;
+        return ValidatePathInsideCanonicalWorkspace(fullPath, relativePath);
     }
 
     public IEnumerable<string> EnumerateValidatedXsdFiles(ApiSchemaProject project)
@@ -198,10 +195,108 @@ public class ApiSchemaAssetManifestProvider(
             return [];
         }
 
-        var workspaceRoot = GetOrResolveWorkspaceRoot();
         return Directory
             .EnumerateFiles(validatedDir, "*.xsd", SearchOption.TopDirectoryOnly)
-            .Select(f => ResolveValidatedPath(Path.GetRelativePath(workspaceRoot, f)));
+            .Select(f => ValidatePathInsideCanonicalWorkspace(f, f));
+    }
+
+    private string ValidatePathInsideCanonicalWorkspace(string fullPath, string sourcePath)
+    {
+        var canonicalWorkspaceRoot = GetOrResolveCanonicalWorkspaceRoot();
+        var canonicalPath = ResolveCanonicalPath(fullPath);
+        var relativeToWorkspace = Path.GetRelativePath(canonicalWorkspaceRoot, canonicalPath);
+
+        if (
+            Path.IsPathRooted(relativeToWorkspace)
+            || relativeToWorkspace == ".."
+            || relativeToWorkspace.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            || relativeToWorkspace.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal)
+        )
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema asset path '{sourcePath}' resolves to '{canonicalPath}', which is outside the "
+                    + $"configured workspace root '{canonicalWorkspaceRoot}'. Manifest paths must remain "
+                    + "within the workspace after resolving symbolic links."
+            );
+        }
+
+        return canonicalPath;
+    }
+
+    private static string ResolveCanonicalPath(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath);
+        if (string.IsNullOrEmpty(root))
+        {
+            return fullPath;
+        }
+
+        var canonicalPath = root;
+        var pathWithoutRoot = fullPath[root.Length..];
+        var pathParts = pathWithoutRoot.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries
+        );
+
+        foreach (var pathPart in pathParts)
+        {
+            var candidatePath = Path.Combine(canonicalPath, pathPart);
+            var fileSystemInfo = GetFileSystemInfo(candidatePath);
+            if (fileSystemInfo?.LinkTarget is not null)
+            {
+                canonicalPath = ResolveSymbolicLink(fileSystemInfo, path);
+                continue;
+            }
+
+            canonicalPath = candidatePath;
+        }
+
+        return Path.GetFullPath(canonicalPath);
+    }
+
+    private static FileSystemInfo? GetFileSystemInfo(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            return attributes.HasFlag(FileAttributes.Directory)
+                ? new DirectoryInfo(path)
+                : new FileInfo(path);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static string ResolveSymbolicLink(FileSystemInfo fileSystemInfo, string originalPath)
+    {
+        try
+        {
+            var resolvedTarget = fileSystemInfo.ResolveLinkTarget(returnFinalTarget: true);
+            if (resolvedTarget is null)
+            {
+                throw new InvalidOperationException(
+                    $"ApiSchema asset path '{originalPath}' contains symbolic link "
+                        + $"'{fileSystemInfo.FullName}' whose target could not be resolved."
+                );
+            }
+
+            return Path.GetFullPath(resolvedTarget.FullName);
+        }
+        catch (IOException ex)
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema asset path '{originalPath}' contains symbolic link "
+                    + $"'{fileSystemInfo.FullName}' whose target could not be resolved: {ex.Message}",
+                ex
+            );
+        }
     }
 
     /// <summary>
