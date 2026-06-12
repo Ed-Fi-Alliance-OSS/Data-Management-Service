@@ -981,8 +981,12 @@ jobs:
           Write-Host "All relational E2E matrix jobs passed."
 
   run-instance-management-e2e-tests:
-    name: Run Instance Management E2E Tests (Route Qualifiers)
+    name: Run Instance Management E2E Tests (Shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     permissions:
       contents: read
     defaults:
@@ -1055,7 +1059,7 @@ jobs:
           DMS_API_URL: http://localhost:8080
         run: |
           # Build script handles Docker environment setup, database configuration, and test execution
-          ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild
+          ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}'
 
       - name: Export Docker Logs
         if: failure()
@@ -1096,7 +1100,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: instance-management-test-logs
+          name: instance-management-shard-${{ matrix.shard }}-test-logs
           path: |
             ${{ github.workspace }}/logs
           retention-days: 10
@@ -1105,7 +1109,7 @@ jobs:
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
-          name: Instance Management E2E Test Results
+          name: Instance Management E2E Test Results (Shard ${{ matrix.shard }})
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx

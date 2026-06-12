@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup
+@InstanceCleanup @instance-management-ci-shard-2
 Feature: OWASP tenant isolation
     Validate cross-tenant isolation for DMS instance routes.
     Requests authenticated for one tenant must not read or write data in another tenant.

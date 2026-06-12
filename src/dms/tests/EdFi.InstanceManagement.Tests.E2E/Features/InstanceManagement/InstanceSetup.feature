@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup
+@InstanceCleanup @instance-management-ci-shard-2
 Feature: Instance Setup for Multi-Instance Testing
              Set up tenants, vendors, instances with route contexts, and applications for multi-instance testing
 

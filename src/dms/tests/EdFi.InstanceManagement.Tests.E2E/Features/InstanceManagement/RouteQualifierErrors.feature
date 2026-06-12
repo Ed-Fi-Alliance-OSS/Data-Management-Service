@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup
+@InstanceCleanup @instance-management-ci-shard-1
 Feature: Route Qualifier Error Handling
     Verify error handling for invalid route qualifiers
 

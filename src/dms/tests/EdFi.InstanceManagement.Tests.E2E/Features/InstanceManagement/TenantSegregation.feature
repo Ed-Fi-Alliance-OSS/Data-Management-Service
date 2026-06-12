@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup
+@InstanceCleanup @instance-management-ci-shard-2
 Feature: Tenant Segregation
     Verify that users with access to one tenant cannot access another tenant's data.
     Each tenant has its own application with credentials that should only work for that tenant.

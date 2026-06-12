@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup
+@InstanceCleanup @instance-management-ci-shard-1
 Feature: Tenant-Aware Discovery API
     Verify that the discovery API validates tenants when multi-tenancy is enabled.
     Invalid tenants should return 404, valid tenants should return discovery information,
