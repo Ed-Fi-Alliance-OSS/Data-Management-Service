@@ -15,7 +15,6 @@ file.
 | Parameter                        | Description                                                                                                                                                                                                                   |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Datastore                        | The primary datastore used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                        |
-| QueryHandler                     | The query handling datastore used by the DataManagementService. Valid values: `postgresql`                                                                                            |
 | DeployDatabaseOnStartup          | When `true` the database will be created and initialized on startup.                                                                                            |
 | BypassStringTypeCoercion         | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance.   |
 | AllowIdentityUpdateOverrides     | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                           |
@@ -56,10 +55,32 @@ These settings configure how the DMS API connects to the Configuration Service t
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | BaseUrl                | The base URL of the Configuration Service. Example: `http://dms-config-service:8081`                                                                                     |
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
-| ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints.                                                                       |
-| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Must match CMS `DatabaseSettings:EncryptionKey`.                                             |
+| ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
+| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. Must be non-empty; see the note below for valid-value semantics. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
 | CacheExpirationMinutes | The duration in minutes before cached claim sets and other metadata expire and are refreshed from the Configuration Service.                                             |
+
+> [!NOTE]
+> **Shared key.** In the provided Docker Compose files, a single
+> `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` value feeds both the CMS
+> `DatabaseSettings__EncryptionKey` and the DMS
+> `ConfigurationServiceSettings__EncryptionKey`. CMS encrypts datastore connection
+> strings with this key and DMS decrypts them with the same key (and
+> `provision-dms-schema.ps1` decrypts with it too), so all three must be configured
+> with an identical value.
+>
+> **Valid values.** The value must be non-empty. The AES-256 key is derived from the
+> UTF-8 bytes of the configured text, right-padded with `0` to 32 characters and then
+> truncated to the first 32 characters (see CMS `ConnectionStringEncryptionService`,
+> DMS `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`).
+> Consequences operators must account for:
+> - Only the first 32 characters are significant; any characters beyond 32 are ignored.
+> - Values shorter than 32 characters are zero-padded — accepted, but weakens the key.
+> - Use ASCII characters. A 32-character ASCII string yields exactly 32 key bytes;
+>   multi-byte (non-ASCII) characters push the UTF-8 length past 32 bytes and break
+>   AES key initialization.
+>
+> Recommended: a 32-character ASCII string.
 
 ## IdentitySettings.ClientSecretValidation
 
@@ -70,7 +91,34 @@ These settings configure the allowed client-secret length range used by CMS regi
 | MinimumLength   | Minimum allowed client-secret length. Default: `32`                                                                   |
 | MaximumLength   | Maximum allowed client-secret length. Default: `128`                                                                  |
 
-`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration, where supported special characters are `!@#$%^&*()-_=+[]{}:;,.?`.
+`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration, where supported special characters are `!@#$%^&*()-_=+[]{}:;,.?`. The bounds are set from the `DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` / `DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH` environment variables.
+
+> [!IMPORTANT]
+> Two different secrets are validated on two different paths — do not conflate them:
+>
+> - **`DMS_CONFIG_IDENTITY_CLIENT_SECRET`** is the CMS's own client secret
+>   (`IdentitySettings:ClientSecret`, client `DmsConfigurationService`). CMS validates it at
+>   **startup** via `IdentitySettingsValidator`; when it is invalid (for example, shorter than
+>   the configured minimum), `ReportInvalidConfiguration` in `Program.cs` returns true,
+>   `InitializeDatabase` is skipped, and the DbUp migrations that create the OpenIddict tables
+>   never run — causing `start-local-dms.ps1` to fail.
+> - **`CONFIG_SERVICE_CLIENT_SECRET`** is the DMS-to-CMS client secret
+>   (`ConfigurationServiceSettings:ClientSecret`, client `CMSReadOnlyAccess`) that DMS uses at
+>   runtime to obtain CMS tokens. It is validated when that client is **registered** by the
+>   setup scripts, not by the CMS startup validator.
+>
+> Both secrets must satisfy the length and complexity rules above. During initial identity
+> provisioning the local startup scripts register each client from its env-file secret and pass
+> the env-file length bounds (`DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` /
+> `_MAXIMUM_LENGTH`) to `setup-keycloak.ps1` / `setup-openiddict.ps1`, so a secret that is valid
+> for CMS is not rejected by the setup scripts' own default 32/128 bounds.
+>
+> Registration applies only to clients that do not yet exist: `setup-keycloak.ps1` warns and
+> skips a client that is already present, and `setup-openiddict.ps1` inserts with
+> `ON CONFLICT (ClientId) DO NOTHING`. Changing one of these secrets therefore does **not**
+> update an already-registered client. To apply a new value, recreate the identity state first —
+> run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm / `dmscs` OpenIddict
+> tables — then start with the new secret.
 
 ## RateLimit
 

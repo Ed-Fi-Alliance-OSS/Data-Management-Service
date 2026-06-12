@@ -138,6 +138,43 @@ function Resolve-BootstrapAdminClient {
     }
 }
 
+function Resolve-IdentityClientSecrets {
+    <#
+    .SYNOPSIS
+        Returns the parameters used to register the local identity clients so that both the
+        secrets and the length-validation bounds match the env-file values DMS and CMS use.
+
+        - DmsConfigurationService (full_access) is registered with
+          DMS_CONFIG_IDENTITY_CLIENT_SECRET (the CMS IdentitySettings:ClientSecret).
+        - CMSReadOnlyAccess (readonly_access) is registered with CONFIG_SERVICE_CLIENT_SECRET
+          (the DMS ConfigurationServiceSettings:ClientSecret used at runtime to obtain CMS tokens).
+        - ClientSecretMinimumLength / ClientSecretMaximumLength come from
+          DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH / _MAXIMUM_LENGTH, which also configure
+          CMS IdentitySettings:ClientSecretValidation. They are passed to setup-keycloak.ps1 /
+          setup-openiddict.ps1 so a CMS-valid secret is not rejected by the setup scripts' own
+          default 32/128 bounds.
+
+        All values fall back to the historical local-dev defaults so the standard developer flow
+        needs no env-file changes. Previously the setup scripts registered every client with the
+        hard-coded default secret and validated against the default 32/128 bounds, so overriding
+        CONFIG_SERVICE_CLIENT_SECRET / DMS_CONFIG_IDENTITY_CLIENT_SECRET (or the length bounds)
+        produced a mismatch and CMS token acquisition or local registration failed. Single-sources
+        the mapping so registration and runtime always agree.
+    .PARAMETER EnvValues
+        Hashtable returned by ReadValuesFromEnvFile.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    return [pscustomobject]@{
+        DmsConfigurationServiceClientSecret = Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
+        CmsReadOnlyAccessClientSecret       = Get-EnvValue -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
+        ClientSecretMinimumLength           = [int](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH" -DefaultValue "32")
+        ClientSecretMaximumLength           = [int](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH" -DefaultValue "128")
+    }
+}
+
 function Resolve-CmsBaseUrl {
     <#
     .SYNOPSIS
