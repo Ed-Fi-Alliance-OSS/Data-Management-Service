@@ -184,8 +184,34 @@ POST /v3/claimSets/import  (body: cms-sisvendor.json)
 
 | Endpoint                    | Description                                                           | Effort                                                       |
 |-----------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------|
-| `GET /v3/claimSets/{id}/export` | Return configured-hierarchy-level claim set with defaults + overrides | Medium — reuses `AuthorizationMetadataResponseFactory` logic |
-| `POST /v3/claimSets/import` | Accept flat `resourceClaims` array; merge into hierarchy              | Medium — reuses `TransformClaims` logic                      |
+| `GET /v3/claimSets/{id}` | Return configured-hierarchy-level claim set with defaults + overrides | Medium — share configured-node traversal with `/export`      |
+| `GET /v3/claimSets/{id}/export` | Return configured-hierarchy-level claim set with defaults + overrides | Medium — implement configured-node hierarchy traversal       |
+| `POST /v3/claimSets/import` | Accept flat `resourceClaims` array; upsert claim set and replace its hierarchy assignments with warning support | Medium — adapt CMS runtime hierarchy-merge path |
+
+Export must not reuse `AuthorizationMetadataResponseFactory` as its traversal
+algorithm. That factory supports `GET /v3/authorizationMetadata`, which expands
+effective permissions to leaf resources for DMS runtime authorization. Claim set
+retrieval/export must instead walk the stored hierarchy, collect nodes whose
+`claimSets` contains the requested claim set, and emit:
+
+- `parentClaimName` from the configured node's parent
+- `_defaultAuthorizationStrategies` from the node's `defaultAuthorization`
+- `authorizationStrategyOverrides` from the matching claim set entry
+- `actions` from the matching claim set entry
+
+`GET /v3/claimSets/{id}` and `GET /v3/claimSets/{id}/export` must use the same
+configured-node response builder so the two routes return the same payload.
+
+Import should reuse or adapt the CMS runtime hierarchy merge flow used by
+`ClaimSetRepository.Import` and `ClaimsHierarchyManager.ApplyImportedClaimSetToHierarchy`.
+The import API treats `claimSetName` as the natural key: create the claim set row
+when it is absent, update the existing row when present, remove that claim set's
+current hierarchy assignments, and apply the valid submitted configured nodes.
+Missing hierarchy nodes and `parentClaimName` mismatches produce warnings in the
+response and do not prevent valid nodes from committing.
+`ClaimSetToAuthHierarchy.TransformClaims` remains useful as an offline utility
+analog for migration concepts such as existing-hierarchy lookup and name
+normalization, but it should not be treated as the CMS API implementation target.
 
 ## Decision Table
 
