@@ -2043,7 +2043,7 @@ EdFi.BulkLoadClient.Console fake
         It "Get-BulkLoadClientPinnedVersion returns the exact repo pin" {
             # Tripwire: bumping the shared pin is a deliberate change that must be reviewed
             # against the BulkLoadClient XML flag preflight and invocation shape.
-            Get-BulkLoadClientPinnedVersion | Should -Be "7.3.20144"
+            Get-BulkLoadClientPinnedVersion | Should -Be "7.3.20162"
         }
 
         It "Get-BulkLoadClient resolves the shared pin when no version is supplied" {
