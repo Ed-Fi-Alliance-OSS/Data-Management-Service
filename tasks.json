@@ -64,7 +64,7 @@
   },
   {
     "category": "Workspace Validation",
-    "description": "Medium: Make ApiSchema manifest path validation symlink-aware so schema-adjacent content cannot escape the configured workspace through linked files or directories.",
+    "description": "Medium: Make ApiSchema manifest path validation symlink-aware in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs:272` so schema-adjacent content cannot escape the configured workspace through linked files or directories.",
     "acceptance-criteria": [
       "Schema-adjacent content paths are checked against the canonical workspace root before file opens or XSD enumeration.",
       "A symlinked manifest path or `xsdDirectory` that resolves outside the workspace is rejected with `InvalidOperationException`.",
