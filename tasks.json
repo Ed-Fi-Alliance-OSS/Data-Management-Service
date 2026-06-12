@@ -156,12 +156,12 @@
   },
   {
     "category": "Container Packaging",
-    "description": "High: Include `src/dms/Directory.Build.targets` in the Docker build context at `src/dms/Dockerfile:12`, materialize a bundled root `ApiSchema/bootstrap-api-schema-manifest.json` during build or publish, and copy published `ApiSchema/**` content recursively at `src/dms/Dockerfile:66` so bundled ApiSchema content survives into the final image.",
+    "description": "High: Include `src/dms/Directory.Build.targets` in the Docker build context at `src/dms/Dockerfile:12` and copy published `ApiSchema/**` content recursively at `src/dms/Dockerfile:66` so bundled ApiSchema content, including the generated root manifest, survives into the final image.",
     "acceptance-criteria": [
       "`src/dms/Dockerfile` copies `Directory.Build.targets` into `/source` before restore/publish so the package-content publish target participates in Docker builds.",
-      "The final `src/dms/Dockerfile` image includes the published `ApiSchema/**` content recursively, including `ApiSchema/bootstrap-api-schema-manifest.json`, discovery/spec files, and XSD files.",
+      "The final `src/dms/Dockerfile` image includes the published `ApiSchema/**` content recursively, including the build/publish-generated `ApiSchema/bootstrap-api-schema-manifest.json`, discovery/spec files, and XSD files.",
       "Top-level bundled ApiSchema JSON files that are currently copied remain available in the image.",
-      "Running without `AppSettings:UseApiSchemaPath=true` loads the bundled root ApiSchema asset manifest instead of depending on runtime package-manifest synthesis."
+      "`src/dms/Dockerfile` preserves the bundled root manifest produced by build/publish and does not generate or synthesize ApiSchema manifests itself."
     ],
     "steps-to-verify": [
       "Add a Dockerfile or image-content verification that confirms recursive `ApiSchema` content is copied into the final image.",
