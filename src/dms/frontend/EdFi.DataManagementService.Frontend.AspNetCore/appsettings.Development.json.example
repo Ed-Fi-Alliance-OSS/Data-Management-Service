@@ -6,7 +6,8 @@
     "BaseUrl": "http://localhost:8081",
     "ClientId": "CMSReadOnlyAccess",
     "ClientSecret": "<local-cms-readonly-secret>",
-    "Scope": "edfi_admin_api/readonly_access"
+    "Scope": "edfi_admin_api/readonly_access",
+    "EncryptionKey": "<dms-config-database-encryption-key>"
   },
   "AppSettings": {
     "UseApiSchemaPath": true,

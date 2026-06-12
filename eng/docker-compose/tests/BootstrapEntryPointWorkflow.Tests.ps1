@@ -501,4 +501,33 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             $startScript | Should -Match 'No bootstrap manifest detected; starting DMS with database startup provisioning controlled by the environment file\.'
         }
     }
+
+    # =========================================================================
+    # R7 - Config Service always included (DMS-1153 bootstrap entry-point spec)
+    #   Per the spec, every non-teardown bootstrap run starts Config Service,
+    #   including keycloak-backed runs. -EnableConfig is retained for backward
+    #   compatibility only and is no longer a meaningful opt-out.
+    # =========================================================================
+    Context "Config Service always included in compose set" {
+        It "start-local-dms.ps1 includes local-config.yml unconditionally (no if-guard)" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            # The unconditional assignment must be present.
+            $startScript | Should -Match '\$files\s*\+=\s*@\("-f",\s*"local-config\.yml"\)'
+
+            # There must be NO conditional guard wrapping the local-config.yml inclusion.
+            # Verify by asserting the old conditional pattern is absent.
+            $startScript | Should -Not -Match 'if\s*\([^)]*EnableConfig[^)]*\)[^{]*\{[^}]*local-config\.yml' -Because "local-config.yml must be included unconditionally, not gated on -EnableConfig"
+            $startScript | Should -Not -Match 'if\s*\(\$EnableConfig\s*-or' -Because "the old conditional guard must have been removed"
+        }
+
+        It "start-local-dms.ps1 retains -EnableConfig parameter for backward compatibility" {
+            $params = Get-DeclaredScriptParameters -Path (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            )
+            $params | Should -Contain "EnableConfig" -Because "-EnableConfig must be retained for backward compatibility even though it is no longer a meaningful opt-out"
+        }
+    }
 }

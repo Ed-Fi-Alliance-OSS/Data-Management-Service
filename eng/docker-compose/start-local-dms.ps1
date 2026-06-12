@@ -97,7 +97,10 @@ param (
     [Switch]
     $EnableKafkaUI,
 
-    # Enable the DMS Configuration Service
+    # Enable the DMS Configuration Service.
+    # Retained for backward compatibility; Config Service is now always included in the compose set.
+    # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Config Service,
+    # including keycloak-backed runs. Passing this switch has no additional effect.
     [Switch]
     $EnableConfig,
 
@@ -250,10 +253,12 @@ if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
 
-# Include configuration service if enabled or if using self-contained identity provider
-if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained") {
-    $files += @("-f", "local-config.yml")
-}
+# Config Service is always included in the managed compose set.
+# Every non-teardown bootstrap run starts Config Service, including keycloak-backed runs.
+# -EnableConfig is retained for backward compatibility but is no longer a meaningful opt-out
+# (per the bootstrap entry-point spec, DMS-1153). Teardown uses the same $files list so that
+# follow-up up/down calls operate on the full environment (same pattern as keycloak.yml above).
+$files += @("-f", "local-config.yml")
 
 if ($EnableSwaggerUI) {
     $files += @("-f", "swagger-ui.yml")

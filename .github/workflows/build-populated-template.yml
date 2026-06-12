@@ -172,6 +172,30 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -enableConfig
         working-directory: eng/docker-compose/
 
+      # Legacy DLL-backed flow (no bootstrap manifest): the claims-ready gate does not apply, and
+      # DMS fails fatally at startup when CMS has no data stores; no data store is created by
+      # default. This non-relational path uses USE_API_SCHEMA_PATH=false (DLL-backed runtime
+      # loading) and is outside the DMS-1153 bootstrap-manifest contract; cutover is assigned
+      # to DMS-1154.
+      - name: Register non-relational data store
+        if: ${{ !inputs.use_relational_backend }}
+        run: |
+          Import-Module ../Dms-Management.psm1 -Force
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
+          Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
+          $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -Name "Non-Relational Template Data Store" -DataStoreType "Template"
+          if (-not $dataStoreId) {
+            throw "Failed to register the non-relational data store."
+          }
+        working-directory: eng/docker-compose/
+
+      - name: Restart DMS to load the provisioned non-relational data store
+        if: ${{ !inputs.use_relational_backend }}
+        run: |
+          docker restart dms-local-dms-1
+
       - name: Start DMS Docker (relational backend)
         if: ${{ inputs.use_relational_backend }}
         run: |

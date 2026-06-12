@@ -272,6 +272,7 @@ The artifact includes:
 | `ConfigurationServiceSettings:ClientId` | `CMSReadOnlyAccess` (created by identity setup) |
 | `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with secret from identity setup output) |
 | `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
+| `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `DefaultEncryptionKey32CharactersX1`) |
 | `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema) |
 | `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
@@ -280,7 +281,9 @@ The artifact includes:
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 
 Replace `<local-cms-readonly-secret>` with the secret printed by `start-local-dms.ps1` or
-`bootstrap-local-dms.ps1` during identity setup. Replace `<repo-root>` with the absolute path
+`bootstrap-local-dms.ps1` during identity setup. Replace `<dms-config-database-encryption-key>`
+with the value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from your `.env` file (`.env.example`
+default `DefaultEncryptionKey32CharactersX1`). Replace `<repo-root>` with the absolute path
 to the repository root on your machine.
 
 > **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at

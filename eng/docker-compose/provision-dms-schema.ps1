@@ -729,6 +729,7 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
     $clientId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_ID" -DefaultValue "CMSReadOnlyAccess"
     $scope = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SCOPE" -DefaultValue "edfi_admin_api/readonly_access"
     $secret = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET"
+    $encryptionKey = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
 
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("")
@@ -740,6 +741,12 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
     }
     else {
         $lines.Add("  ConfigurationServiceSettings__ClientSecret = (present in environment file)")
+    }
+    if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
+        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (set to DMS_CONFIG_DATABASE_ENCRYPTION_KEY from your .env file; .env.example default DefaultEncryptionKey32CharactersX1)")
+    }
+    else {
+        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (present in environment file as DMS_CONFIG_DATABASE_ENCRYPTION_KEY)")
     }
 
     return $lines.ToArray()
