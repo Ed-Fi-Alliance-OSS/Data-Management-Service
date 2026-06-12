@@ -468,12 +468,14 @@ function Set-BootstrapStartupEnvironment {
 
     # Activate the staged schema workspace as runtime-authoritative (bootstrap-design.md §3 activation
     # boundary). DMS_API_SCHEMA_MOUNT_SOURCE is the host-side source for the bootstrap-dms.yml volume
-    # mount; SCHEMA_PACKAGES is cleared so run.sh performs no second package download into the mounted
-    # workspace.
+    # mount; SCHEMA_PACKAGES is set to an empty JSON array so run.sh performs no second package
+    # download into the mounted workspace. Do not use an empty string: on Linux PowerShell that
+    # removes the process env var, allowing docker compose to fall back to SCHEMA_PACKAGES from
+    # the env file.
     $env:USE_API_SCHEMA_PATH = "true"
     $env:API_SCHEMA_PATH = "/app/ApiSchema"
     $env:DMS_API_SCHEMA_MOUNT_SOURCE = $apiSchemaPath
-    $env:SCHEMA_PACKAGES = ""
+    $env:SCHEMA_PACKAGES = "[]"
 
     if (-not $manifest.ContainsKey("claims")) {
         if (-not $SkipArtifactValidation) {

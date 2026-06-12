@@ -170,6 +170,46 @@ public class ApiSchemaValidatorTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_ProjectSchema_With_ChangeQueries_OpenApi_Base_Document : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode =
+            JsonNode.Parse(
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "caseInsensitiveEndpointNameMapping": {},
+                    "abstractResources": {},
+                    "description": "The Ed-Fi Data Standard v5.0",
+                    "educationOrganizationHierarchy": {},
+                    "educationOrganizationTypes": [],
+                    "isExtensionProject": false,
+                    "openApiBaseDocuments": {
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "changeQueries": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                    },
+                    "projectName": "ed-fi",
+                    "projectEndpointName": "ed-fi",
+                    "projectVersion": "5.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {}
+                  }
+                }
+                """
+            ) ?? new JsonObject();
+
+        [Test]
+        public void It_has_no_validation_errors()
+        {
+            var response = _validator!.Validate(_apiSchemaRootNode);
+            response.Should().NotBeNull();
+            response.Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_ResourceSchema_With_Missing_Required_Properties : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =

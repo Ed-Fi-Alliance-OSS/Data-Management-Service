@@ -43,10 +43,10 @@ Describe "DMS-1154 Invoke-BootstrapDockerSmoke static contract" {
             $script:smokeContent | Should -Match 'SchemaPackageId\s*=\s*"EdFi\.DataStandard52\.ApiSchema"'
         }
 
-        It "declares -SchemaPackageVersion with default 1.0.329" {
+        It "declares -SchemaPackageVersion with default 1.0.330" {
             $params = Get-DeclaredScriptParameters -Path $script:smokeScriptPath
             $params | Should -Contain "SchemaPackageVersion"
-            $script:smokeContent | Should -Match 'SchemaPackageVersion\s*=\s*"1\.0\.329"'
+            $script:smokeContent | Should -Match 'SchemaPackageVersion\s*=\s*"1\.0\.330"'
         }
 
         It "declares -SchemaPackageFeedUrl pointing at the Ed-Fi Alliance OSS feed" {

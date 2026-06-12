@@ -803,7 +803,7 @@ exit $ExitCode
         It "activates staged DMS schema and CMS claims env vars when a valid bootstrap manifest is present" {
             # With a valid bootstrap manifest, Set-BootstrapStartupEnvironment returns $true and
             # activates both the staged schema workspace (USE_API_SCHEMA_PATH, API_SCHEMA_PATH,
-            # DMS_API_SCHEMA_MOUNT_SOURCE, SCHEMA_PACKAGES cleared) and staged claims per
+            # DMS_API_SCHEMA_MOUNT_SOURCE, SCHEMA_PACKAGES=[]) and staged claims per
             # manifest claims.mode. The "Sample" extension produces Hybrid mode.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
@@ -819,11 +819,11 @@ exit $ExitCode
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
             # Schema activation: USE_API_SCHEMA_PATH and API_SCHEMA_PATH are set; SCHEMA_PACKAGES
-            # is cleared so run.sh performs no second download; DMS_API_SCHEMA_MOUNT_SOURCE is the
-            # host-side source for bootstrap-dms.yml.
+            # is an empty JSON array so run.sh performs no second download; DMS_API_SCHEMA_MOUNT_SOURCE
+            # is the host-side source for bootstrap-dms.yml.
             $env:USE_API_SCHEMA_PATH | Should -Be "true"
             $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
-            $env:SCHEMA_PACKAGES | Should -BeNullOrEmpty
+            $env:SCHEMA_PACKAGES | Should -Be "[]"
             $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
 
             # Claims activation: manifest claims.mode=Hybrid (Sample extension) overrides the
@@ -836,7 +836,8 @@ exit $ExitCode
         It "activates staged schema env vars in bootstrap mode and sets DMS_API_SCHEMA_MOUNT_SOURCE to the staged workspace" {
             # Bootstrap mode sets USE_API_SCHEMA_PATH=true, API_SCHEMA_PATH=/app/ApiSchema, and
             # DMS_API_SCHEMA_MOUNT_SOURCE to the absolute .bootstrap/ApiSchema path. SCHEMA_PACKAGES
-            # is cleared so run.sh performs no second package download into the mounted workspace.
+            # is set to an empty JSON array so run.sh performs no second package download into the
+            # mounted workspace.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
@@ -851,7 +852,7 @@ exit $ExitCode
             $env:USE_API_SCHEMA_PATH | Should -Be "true"
             $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
             $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
-            $env:SCHEMA_PACKAGES | Should -BeNullOrEmpty
+            $env:SCHEMA_PACKAGES | Should -Be "[]"
         }
 
         It "manifest claims.mode governs in bootstrap mode and overrides caller-set process-env claims values" {
