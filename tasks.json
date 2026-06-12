@@ -78,16 +78,19 @@
   },
   {
     "category": "Runtime Content Loading",
-    "description": "Medium: Remove runtime `package-manifest.json` synthesis from `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs:87` and make bundled ApiSchema content provide the same root `bootstrap-api-schema-manifest.json` used by bootstrap workspaces.",
+    "description": "Medium: Remove runtime `package-manifest.json` synthesis from `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs:87` and make both bundled ApiSchema content and the `SCHEMA_PACKAGES` startup path at `src/dms/run.sh:37` provide the same root `bootstrap-api-schema-manifest.json` used by bootstrap workspaces.",
     "acceptance-criteria": [
       "`ApiSchemaAssetManifestProvider.GetManifest` reads only the root `bootstrap-api-schema-manifest.json` from the configured or bundled ApiSchema workspace and no longer recursively scans for `package-manifest.json` files.",
       "The build or publish path materializes `ApiSchema/bootstrap-api-schema-manifest.json` for bundled ApiSchema package content, with project paths relative to the bundled `ApiSchema` directory.",
+      "When `AppSettings__UseApiSchemaPath=true` and `SCHEMA_PACKAGES` contains package entries, `src/dms/run.sh` downloads the current packages and materializes `AppSettings__ApiSchemaPath/bootstrap-api-schema-manifest.json` before launching DMS.",
+      "The startup-materialized manifest includes only projects from the current `SCHEMA_PACKAGES` list and uses paths relative to `AppSettings__ApiSchemaPath`.",
       "Running with `UseApiSchemaPath=false` loads bundled schema, discovery spec, and XSD content through the same manifest path validation used when `UseApiSchemaPath=true`.",
       "A stray nested `package-manifest.json` under the ApiSchema workspace is ignored; runtime content loading is driven only by projects and paths declared in the root `bootstrap-api-schema-manifest.json`."
     ],
     "steps-to-verify": [
       "Add or update frontend unit coverage for `ApiSchemaAssetManifestProvider` showing that a missing root `bootstrap-api-schema-manifest.json` fails even when a nested `package-manifest.json` exists.",
       "Add build or publish verification showing `ApiSchema/bootstrap-api-schema-manifest.json` is produced for bundled package content.",
+      "Add startup or script-level coverage showing `src/dms/run.sh` materializes `AppSettings__ApiSchemaPath/bootstrap-api-schema-manifest.json` from the current `SCHEMA_PACKAGES` entries after download and before launching DMS.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
     ],
     "completed": false
