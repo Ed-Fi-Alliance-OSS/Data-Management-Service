@@ -1,11 +1,13 @@
 [
   {
     "category": "Metadata Content",
-    "description": "Medium: Make XSD content streaming validate the requested section and open the same validated manifest path that the section-specific file listing exposed, not the first matching bare filename across all projects.",
+    "description": "Medium: Make XSD section lookup and streaming section-aware at `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/XsdMetadataEndpointModule.cs:149`, `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs:96`, and `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs:252` so unknown sections do not fall back to core files and streaming opens the same validated manifest path that section-specific file listing exposed.",
     "acceptance-criteria": [
       "`/metadata/xsd/{section}/{file}.xsd` returns 404 for an unknown section instead of falling back to core XSD files.",
-      "`XsdMetadataEndpointModule.GetXsdMetadataFileContent` passes the requested section, or an already resolved validated file path, into XSD content loading.",
-      "Duplicate XSD file names across extensions return the requested section's content; core XSD files remain available to extension sections.",
+      "`ContentProvider.Files(fileFullName, \".xsd\", section)` does not include core XSD files when the requested section does not match any manifest project.",
+      "`XsdMetadataEndpointModule.GetXsdMetadataFileContent` no longer calls `contentProvider.LoadXsdContent(fileFullName)` after only section-scoped validation; it passes the requested section, or an already resolved validated file path, into XSD content loading.",
+      "`ContentProvider` resolves the XSD stream with the same project selection rules used by `Files(fileFullName, \".xsd\", section)`.",
+      "Duplicate XSD file names across extension projects return the requested section's content; core XSD files remain available to extension sections.",
       "Legacy prefixed XSD names normalize consistently for both section-specific listing and streaming."
     ],
     "steps-to-verify": [
@@ -44,6 +46,23 @@
     "completed": false
   },
   {
+    "category": "Metadata Content",
+    "description": "Low: Reject nested XSD files consistently in `eng/docker-compose/prepare-dms-schema.ps1:454` and `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs:325` so staged or bundled XSD content is not silently omitted by runtime top-level enumeration.",
+    "acceptance-criteria": [
+      "`prepare-dms-schema.ps1` fails before writing the staged ApiSchema manifest when a source project's `xsd` or `XSD` directory contains `.xsd` files below a nested subdirectory.",
+      "`ApiSchemaAssetManifestProvider.EnumerateValidatedXsdFiles` detects nested `.xsd` files under a declared `xsdDirectory` and throws `InvalidOperationException` instead of returning only top-level files.",
+      "Valid top-level `.xsd` files continue to be listed and streamed with the existing file-name normalization behavior.",
+      "The error message identifies the project or nested XSD path that must be flattened."
+    ],
+    "steps-to-verify": [
+      "Add Pester coverage for `prepare-dms-schema.ps1` with a project containing `xsd/nested/*.xsd` and assert staging fails before producing a successful manifest.",
+      "Add frontend unit coverage for `ApiSchemaAssetManifestProvider.EnumerateValidatedXsdFiles` with a nested `.xsd` under a declared `xsdDirectory` and assert it throws.",
+      "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1\"`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ApiSchemaAssetManifestProvider\"`"
+    ],
+    "completed": false
+  },
+  {
     "category": "Workspace Validation",
     "description": "Medium: Make ApiSchema manifest path validation symlink-aware so schema-adjacent content cannot escape the configured workspace through linked files or directories.",
     "acceptance-criteria": [
@@ -54,6 +73,38 @@
     "steps-to-verify": [
       "Add unit coverage for an escaping symlink used as `discoverySpecPath` or `xsdDirectory` and assert the provider rejects it before opening or enumerating the target.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runtime Content Loading",
+    "description": "Medium: Remove runtime `package-manifest.json` synthesis from `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs:87` and make bundled ApiSchema content provide the same root `bootstrap-api-schema-manifest.json` used by bootstrap workspaces.",
+    "acceptance-criteria": [
+      "`ApiSchemaAssetManifestProvider.GetManifest` reads only the root `bootstrap-api-schema-manifest.json` from the configured or bundled ApiSchema workspace and no longer recursively scans for `package-manifest.json` files.",
+      "The build or publish path materializes `ApiSchema/bootstrap-api-schema-manifest.json` for bundled ApiSchema package content, with project paths relative to the bundled `ApiSchema` directory.",
+      "Running with `UseApiSchemaPath=false` loads bundled schema, discovery spec, and XSD content through the same manifest path validation used when `UseApiSchemaPath=true`.",
+      "A stray nested `package-manifest.json` under the ApiSchema workspace is ignored unless it is referenced by the generated root bootstrap manifest."
+    ],
+    "steps-to-verify": [
+      "Add or update frontend unit coverage for `ApiSchemaAssetManifestProvider` showing that a missing root `bootstrap-api-schema-manifest.json` fails even when a nested `package-manifest.json` exists.",
+      "Add build or publish verification showing `ApiSchema/bootstrap-api-schema-manifest.json` is produced for bundled package content.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Seed Delivery",
+    "description": "Medium: Enforce bootstrap workspace-relative path validation in `eng/docker-compose/load-dms-seed-data.ps1:1250` and `eng/docker-compose/load-dms-seed-data.ps1:1332` before reading the staged ApiSchema manifest or copying staged XSDs, so seed loading cannot read XSD content from outside `.bootstrap/ApiSchema`.",
+    "acceptance-criteria": [
+      "`Copy-XsdsFromStagedApiSchema` resolves `schema.apiSchemaManifestPath` through `Resolve-BootstrapWorkspaceRelativePath`, or equivalent validation, before calling `Get-Content`.",
+      "Each project `xsdDirectory` is treated as manifest-relative to the staged ApiSchema workspace and rejects rooted paths, empty path segments, current-directory segments, parent-directory segments, and resolved paths outside that workspace before `Test-Path`, `Get-ChildItem`, or `Copy-Item` runs.",
+      "Invalid `apiSchemaManifestPath` or `xsdDirectory` values fail with an error that identifies the offending field or project, and no XSD files are copied from an escaping path.",
+      "Valid staged `xsdDirectory` values still copy XSD files into the seed workspace `xsd` directory."
+    ],
+    "steps-to-verify": [
+      "Add Pester coverage in `eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1` for absolute and parent-traversing `xsdDirectory` values in the staged ApiSchema manifest and assert `Copy-XsdsFromStagedApiSchema` throws before copying files.",
+      "Add Pester coverage that exercises `Copy-XsdsFromStagedApiSchema` with an invalid `schema.apiSchemaManifestPath` value and assert the helper rejects it through the workspace-relative path validation path.",
+      "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1\"`"
     ],
     "completed": false
   },
@@ -88,15 +139,16 @@
   },
   {
     "category": "Container Packaging",
-    "description": "Medium: Copy bundled ApiSchema package content recursively into the final DMS Docker image so `UseApiSchemaPath=false` can load file-based package manifests, discovery content, and XSD files.",
+    "description": "High: Include `src/dms/Directory.Build.targets` in the Docker build context at `src/dms/Dockerfile:12` and copy published `ApiSchema/**` content recursively at `src/dms/Dockerfile:66` so bundled ApiSchema package assets and the root bundled manifest declared by `src/dms/Directory.Build.targets:30` survive into the final image.",
     "acceptance-criteria": [
-      "The final `src/dms/Dockerfile` image includes the published `ApiSchema/Packages/**` content, including each package's `package-manifest.json`, discovery/spec files, and XSD files.",
+      "`src/dms/Dockerfile` copies `Directory.Build.targets` into `/source` before restore/publish so the package-content publish target participates in Docker builds.",
+      "The final `src/dms/Dockerfile` image includes the published `ApiSchema/**` content recursively, including `ApiSchema/bootstrap-api-schema-manifest.json`, discovery/spec files, and XSD files.",
       "Top-level bundled ApiSchema JSON files that are currently copied remain available in the image.",
-      "Running without `AppSettings:UseApiSchemaPath=true` can synthesize an ApiSchema asset manifest from bundled package manifests instead of failing because no package manifests exist."
+      "Running without `AppSettings:UseApiSchemaPath=true` loads the bundled root ApiSchema asset manifest instead of depending on runtime package-manifest synthesis."
     ],
     "steps-to-verify": [
-      "Add a Dockerfile or image-content verification that confirms recursive `ApiSchema` package content is copied into the final image.",
-      "Build or inspect the DMS image output and verify `/app/ApiSchema/Packages/<package>/package-manifest.json` and XSD files are present."
+      "Add a Dockerfile or image-content verification that confirms recursive `ApiSchema` content is copied into the final image.",
+      "Build or inspect the DMS image output and verify `/app/ApiSchema/bootstrap-api-schema-manifest.json`, discovery/spec files, and XSD files are present."
     ],
     "completed": false
   }
