@@ -91,29 +91,34 @@ These settings configure the allowed client-secret length range used by CMS regi
 | MinimumLength   | Minimum allowed client-secret length. Default: `32`                                                                   |
 | MaximumLength   | Maximum allowed client-secret length. Default: `128`                                                                  |
 
-`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration, where supported special characters are `!@#$%^&*()-_=+[]{}:;,.?`.
+`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration, where supported special characters are `!@#$%^&*()-_=+[]{}:;,.?`. The bounds are set from the `DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` / `DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH` environment variables.
 
 > [!IMPORTANT]
-> Every configured client secret must satisfy these rules (by default: 32–128
-> characters with at least one lowercase letter, uppercase letter, number, and
-> supported special character). CMS validates configured secrets at startup via
-> `IdentitySettingsValidator`; when a secret is invalid (for example, shorter than
-> the 32-character minimum), `ReportInvalidConfiguration` in `Program.cs` returns
-> true, `InitializeDatabase` is skipped, and the DbUp migrations that create the
-> OpenIddict tables never run — causing `start-local-dms.ps1` to fail. During initial
-> identity provisioning the local startup scripts register the CMS identity clients from
-> these env-file values — `CMSReadOnlyAccess` from `CONFIG_SERVICE_CLIENT_SECRET`
-> (DMS → CMS) and `DmsConfigurationService` from `DMS_CONFIG_IDENTITY_CLIENT_SECRET`
-> (the CMS client) — so the registered secret matches the value the service authenticates
-> with.
+> Two different secrets are validated on two different paths — do not conflate them:
 >
-> Registration applies only to clients that do not yet exist: `setup-keycloak.ps1` warns
-> and skips a client that is already present, and `setup-openiddict.ps1` inserts with
+> - **`DMS_CONFIG_IDENTITY_CLIENT_SECRET`** is the CMS's own client secret
+>   (`IdentitySettings:ClientSecret`, client `DmsConfigurationService`). CMS validates it at
+>   **startup** via `IdentitySettingsValidator`; when it is invalid (for example, shorter than
+>   the configured minimum), `ReportInvalidConfiguration` in `Program.cs` returns true,
+>   `InitializeDatabase` is skipped, and the DbUp migrations that create the OpenIddict tables
+>   never run — causing `start-local-dms.ps1` to fail.
+> - **`CONFIG_SERVICE_CLIENT_SECRET`** is the DMS-to-CMS client secret
+>   (`ConfigurationServiceSettings:ClientSecret`, client `CMSReadOnlyAccess`) that DMS uses at
+>   runtime to obtain CMS tokens. It is validated when that client is **registered** by the
+>   setup scripts, not by the CMS startup validator.
+>
+> Both secrets must satisfy the length and complexity rules above. During initial identity
+> provisioning the local startup scripts register each client from its env-file secret and pass
+> the env-file length bounds (`DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` /
+> `_MAXIMUM_LENGTH`) to `setup-keycloak.ps1` / `setup-openiddict.ps1`, so a secret that is valid
+> for CMS is not rejected by the setup scripts' own default 32/128 bounds.
+>
+> Registration applies only to clients that do not yet exist: `setup-keycloak.ps1` warns and
+> skips a client that is already present, and `setup-openiddict.ps1` inserts with
 > `ON CONFLICT (ClientId) DO NOTHING`. Changing one of these secrets therefore does **not**
-> update an already-registered client. To apply a new value, recreate the identity state
-> first — run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm /
-> `dmscs` OpenIddict tables — then start with the new secret. Any value you choose must
-> still meet the length and complexity rules above.
+> update an already-registered client. To apply a new value, recreate the identity state first —
+> run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm / `dmscs` OpenIddict
+> tables — then start with the new secret.
 
 ## RateLimit
 

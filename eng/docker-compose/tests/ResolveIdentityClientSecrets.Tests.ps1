@@ -34,6 +34,15 @@ Describe "Resolve-IdentityClientSecrets" {
             $result.CmsReadOnlyAccessClientSecret | Should -Be "ReadOnlySecret1234567890!Abcdef"
             $result.DmsConfigurationServiceClientSecret | Should -Be "FullAccessSecret1234567890!Abcd"
         }
+
+        It "resolves custom client-secret length bounds from the env file" {
+            $result = Resolve-IdentityClientSecrets -EnvValues @{
+                DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH = "10"
+                DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH = "200"
+            }
+            $result.ClientSecretMinimumLength | Should -Be 10
+            $result.ClientSecretMaximumLength | Should -Be 200
+        }
     }
 
     Context "when env-file values are missing or blank" {
@@ -46,6 +55,12 @@ Describe "Resolve-IdentityClientSecrets" {
         It "treats a whitespace-only value as missing" {
             $result = Resolve-IdentityClientSecrets -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "   " }
             $result.CmsReadOnlyAccessClientSecret | Should -Be $script:defaultSecret
+        }
+
+        It "falls back to the default 32/128 length bounds" {
+            $result = Resolve-IdentityClientSecrets -EnvValues @{}
+            $result.ClientSecretMinimumLength | Should -Be 32
+            $result.ClientSecretMaximumLength | Should -Be 128
         }
     }
 }
@@ -64,13 +79,18 @@ Describe "Start scripts register identity clients with env-file secrets" {
         $content | Should -Match '\$identityClientSecrets\s*=\s*Resolve-IdentityClientSecrets\s+-EnvValues\s+\$envValues'
     }
 
-    It "binds each client registration to the matching resolved secret in <Name>" -ForEach $cases {
+    It "binds each client registration to the matching resolved secret and bounds in <Name>" -ForEach $cases {
         # A presence-only check (does the line contain -NewClientSecret?) is not enough: it would
         # still pass with a hard-coded value, with the same secret reused for both clients, or with
         # the two resolved secrets swapped. Assert the exact resolved property each client requires:
         #   - CMSReadOnlyAccess           -> CmsReadOnlyAccessClientSecret        (CONFIG_SERVICE_CLIENT_SECRET)
         #   - DmsConfigurationService     -> DmsConfigurationServiceClientSecret  (DMS_CONFIG_IDENTITY_CLIENT_SECRET)
         #   - CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret and keeps the default.
+        # Both operator-secret clients must also pass the env-file length bounds so a CMS-valid
+        # secret is not rejected by the setup scripts' default 32/128 validation.
+        $minBoundPattern = '-ClientSecretMinimumLength\s+\$identityClientSecrets\.ClientSecretMinimumLength\b'
+        $maxBoundPattern = '-ClientSecretMaximumLength\s+\$identityClientSecrets\.ClientSecretMaximumLength\b'
+
         $setupLines = Get-Content -LiteralPath $ScriptPath | Where-Object {
             $_ -match '\./setup-(keycloak|openiddict)\.ps1' -and $_ -notmatch '-InitDb'
         }
@@ -79,15 +99,19 @@ Describe "Start scripts register identity clients with env-file secrets" {
 
         foreach ($line in $setupLines) {
             if ($line -match '-NewClientId\s+"CMSAuthMetadataReadOnlyAccess"') {
-                # Intentionally not bound to an env-file secret; uses the setup default.
+                # Intentionally not bound to env-file values; uses the setup defaults.
                 $line | Should -Not -Match '\$identityClientSecrets\.' -Because "CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret: $line"
             }
             elseif ($line -match '-NewClientId\s+"CMSReadOnlyAccess"') {
                 $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.CmsReadOnlyAccessClientSecret\b' -Because "CMSReadOnlyAccess must register CONFIG_SERVICE_CLIENT_SECRET: $line"
+                $line | Should -Match $minBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file minimum length: $line"
+                $line | Should -Match $maxBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file maximum length: $line"
             }
             else {
                 # No -NewClientId => the default DmsConfigurationService (full_access) client.
                 $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.DmsConfigurationServiceClientSecret\b' -Because "DmsConfigurationService must register DMS_CONFIG_IDENTITY_CLIENT_SECRET: $line"
+                $line | Should -Match $minBoundPattern -Because "DmsConfigurationService must validate with the env-file minimum length: $line"
+                $line | Should -Match $maxBoundPattern -Because "DmsConfigurationService must validate with the env-file maximum length: $line"
             }
         }
     }
