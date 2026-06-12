@@ -312,6 +312,8 @@ function Get-AuthorizationMetadataResponse {
     .SYNOPSIS
     Calls CMS GET /v3/authorizationMetadata?claimSetName=<name> and returns the parsed response.
     Returns $null when the claim set is not found (404). Throws on unexpected HTTP errors.
+    Sends the Tenant header when a tenant is supplied, matching every other CMS Admin API
+    call in Dms-Management.psm1 so multi-tenant CMS routing resolves the request.
     #>
     param(
         [Parameter(Mandatory)]
@@ -323,7 +325,10 @@ function Get-AuthorizationMetadataResponse {
         $AccessToken,
 
         [string]
-        $ClaimSetName = ""
+        $ClaimSetName = "",
+
+        [string]
+        $Tenant = ""
     )
 
     $normalizedBase = $CmsBaseUrl.TrimEnd('/')
@@ -334,6 +339,9 @@ function Get-AuthorizationMetadataResponse {
     }
 
     $headers = @{ Authorization = "Bearer $AccessToken" }
+    if (-not [string]::IsNullOrWhiteSpace($Tenant)) {
+        $headers["Tenant"] = $Tenant
+    }
 
     try {
         $response = Invoke-RestMethod `
@@ -372,7 +380,10 @@ function Assert-SingleVerificationCheck {
         $AccessToken,
 
         [Parameter(Mandatory)]
-        $Check
+        $Check,
+
+        [string]
+        $Tenant = ""
     )
 
     $claimSetName = [string]$Check.claimSetName
@@ -395,7 +406,8 @@ function Assert-SingleVerificationCheck {
     $metadata = Get-AuthorizationMetadataResponse `
         -CmsBaseUrl $CmsBaseUrl `
         -AccessToken $AccessToken `
-        -ClaimSetName $claimSetName
+        -ClaimSetName $claimSetName `
+        -Tenant $Tenant
 
     if ($null -eq $metadata) {
         throw "Claims-ready gate FAILED: claim set '$(Format-ClaimsGateLogSafeText $claimSetName)' was not found in CMS /authorizationMetadata. CMS may not yet have applied the expected claims. /health green and /v2/claimSets name presence alone do not satisfy this gate."
@@ -515,7 +527,8 @@ function Test-CmsClaimsReady {
     derived from the environment file via Resolve-CmsBaseUrl (env-utility.psm1).
 
     .PARAMETER EnvironmentFile
-    Path to the .env file used to resolve CMS base URL and identity provider settings.
+    Path to the .env file used to resolve CMS base URL, identity provider settings, and the
+    CONFIG_SERVICE_TENANT tenant scope sent as the Tenant header on multi-tenant CMS calls.
     Resolved via Resolve-LocalSettingsEnvironmentFile (env-utility.psm1) when the sibling
     module is present. Ignored when -CmsBaseUrl and -AccessToken are both supplied.
 
@@ -606,6 +619,15 @@ function Test-CmsClaimsReady {
         "http://localhost:8081"
     }
 
+    # Resolve tenant scope for multi-tenant CMS routing. Mirrors configure-local-data-store.ps1:
+    # CONFIG_SERVICE_TENANT from the env file, forwarded as the Tenant header only when non-empty
+    # (the same pattern every CMS Admin API call in Dms-Management.psm1 uses). Without it the
+    # gate's /v3/authorizationMetadata request fails tenant resolution in multi-tenant CMS mode.
+    $resolvedTenant = ""
+    if ($null -ne $envValues -and $envValues.ContainsKey("CONFIG_SERVICE_TENANT")) {
+        $resolvedTenant = ([string]$envValues["CONFIG_SERVICE_TENANT"]).Trim()
+    }
+
     # Acquire bearer token (skip when pre-obtained token was supplied by the caller).
     $resolvedToken = if (-not [string]::IsNullOrWhiteSpace($AccessToken)) {
         $AccessToken
@@ -656,7 +678,8 @@ function Test-CmsClaimsReady {
         Assert-SingleVerificationCheck `
             -CmsBaseUrl $resolvedCmsBaseUrl `
             -AccessToken $resolvedToken `
-            -Check $check
+            -Check $check `
+            -Tenant $resolvedTenant
 
         $verifiedCount++
     }

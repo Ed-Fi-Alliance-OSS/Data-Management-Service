@@ -472,6 +472,9 @@ function Invoke-BootstrapWrapper {
                 Write-Information "  load-dms-seed-data.ps1 -DmsBaseUrl <url> [...]" -InformationAction Continue
                 Write-Information "For a wrapper-managed health-wait and seed (fresh wrapper run; -NoDataStore reuses the data store this run created):" -InformationAction Continue
                 Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]" -InformationAction Continue
+                Write-Information "  Note: -NoDataStore supports exactly one route-unqualified data store. If this run used" -InformationAction Continue
+                Write-Information "  -SchoolYearRange (or created route-qualified data stores), re-supply the same selection" -InformationAction Continue
+                Write-Information "  inputs on the follow-up run instead of -NoDataStore." -InformationAction Continue
                 return
             }
 

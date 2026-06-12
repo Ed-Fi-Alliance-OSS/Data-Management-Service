@@ -285,7 +285,7 @@ The artifact includes:
 | `ConnectionStrings:DatabaseConnection` | `host=localhost;port=5435;...` (matches `.env.example` PostgreSQL port) |
 | `ConfigurationServiceSettings:BaseUrl` | `http://localhost:8081` (Config Service host port) |
 | `ConfigurationServiceSettings:ClientId` | `CMSReadOnlyAccess` (created by identity setup) |
-| `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with secret from identity setup output) |
+| `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with the `CMSReadOnlyAccess` client secret; local-dev default `ValidClientSecret1234567890!Abcd`) |
 | `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
 | `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `DefaultEncryptionKey32CharactersX1`) |
 | `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema) |
@@ -295,8 +295,10 @@ The artifact includes:
 | `JwtAuthentication:ClientRole` | `dms-client` |
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 
-Replace `<local-cms-readonly-secret>` with the secret printed by `start-local-dms.ps1` or
-`bootstrap-local-dms.ps1` during identity setup. Replace `<dms-config-database-encryption-key>`
+Replace `<local-cms-readonly-secret>` with the `CMSReadOnlyAccess` client secret. Identity setup
+(`setup-keycloak.ps1` / `setup-openiddict.ps1`) creates the client with the local-dev default
+`ValidClientSecret1234567890!Abcd` and does not print the value; if you override the secret at
+client creation, use your override here. Replace `<dms-config-database-encryption-key>`
 with the value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from your `.env` file (`.env.example`
 default `DefaultEncryptionKey32CharactersX1`). Replace `<repo-root>` with the absolute path
 to the repository root on your machine.
@@ -316,7 +318,8 @@ cd eng/docker-compose
 ./bootstrap-local-dms.ps1 -InfraOnly -EnableConfig -IdentityProvider self-contained
 ```
 
-The wrapper prints IDE next-step guidance (staged schema path and `CMSReadOnlyAccess` details)
+The wrapper prints IDE next-step guidance (staged schema path and, when `CONFIG_SERVICE_CLIENT_*`
+keys are set in the env file, `CMSReadOnlyAccess` client id and scope — never the secret value)
 after provisioning completes.
 
 ### Two IDE workflow shapes
@@ -328,7 +331,7 @@ Start DMS in your IDE using the printed settings; this invocation does not wait 
 ```pwsh
 cd eng/docker-compose
 ./bootstrap-local-dms.ps1 -InfraOnly -IdentityProvider self-contained
-# → prints appsettings values and CMSReadOnlyAccess secret; stops before DMS startup
+# → prints appsettings guidance (see the starter configuration table for the CMSReadOnlyAccess secret); stops before DMS startup
 # Start DMS in your IDE now using the printed settings.
 ```
 
@@ -343,6 +346,10 @@ wait passes.
 > data store (for example a Shape 1 run on the same stack), add `-NoDataStore` to the follow-up run
 > so the configure phase reuses the existing data store instead of creating a duplicate:
 > `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]`
+>
+> `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
+> used `-SchoolYearRange` (or otherwise created route-qualified data stores), re-supply the same
+> selection inputs on the follow-up run instead of `-NoDataStore`.
 
 ```pwsh
 cd eng/docker-compose

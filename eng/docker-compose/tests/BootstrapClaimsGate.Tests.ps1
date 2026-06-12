@@ -798,4 +798,130 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:authMetadataCalled_h2 | Should -Be $false
         }
     }
+
+    # ===========================================================================
+    # Scenario (i): multi-tenant CMS routing - the gate must forward the env-file
+    # CONFIG_SERVICE_TENANT as the Tenant header on /authorizationMetadata calls
+    # (the same pattern every CMS Admin API call in Dms-Management.psm1 uses),
+    # and must NOT send the header when no tenant is configured.
+    # ===========================================================================
+    Context "Scenario (i) - Tenant header is sent when CONFIG_SERVICE_TENANT is configured" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_i1 = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @(
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = $script:sandboxResourceClaim; action = $script:sandboxAction }
+                ) `
+                -FileName "manifest-i1.json"
+
+            # Env file with multi-tenant CMS settings; -AccessToken is intentionally omitted
+            # below so Test-CmsClaimsReady resolves env values (and the tenant) from this file.
+            $script:envFile_i1 = Join-Path $tempDir "tenant.env"
+            @(
+                "DMS_CONFIG_MULTI_TENANCY=true"
+                "CONFIG_SERVICE_TENANT=tenant1"
+            ) | Set-Content -LiteralPath $script:envFile_i1 -Encoding utf8
+
+            $script:capturedHeaders_i1 = $null
+
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+
+                if ($Method -eq "Post" -and $Uri -match "/connect/token") {
+                    return [pscustomobject]@{ access_token = "tenant-test-token" }
+                }
+
+                if ($Uri -match "/v3/authorizationMetadata") {
+                    $script:capturedHeaders_i1 = $Headers
+                    return New-AuthMetadataResponse `
+                        -ClaimSetName "EdFiSandbox" `
+                        -Claims @(
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") }
+                        )
+                }
+            }
+
+            $script:error_i1 = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -EnvironmentFile $script:envFile_i1 `
+                    -IdentityProvider "self-contained" `
+                    -ManifestPath $script:manifestPath_i1
+            }
+            catch {
+                $script:error_i1 = $_.Exception.Message
+            }
+        }
+
+        It "does not throw" {
+            $script:error_i1 | Should -BeNullOrEmpty
+        }
+
+        It "sends the Tenant header with the env-file CONFIG_SERVICE_TENANT value" {
+            $script:capturedHeaders_i1 | Should -Not -BeNullOrEmpty
+            $script:capturedHeaders_i1["Tenant"] | Should -Be "tenant1"
+        }
+    }
+
+    Context "Scenario (i) - Tenant header is absent when no tenant is configured" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_i2 = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @(
+                    @{ claimSetName = $script:sandboxClaimSet; resourceClaim = $script:sandboxResourceClaim; action = $script:sandboxAction }
+                ) `
+                -FileName "manifest-i2.json"
+
+            # Env file with no CONFIG_SERVICE_TENANT - single-tenant local default.
+            $script:envFile_i2 = Join-Path $tempDir "no-tenant.env"
+            "DMS_CONFIG_MULTI_TENANCY=false" | Set-Content -LiteralPath $script:envFile_i2 -Encoding utf8
+
+            $script:capturedHeaders_i2 = $null
+
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+
+                if ($Method -eq "Post" -and $Uri -match "/connect/token") {
+                    return [pscustomobject]@{ access_token = "tenant-test-token" }
+                }
+
+                if ($Uri -match "/v3/authorizationMetadata") {
+                    $script:capturedHeaders_i2 = $Headers
+                    return New-AuthMetadataResponse `
+                        -ClaimSetName "EdFiSandbox" `
+                        -Claims @(
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") }
+                        )
+                }
+            }
+
+            $script:error_i2 = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -EnvironmentFile $script:envFile_i2 `
+                    -IdentityProvider "self-contained" `
+                    -ManifestPath $script:manifestPath_i2
+            }
+            catch {
+                $script:error_i2 = $_.Exception.Message
+            }
+        }
+
+        It "does not throw" {
+            $script:error_i2 | Should -BeNullOrEmpty
+        }
+
+        It "does not send a Tenant header" {
+            $script:capturedHeaders_i2 | Should -Not -BeNullOrEmpty
+            $script:capturedHeaders_i2.ContainsKey("Tenant") | Should -Be $false
+        }
+    }
 }
