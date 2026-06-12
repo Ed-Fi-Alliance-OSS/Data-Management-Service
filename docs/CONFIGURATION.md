@@ -56,16 +56,31 @@ These settings configure how the DMS API connects to the Configuration Service t
 | BaseUrl                | The base URL of the Configuration Service. Example: `http://dms-config-service:8081`                                                                                     |
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
-| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. |
+| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. Must be non-empty; see the note below for valid-value semantics. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
 | CacheExpirationMinutes | The duration in minutes before cached claim sets and other metadata expire and are refreshed from the Configuration Service.                                             |
 
 > [!NOTE]
-> In the provided Docker Compose files, a single `DMS_CONFIG_DATABASE_ENCRYPTION_KEY`
-> value feeds both the CMS `DatabaseSettings__EncryptionKey` and the DMS
+> **Shared key.** In the provided Docker Compose files, a single
+> `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` value feeds both the CMS
+> `DatabaseSettings__EncryptionKey` and the DMS
 > `ConfigurationServiceSettings__EncryptionKey`. CMS encrypts datastore connection
-> strings with this key and DMS decrypts them with the same key, so the two values
-> must be identical.
+> strings with this key and DMS decrypts them with the same key (and
+> `provision-dms-schema.ps1` decrypts with it too), so all three must be configured
+> with an identical value.
+>
+> **Valid values.** The value must be non-empty. The AES-256 key is derived from the
+> UTF-8 bytes of the configured text, right-padded with `0` to 32 characters and then
+> truncated to the first 32 characters (see CMS `ConnectionStringEncryptionService`,
+> DMS `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`).
+> Consequences operators must account for:
+> - Only the first 32 characters are significant; any characters beyond 32 are ignored.
+> - Values shorter than 32 characters are zero-padded — accepted, but weakens the key.
+> - Use ASCII characters. A 32-character ASCII string yields exactly 32 key bytes;
+>   multi-byte (non-ASCII) characters push the UTF-8 length past 32 bytes and break
+>   AES key initialization.
+>
+> Recommended: a 32-character ASCII string.
 
 ## IdentitySettings.ClientSecretValidation
 
