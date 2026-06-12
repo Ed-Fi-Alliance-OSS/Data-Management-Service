@@ -278,12 +278,34 @@ exit $ExitCode
 
                 $params | Should -Contain "InfraOnly"
                 $params | Should -Contain "DmsOnly"
-                $params | Should -Contain "LoadSeedData"
                 $params | Should -Contain "SkipConnectorSetup"
                 $params | Should -Not -Contain "ApiSchemaPath"
                 $params | Should -Not -Contain "ClaimsDirectoryPath"
                 $params | Should -Not -Contain "Extensions"
             }
+        }
+
+        It "start-published-dms.ps1 retains transitional flags pending consumer migration" {
+            # start-published-dms.ps1 keeps -LoadSeedData, -NoDataStore, -SchoolYearRange, and
+            # -AddSmokeTestCredentials until the published-image consumer path is migrated (separate task).
+            $params = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1")
+
+            $params | Should -Contain "LoadSeedData"
+            $params | Should -Contain "NoDataStore"
+            $params | Should -Contain "SchoolYearRange"
+            $params | Should -Contain "AddSmokeTestCredentials"
+        }
+
+        It "start-local-dms.ps1 no longer declares de-scoped non-infrastructure flags" {
+            # DMS-1153: -NoDataStore, -SchoolYearRange, -LoadSeedData, and -AddSmokeTestCredentials
+            # have been removed from start-local-dms.ps1. Use configure-local-data-store.ps1 for
+            # data-store/smoke-credential concerns and load-dms-seed-data.ps1 for seed delivery.
+            $params = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1")
+
+            $params | Should -Not -Contain "LoadSeedData"
+            $params | Should -Not -Contain "NoDataStore"
+            $params | Should -Not -Contain "SchoolYearRange"
+            $params | Should -Not -Contain "AddSmokeTestCredentials"
         }
     }
 

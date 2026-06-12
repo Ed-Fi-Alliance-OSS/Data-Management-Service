@@ -110,7 +110,7 @@ jobs:
       - name: Start DMS on the relational backend with Core and TPDM (SmokeTest)
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig -NoDataStore
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.template.relational" -EnableConfig
         working-directory: eng/docker-compose/
 
       - name: Wait for the Configuration Service to be ready
@@ -138,11 +138,11 @@ jobs:
           Restore-TemplatePackage -PackageDirectory "${{ github.workspace }}/template-package" -DatabaseName $env:SMOKE_DATABASE_NAME
         working-directory: eng/DatabaseTemplates/
 
-      # The relational stack starts with -NoDataStore, and DMS fails fatally at startup
-      # when the Configuration Service has no data stores. Register the restored smoke
-      # database as the single data store and hand its id forward; the Configuration
-      # Service protects data store connection strings in API responses, so the id from
-      # registration is the only reliable way to select this data store later.
+      # DMS fails fatally at startup when the Configuration Service has no data stores.
+      # No data store is created by default; register the restored smoke database as the
+      # single data store and hand its id forward; the Configuration Service protects data
+      # store connection strings in API responses, so the id from registration is the only
+      # reliable way to select this data store later.
       - name: Register the smoke test data store
         run: |
           Import-Module ../Dms-Management.psm1 -Force

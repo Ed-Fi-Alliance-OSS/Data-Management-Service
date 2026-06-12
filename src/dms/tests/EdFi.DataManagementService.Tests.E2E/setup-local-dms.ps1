@@ -18,6 +18,7 @@
 
     The script runs:
     ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
+    ./configure-local-data-store.ps1 -EnvironmentFile <selected env file>
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -89,6 +90,23 @@ try {
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    # Create the default data store via the configuration phase. start-local-dms.ps1 no longer
+    # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
+    # Config Service is already healthy at this point (start-local-dms.ps1 with -EnableConfig waits
+    # for CMS readiness before returning).
+    #
+    # This DLL-backed E2E flow intentionally keeps the full start rather than the
+    # -InfraOnly/-DmsOnly split: -DmsOnly forces NEED_DATABASE_SETUP=false (DMS-1151 phase
+    # contract), but this flow relies on .env.e2e legacy in-container provisioning. The DMS
+    # container restarts until this step lands the data store; Story 04 migrates E2E onto the
+    # staged bootstrap workspace and the ordered phase flow.
+    ./configure-local-data-store.ps1 -EnvironmentFile $EnvironmentFile
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
 

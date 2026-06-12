@@ -6,12 +6,15 @@ This guide explains how to set up multiple data stores with school year routing.
 
 There are two ways to end up with multiple school year instances:
 
-1. **Scripted convenience (this guide)**: use `-SchoolYearRange` on `start-local-dms.ps1` to automatically create multiple `dataStores` and their `schoolYear` route contexts in the Configuration Service.
+1. **Scripted convenience (this guide)**: use `-SchoolYearRange` on `configure-local-data-store.ps1` (after starting the stack with `start-local-dms.ps1`) to automatically create multiple `dataStores` and their `schoolYear` route contexts in the Configuration Service.
 2. **Manual/field-like (Configuration API)**: create instances and route contexts yourself (for example, using the REST client `.http` workflow described in the multi-tenancy guide).
 
 These approaches use the same underlying Configuration Service APIs and should result in the same DMS routing behavior and Swagger UI dropdowns.
 
 > [!IMPORTANT]
+> As of DMS-1153, `-SchoolYearRange` and `-NoDataStore` live on
+> `configure-local-data-store.ps1`, not `start-local-dms.ps1` (which is
+> infrastructure-only).
 > `-SchoolYearRange` is currently a convenience helper and is not idempotent.
 > If you also create instances manually (or re-run the script), you can end up with duplicate instances/route contexts (similar names, different IDs).
 > Prefer **one** workflow per environment: either scripted *or* manual.
@@ -22,16 +25,17 @@ These approaches use the same underlying Configuration Service APIs and should r
 
 ## Overview
 
-The `start-local-dms.ps1` script now supports automatic creation of multiple data stores, each configured with a specific school year route context. This is useful for multi-tenant scenarios where you need to separate data by school year.
+The `configure-local-data-store.ps1` phase command supports automatic creation of multiple data stores, each configured with a specific school year route context. This is useful for multi-tenant scenarios where you need to separate data by school year. (`start-local-dms.ps1` is infrastructure-only as of DMS-1153 and no longer creates instances.)
 
 ## Quick Start
 
 ### Create School Year Instances
 
-To create data stores for a range of school years, use the `-SchoolYearRange` parameter:
+To create data stores for a range of school years, start the stack and then run the configure phase with the `-SchoolYearRange` parameter:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env -EnableSwaggerUI -LoadSeedData -SchoolYearRange "2022-2026"
+./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env -EnableSwaggerUI
+./configure-local-data-store.ps1 -EnvironmentFile ./.env -SchoolYearRange "2022-2026"
 ```
 
 This will:
@@ -71,7 +75,7 @@ For each school year in the range, the script creates:
 
 ## Swagger UI Integration
 
-When you use the `-EnableSwaggerUI` flag along with `-SchoolYearRange`, the Swagger UI will automatically:
+When you start the stack with `-EnableSwaggerUI` and create instances with `-SchoolYearRange`, the Swagger UI will automatically:
 
 1. Detect all available school years from the OpenAPI specification
 2. Display a school year selector dropdown
@@ -95,14 +99,16 @@ If you're accessing Swagger UI in March 2025:
 ## Complete Example
 
 ```powershell
-# Start DMS with school year instances for 2022-2026
+# Start DMS, then create school year instances for 2022-2026
 ./start-local-dms.ps1 `
     -EnableConfig `
     -EnvironmentFile ./.env `
     -EnableSwaggerUI `
-    -LoadSeedData `
-    -SchoolYearRange "2022-2026" `
     -r
+
+./configure-local-data-store.ps1 `
+    -EnvironmentFile ./.env `
+    -SchoolYearRange "2022-2026"
 ```
 
 > [!NOTE]
@@ -113,20 +119,20 @@ If you're accessing Swagger UI in March 2025:
 ROUTE_QUALIFIER_SEGMENTS=schoolYear
 ```
 
-This command:
+These commands:
 
-- Rebuilds images (`-r`)
-- Enables Configuration Service (`-EnableConfig`)
-- Loads seed data (`-LoadSeedData`)
-- Enables Swagger UI (`-EnableSwaggerUI`)
-- Creates instances for years 2022-2026
+- Rebuild images (`-r`)
+- Enable Configuration Service (`-EnableConfig`)
+- Enable Swagger UI (`-EnableSwaggerUI`)
+- Create instances for years 2022-2026 (configure phase)
 
 ## Single Instance (Default Behavior)
 
-If you don't specify `-SchoolYearRange`, the script will create a single default instance:
+If you don't specify `-SchoolYearRange`, the configure phase will create a single default instance:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env -EnableSwaggerUI -LoadSeedData
+./start-local-dms.ps1 -EnableConfig -EnvironmentFile ./.env -EnableSwaggerUI
+./configure-local-data-store.ps1 -EnvironmentFile ./.env
 ```
 
 This creates:
@@ -138,7 +144,7 @@ This creates:
 
 If you need more complex routing or want to add route contexts manually, you can still use the Configuration Service API. See `test-schoolyear-route.http` in `src/dms/tests/RestClient/` for examples.
 
-If you are using the manual approach, consider skipping `-SchoolYearRange` (and `-NoDataStore` may be appropriate) to avoid creating duplicate configuration data.
+If you are using the manual approach, skip `-SchoolYearRange` on the configure phase (running `configure-local-data-store.ps1 -NoDataStore` against an existing single data store may be appropriate) to avoid creating duplicate configuration data.
 
 ## Troubleshooting
 

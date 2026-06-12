@@ -5,12 +5,14 @@
 
 <#
 .SYNOPSIS
-    Post-bootstrap startup phase for the local DMS Docker stack.
+    Infrastructure-lifecycle phase for the local DMS Docker stack.
 .DESCRIPTION
-    This script is the post-bootstrap startup phase. The wrapper
-    bootstrap-local-dms.ps1 orchestrates prepare -> infra -> configure -> provision ->
-    this script, so by the time the wrapper calls into here a .bootstrap/ workspace and
-    a provisioned database already exist.
+    This script is the infrastructure-lifecycle phase. It starts or stops the Docker
+    services that underpin local DMS development (PostgreSQL, Kafka, Config Service,
+    optional Keycloak/SwaggerUI/KafkaUI). The wrapper bootstrap-local-dms.ps1
+    orchestrates prepare -> infra -> configure -> provision -> DMS-only, so by the
+    time the wrapper calls into here a .bootstrap/ workspace and a provisioned database
+    already exist.
 
     Direct invocation is supported for diagnostics and partial-phase orchestration
     (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
@@ -18,8 +20,59 @@
     schema provisioning will NOT happen here. Legacy direct-start database provisioning
     remains controlled by the supplied environment file's NEED_DATABASE_SETUP value.
 
+    BREAKING CHANGE (DMS-1153): The following flags have been removed from this script
+    and relocated to phase-specific commands:
+      -NoDataStore         -> configure-local-data-store.ps1 (instance selection)
+      -SchoolYearRange     -> configure-local-data-store.ps1 (school-year data stores)
+      -AddSmokeTestCredentials -> configure-local-data-store.ps1 (CMS-only smoke credentials)
+      -LoadSeedData        -> load-dms-seed-data.ps1 (API-based seed delivery)
+
+    Migration guidance:
+      - For infrastructure + configure + provision + seed in one step:
+          bootstrap-local-dms.ps1 [-LoadSeedData] [-AddSmokeTestCredentials] [other flags]
+      - For manual phase-by-phase invocation:
+          1. start-local-dms.ps1 -InfraOnly    (infrastructure only)
+          2. configure-local-data-store.ps1    (instance creation / selection)
+          3. provision-dms-schema.ps1          (schema provisioning)
+          4. Launch DMS in IDE / debugger
+          5. start-local-dms.ps1 -InfraOnly -DmsBaseUrl http://localhost:8080  (post-provision health wait)
+          6. load-dms-seed-data.ps1            (optional seed delivery)
+      - Scripts that previously passed -NoDataStore to this script should call
+        configure-local-data-store.ps1 -NoDataStore after the -InfraOnly phase.
+
+    IDE workflow shapes (requires -InfraOnly):
+      -InfraOnly (terminal):
+          Starts infrastructure and Config Service, runs the claims-ready gate, then
+          stops. Use this as the pre-DMS preparation phase. After this returns, run
+          configure-local-data-store.ps1 and provision-dms-schema.ps1, then launch
+          DMS in your IDE. This shape does not perform data-store, provisioning,
+          smoke-credential, or seed work.
+
+      -InfraOnly -DmsBaseUrl <url> (health-wait continuation):
+          Starts or verifies infrastructure (docker compose up is idempotent), runs
+          the Config Service readiness check and the claims-ready gate, then polls
+          <url>/health until HTTP 200 is returned. Use this after configure and
+          provision phases have already been run and the IDE-hosted DMS process is
+          launching. Times out after 300 seconds with a clear error if the DMS
+          endpoint never becomes healthy.
+
+    Example invocations:
+      # Infrastructure pre-DMS stop (terminal):
+      start-local-dms.ps1 -InfraOnly
+
+      # Post-provision IDE health-wait continuation:
+      start-local-dms.ps1 -InfraOnly -DmsBaseUrl http://localhost:8080
+
     See command-boundaries.md Section 3 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
+.PARAMETER DmsBaseUrl
+    The base URL of an IDE-hosted (externally launched) DMS process to health-wait.
+    Valid only with -InfraOnly; not valid with -DmsOnly. When set the script starts
+    or verifies infrastructure (docker compose up is idempotent), waits for Config
+    Service readiness and the claims-ready gate, then polls <DmsBaseUrl>/health until
+    HTTP 200 is returned or the 300-second timeout elapses. No data-store, schema
+    provisioning, smoke-credential, or seed work is performed on this path — those
+    are preconditions the caller must have already completed.
 #>
 
 [CmdletBinding()]
@@ -44,36 +97,22 @@ param (
     [Switch]
     $EnableKafkaUI,
 
-    # Enable the DMS Configuration Service
+    # Enable the DMS Configuration Service.
+    # Retained for backward compatibility; Config Service is now always included in the compose set.
+    # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Config Service,
+    # including keycloak-backed runs. Passing this switch has no additional effect.
     [Switch]
     $EnableConfig,
 
     # Enable Swagger UI for the DMS API
     [switch]$EnableSwaggerUI,
 
-    # Add smoke test credentials
-    [Switch]
-    $AddSmokeTestCredentials,
-
-    # Load seed data via the direct-SQL database-template path. Retained pending the implementation
-    # gate in bootstrap-design.md section 6.4 line 1250: removal is gated on Story 04 XSD-staging
-    # verification. The new API-based seed path, via load-dms-seed-data.ps1 + bootstrap-*-dms.ps1,
-    # is the forward contract; the slice that closes the gate owns this switch's removal.
-    [Switch]
-    $LoadSeedData,
-
-    # Identity provider type
+    # Identity provider type. When omitted, resolved from the environment file's
+    # DMS_CONFIG_IDENTITY_PROVIDER via Resolve-IdentityProvider (defaulting to self-contained),
+    # matching the shared local-settings contract used by the other phase commands.
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="self-contained",
-
-    # Skip creating initial data store in Configuration Service
-    [Switch]
-    $NoDataStore,
-
-    # School year range for multi-data-store setup (format: StartYear-EndYear, e.g., "2022-2026")
-    [string]
-    $SchoolYearRange = "",
+    $IdentityProvider,
 
     # Start only infrastructure required before schema provisioning
     [Switch]
@@ -100,10 +139,29 @@ param (
     # directory that is already mounted at /app/additional-claims by local-config.yml.
     # This flag is intentionally kept until Story 04 moves E2E runtime loading onto the staged bootstrap workspace.
     [Switch]
-    $AddExtensionSecurityMetadata
+    $AddExtensionSecurityMetadata,
+
+    # Base URL of an IDE-hosted DMS process to health-wait after infrastructure and Config Service
+    # are ready. Valid only with -InfraOnly; not valid with -DmsOnly. When set, the script polls
+    # <DmsBaseUrl>/health until HTTP 200 is returned (300-second timeout). No data-store,
+    # provisioning, smoke-credential, or seed work is performed — those are caller preconditions.
+    # See .DESCRIPTION for the two -InfraOnly workflow shapes.
+    [string]
+    $DmsBaseUrl
 )
 
+# Early fail-fast parameter validation — runs before any module import or Docker activity.
+if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace($DmsBaseUrl)) {
+    if ($DmsOnly) {
+        throw "-DmsBaseUrl is not valid with -DmsOnly. Use -InfraOnly -DmsBaseUrl <url> for the IDE health-wait continuation shape."
+    }
+    if (-not $InfraOnly) {
+        throw "-DmsBaseUrl requires -InfraOnly. Use: start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>"
+    }
+}
+
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
 $originalLocation = Get-Location
 if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
     if ($PSBoundParameters.ContainsKey('EnvironmentFile')) {
@@ -127,6 +185,10 @@ Import-Module ./env-utility.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
+# Shared local-settings contract: explicit -IdentityProvider wins, then the env file's
+# DMS_CONFIG_IDENTITY_PROVIDER, then self-contained (Resolve-IdentityProvider treats an
+# empty override as "not supplied").
+$IdentityProvider = Resolve-IdentityProvider -EnvValues $envValues -OverrideProvider $IdentityProvider
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
 Write-Output "Identity Provider $IdentityProvider"
 if($IdentityProvider -eq "keycloak")
@@ -146,22 +208,6 @@ elseif ($IdentityProvider -eq "self-contained") {
 if (-not $d) {
     if ($InfraOnly -and $DmsOnly) {
         throw "Parameters -InfraOnly and -DmsOnly are mutually exclusive."
-    }
-
-    if (($InfraOnly -or $DmsOnly) -and $LoadSeedData) {
-        throw "Parameter -LoadSeedData cannot be used with -InfraOnly or -DmsOnly."
-    }
-
-    if ($DmsOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
-        throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
-    }
-
-    if ($NoDataStore -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
-        throw "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores."
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and -not $envValues.CONFIG_SERVICE_TENANT) {
-        throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
     }
 }
 $usePostgresqlTmpfs = [string]::Equals(
@@ -213,10 +259,12 @@ if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
 
-# Include configuration service if enabled or if using self-contained identity provider
-if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained") {
-    $files += @("-f", "local-config.yml")
-}
+# Config Service is always included in the managed compose set.
+# Every non-teardown bootstrap run starts Config Service, including keycloak-backed runs.
+# -EnableConfig is retained for backward compatibility but is no longer a meaningful opt-out
+# (per the bootstrap entry-point spec, DMS-1153). Teardown uses the same $files list so that
+# follow-up up/down calls operate on the full environment (same pattern as keycloak.yml above).
+$files += @("-f", "local-config.yml")
 
 if ($EnableSwaggerUI) {
     $files += @("-f", "swagger-ui.yml")
@@ -396,19 +444,43 @@ else {
             }
         }
 
-        Write-Output "Infrastructure phase complete. DMS service was not started."
-        return
-    }
-
-    if($LoadSeedData)
-    {
-        Import-Module ./setup-database-template.psm1 -Force
-        Write-Output "Loading initial data from the database template..."
-        LoadSeedData -EnvironmentFile $EnvironmentFile
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to load initial data, with exit code $LASTEXITCODE."
+        # Claims-ready gate: prove CMS has applied the expected claims content before
+        # instance configuration begins. Runs only on bootstrap-manifest runs; skipped
+        # with an informational message on legacy no-manifest invocations.
+        if ($bootstrapManifestPresent) {
+            Write-Output "Running claims-ready gate..."
+            Test-CmsClaimsReady `
+                -EnvironmentFile $EnvironmentFile `
+                -IdentityProvider $IdentityProvider
         }
+        else {
+            Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on legacy run." -InformationAction Continue
+        }
+
+        if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace($DmsBaseUrl)) {
+            # IDE health-wait continuation: the caller has already run configure and provision
+            # phases externally and has launched a DMS process in the IDE. Poll the health
+            # endpoint until it responds HTTP 200. The 300-second default is intentionally
+            # generous — the developer may need time to attach and start the process.
+            Write-Output "Waiting for IDE-hosted DMS at $(Format-LogSafeText $DmsBaseUrl) to become healthy (timeout: 300 seconds)..."
+            Wait-HttpEndpointHealthy -Url "$($DmsBaseUrl.TrimEnd('/'))/health" -Name "DMS (IDE-hosted)" -TimeoutSeconds 300
+            Write-Output "DMS (IDE-hosted) is healthy. Infrastructure and DMS health-wait complete."
+        }
+        else {
+            # Terminal guidance contract (DMS-1153 AC): print actionable phase next-steps but do
+            # NOT present a second start-local-dms.ps1 run as a resume mechanism. The wrapper
+            # continuation shape is the supported health-wait path after a terminal stop.
+            Write-Output "Infrastructure phase complete. DMS service was not started."
+            Write-Output ""
+            Write-Output "Next steps for the manual IDE / debugger phase flow:"
+            Write-Output "  1. configure-local-data-store.ps1    (instance creation / selection)"
+            Write-Output "  2. provision-dms-schema.ps1          (schema provisioning; prints IDE configuration guidance)"
+            Write-Output "  3. Launch DMS in your IDE / debugger"
+            Write-Output "  4. load-dms-seed-data.ps1 -DmsBaseUrl <url>   (optional seed delivery to the IDE-hosted DMS)"
+            Write-Output "For a wrapper-managed health-wait and optional seed, run a fresh:"
+            Write-Output "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> [-LoadSeedData ...]"
+        }
+        return
     }
 
     if($IdentityProvider -eq "self-contained")
@@ -467,82 +539,6 @@ else {
     }
     else {
         Write-Output "Skipping default connector setup."
-    }
-
-    if($AddSmokeTestCredentials)
-    {
-        Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
-        Write-Output "Creating smoke test credentials..."
-        $null = Get-SmokeTestCredentials -ConfigServiceUrl $cmsUrl
-
-        Write-Output "Smoke test credentials created successfully!"
-        Write-Output "Credential values were returned to the caller and were not written to logs."
-    }
-
-    if(-not $NoDataStore -or $SchoolYearRange)
-    {
-        Import-Module ../Dms-Management.psm1 -Force
-
-        try {
-            # Create system administrator credentials
-            Add-CmsClient -CmsUrl $cmsUrl -ClientId "dms-data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
-
-            # Get configuration service token
-            $configToken = Get-CmsToken -CmsUrl $cmsUrl -ClientId "dms-data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-
-            # Create tenant if multi-tenancy is enabled
-            if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $envValues.CONFIG_SERVICE_TENANT) {
-                Write-Output "Multi-tenancy is enabled. Creating tenant: $($envValues.CONFIG_SERVICE_TENANT)"
-                try {
-                    $tenantId = Add-Tenant -CmsUrl $cmsUrl -AccessToken $configToken -TenantName $envValues.CONFIG_SERVICE_TENANT
-                    Write-Output "Tenant created successfully with ID: $tenantId"
-                }
-                catch {
-                    Write-Warning "Failed to create tenant (may already exist): $($_.Exception.Message)"
-                }
-            }
-
-            # Get tenant from environment (for multi-tenant support)
-            $tenant = $envValues.CONFIG_SERVICE_TENANT
-
-            # Handle school year range data stores
-            if ($SchoolYearRange) {
-                Write-Output "Creating data stores for school year range: $SchoolYearRange"
-
-                # Parse the range (format: StartYear-EndYear, e.g., "2022-2026")
-                if ($SchoolYearRange -match '^(\d{4})-(\d{4})$') {
-                    $startYear = [int]$matches[1]
-                    $endYear = [int]$matches[2]
-
-                    # Create data stores for each year in the range
-                    $dataStores = Add-DmsSchoolYearInstances `
-                        -CmsUrl $cmsUrl `
-                        -AccessToken $configToken `
-                        -StartYear $startYear `
-                        -EndYear $endYear `
-                        -PostgresPassword $envValues.POSTGRES_PASSWORD `
-                        -PostgresDbName $envValues.POSTGRES_DB_NAME `
-                        -Tenant $tenant
-
-                    Write-Output "Created $($dataStores.Count) school year data stores successfully"
-                }
-                else {
-                    Write-Warning "Invalid SchoolYearRange format. Expected format: StartYear-EndYear (e.g., 2022-2026)"
-                }
-            }
-            # Handle single default data store
-            elseif(-not $NoDataStore) {
-                Write-Output "Creating initial data store..."
-
-                # Create data store using environment variables
-                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
-
-                Write-Output "Data store created successfully with ID: $dataStoreId"
-            }
-        }
-        catch {
-            throw "Failed to create data store(s): $($_.Exception.Message)"
-        }
     }
 
     Start-Sleep 20

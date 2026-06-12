@@ -1126,6 +1126,14 @@ Example shape:
 }
 ```
 
+Each `claims.expectedVerificationChecks` entry is `{ claimSetName, resourceClaim, action }` plus an
+optional `isParent: true` marker on checks extracted from parent (`isParent=true`) fragment resource
+claims. CMS `/authorizationMetadata` serializes leaf resource claims only — parent grants materialize on
+leaf descendants via hierarchy lineage and the parent name itself never appears in the response — so the
+claims-ready gate (DMS-1153) asserts non-parent checks and defers `isParent` checks with a warning,
+failing only if nothing was verifiable. The embedded baseline probe therefore targets a leaf resource
+claim (`ed-fi/schoolYearType`), never a `domains/*` parent.
+
 The manifest deliberately stays small. It records only stable prepared inputs and fingerprints needed to
 validate `.bootstrap` compatibility, reject built-in templates in expert `-ApiSchemaPath` mode, compose the
 `SeedLoader` vendor namespace-prefix list, and let the seed phase decide whether selected extensions have
@@ -2474,6 +2482,7 @@ creates admin-scoped clients.
 | `ConfigurationServiceSettings__ClientId` | `CMSReadOnlyAccess` | Local identity setup read-only OAuth client ID that DMS uses to authenticate against the Config Service during local development. |
 | `ConfigurationServiceSettings__ClientSecret` | `<local-cms-readonly-secret>` | Local-development secret for `CMSReadOnlyAccess`, taken from the identity setup output or IDE guidance. **DEV-ONLY**: This localhost credential must not be reused in shared, remote, or production environments. |
 | `ConfigurationServiceSettings__Scope` | `edfi_admin_api/readonly_access` | OAuth scope for Config Service read access. |
+| `ConfigurationServiceSettings__EncryptionKey` | `<dms-config-database-encryption-key>` | Key used to decrypt data-store connection strings returned by the Config Service. Must match the Docker-hosted Config Service's `DatabaseSettings__EncryptionKey`; both are sourced from `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` in the docker-compose env file (`.env.example` default `DefaultEncryptionKey32CharactersX1`). **DEV-ONLY**: This localhost key must not be reused in shared, remote, or production environments. |
 | `AppSettings__AuthenticationService` | `http://localhost:8081/connect/token` (self-contained) or `http://localhost:8045/realms/edfi/protocol/openid-connect/token` (Keycloak) | Token endpoint must match the selected `-IdentityProvider`, using host-reachable URLs rather than Docker-internal addresses. |
 | `JwtAuthentication__Authority` | `http://localhost:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | JWT authority for token validation, translated to host-local endpoints for IDE debugging. |
 | `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | OIDC discovery document URL for the selected identity provider. |
@@ -2503,7 +2512,8 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
     "BaseUrl": "http://localhost:8081",
     "ClientId": "CMSReadOnlyAccess",
     "ClientSecret": "<local-cms-readonly-secret>",
-    "Scope": "edfi_admin_api/readonly_access"
+    "Scope": "edfi_admin_api/readonly_access",
+    "EncryptionKey": "<dms-config-database-encryption-key>"
   },
   "AppSettings": {
     "UseApiSchemaPath": true,
@@ -2526,7 +2536,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
 }
 ```
 
-This file is illustrative IDE guidance only. It shows the common single-instance workflow using the non-qualified self-contained token endpoint and is intentionally not a multi-year template. It also explicitly enables the relational backend because this IDE flow assumes bootstrap has already provisioned the relational schema. Bootstrap does not generate it and does not read it as a bootstrap input; the developer copies it to `appsettings.Development.json`, replaces `<local-cms-readonly-secret>` with the credential from local identity setup output or printed IDE guidance, and replaces `<repo-root>` with the native absolute path for the host platform running the IDE, for example a Windows path, `/Users/...`, or `/home/...`.
+This file is illustrative IDE guidance only. It shows the common single-instance workflow using the non-qualified self-contained token endpoint and is intentionally not a multi-year template. It also explicitly enables the relational backend because this IDE flow assumes bootstrap has already provisioned the relational schema. Bootstrap does not generate it and does not read it as a bootstrap input; the developer copies it to `appsettings.Development.json`, replaces `<local-cms-readonly-secret>` with the credential from local identity setup output or printed IDE guidance, replaces `<dms-config-database-encryption-key>` with the value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from the docker-compose env file (`.env.example` default `DefaultEncryptionKey32CharactersX1`), and replaces `<repo-root>` with the native absolute path for the host platform running the IDE, for example a Windows path, `/Users/...`, or `/home/...`.
 
 When the existing `-SchoolYearRange` developer workflow is used with self-contained identity and the
 developer continues bootstrap against an IDE-hosted DMS process for one selected school year, update the
@@ -2830,3 +2840,4 @@ or contributors.
 | 3 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | `-LoadSeedData` is a wrapper-level opt-in only; direct `load-dms-seed-data.ps1` invocation always loads seed data and owns `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix`, `-BootstrapManifestPath`, the seed-phase BulkLoadClient target `-DmsBaseUrl`, and the seed-phase token endpoint selector `-IdentityProvider`; `start-local-dms.ps1` no longer accepts seed-source or seed-authorization parameters | Call `load-dms-seed-data.ps1` directly for seed loading after `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1`, passing `-DmsBaseUrl` for an IDE-hosted endpoint, `-IdentityProvider` when the running environment uses a non-default provider, and `-AdditionalNamespacePrefix` when custom seed data needs additional vendor namespace authorization, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
 | 4 | Persisted data-store-ID hand-off via `.bootstrap/run-context.json` | `configure-local-data-store.ps1` wrote selected data store IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | data store IDs are emitted in a structured `configure-local-data-store.ps1` result and **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-DataStoreId <long[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-DataStoreId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |
 | 5 | Wrapper explicit instance targeting | `bootstrap-local-dms.ps1 -DataStoreId` could target downstream provision/seed phases while the configure phase still created or selected a different target set | The wrapper no longer exposes `-DataStoreId`; it always provisions and optionally seeds the instance set from the structured `configure-local-data-store.ps1` result in the same invocation. Explicit `-DataStoreId` targeting is **phase-command-only**. | Use `provision-dms-schema.ps1 -DataStoreId ...` or `load-dms-seed-data.ps1 -DataStoreId ...` directly for explicit ID targeting; use the wrapper only when its configure phase owns target selection for the run |
+| 6 | `start-local-dms.ps1` parameter surface (DMS-1153) | `-NoDataStore`, `-SchoolYearRange`, `-LoadSeedData`, and `-AddSmokeTestCredentials` were accepted by `start-local-dms.ps1` | `start-local-dms.ps1` is **infrastructure-lifecycle-only** as of DMS-1153; these four flags are removed. `-NoDataStore` is now owned by `configure-local-data-store.ps1` (narrow rerun escape hatch — see row #2). `-SchoolYearRange` and `-AddSmokeTestCredentials` are also owned by `configure-local-data-store.ps1`. `-LoadSeedData` is a wrapper-level opt-in (see row #3). `start-published-dms.ps1` retains these transitional flags unchanged. | Replace `start-local-dms.ps1 -NoDataStore` with `start-local-dms.ps1 -InfraOnly` followed by `configure-local-data-store.ps1 -NoDataStore`; or use `bootstrap-local-dms.ps1 -NoDataStore` which forwards the flag to the configure phase. For fresh-stack runs, drop `-NoDataStore` entirely and let `configure-local-data-store.ps1` create the instance. |
