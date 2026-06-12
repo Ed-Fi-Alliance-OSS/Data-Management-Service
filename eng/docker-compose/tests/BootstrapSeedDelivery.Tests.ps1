@@ -1332,7 +1332,7 @@ LOG_LEVEL=DEBUG
 FAILURE_RATIO=0.01
 SCHEMA_PACKAGES='[
   { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" }
+  { "version": "1.0", "name": "EdFi.DataStandard52.Sample.ApiSchema" }
 ]'
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
@@ -1379,9 +1379,9 @@ LOG_LEVEL=DEBUG
 FAILURE_RATIO=0.01
 SCHEMA_PACKAGES='[
   { "version": "1.0", "name": "EdFi.DataStandard52.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Sample.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.Homograph.ApiSchema" },
-  { "version": "1.0", "name": "EdFi.TPDM.ApiSchema" }
+  { "version": "1.0", "name": "EdFi.DataStandard52.Sample.ApiSchema" },
+  { "version": "1.0", "name": "EdFi.DataStandard52.Homograph.ApiSchema" },
+  { "version": "1.0", "name": "EdFi.DataStandard52.TPDM.ApiSchema" }
 ]'
 "@ | Set-Content -LiteralPath $base -Encoding utf8
             try {
@@ -1392,9 +1392,9 @@ SCHEMA_PACKAGES='[
                 $content | Should -Match "(?m)^FAILURE_RATIO=0\.95$" -Because "circuit-breaker override must still apply"
                 $content | Should -Not -Match "FAILURE_RATIO=0\.01"
                 $content | Should -Match "EdFi.DataStandard52.ApiSchema"
-                $content | Should -Match "EdFi.TPDM.ApiSchema"
-                $content | Should -Match "EdFi.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
-                $content | Should -Match "EdFi.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.DataStandard52.TPDM.ApiSchema"
+                $content | Should -Match "EdFi.DataStandard52.Sample.ApiSchema" -Because "the full schema surface must stay active for seed runs"
+                $content | Should -Match "EdFi.DataStandard52.Homograph.ApiSchema" -Because "the full schema surface must stay active for seed runs"
                 $content | Should -Match "(?m)^LOG_LEVEL=DEBUG$"
             }
             finally {

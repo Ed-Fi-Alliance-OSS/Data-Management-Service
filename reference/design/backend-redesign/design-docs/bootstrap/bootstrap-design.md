@@ -243,14 +243,14 @@ DMS. That explains the current `.env.example` pattern, for example:
 ```json
 [
   {
-    "version": "1.0.328",
+    "version": "1.0.330",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.328",
+    "version": "1.0.330",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
-    "name": "EdFi.Sample.ApiSchema"
+    "name": "EdFi.DataStandard52.Sample.ApiSchema"
   }
 ]
 ```
@@ -559,7 +559,7 @@ For each extension in `-Extensions`, bootstrap resolves the schema package and a
 fragment metadata from the configured artifact sources. The seed phase owns a separate seed catalog that may
 define an optional built-in seed data package for the same extension name:
 
-1. **Schema package** (e.g., `EdFi.DataStandard52.ApiSchema.Sample`) - determines API surface
+1. **Schema package** (e.g., `EdFi.DataStandard52.Sample.ApiSchema`) - determines API surface
 2. **Security fragment** (e.g., `004-sample-extension-claimset.json`) - determines authorization rules
 3. **Optional built-in seed data package** (when present in the seed catalog) - determines bootstrap-managed
    sample data
@@ -1662,7 +1662,7 @@ seed-catalog concern rather than a schema-selection concern.
 The `-Extensions` parameter is the single developer-facing control for enabling extensions. Passing it triggers three coordinated actions automatically - the developer does not need to configure each concern separately:
 
 1. **ApiSchema files staged host-side (Section 3)** - The script resolves the extension's NuGet schema
-   package (e.g., `EdFi.DataStandard52.ApiSchema.Sample`) on the host, stages the resulting file in
+   package (e.g., `EdFi.DataStandard52.Sample.ApiSchema`) on the host, stages the resulting file in
    `eng/docker-compose/.bootstrap/ApiSchema/`, and includes that staged file in the exact set later hashed
    and mounted/read by DMS.
 
@@ -1916,8 +1916,8 @@ A minimal acceptable console shape is:
 Bootstrap-DMS: Starting...
 
 [prepare-dms-schema]                                       (0.4s)
-  Core:  EdFi.DataStandard52.ApiSchema        1.0.328
-  Ext:   EdFi.DataStandard52.ApiSchema.Sample 1.0.154
+  Core:  EdFi.DataStandard52.ApiSchema        1.0.330
+  Ext:   EdFi.DataStandard52.Sample.ApiSchema 1.0.330
 [prepare-dms-claims]                                       (0.2s)
   Hybrid mode: 1 security fragment(s) staged
 [start-local-dms -InfraOnly]                              (13.7s)

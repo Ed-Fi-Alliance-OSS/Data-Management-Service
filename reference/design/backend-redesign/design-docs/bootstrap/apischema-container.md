@@ -207,14 +207,13 @@ contract even if MetaEd originally emitted `ApiSchema-EXTENSION.json`; the packa
 content identify whether the project is core or extension.
 
 Published ApiSchema package IDs are Data-Standard-qualified. The core package is
-`EdFi.DataStandard52.ApiSchema`, and extension packages follow the `EdFi.DataStandard52.ApiSchema.<Project>`
-convention (for example `EdFi.DataStandard52.ApiSchema.Sample`, `EdFi.DataStandard52.ApiSchema.Homograph`,
-and `EdFi.DataStandard52.ApiSchema.TPDM`), where `<Project>` is the MetaEd project name.
+`EdFi.DataStandard52.ApiSchema`, and extension packages follow the `EdFi.DataStandard52.<Project>.ApiSchema`
+convention (for example `EdFi.DataStandard52.Sample.ApiSchema`, `EdFi.DataStandard52.Homograph.ApiSchema`,
+and `EdFi.DataStandard52.TPDM.ApiSchema`), where `<Project>` is the MetaEd project name.
 
-This is the canonical DMS-916 target package identity convention. Some repository package references and
-`SCHEMA_PACKAGES` examples may still use legacy unqualified extension IDs such as `EdFi.Sample.ApiSchema`,
-`EdFi.Homograph.ApiSchema`, and `EdFi.TPDM.ApiSchema`; Story 06 owns migrating those consumers to the
-qualified convention after Story 05 publishes asset-only packages.
+This is the canonical DMS-916 target package identity convention. Legacy unqualified extension IDs such as
+`EdFi.Sample.ApiSchema`, `EdFi.Homograph.ApiSchema`, and `EdFi.TPDM.ApiSchema` are superseded by the
+qualified package IDs.
 
 The package should contain no `lib/` or `ref/` entries. It may include docs and license files:
 
@@ -229,7 +228,7 @@ Example package manifest:
 ```json
 {
   "version": 1,
-  "packageId": "EdFi.DataStandard52.ApiSchema.Sample",
+  "packageId": "EdFi.DataStandard52.Sample.ApiSchema",
   "projectName": "Sample",
   "projectEndpointName": "sample",
   "isExtensionProject": true,
