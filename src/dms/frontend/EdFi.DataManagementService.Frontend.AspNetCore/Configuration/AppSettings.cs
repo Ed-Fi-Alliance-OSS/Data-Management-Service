@@ -11,7 +11,6 @@ public class AppSettings
 {
     public required string AuthenticationService { get; set; }
     public required string Datastore { get; set; }
-    public required string QueryHandler { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
     public string? StartupStatusFilePath { get; set; }
     public required string CorrelationIdHeader { get; set; }
@@ -57,18 +56,6 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         {
             return ValidateOptionsResult.Fail(
                 "AppSettings value Datastore must be one of: postgresql, mssql"
-            );
-        }
-
-        if (string.IsNullOrWhiteSpace(options.QueryHandler))
-        {
-            return ValidateOptionsResult.Fail("Missing required AppSettings value: Datastore");
-        }
-
-        if (!options.QueryHandler.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase))
-        {
-            return ValidateOptionsResult.Fail(
-                "AppSettings value QueryHandler must be 'postgresql'. Only 'postgresql' is currently supported for QueryHandler. This validation exists to prevent misconfiguration and may allow more options in the future."
             );
         }
 

@@ -27,8 +27,6 @@ public static class AppSettings
         }
     }
 
-    public static string QueryHandler => Configuration["QueryHandler"] ?? "postgresql";
-
     public static string AuthenticationService =>
         Configuration["AuthenticationService"]
         ?? "http://localhost:8045/realms/edfi/protocol/openid-connect/token";
