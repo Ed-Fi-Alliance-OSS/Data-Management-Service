@@ -29,7 +29,7 @@
       "Add a `ContentProvider` unit test where the core project declares a missing `discoverySpecPath` and a later extension has an existing discovery spec; assert the provider throws instead of returning the extension spec.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~discovery\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Metadata Content",

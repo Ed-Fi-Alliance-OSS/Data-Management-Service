@@ -390,6 +390,36 @@ public class Given_file_mode_discovery_spec_load
             Directory.Delete(workspaceNoSpec, recursive: true);
         }
     }
+
+    [Test]
+    public void It_throws_for_declared_missing_discovery_spec_instead_of_falling_back_to_later_project()
+    {
+        File.Delete(Path.Combine(_workspaceRoot, "content", "Ed-Fi", "discovery-spec.json"));
+
+        var extensionDiscoverySpecPath = Path.Combine(
+            _workspaceRoot,
+            "content",
+            "Sample",
+            "discovery-spec.json"
+        );
+        File.WriteAllText(extensionDiscoverySpecPath, """{"extension":"available"}""");
+
+        var manifestPath = Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var sampleProject = manifest["projects"]!.AsArray()[1]!.AsObject();
+        sampleProject["discoverySpecPath"] = "content/Sample/discovery-spec.json";
+        File.WriteAllText(
+            manifestPath,
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+        );
+
+        Action action = () => _provider.LoadJsonContent("discovery", string.Empty, string.Empty);
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Ed-Fi*discoverySpecPath*content/Ed-Fi/discovery-spec.json*does not exist*");
+    }
 }
 
 [TestFixture]

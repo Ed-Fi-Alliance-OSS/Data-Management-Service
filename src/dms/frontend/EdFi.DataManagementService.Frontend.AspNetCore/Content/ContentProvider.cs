@@ -198,19 +198,29 @@ public class ContentProvider(
         }
 
         var manifest = manifestProvider.GetManifest();
+        var project = manifest.Projects.FirstOrDefault(p => p.DiscoverySpecPath is not null);
 
         // Serve the first manifest project (in manifest order) that provides discoverySpecPath
-        foreach (var project in manifest.Projects.Where(p => p.DiscoverySpecPath is not null))
+        if (project is not null)
         {
             var resolvedPath = manifestProvider.ResolveValidatedPath(project.DiscoverySpecPath!);
-            if (File.Exists(resolvedPath))
+            if (!File.Exists(resolvedPath))
             {
-                _logger.LogDebug(
-                    "Serving discovery-spec from manifest project {ProjectName}",
-                    SanitizeForLog(project.ProjectName)
+                var invalidWorkspaceError =
+                    $"Manifest project '{project.ProjectName}' declares discoverySpecPath "
+                    + $"'{project.DiscoverySpecPath}', but the resolved file '{resolvedPath}' does not exist.";
+                _logger.LogCritical(
+                    "Invalid ApiSchema workspace: {Error}",
+                    SanitizeForLog(invalidWorkspaceError)
                 );
-                return File.OpenRead(resolvedPath);
+                throw new InvalidOperationException(invalidWorkspaceError);
             }
+
+            _logger.LogDebug(
+                "Serving discovery-spec from manifest project {ProjectName}",
+                SanitizeForLog(project.ProjectName)
+            );
+            return File.OpenRead(resolvedPath);
         }
 
         // No project provides a discovery spec: keep the legacy failure shape.
