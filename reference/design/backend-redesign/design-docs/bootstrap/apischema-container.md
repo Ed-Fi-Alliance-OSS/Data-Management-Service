@@ -171,19 +171,19 @@ or narrow direct filesystem `-ApiSchemaPath` loading.
 
 ## Runtime Responsibilities
 
-`ApiSchemaProvider` should load schema JSON from the normalized workspace. It may use either:
+`ApiSchemaProvider` loads schema JSON from the normalized workspace. It may use either:
 
 - the manifest's `schemaPath` entries, or
 - a documented `schemas/**/ApiSchema.json` convention.
 
-`ContentProvider` should stop using assembly loading for the DMS-916 bootstrap path. It should read static
-content from the normalized workspace:
+`ContentProvider` no longer uses assembly loading for the DMS-916 bootstrap path (delivered by DMS-1154).
+When `UseApiSchemaPath=true`, it reads static content from the normalized workspace:
 
 - discovery/specification JSON from manifest paths,
 - XSD file lists from each project's `xsdDirectory`,
 - XSD file streams through `File.OpenRead` on validated manifest-relative paths.
 
-The runtime should not generate DLLs from files. Generating DLLs would require runtime compilation, resource
+The runtime does not generate DLLs from files. Generating DLLs would require runtime compilation, resource
 name synthesis, cache invalidation, write permissions, cleanup, and additional trust boundaries. That keeps
 the old assembly-resource shape alive and adds complexity in the wrong layer.
 
@@ -211,9 +211,10 @@ Published ApiSchema package IDs are Data-Standard-qualified. The core package is
 convention (for example `EdFi.DataStandard52.ApiSchema.Sample`, `EdFi.DataStandard52.ApiSchema.Homograph`,
 and `EdFi.DataStandard52.ApiSchema.TPDM`), where `<Project>` is the MetaEd project name.
 
-This is the canonical DMS-916 target package identity convention. Some current repository package references
-and `SCHEMA_PACKAGES` examples still use legacy unqualified extension IDs such as `EdFi.Sample.ApiSchema`,
-`EdFi.Homograph.ApiSchema`, and `EdFi.TPDM.ApiSchema` until the Story 04/06 migration updates those consumers.
+This is the canonical DMS-916 target package identity convention. Some repository package references and
+`SCHEMA_PACKAGES` examples may still use legacy unqualified extension IDs such as `EdFi.Sample.ApiSchema`,
+`EdFi.Homograph.ApiSchema`, and `EdFi.TPDM.ApiSchema`; Story 06 owns migrating those consumers to the
+qualified convention after Story 05 publishes asset-only packages.
 
 The package should contain no `lib/` or `ref/` entries. It may include docs and license files:
 
@@ -292,11 +293,13 @@ include the direct filesystem asset-container staging contract:
 - write the manifest,
 - point Docker-hosted and IDE-hosted DMS at the normalized workspace.
 
-[`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) should
-update `ContentProvider` to read the normalized workspace and ApiSchema asset manifest instead of requiring
-`*.ApiSchema.dll` assemblies. This story depends on the filesystem workspace and asset manifest contract, not
-on published asset-only packages. It can proceed in parallel with MetaEd package replacement. Staging DLLs as a
-runtime bridge is not part of this design.
+[`../../epics/16-bootstrap/04-apischema-runtime-content-loading.md`](../../epics/16-bootstrap/04-apischema-runtime-content-loading.md) —
+**Delivered (DMS-1154).** `ContentProvider` reads discovery/specification JSON and XSD content from the
+normalized workspace and `bootstrap-api-schema-manifest.json` manifest-relative paths when
+`UseApiSchemaPath=true`. No `*.ApiSchema.dll` assemblies are required on the bootstrap path. Docker
+activation (`USE_API_SCHEMA_PATH=true`, `API_SCHEMA_PATH=/app/ApiSchema`, `bootstrap-dms.yml` mount,
+`SCHEMA_PACKAGES` cleared) and staged claims activation ship as one boundary. Staging DLLs as a runtime
+bridge is not part of this design.
 
 [`../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md`](../../epics/16-bootstrap/05-metaed-apischema-asset-packaging.md) should own
 the MetaEd packaging replacement required to publish asset-only ApiSchema NuGet packages. DMS bootstrap
