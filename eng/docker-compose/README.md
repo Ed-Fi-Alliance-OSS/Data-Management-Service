@@ -211,10 +211,25 @@ dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOu
 # 2. Point to the platform-appropriate executable
 $schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "$schemaToolOutput/dms-schema" }
 
-# 3. Stage schema and claims, then start DMS
+# 3. Stage schema and claims, then run the bootstrap wrapper
+#    (sequences infrastructure -> configure -> provision -> DMS over the staged workspace)
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
 ./prepare-dms-claims.ps1 -ClaimsDirectoryPath <directory-with-tpdm-claimset-fragment>
-./start-local-dms.ps1
+./bootstrap-local-dms.ps1
+```
+
+As of DMS-1153, `start-local-dms.ps1` is infrastructure-lifecycle-only: it no
+longer creates data stores or provisions the DMS schema, and with a bootstrap
+manifest present it disables startup database provisioning. Running it bare
+after staging leaves the stack without a configured instance or provisioned
+schema. Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases
+manually:
+
+```pwsh
+./start-local-dms.ps1 -InfraOnly
+./configure-local-data-store.ps1
+./provision-dms-schema.ps1
+./start-local-dms.ps1 -DmsOnly
 ```
 
 `prepare-dms-claims.ps1` stages `*-claimset.json` fragments into

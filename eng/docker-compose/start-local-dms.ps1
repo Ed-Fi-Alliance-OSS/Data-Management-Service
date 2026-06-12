@@ -107,10 +107,12 @@ param (
     # Enable Swagger UI for the DMS API
     [switch]$EnableSwaggerUI,
 
-    # Identity provider type
+    # Identity provider type. When omitted, resolved from the environment file's
+    # DMS_CONFIG_IDENTITY_PROVIDER via Resolve-IdentityProvider (defaulting to self-contained),
+    # matching the shared local-settings contract used by the other phase commands.
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="self-contained",
+    $IdentityProvider,
 
     # Start only infrastructure required before schema provisioning
     [Switch]
@@ -183,6 +185,10 @@ Import-Module ./env-utility.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
+# Shared local-settings contract: explicit -IdentityProvider wins, then the env file's
+# DMS_CONFIG_IDENTITY_PROVIDER, then self-contained (Resolve-IdentityProvider treats an
+# empty override as "not supplied").
+$IdentityProvider = Resolve-IdentityProvider -EnvValues $envValues -OverrideProvider $IdentityProvider
 $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
 Write-Output "Identity Provider $IdentityProvider"
 if($IdentityProvider -eq "keycloak")
