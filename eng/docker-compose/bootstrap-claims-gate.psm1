@@ -310,7 +310,7 @@ function Get-ClaimsGateToken {
 function Get-AuthorizationMetadataResponse {
     <#
     .SYNOPSIS
-    Calls CMS GET /authorizationMetadata?claimSetName=<name> and returns the parsed response.
+    Calls CMS GET /v3/authorizationMetadata?claimSetName=<name> and returns the parsed response.
     Returns $null when the claim set is not found (404). Throws on unexpected HTTP errors.
     #>
     param(
@@ -327,7 +327,7 @@ function Get-AuthorizationMetadataResponse {
     )
 
     $normalizedBase = $CmsBaseUrl.TrimEnd('/')
-    $url = "$normalizedBase/authorizationMetadata"
+    $url = "$normalizedBase/v3/authorizationMetadata"
     if (-not [string]::IsNullOrWhiteSpace($ClaimSetName)) {
         $encodedName = [System.Uri]::EscapeDataString($ClaimSetName)
         $url = $url + "?claimSetName=" + $encodedName
@@ -497,7 +497,7 @@ function Test-CmsClaimsReady {
     manifest is present the list must be non-empty; a missing or empty list throws with
     an actionable message.
 
-    For each check, queries CMS GET /authorizationMetadata?claimSetName=<name> and asserts:
+    For each check, queries CMS GET /v3/authorizationMetadata?claimSetName=<name> and asserts:
       1. The expected claim set exists in the response.
       2. The expected resource claim URI is in that claim set's claims array ('name').
       3. The expected action name is present in the actions of the authorizations entry

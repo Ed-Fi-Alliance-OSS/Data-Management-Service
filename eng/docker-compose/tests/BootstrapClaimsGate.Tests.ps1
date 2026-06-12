@@ -130,7 +130,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
         # ---------------------------------------------------------------------------
 
         $script:sandboxClaimSet    = "EdFiSandbox"
-        $script:sandboxResourceClaim = "http://ed-fi.org/identity/claims/domains/edFiTypes"
+        $script:sandboxResourceClaim = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"
         $script:sandboxAction      = "Read"
         $script:cmsBaseUrl         = "http://localhost:8081"
         $script:accessToken        = "unit-test-fake-token"
@@ -154,12 +154,12 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
 
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     $claimSet = if ($Uri -match "claimSetName=EdFiSandbox") {
                         New-AuthMetadataResponse `
                             -ClaimSetName "EdFiSandbox" `
                             -Claims @(
-                                @{ name = "http://ed-fi.org/identity/claims/domains/edFiTypes"; actions = @("Read") }
+                                @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") }
                             )
                     }
                     else {
@@ -191,7 +191,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
 
         It "calls /authorizationMetadata for each check" {
             Should -Invoke Invoke-RestMethod -ModuleName bootstrap-claims-gate -Times 2 -Scope Context -ParameterFilter {
-                $Uri -match "/authorizationMetadata"
+                $Uri -match "/v3/authorizationMetadata"
             }
         }
     }
@@ -215,7 +215,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             # Response has the right claimSetName but the resource claim URI is WRONG
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     return New-AuthMetadataResponse `
                         -ClaimSetName "EdFiSandbox" `
                         -Claims @(
@@ -260,11 +260,11 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             # Response has correct claimSetName and resourceClaim but WRONG action
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     return New-AuthMetadataResponse `
                         -ClaimSetName "EdFiSandbox" `
                         -Claims @(
-                            @{ name = "http://ed-fi.org/identity/claims/domains/edFiTypes"; actions = @("Create") }
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Create") }
                         )
                 }
             }
@@ -309,7 +309,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             # /authorizationMetadata 404s for EdFiAdmin (claim set does not exist)
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     # Simulate 404 by throwing an exception with a fake Response property
                     $webException = [System.Net.WebException]::new("The remote server returned an error: (404) Not Found.")
                     throw $webException
@@ -448,7 +448,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
                         [pscustomobject]@{ claimSetName = "EdFiSandbox"; id = 1 }
                     )
                 }
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     # Claim set exists but has NO claims - must fail the gate
                     return New-AuthMetadataResponse -ClaimSetName "EdFiSandbox" -Claims @()
                 }
@@ -522,11 +522,11 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
                     throw [System.Net.WebException]::new("Unknown client in token request.")
                 }
 
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     return New-AuthMetadataResponse `
                         -ClaimSetName "EdFiSandbox" `
                         -Claims @(
-                            @{ name = "http://ed-fi.org/identity/claims/domains/edFiTypes"; actions = @("Read") }
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") }
                         )
                 }
             }
@@ -562,7 +562,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
 
         It "verified claims using the admin token" {
             Should -Invoke Invoke-RestMethod -ModuleName bootstrap-claims-gate -Scope Context -ParameterFilter {
-                $Uri -match "/authorizationMetadata"
+                $Uri -match "/v3/authorizationMetadata"
             }
         }
     }
@@ -595,7 +595,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
   {
     "claimSetName": "EdFiSandbox",
     "claims": [
-      { "name": "http://ed-fi.org/identity/claims/domains/edFiTypes", "authorizationId": 1 }
+      { "name": "http://ed-fi.org/identity/claims/ed-fi/schoolYearType", "authorizationId": 1 }
     ],
     "authorizations": [
       {
@@ -611,7 +611,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
 
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     return @($script:literalCmsJson_g1 | ConvertFrom-Json)
                 }
             }
@@ -654,7 +654,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
     "claimSetName": "EdFiSandbox",
     "claims": [
       {
-        "claimName": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+        "claimName": "http://ed-fi.org/identity/claims/ed-fi/schoolYearType",
         "actions": [ { "name": "Read" } ]
       }
     ]
@@ -664,7 +664,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
 
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     return @($script:fantasyJson_g2 | ConvertFrom-Json)
                 }
             }
@@ -716,12 +716,12 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             # mirroring the live CMS contract.
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     $script:authMetadataCalls_h1++
                     return New-AuthMetadataResponse `
                         -ClaimSetName "EdFiSandbox" `
                         -Claims @(
-                            @{ name = "http://ed-fi.org/identity/claims/domains/edFiTypes"; actions = @("Read") }
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Read") }
                         )
                 }
             }
@@ -769,7 +769,7 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:authMetadataCalled_h2 = $false
             Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
                 param($Uri, $Method, $ContentType, $Headers, $Body)
-                if ($Uri -match "/authorizationMetadata") {
+                if ($Uri -match "/v3/authorizationMetadata") {
                     $script:authMetadataCalled_h2 = $true
                 }
             }
