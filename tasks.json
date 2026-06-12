@@ -93,7 +93,7 @@
       "Add startup or script-level coverage showing `src/dms/run.sh` materializes `AppSettings__ApiSchemaPath/bootstrap-api-schema-manifest.json` from the current `SCHEMA_PACKAGES` entries after download and before launching DMS.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "ApiSchema Downloader",

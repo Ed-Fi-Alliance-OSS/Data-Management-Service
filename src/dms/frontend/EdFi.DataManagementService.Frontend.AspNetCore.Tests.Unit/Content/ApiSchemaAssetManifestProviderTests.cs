@@ -189,29 +189,6 @@ public class Given_package_manifests_without_a_bootstrap_manifest
             """
         );
 
-        var extensionPackageRoot = Path.Combine(
-            _workspaceRoot,
-            "Packages",
-            "EdFi.DataStandard52.TPDM.ApiSchema"
-        );
-        Directory.CreateDirectory(extensionPackageRoot);
-        File.WriteAllText(Path.Combine(extensionPackageRoot, "ApiSchema.json"), "{}");
-        File.WriteAllText(
-            Path.Combine(extensionPackageRoot, "package-manifest.json"),
-            """
-            {
-              "version": 1,
-              "packageId": "EdFi.DataStandard52.TPDM.ApiSchema",
-              "projectName": "TPDM",
-              "projectEndpointName": "tpdm",
-              "isExtensionProject": true,
-              "schemaPath": "ApiSchema.json",
-              "discoverySpecPath": null,
-              "xsdDirectory": null
-            }
-            """
-        );
-
         var appSettings = Options.Create(
             new AppSettings
             {
@@ -234,36 +211,14 @@ public class Given_package_manifests_without_a_bootstrap_manifest
     }
 
     [Test]
-    public void It_synthesizes_a_manifest_from_package_manifests()
+    public void It_throws_instead_of_synthesizing_a_manifest_from_package_manifests()
     {
-        var manifest = _provider.GetManifest();
+        Action action = () => _provider.GetManifest();
 
-        manifest.Version.Should().Be(1);
-        manifest.Projects.Should().HaveCount(2);
-    }
-
-    [Test]
-    public void It_rewrites_package_relative_paths_as_workspace_relative_paths()
-    {
-        var manifest = _provider.GetManifest();
-        var core = manifest.Projects[0];
-
-        core.ProjectName.Should().Be("Ed-Fi");
-        core.SchemaPath.Should().Be("Packages/EdFi.DataStandard52.ApiSchema/ApiSchema.json");
-        core.DiscoverySpecPath.Should().Be("Packages/EdFi.DataStandard52.ApiSchema/discovery-spec.json");
-        core.XsdDirectory.Should().Be("Packages/EdFi.DataStandard52.ApiSchema/xsd");
-    }
-
-    [Test]
-    public void It_enumerates_xsd_files_from_the_synthesized_manifest()
-    {
-        var manifest = _provider.GetManifest();
-        var core = manifest.Projects[0];
-
-        var xsdFiles = _provider.EnumerateValidatedXsdFiles(core).ToList();
-
-        xsdFiles.Should().ContainSingle();
-        xsdFiles[0].Should().EndWith(Path.Combine("xsd", "Ed-Fi-Core.xsd"));
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*bootstrap-api-schema-manifest.json*not found*");
     }
 }
 

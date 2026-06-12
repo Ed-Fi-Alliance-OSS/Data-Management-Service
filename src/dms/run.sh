@@ -34,15 +34,54 @@ fi
 if [ "$AppSettings__UseApiSchemaPath" = true ]; then
     echo "Using Api Schema Path."
 
-    echo "$SCHEMA_PACKAGES" | jq -c '.[]' | while read -r item
-    do
-        version=$(echo "$item" | jq -r '.version')
-        feedUrl=$(echo "$item" | jq -r '.feedUrl')
-        name=$(echo "$item" | jq -r '.name')
+    schema_packages="${SCHEMA_PACKAGES:-[]}"
+    package_count=$(echo "$schema_packages" | jq 'length')
 
-        echo "Downloading Package $name..."
-        dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${AppSettings__ApiSchemaPath}" -v "$version" -f "$feedUrl"
-    done
+    if [ "$package_count" -gt 0 ]; then
+        echo "$schema_packages" | jq -c '.[]' | while read -r item
+        do
+            version=$(echo "$item" | jq -r '.version')
+            feedUrl=$(echo "$item" | jq -r '.feedUrl')
+            name=$(echo "$item" | jq -r '.name')
+
+            echo "Downloading Package $name..."
+            dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${AppSettings__ApiSchemaPath}" -v "$version" -f "$feedUrl"
+        done
+
+        manifest_path="${AppSettings__ApiSchemaPath}/bootstrap-api-schema-manifest.json"
+        manifest_temp_path=$(mktemp)
+        projects_temp_path=$(mktemp)
+        : > "$projects_temp_path"
+
+        echo "$schema_packages" | jq -r '.[].name' | while read -r name
+        do
+            package_manifest_path="${AppSettings__ApiSchemaPath}/Packages/${name}/package-manifest.json"
+            if [ ! -f "$package_manifest_path" ]; then
+                echo "ApiSchema package manifest not found: $package_manifest_path"
+                exit 1
+            fi
+
+            package_manifest_version=$(jq -r '.version' "$package_manifest_path")
+            if [ "$package_manifest_version" != "1" ]; then
+                echo "Unsupported ApiSchema package manifest version $package_manifest_version in $package_manifest_path"
+                exit 1
+            fi
+
+            jq --arg packageDir "Packages/${name}" '{
+                projectName: .projectName,
+                projectEndpointName: .projectEndpointName,
+                isExtensionProject: .isExtensionProject,
+                schemaPath: ($packageDir + "/" + .schemaPath),
+                discoverySpecPath: (if .discoverySpecPath == null then null else $packageDir + "/" + .discoverySpecPath end),
+                xsdDirectory: (if .xsdDirectory == null then null else $packageDir + "/" + .xsdDirectory end)
+            }' "$package_manifest_path" >> "$projects_temp_path"
+        done
+
+        jq -n --slurpfile projects "$projects_temp_path" '{ version: 1, projects: $projects }' > "$manifest_temp_path"
+        mkdir -p "${AppSettings__ApiSchemaPath}"
+        mv "$manifest_temp_path" "$manifest_path"
+        rm -f "$projects_temp_path"
+    fi
 fi
 
 echo "Running EdFi.DataManagementService.Frontend.AspNetCore..."

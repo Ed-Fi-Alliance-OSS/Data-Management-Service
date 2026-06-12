@@ -1,38 +1,92 @@
 <Project>
     <ItemGroup>
-        <ApiSchemaPackageContent
-            Include="$(PkgEdFi_DataStandard52_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.ApiSchema"
             Condition="'$(PkgEdFi_DataStandard52_ApiSchema)' != ''"
         >
-            <PackageId>EdFi.DataStandard52.ApiSchema</PackageId>
-        </ApiSchemaPackageContent>
-        <ApiSchemaPackageContent
-            Include="$(PkgEdFi_DataStandard52_Homograph_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+            <PackageRoot>$(PkgEdFi_DataStandard52_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+            <ProjectName>Ed-Fi</ProjectName>
+            <ProjectEndpointName>ed-fi</ProjectEndpointName>
+            <IsExtensionProject>false</IsExtensionProject>
+            <SchemaPath>Packages/EdFi.DataStandard52.ApiSchema/ApiSchema.json</SchemaPath>
+            <DiscoverySpecPathJson>&quot;Packages/EdFi.DataStandard52.ApiSchema/discovery-spec.json&quot;</DiscoverySpecPathJson>
+            <XsdDirectoryJson>&quot;Packages/EdFi.DataStandard52.ApiSchema/xsd&quot;</XsdDirectoryJson>
+        </ApiSchemaBundledPackage>
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.Homograph.ApiSchema"
             Condition="'$(PkgEdFi_DataStandard52_Homograph_ApiSchema)' != ''"
         >
-            <PackageId>EdFi.DataStandard52.Homograph.ApiSchema</PackageId>
-        </ApiSchemaPackageContent>
-        <ApiSchemaPackageContent
-            Include="$(PkgEdFi_DataStandard52_Sample_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+            <PackageRoot>$(PkgEdFi_DataStandard52_Homograph_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+            <ProjectName>Homograph</ProjectName>
+            <ProjectEndpointName>homograph</ProjectEndpointName>
+            <IsExtensionProject>true</IsExtensionProject>
+            <SchemaPath>Packages/EdFi.DataStandard52.Homograph.ApiSchema/ApiSchema.json</SchemaPath>
+            <DiscoverySpecPathJson>null</DiscoverySpecPathJson>
+            <XsdDirectoryJson>&quot;Packages/EdFi.DataStandard52.Homograph.ApiSchema/xsd&quot;</XsdDirectoryJson>
+        </ApiSchemaBundledPackage>
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.Sample.ApiSchema"
             Condition="'$(PkgEdFi_DataStandard52_Sample_ApiSchema)' != ''"
         >
-            <PackageId>EdFi.DataStandard52.Sample.ApiSchema</PackageId>
-        </ApiSchemaPackageContent>
-        <ApiSchemaPackageContent
-            Include="$(PkgEdFi_DataStandard52_TPDM_ApiSchema)/contentFiles/any/any/ApiSchema/**/*"
+            <PackageRoot>$(PkgEdFi_DataStandard52_Sample_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+            <ProjectName>Sample</ProjectName>
+            <ProjectEndpointName>sample</ProjectEndpointName>
+            <IsExtensionProject>true</IsExtensionProject>
+            <SchemaPath>Packages/EdFi.DataStandard52.Sample.ApiSchema/ApiSchema.json</SchemaPath>
+            <DiscoverySpecPathJson>null</DiscoverySpecPathJson>
+            <XsdDirectoryJson>&quot;Packages/EdFi.DataStandard52.Sample.ApiSchema/xsd&quot;</XsdDirectoryJson>
+        </ApiSchemaBundledPackage>
+        <ApiSchemaBundledPackage
+            Include="EdFi.DataStandard52.TPDM.ApiSchema"
             Condition="'$(PkgEdFi_DataStandard52_TPDM_ApiSchema)' != ''"
         >
-            <PackageId>EdFi.DataStandard52.TPDM.ApiSchema</PackageId>
-        </ApiSchemaPackageContent>
+            <PackageRoot>$(PkgEdFi_DataStandard52_TPDM_ApiSchema)/contentFiles/any/any/ApiSchema</PackageRoot>
+            <ProjectName>TPDM</ProjectName>
+            <ProjectEndpointName>tpdm</ProjectEndpointName>
+            <IsExtensionProject>true</IsExtensionProject>
+            <SchemaPath>Packages/EdFi.DataStandard52.TPDM.ApiSchema/ApiSchema.json</SchemaPath>
+            <DiscoverySpecPathJson>null</DiscoverySpecPathJson>
+            <XsdDirectoryJson>&quot;Packages/EdFi.DataStandard52.TPDM.ApiSchema/xsd&quot;</XsdDirectoryJson>
+        </ApiSchemaBundledPackage>
     </ItemGroup>
 
-    <ItemGroup>
-        <Content
-            Include="@(ApiSchemaPackageContent)"
-            Link="ApiSchema/Packages/%(PackageId)/%(RecursiveDir)%(Filename)%(Extension)"
-            CopyToOutputDirectory="PreserveNewest"
-            CopyToPublishDirectory="PreserveNewest"
-            Visible="false"
+    <Target
+        Name="MaterializeBundledApiSchemaBootstrapManifest"
+        BeforeTargets="GetCopyToOutputDirectoryItems;GetCopyToPublishDirectoryItems;ComputeFilesToPublish"
+        Condition="'@(ApiSchemaBundledPackage)' != ''"
+    >
+        <PropertyGroup>
+            <ApiSchemaBootstrapManifestPath>$(IntermediateOutputPath)ApiSchema/bootstrap-api-schema-manifest.json</ApiSchemaBootstrapManifestPath>
+            <ApiSchemaBootstrapManifestJson>{
+  "version": 1,
+  "projects": [
+@(ApiSchemaBundledPackage->'    { "projectName": "%(ProjectName)", "projectEndpointName": "%(ProjectEndpointName)", "isExtensionProject": %(IsExtensionProject), "schemaPath": "%(SchemaPath)", "discoverySpecPath": %(DiscoverySpecPathJson), "xsdDirectory": %(XsdDirectoryJson) }', ',%0A')
+  ]
+}</ApiSchemaBootstrapManifestJson>
+        </PropertyGroup>
+        <MakeDir Directories="$(IntermediateOutputPath)ApiSchema" />
+        <WriteLinesToFile
+            File="$(ApiSchemaBootstrapManifestPath)"
+            Lines="$(ApiSchemaBootstrapManifestJson)"
+            Overwrite="true"
+            Encoding="UTF-8"
         />
-    </ItemGroup>
+        <ItemGroup>
+            <ApiSchemaPackageContent Include="%(ApiSchemaBundledPackage.PackageRoot)/**/*">
+                <PackageId>%(ApiSchemaBundledPackage.Identity)</PackageId>
+            </ApiSchemaPackageContent>
+            <ContentWithTargetPath Include="@(ApiSchemaPackageContent)">
+                <TargetPath>ApiSchema/Packages/%(ApiSchemaPackageContent.PackageId)/%(ApiSchemaPackageContent.RecursiveDir)%(ApiSchemaPackageContent.Filename)%(ApiSchemaPackageContent.Extension)</TargetPath>
+                <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+                <Visible>false</Visible>
+            </ContentWithTargetPath>
+            <ContentWithTargetPath Include="$(ApiSchemaBootstrapManifestPath)">
+                <TargetPath>ApiSchema/bootstrap-api-schema-manifest.json</TargetPath>
+                <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+                <Visible>false</Visible>
+            </ContentWithTargetPath>
+        </ItemGroup>
+    </Target>
 </Project>

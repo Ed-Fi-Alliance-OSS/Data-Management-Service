@@ -1061,6 +1061,16 @@ exit $ExitCode
             $env:SCHEMA_PACKAGES | Should -Be "prior-packages"
         }
 
+        It "run.sh materializes a root ApiSchema manifest from current SCHEMA_PACKAGES package manifests" {
+            $content = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/run.sh") -Raw
+
+            $content | Should -Match "bootstrap-api-schema-manifest\.json"
+            $content | Should -Match "package-manifest\.json"
+            $content | Should -Match '\$\{AppSettings__ApiSchemaPath\}/Packages/\$\{name\}/package-manifest\.json'
+            $content | Should -Match "jq -n --slurpfile projects"
+            $content | Should -Match 'schemaPath: \(\$packageDir \+ "/" \+ \.schemaPath\)'
+        }
+
         It "start-local-dms.ps1 gates default connector registration on bootstrap mode in the -DmsOnly block" {
             # Bootstrap mode provisions the redesigned relational schema which does not include the
             # legacy dms.document table or the to_debezium publication that the default Debezium connector
