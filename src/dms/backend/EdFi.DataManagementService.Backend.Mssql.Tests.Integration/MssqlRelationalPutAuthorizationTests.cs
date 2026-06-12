@@ -101,7 +101,7 @@ file static class MssqlAuthorizationRootChildProfileTestSupport
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category("RelationalPut")]
-[Category(MssqlCiShards.Shard1)]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg_Fixture
 {
     private const long ClaimEducationOrganizationId =
@@ -628,7 +628,7 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
 [Category("RelationalPut")]
 [Category("RelationalPost")]
 [Category("PeopleRelationship")]
-[Category(MssqlCiShards.Shard1)]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_People_Fixture
 {
     private const long ClaimEducationOrganizationId =
@@ -1309,7 +1309,7 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_Peopl
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category("RelationalPost")]
-[Category(MssqlCiShards.Shard1)]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthetic_EdOrg_Fixture
 {
     private const long ClaimEducationOrganizationId =

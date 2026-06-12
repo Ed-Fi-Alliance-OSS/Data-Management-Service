@@ -206,16 +206,16 @@ jobs:
       matrix:
         include:
           - shard: 1
-            shard-name: Authorization
+            shard-name: Shard 1
             shard-category: MssqlCiShard1
           - shard: 2
-            shard-name: Profile
+            shard-name: Shard 2
             shard-category: MssqlCiShard2
           - shard: 3
-            shard-name: Descriptor and Reference
+            shard-name: Shard 3
             shard-category: MssqlCiShard3
           - shard: 4
-            shard-name: DDL and Utility
+            shard-name: Shard 4
             shard-category: MssqlCiShard4
     defaults:
       run:

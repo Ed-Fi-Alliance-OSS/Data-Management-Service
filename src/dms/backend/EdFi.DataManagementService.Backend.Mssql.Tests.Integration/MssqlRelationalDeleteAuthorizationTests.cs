@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("Authorization")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[Category(MssqlCiShards.Shard1)]
+[Category(MssqlCiShards.Shard2)]
 public class Given_A_Mssql_Relational_Delete_Authorization_With_A_Synthetic_EdOrg_Fixture
 {
     private const long ClaimEducationOrganizationId =
