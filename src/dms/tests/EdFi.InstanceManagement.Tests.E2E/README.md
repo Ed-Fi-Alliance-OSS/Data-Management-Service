@@ -85,7 +85,6 @@ Tests are organized using Reqnroll (SpecFlow successor) with Gherkin feature fil
 
 ### Test Configuration (`appsettings.json`)
 
-- `QueryHandler` - Database type (postgresql)
 - `AuthenticationService` - URL for authentication endpoint
 - `EnableClaimsetReload` - Whether to reload claimsets during tests
 - `Kafka.BootstrapServers` - Kafka broker address (default: localhost:9092)
