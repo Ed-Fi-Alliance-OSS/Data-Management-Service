@@ -24,12 +24,9 @@ public class DatabaseSetupFixture
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        if (!MssqlTestDatabaseHelper.IsConfigured())
-        {
-            Assert.Ignore(
-                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.json (or appsettings.Test.json)"
-            );
-        }
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "SQL Server integration tests require a MssqlAdmin connection string in appsettings.json (or appsettings.Test.json)"
+        );
 
         _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
         MssqlTestDatabaseHelper.CreateDatabase(_databaseName);

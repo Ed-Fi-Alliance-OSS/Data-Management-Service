@@ -11,19 +11,30 @@ namespace EdFi.DataManagementService.Tests.Unit;
 public class Given_E2E_Feature_File_Guardrails
 {
     private DirectoryInfo _repositoryRoot = null!;
-    private DirectoryInfo _featuresDirectory = null!;
+    private DirectoryInfo _dmsFeaturesDirectory = null!;
+    private DirectoryInfo _instanceManagementFeaturesDirectory = null!;
 
     [SetUp]
     public void Setup()
     {
         _repositoryRoot = FindRepositoryRoot();
-        _featuresDirectory = new DirectoryInfo(
+        _dmsFeaturesDirectory = new DirectoryInfo(
             Path.Combine(
                 _repositoryRoot.FullName,
                 "src",
                 "dms",
                 "tests",
                 "EdFi.DataManagementService.Tests.E2E",
+                "Features"
+            )
+        );
+        _instanceManagementFeaturesDirectory = new DirectoryInfo(
+            Path.Combine(
+                _repositoryRoot.FullName,
+                "src",
+                "dms",
+                "tests",
+                "EdFi.InstanceManagement.Tests.E2E",
                 "Features"
             )
         );
@@ -34,7 +45,7 @@ public class Given_E2E_Feature_File_Guardrails
     {
         string[] offendingFeatureFiles =
         [
-            .. _featuresDirectory
+            .. _dmsFeaturesDirectory
                 .EnumerateFiles("*.feature", SearchOption.AllDirectories)
                 .Select(featureFile => new
                 {
@@ -61,7 +72,7 @@ public class Given_E2E_Feature_File_Guardrails
     [Test]
     public void It_assigns_exactly_one_relational_ci_shard_tag_to_every_relational_backend_scenario()
     {
-        string[] offendingScenarios = EnumerateScenariosWithTags()
+        string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
             .Where(s => s.Tags.Contains("@relational-backend", StringComparer.OrdinalIgnoreCase))
             .Where(s =>
                 s.Tags.Count(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
@@ -80,7 +91,7 @@ public class Given_E2E_Feature_File_Guardrails
     [Test]
     public void It_never_applies_a_relational_ci_shard_tag_outside_the_relational_lane()
     {
-        string[] offendingScenarios = EnumerateScenariosWithTags()
+        string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
             .Where(s =>
                 s.Tags.Any(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
             )
@@ -96,7 +107,7 @@ public class Given_E2E_Feature_File_Guardrails
     [Test]
     public void It_only_uses_relational_ci_shard_numbers_in_the_supported_range()
     {
-        string[] offendingTags = EnumerateScenariosWithTags()
+        string[] offendingTags = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
             .SelectMany(s =>
                 s.Tags.Where(t => t.StartsWith("@relational-ci-shard-", StringComparison.OrdinalIgnoreCase))
                     .Select(t => new
@@ -121,9 +132,58 @@ public class Given_E2E_Feature_File_Guardrails
             );
     }
 
+    [Test]
+    public void It_assigns_exactly_one_instance_management_ci_shard_tag_to_every_instance_management_scenario()
+    {
+        string[] offendingScenarios = EnumerateScenariosWithTags(_instanceManagementFeaturesDirectory)
+            .Where(s =>
+                s.Tags.Count(t =>
+                    t.StartsWith("@instance-management-ci-shard-", StringComparison.OrdinalIgnoreCase)
+                ) != 1
+            )
+            .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
+            .ToArray();
+
+        offendingScenarios
+            .Should()
+            .BeEmpty(
+                "every instance management E2E scenario must carry exactly one @instance-management-ci-shard-N tag so PR CI shards never drop coverage"
+            );
+    }
+
+    [Test]
+    public void It_only_uses_instance_management_ci_shard_numbers_in_the_supported_range()
+    {
+        string[] offendingTags = EnumerateScenariosWithTags(_instanceManagementFeaturesDirectory)
+            .SelectMany(s =>
+                s.Tags.Where(t =>
+                        t.StartsWith("@instance-management-ci-shard-", StringComparison.OrdinalIgnoreCase)
+                    )
+                    .Select(t => new
+                    {
+                        s.RelativePath,
+                        s.LineNumber,
+                        Tag = t,
+                    })
+            )
+            .Where(x =>
+            {
+                string suffix = x.Tag.Substring("@instance-management-ci-shard-".Length);
+                return !int.TryParse(suffix, out int n) || n < 1 || n > 2;
+            })
+            .Select(x => $"{x.RelativePath}:{x.LineNumber} ({x.Tag})")
+            .ToArray();
+
+        offendingTags
+            .Should()
+            .BeEmpty(
+                "instance management shard numbers must be in [1..2]; rebalancing the matrix size is a separate, deliberate change"
+            );
+    }
+
     /// <summary>
     /// Enumerates every Scenario / Scenario Outline under the Features tree along with the
-    /// tags that attach to it.
+    /// feature-level and scenario-level tags that attach to it.
     /// </summary>
     /// <remarks>
     /// SpecFlow / Reqnroll treat comment lines (those starting with a hash, '#') as transparent
@@ -131,21 +191,25 @@ public class Given_E2E_Feature_File_Guardrails
     /// so the backward walk skips blank lines and hash-prefixed lines and only stops at the
     /// first non-tag, non-comment line.
     /// </remarks>
-    private IEnumerable<ScenarioRecord> EnumerateScenariosWithTags()
+    private IEnumerable<ScenarioRecord> EnumerateScenariosWithTags(DirectoryInfo featuresDirectory)
     {
         foreach (
-            FileInfo featureFile in _featuresDirectory.EnumerateFiles(
-                "*.feature",
-                SearchOption.AllDirectories
-            )
+            FileInfo featureFile in featuresDirectory.EnumerateFiles("*.feature", SearchOption.AllDirectories)
         )
         {
             string[] lines = File.ReadAllLines(featureFile.FullName);
             string relativePath = Path.GetRelativePath(_repositoryRoot.FullName, featureFile.FullName);
+            IReadOnlyCollection<string> featureTags = [];
 
             for (int i = 0; i < lines.Length; i++)
             {
                 string trimmed = lines[i].TrimStart();
+                if (trimmed.StartsWith("Feature:", StringComparison.Ordinal))
+                {
+                    featureTags = CollectTagsAbove(lines, i);
+                    continue;
+                }
+
                 bool isScenario =
                     trimmed.StartsWith("Scenario:", StringComparison.Ordinal)
                     || trimmed.StartsWith("Scenario Outline:", StringComparison.Ordinal);
@@ -155,32 +219,39 @@ public class Given_E2E_Feature_File_Guardrails
                     continue;
                 }
 
-                var tags = new List<string>();
-                for (int j = i - 1; j >= 0; j--)
-                {
-                    string previous = lines[j].Trim();
-
-                    if (previous.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    if (previous.StartsWith('#'))
-                    {
-                        continue;
-                    }
-
-                    if (!previous.StartsWith('@'))
-                    {
-                        break;
-                    }
-
-                    tags.AddRange(previous.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries));
-                }
+                string[] tags = [.. featureTags, .. CollectTagsAbove(lines, i)];
 
                 yield return new ScenarioRecord(relativePath.Replace('\\', '/'), i + 1, trimmed, tags);
             }
         }
+    }
+
+    private static string[] CollectTagsAbove(string[] lines, int lineIndex)
+    {
+        var tags = new List<string>();
+        for (int j = lineIndex - 1; j >= 0; j--)
+        {
+            string previous = lines[j].Trim();
+
+            if (previous.Length == 0)
+            {
+                continue;
+            }
+
+            if (previous.StartsWith('#'))
+            {
+                continue;
+            }
+
+            if (!previous.StartsWith('@'))
+            {
+                break;
+            }
+
+            tags.AddRange(previous.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        return [.. tags];
     }
 
     private sealed record ScenarioRecord(
