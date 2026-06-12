@@ -1404,6 +1404,244 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// SharedDescriptor tombstone tests
+// ═══════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Builds a <see cref="TrackedChangeTableInfo"/> for the shared descriptor tombstone fixture used by
+/// <see cref="Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Pgsql"/>,
+/// <see cref="Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql"/>, and
+/// <see cref="Given_CoreDdlEmitter_With_NonDescriptor_TrackedChange_Kind"/>.
+/// </summary>
+internal static class SharedDescriptorTrackedChangeFixture
+{
+    internal static TrackedChangeTableInfo Build() =>
+        new(
+            new DbTableName(new DbSchemaName("tracked_changes_edfi"), "Descriptor"),
+            TrackedChangeTableKind.SharedDescriptor,
+            DmsTableNames.Descriptor,
+            [
+                new TrackedChangeColumnInfo(
+                    new DbColumnName("Old_Namespace"),
+                    new DbColumnName("New_Namespace"),
+                    "$.namespace",
+                    null,
+                    IsOldColumnNullable: false,
+                    IsNewColumnNullable: true,
+                    new RelationalScalarType(ScalarKind.String),
+                    TrackedChangeColumnRole.Scalar,
+                    TrackedChangeColumnOrigin.Identity
+                ),
+                new TrackedChangeColumnInfo(
+                    new DbColumnName("Old_CodeValue"),
+                    new DbColumnName("New_CodeValue"),
+                    "$.codeValue",
+                    null,
+                    IsOldColumnNullable: false,
+                    IsNewColumnNullable: true,
+                    new RelationalScalarType(ScalarKind.String),
+                    TrackedChangeColumnRole.Scalar,
+                    TrackedChangeColumnOrigin.Identity
+                ),
+            ],
+            [
+                new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.Discriminator,
+                    new DbColumnName("Discriminator"),
+                    new RelationalScalarType(ScalarKind.String),
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+                new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.Id,
+                    new DbColumnName("Id"),
+                    null,
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+                new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.ChangeVersion,
+                    new DbColumnName("ChangeVersion"),
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    IsPrimaryKey: true
+                ),
+                new TrackedChangeSystemColumnInfo(
+                    TrackedChangeSystemColumnRole.CreatedAt,
+                    new DbColumnName("CreatedAt"),
+                    null,
+                    IsNullable: false,
+                    IsPrimaryKey: false
+                ),
+            ],
+            [new DbColumnName("ChangeVersion")],
+            [],
+            []
+        );
+}
+
+[TestFixture]
+public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Pgsql
+{
+    private string _ddl = default!;
+    private static readonly ISqlDialect _pgsqlDialect = new PgsqlDialect(new PgsqlDialectRules());
+
+    [SetUp]
+    public void Setup()
+    {
+        _ddl = new CoreDdlEmitter(_pgsqlDialect, SharedDescriptorTrackedChangeFixture.Build()).Emit();
+    }
+
+    [Test]
+    public void It_should_contain_insert_into_tracked_changes_descriptor()
+    {
+        _ddl.Should().Contain("INSERT INTO \"tracked_changes_edfi\".\"Descriptor\"");
+    }
+
+    [Test]
+    public void It_should_read_discriminator_namespace_and_code_value_from_old_image()
+    {
+        _ddl.Should().Contain("OLD.\"Discriminator\"");
+        _ddl.Should().Contain("OLD.\"Namespace\"");
+        _ddl.Should().Contain("OLD.\"CodeValue\"");
+    }
+
+    [Test]
+    public void It_should_read_document_uuid_and_content_version_from_doc_join()
+    {
+        _ddl.Should().Contain("doc.\"DocumentUuid\"");
+        _ddl.Should().Contain("doc.\"ContentVersion\"");
+    }
+
+    [Test]
+    public void It_should_place_tombstone_insert_after_document_update_and_before_return_old_in_delete_branch()
+    {
+        var deleteStart = _ddl.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        deleteStart.Should().BeGreaterOrEqualTo(0);
+
+        var documentUpdate = _ddl.IndexOf(
+            "WHERE \"DocumentId\" = OLD.\"DocumentId\";",
+            deleteStart,
+            StringComparison.Ordinal
+        );
+        documentUpdate.Should().BeGreaterThan(deleteStart);
+
+        var tombstoneInsert = _ddl.IndexOf(
+            "INSERT INTO \"tracked_changes_edfi\".\"Descriptor\"",
+            deleteStart,
+            StringComparison.Ordinal
+        );
+        tombstoneInsert.Should().BeGreaterThan(documentUpdate);
+
+        var returnOld = _ddl.IndexOf("RETURN OLD;", deleteStart, StringComparison.Ordinal);
+        returnOld.Should().BeGreaterThan(tombstoneInsert);
+    }
+
+    [Test]
+    public void It_should_not_contain_tracked_changes_when_no_inventory_provided()
+    {
+        var noInventoryDdl = new CoreDdlEmitter(_pgsqlDialect).Emit();
+        noInventoryDdl.Should().NotContain("tracked_changes_edfi");
+    }
+}
+
+[TestFixture]
+public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _ddl = new CoreDdlEmitter(dialect, SharedDescriptorTrackedChangeFixture.Build()).Emit();
+    }
+
+    [Test]
+    public void It_should_guard_tombstone_with_deleted_exists_and_not_inserted_exists()
+    {
+        _ddl.Should().Contain("IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)");
+    }
+
+    [Test]
+    public void It_should_contain_insert_into_tracked_changes_descriptor()
+    {
+        _ddl.Should().Contain("INSERT INTO [tracked_changes_edfi].[Descriptor]");
+    }
+
+    [Test]
+    public void It_should_read_discriminator_namespace_and_code_value_from_del_alias()
+    {
+        _ddl.Should().Contain("del.[Discriminator]");
+        _ddl.Should().Contain("del.[Namespace]");
+        _ddl.Should().Contain("del.[CodeValue]");
+    }
+
+    [Test]
+    public void It_should_read_document_uuid_and_content_version_from_doc_join()
+    {
+        _ddl.Should().Contain("doc.[DocumentUuid]");
+        _ddl.Should().Contain("doc.[ContentVersion]");
+    }
+
+    [Test]
+    public void It_should_join_deleted_del_and_document_doc_in_from_clause()
+    {
+        _ddl.Should().Contain("FROM deleted del");
+        _ddl.Should().Contain("INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]");
+    }
+
+    [Test]
+    public void It_should_place_the_tombstone_after_the_document_stamp_update()
+    {
+        var documentStampUpdate = _ddl.IndexOf(
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            StringComparison.Ordinal
+        );
+        documentStampUpdate.Should().BeGreaterOrEqualTo(0);
+
+        var tombstoneGuard = _ddl.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
+            StringComparison.Ordinal
+        );
+        tombstoneGuard.Should().BeGreaterThan(documentStampUpdate);
+    }
+
+    [Test]
+    public void It_should_not_have_standalone_semicolon_line_in_tombstone_block()
+    {
+        // House style: terminator must be on the last content line, not on a line by itself.
+        var tombstoneStart = _ddl.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
+            StringComparison.Ordinal
+        );
+        tombstoneStart.Should().BeGreaterOrEqualTo(0);
+        var tombstoneEnd = _ddl.IndexOf("END", tombstoneStart + 1, StringComparison.Ordinal);
+        tombstoneEnd.Should().BeGreaterThan(tombstoneStart);
+        var tombstoneBlock = _ddl[tombstoneStart..tombstoneEnd];
+        tombstoneBlock.Should().NotContain("\n;\n");
+    }
+}
+
+[TestFixture]
+public class Given_CoreDdlEmitter_With_NonDescriptor_TrackedChange_Kind
+{
+    [Test]
+    public void It_should_throw_when_kind_is_not_shared_descriptor()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var fixture = SharedDescriptorTrackedChangeFixture.Build() with
+        {
+            Kind = TrackedChangeTableKind.Resource,
+        };
+
+        var act = () => new CoreDdlEmitter(dialect, fixture);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*SharedDescriptor*");
+    }
+}
+
 /// <summary>
 /// Test fixture for the core-owned descriptor stamping trigger. The trigger is derived into
 /// <c>DerivedRelationalModelSet.TriggersInCreateOrder</c> (by <c>DeriveTriggerInventoryPass</c>) so its

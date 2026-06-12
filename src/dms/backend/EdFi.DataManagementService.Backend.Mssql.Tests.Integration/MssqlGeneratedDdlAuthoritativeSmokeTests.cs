@@ -25,7 +25,9 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
     long ContactExtensionAuthorCollectionItemId,
     long ContactAddressCollectionItemId,
     long ContactExtensionAddressSchoolDistrictCollectionItemId,
-    long ContactExtensionAddressTermCollectionItemId
+    long ContactExtensionAddressTermCollectionItemId,
+    long SchoolDocumentId,
+    long SchoolYearTypeDocumentId
 );
 
 internal sealed record DocumentStampState(
@@ -47,6 +49,16 @@ internal sealed record SurveySessionReferenceState(
     int SessionSchoolId,
     int SchoolYearUnified,
     string SessionSessionName
+);
+
+internal sealed record TrackedChangeKeyChangeAssociationSeedData(
+    long AssociationDocumentId,
+    Guid AssociationDocumentUuid,
+    long StudentDocumentId,
+    string StudentUniqueId,
+    long OriginalEducationOrganizationId,
+    long ReplacementSchoolDocumentId,
+    long ReplacementEducationOrganizationId
 );
 
 [TestFixture]
@@ -746,6 +758,25 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var beforeCourseOffering = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var beforeSurvey = await GetDocumentStampStateAsync(_seedData.SurveyDocumentId);
 
+        var sessionDocumentUuid = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var courseOfferingDocumentUuid = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        var surveyDocumentUuid = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var sessionTrackedBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "Session",
+            sessionDocumentUuid
+        );
+        var courseOfferingTrackedBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "CourseOffering",
+            courseOfferingDocumentUuid
+        );
+        var surveyTrackedBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "Survey",
+            surveyDocumentUuid
+        );
+
         beforeCourseOfferingSessionReferenceState
             .Should()
             .Be(new CourseOfferingSessionReferenceState(_seedData.SessionDocumentId, 100, 2025, "Fall"));
@@ -820,6 +851,50 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         AssertMirrorContentMatchesDocument(afterSessionMirror, afterSession);
         AssertMirrorContentMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
         AssertMirrorContentMatchesDocument(afterSurveyMirror, afterSurvey);
+
+        // The renamed Session and the cascade-updated CourseOffering each insert
+        // exactly one key-change row. Survey's session reference is NOT part of its
+        // identity projection (Namespace + SurveyIdentifier), so the trigger-fallback
+        // rewrite must not produce a Survey key-change row.
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Session", sessionDocumentUuid))
+            .Should()
+            .Be(sessionTrackedBefore + 1);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "CourseOffering",
+                courseOfferingDocumentUuid
+            )
+        )
+            .Should()
+            .Be(courseOfferingTrackedBefore + 1);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Survey", surveyDocumentUuid))
+            .Should()
+            .Be(surveyTrackedBefore);
+
+        var sessionTrackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "Session",
+            sessionDocumentUuid
+        );
+        sessionTrackedRow["Old_SessionName"].Should().Be("Fall");
+        sessionTrackedRow["New_SessionName"].Should().Be(updatedSessionName);
+        Convert
+            .ToInt64(sessionTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterSession.ContentVersion);
+
+        var courseOfferingTrackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "CourseOffering",
+            courseOfferingDocumentUuid
+        );
+        courseOfferingTrackedRow["Old_Session_SessionName"].Should().Be("Fall");
+        courseOfferingTrackedRow["New_Session_SessionName"].Should().Be(updatedSessionName);
+        Convert
+            .ToInt64(courseOfferingTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterCourseOffering.ContentVersion);
     }
 
     [Test]
@@ -1087,6 +1162,1269 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
     }
 
+    // GUID allocation convention for tracked-change tests:
+    //   c* seeds  → SeedKeyChangeStudentEducationOrganizationAssociationAsync (key-change)
+    //   d1-d4 seeds → It_should_insert_one_key_change_row_per_row_in_a_multi_row_update
+    //   d5-d7 seeds → It_should_insert_key_change_rows_only_for_identity_changed_rows_in_a_mixed_workset_update
+    //   e1-e3 seeds → It_should_use_canonical_columns_for_key_unified_paths
+    //   e5-e7 seeds → It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change (e4 unused)
+    //   b5-b7 seeds → It_should_project_a_null_to_value_transition_in_the_key_change_row
+    //   f* seeds  → tombstone tests (see #region Tracked-change tombstones)
+    // Per-test ResetAsync wipes all transient rows before each test, so collisions with
+    // the permanent seeds planted in SeedSmokeRowsAsync (1*/2*/…/9* and the full-byte
+    // a*–f* patterns such as cccccccc-…) are impossible.
+    #region Tracked-change key-change rows
+
+    [Test]
+    public async Task It_should_insert_a_key_change_row_with_three_way_linkage_on_identity_update()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+
+        await DelayForDistinctTimestampsAsync();
+        await RepointAssociationEducationOrganizationAsync(seed);
+
+        var afterDocument = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+        var afterMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentId
+        );
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid
+        );
+
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterDocument.ContentVersion);
+        afterMirror.ContentVersion.Should().Be(afterDocument.ContentVersion);
+        trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
+        Convert
+            .ToInt64(
+                trackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(seed.OriginalEducationOrganizationId);
+        Convert
+            .ToInt64(
+                trackedRow["New_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(seed.ReplacementEducationOrganizationId);
+        trackedRow["Old_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+        trackedRow["New_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+    }
+
+    [Test]
+    public async Task It_should_store_the_person_document_id_on_key_change_rows()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+
+        await DelayForDistinctTimestampsAsync();
+        await RepointAssociationEducationOrganizationAsync(seed);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid
+        );
+
+        Convert
+            .ToInt64(trackedRow["Old_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seed.StudentDocumentId);
+        Convert
+            .ToInt64(trackedRow["New_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seed.StudentDocumentId);
+    }
+
+    [Test]
+    public async Task It_should_not_insert_tracked_rows_for_non_identity_updates()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+        var before = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StudentEducationOrganizationAssociation]
+            SET [LoginId] = @loginId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@loginId", "key-change-login-001"),
+            new SqlParameter("@documentId", seed.AssociationDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task It_should_insert_one_key_change_row_per_row_in_a_multi_row_update()
+    {
+        const int SchoolYear = 2025;
+        const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
+        const string GradingPeriodDescriptorCodeValue = "FirstSixWeeks";
+
+        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
+        var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "GradingPeriodDescriptor"
+        );
+
+        // SchoolYear is unique on edfi.SchoolYearType, so reuse the seeded 2025 row
+        // instead of inserting a second one.
+        var schoolYearTypeDocumentId = _seedData.SchoolYearTypeDocumentId;
+
+        // GradingPeriod pairs School_SchoolId with School_DocumentId in its FK to
+        // edfi.School (SchoolId, DocumentId), so read the seeded school's id back
+        // instead of hard-coding the seed literal.
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            "SELECT [SchoolId] FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+
+        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
+            GradingPeriodDescriptorNamespace,
+            GradingPeriodDescriptorCodeValue,
+            "First Six Weeks"
+        );
+
+        var firstGradingPeriodDocumentUuid = Guid.Parse("d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3");
+        var firstGradingPeriodDocumentId = await InsertDocumentAsync(
+            firstGradingPeriodDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
+        await InsertGradingPeriodAsync(
+            firstGradingPeriodDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "First Grading Period"
+        );
+
+        var secondGradingPeriodDocumentUuid = Guid.Parse("d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4");
+        var secondGradingPeriodDocumentId = await InsertDocumentAsync(
+            secondGradingPeriodDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
+        await InsertGradingPeriodAsync(
+            secondGradingPeriodDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "Second Grading Period"
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[GradingPeriod]
+            SET [GradingPeriodName] = [GradingPeriodName] + N'-renamed'
+            WHERE [DocumentId] IN (@firstDocumentId, @secondDocumentId);
+            """,
+            new SqlParameter("@firstDocumentId", firstGradingPeriodDocumentId),
+            new SqlParameter("@secondDocumentId", secondGradingPeriodDocumentId)
+        );
+        rowsAffected.Should().Be(2);
+
+        var firstAfter = await GetDocumentStampStateAsync(firstGradingPeriodDocumentId);
+        var secondAfter = await GetDocumentStampStateAsync(secondGradingPeriodDocumentId);
+        firstAfter.ContentVersion.Should().NotBe(secondAfter.ContentVersion);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "GradingPeriod",
+                firstGradingPeriodDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "GradingPeriod",
+                secondGradingPeriodDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var firstTrackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            firstGradingPeriodDocumentUuid
+        );
+        var secondTrackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            secondGradingPeriodDocumentUuid
+        );
+
+        Convert
+            .ToInt64(firstTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(firstAfter.ContentVersion);
+        Convert
+            .ToInt64(secondTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(secondAfter.ContentVersion);
+
+        firstTrackedRow["Old_GradingPeriodName"].Should().Be("First Grading Period");
+        firstTrackedRow["New_GradingPeriodName"].Should().Be("First Grading Period-renamed");
+        secondTrackedRow["Old_GradingPeriodName"].Should().Be("Second Grading Period");
+        secondTrackedRow["New_GradingPeriodName"].Should().Be("Second Grading Period-renamed");
+
+        foreach (var trackedRow in new[] { firstTrackedRow, secondTrackedRow })
+        {
+            trackedRow["Old_GradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
+            trackedRow["New_GradingPeriodDescriptor_Namespace"].Should().Be(GradingPeriodDescriptorNamespace);
+            trackedRow["Old_GradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
+            trackedRow["New_GradingPeriodDescriptor_CodeValue"].Should().Be(GradingPeriodDescriptorCodeValue);
+        }
+    }
+
+    [Test]
+    public async Task It_should_insert_key_change_rows_only_for_identity_changed_rows_in_a_mixed_workset_update()
+    {
+        // The core statement-level-trigger risk: one UPDATE whose workset contains
+        // multiple rows where only SOME change identity. @identityChangedDocs must
+        // admit exactly the changed row — no key-change row and no stamps at all
+        // for the row whose values were self-assigned.
+        const int SchoolYear = 2025;
+        const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
+        const string GradingPeriodDescriptorCodeValue = "SecondSixWeeks";
+
+        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
+        var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "GradingPeriodDescriptor"
+        );
+
+        var schoolYearTypeDocumentId = _seedData.SchoolYearTypeDocumentId;
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            "SELECT [SchoolId] FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+
+        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
+            GradingPeriodDescriptorNamespace,
+            GradingPeriodDescriptorCodeValue,
+            "Second Six Weeks"
+        );
+
+        var changedDocumentUuid = Guid.Parse("d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6");
+        var changedDocumentId = await InsertDocumentAsync(changedDocumentUuid, gradingPeriodResourceKeyId);
+        await InsertGradingPeriodAsync(
+            changedDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "Mixed Changed Period"
+        );
+
+        var unchangedDocumentUuid = Guid.Parse("d7d7d7d7-d7d7-d7d7-d7d7-d7d7d7d7d7d7");
+        var unchangedDocumentId = await InsertDocumentAsync(unchangedDocumentUuid, gradingPeriodResourceKeyId);
+        await InsertGradingPeriodAsync(
+            unchangedDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            gradingPeriodDescriptorDocumentId,
+            "Mixed Unchanged Period"
+        );
+
+        var changedBefore = await GetDocumentStampStateAsync(changedDocumentId);
+        var unchangedBefore = await GetDocumentStampStateAsync(unchangedDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[GradingPeriod]
+            SET [GradingPeriodName] = CASE
+                WHEN [DocumentId] = @changedDocumentId THEN [GradingPeriodName] + N'-renamed'
+                ELSE [GradingPeriodName] END
+            WHERE [DocumentId] IN (@changedDocumentId, @unchangedDocumentId);
+            """,
+            new SqlParameter("@changedDocumentId", changedDocumentId),
+            new SqlParameter("@unchangedDocumentId", unchangedDocumentId)
+        );
+        rowsAffected.Should().Be(2);
+
+        var changedAfter = await GetDocumentStampStateAsync(changedDocumentId);
+        var unchangedAfter = await GetDocumentStampStateAsync(unchangedDocumentId);
+
+        changedAfter.ContentVersion.Should().BeGreaterThan(changedBefore.ContentVersion);
+        changedAfter.IdentityVersion.Should().BeGreaterThan(changedBefore.IdentityVersion);
+        // The self-assigned row is a stored-value no-op: no stamps at all.
+        unchangedAfter.Should().Be(unchangedBefore);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "GradingPeriod", changedDocumentUuid))
+            .Should()
+            .Be(1);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "GradingPeriod", unchangedDocumentUuid))
+            .Should()
+            .Be(0);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            changedDocumentUuid
+        );
+        trackedRow["Old_GradingPeriodName"].Should().Be("Mixed Changed Period");
+        trackedRow["New_GradingPeriodName"].Should().Be("Mixed Changed Period-renamed");
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(changedAfter.ContentVersion);
+    }
+
+    [Test]
+    public async Task It_should_project_old_and_new_descriptor_values_from_their_own_images_on_key_change()
+    {
+        // The descriptor element of the identity actually CHANGES here, so the
+        // key-change row's Old_* descriptor projection must come from the deleted
+        // image and New_* from the inserted image — equal-value tests cannot tell.
+        const int SchoolYear = 2025;
+        const string DescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
+
+        var gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod");
+        var gradingPeriodDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "GradingPeriodDescriptor"
+        );
+
+        var schoolYearTypeDocumentId = _seedData.SchoolYearTypeDocumentId;
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            "SELECT [SchoolId] FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+
+        var originalDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{DescriptorNamespace}#FourthSixWeeks",
+            DescriptorNamespace,
+            "FourthSixWeeks",
+            "Fourth Six Weeks"
+        );
+        var replacementDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6"),
+            gradingPeriodDescriptorResourceKeyId,
+            "Ed-Fi:GradingPeriodDescriptor",
+            $"{DescriptorNamespace}#FifthSixWeeks",
+            DescriptorNamespace,
+            "FifthSixWeeks",
+            "Fifth Six Weeks"
+        );
+
+        var gradingPeriodDocumentUuid = Guid.Parse("e7e7e7e7-e7e7-e7e7-e7e7-e7e7e7e7e7e7");
+        var gradingPeriodDocumentId = await InsertDocumentAsync(
+            gradingPeriodDocumentUuid,
+            gradingPeriodResourceKeyId
+        );
+        await InsertGradingPeriodAsync(
+            gradingPeriodDocumentId,
+            schoolYearTypeDocumentId,
+            SchoolYear,
+            _seedData.SchoolDocumentId,
+            seededSchoolId,
+            originalDescriptorDocumentId,
+            "Descriptor Swap Period"
+        );
+
+        var before = await GetDocumentStampStateAsync(gradingPeriodDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[GradingPeriod]
+            SET [GradingPeriodDescriptor_DescriptorId] = @replacementDescriptorDocumentId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@replacementDescriptorDocumentId", replacementDescriptorDocumentId),
+            new SqlParameter("@documentId", gradingPeriodDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(gradingPeriodDocumentId);
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "GradingPeriod", gradingPeriodDocumentUuid))
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "GradingPeriod",
+            gradingPeriodDocumentUuid
+        );
+        trackedRow["Old_GradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["New_GradingPeriodDescriptor_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["Old_GradingPeriodDescriptor_CodeValue"].Should().Be("FourthSixWeeks");
+        trackedRow["New_GradingPeriodDescriptor_CodeValue"].Should().Be("FifthSixWeeks");
+        trackedRow["Old_GradingPeriodName"].Should().Be("Descriptor Swap Period");
+        trackedRow["New_GradingPeriodName"].Should().Be("Descriptor Swap Period");
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(after.ContentVersion);
+    }
+
+    [Test]
+    public async Task It_should_project_a_null_to_value_transition_in_the_key_change_row()
+    {
+        // ReportedSchool is a nullable securable projection on StudentAssessment.
+        // Change the identity (StudentAssessmentIdentifier) and set ReportedSchool
+        // from NULL to a value in the same UPDATE: the key-change row must read the
+        // old image as NULL and the new image as the value — a both-images-from-
+        // inserted bug projects the value on both sides.
+        const string AssessmentNamespace = "uri://ed-fi.org/Assessment";
+        const string AssessmentIdentifier = "ASMT-NULLT-001";
+        const string StudentUniqueId = "20001";
+
+        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
+        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var studentAssessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "StudentAssessment");
+
+        var assessmentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("b5b5b5b5-b5b5-b5b5-b5b5-b5b5b5b5b5b5"),
+            assessmentResourceKeyId
+        );
+        await InsertAssessmentAsync(
+            assessmentDocumentId,
+            AssessmentIdentifier,
+            "Null Transition Assessment",
+            AssessmentNamespace
+        );
+
+        var studentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6"),
+            studentResourceKeyId
+        );
+        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Nola", "Vale");
+
+        var studentAssessmentDocumentUuid = Guid.Parse("b7b7b7b7-b7b7-b7b7-b7b7-b7b7b7b7b7b7");
+        var studentAssessmentDocumentId = await InsertDocumentAsync(
+            studentAssessmentDocumentUuid,
+            studentAssessmentResourceKeyId
+        );
+        await InsertStudentAssessmentAsync(
+            studentAssessmentDocumentId,
+            assessmentDocumentId,
+            AssessmentIdentifier,
+            AssessmentNamespace,
+            studentDocumentId,
+            StudentUniqueId,
+            "SA-001"
+        );
+
+        var seededSchoolId = await _database.ExecuteScalarAsync<long>(
+            "SELECT [SchoolId] FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", _seedData.SchoolDocumentId)
+        );
+        var before = await GetDocumentStampStateAsync(studentAssessmentDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StudentAssessment]
+            SET [StudentAssessmentIdentifier] = @replacementIdentifier,
+                [ReportedSchool_DocumentId] = @schoolDocumentId,
+                [ReportedSchool_SchoolId] = @schoolId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@replacementIdentifier", "SA-001-renamed"),
+            new SqlParameter("@schoolDocumentId", _seedData.SchoolDocumentId),
+            new SqlParameter("@schoolId", seededSchoolId),
+            new SqlParameter("@documentId", studentAssessmentDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(studentAssessmentDocumentId);
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentAssessment",
+                studentAssessmentDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentAssessment",
+            studentAssessmentDocumentUuid
+        );
+        trackedRow["Old_StudentAssessmentIdentifier"].Should().Be("SA-001");
+        trackedRow["New_StudentAssessmentIdentifier"].Should().Be("SA-001-renamed");
+        trackedRow["Old_ReportedSchool_SchoolId"].Should().BeNull();
+        Convert
+            .ToInt64(trackedRow["New_ReportedSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seededSchoolId);
+        trackedRow["Old_Student_StudentUniqueId"].Should().Be(StudentUniqueId);
+        trackedRow["New_Student_StudentUniqueId"].Should().Be(StudentUniqueId);
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(after.ContentVersion);
+    }
+
+    [Test]
+    public async Task It_should_use_canonical_columns_for_key_unified_paths()
+    {
+        const string AssessmentNamespace = "uri://ed-fi.org/Assessment";
+        const string OriginalAssessmentIdentifier = "ASMT-001";
+        const string ReplacementAssessmentIdentifier = "ASMT-002";
+        const string ScoreRangeId = "SR-001";
+
+        var assessmentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Assessment");
+        var scoreRangeResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "AssessmentScoreRangeLearningStandard"
+        );
+
+        var originalAssessmentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1"),
+            assessmentResourceKeyId
+        );
+        await InsertAssessmentAsync(
+            originalAssessmentDocumentId,
+            OriginalAssessmentIdentifier,
+            "Original Assessment",
+            AssessmentNamespace
+        );
+
+        var replacementAssessmentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2"),
+            assessmentResourceKeyId
+        );
+        await InsertAssessmentAsync(
+            replacementAssessmentDocumentId,
+            ReplacementAssessmentIdentifier,
+            "Replacement Assessment",
+            AssessmentNamespace
+        );
+
+        var scoreRangeDocumentUuid = Guid.Parse("e3e3e3e3-e3e3-e3e3-e3e3-e3e3e3e3e3e3");
+        var scoreRangeDocumentId = await InsertDocumentAsync(scoreRangeDocumentUuid, scoreRangeResourceKeyId);
+        await InsertAssessmentScoreRangeLearningStandardAsync(
+            scoreRangeDocumentId,
+            OriginalAssessmentIdentifier,
+            AssessmentNamespace,
+            originalAssessmentDocumentId,
+            ScoreRangeId
+        );
+
+        // The Assessment_AssessmentIdentifier/Assessment_Namespace alias columns are
+        // computed (PERSISTED) from the canonical *_Unified columns, and the FK to
+        // edfi.Assessment pairs the canonical columns with Assessment_DocumentId
+        // (ON UPDATE NO ACTION). Re-pointing the reference and the canonical identifier
+        // in a single UPDATE is the direct-SQL simulation of an upstream assessment key
+        // change reaching this key-unified resource; the trigger's identity gate keys
+        // off the canonical column.
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[AssessmentScoreRangeLearningStandard]
+            SET [AssessmentIdentifier_Unified] = @replacementAssessmentIdentifier,
+                [Assessment_DocumentId] = @replacementAssessmentDocumentId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@replacementAssessmentIdentifier", ReplacementAssessmentIdentifier),
+            new SqlParameter("@replacementAssessmentDocumentId", replacementAssessmentDocumentId),
+            new SqlParameter("@documentId", scoreRangeDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var afterDocument = await GetDocumentStampStateAsync(scoreRangeDocumentId);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "AssessmentScoreRangeLearningStandard",
+                scoreRangeDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "AssessmentScoreRangeLearningStandard",
+            scoreRangeDocumentUuid
+        );
+
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterDocument.ContentVersion);
+        trackedRow["Id"].Should().Be(scoreRangeDocumentUuid);
+        trackedRow["Old_AssessmentIdentifier_Unified"].Should().Be(OriginalAssessmentIdentifier);
+        trackedRow["New_AssessmentIdentifier_Unified"].Should().Be(ReplacementAssessmentIdentifier);
+        trackedRow["Old_Namespace_Unified"].Should().Be(AssessmentNamespace);
+        trackedRow["New_Namespace_Unified"].Should().Be(AssessmentNamespace);
+        trackedRow["Old_ScoreRangeId"].Should().Be(ScoreRangeId);
+        trackedRow["New_ScoreRangeId"].Should().Be(ScoreRangeId);
+    }
+
+    #endregion
+
+    // f* GUID seeds used here — see the GUID allocation comment above #region Tracked-change key-change rows.
+    #region Tracked-change tombstones
+
+    [Test]
+    public async Task It_should_insert_a_tombstone_with_the_bumped_content_version_on_delete()
+    {
+        var seed = await SeedKeyChangeStudentEducationOrganizationAssociationAsync();
+        var before = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+
+        // DMS-1180 two-statement order, statement 1: delete the resource row while the
+        // dms.Document row still exists, so the stamping trigger can read the doc-stamp
+        // linkage for the tombstone.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", seed.AssociationDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
+        Convert
+            .ToInt64(
+                trackedRow["Old_EducationOrganization_EducationOrganizationId"],
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .Be(seed.OriginalEducationOrganizationId);
+        trackedRow["Old_Student_StudentUniqueId"].Should().Be(seed.StudentUniqueId);
+        Convert
+            .ToInt64(trackedRow["Old_Student_DocumentId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seed.StudentDocumentId);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", seed.AssociationDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(0);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                seed.AssociationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            seed.AssociationDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_insert_a_descriptor_tombstone_with_discriminator_on_delete()
+    {
+        const string DescriptorDiscriminator = "Ed-Fi:TermDescriptor";
+        const string DescriptorNamespace = "uri://ed-fi.org/TermDescriptor";
+        const string DescriptorCodeValue = "Summer";
+
+        var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
+        var descriptorDocumentUuid = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
+        var descriptorDocumentId = await InsertDescriptorAsync(
+            descriptorDocumentUuid,
+            termDescriptorResourceKeyId,
+            DescriptorDiscriminator,
+            $"{DescriptorNamespace}#{DescriptorCodeValue}",
+            DescriptorNamespace,
+            DescriptorCodeValue,
+            "Summer"
+        );
+        var before = await GetDocumentStampStateAsync(descriptorDocumentId);
+
+        // Statement 1: delete the shared descriptor row while the dms.Document row
+        // still exists.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", descriptorDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "Descriptor",
+            descriptorDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        trackedRow["Id"].Should().Be(descriptorDocumentUuid);
+        trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
+        trackedRow["Old_Namespace"].Should().Be(DescriptorNamespace);
+        trackedRow["Old_CodeValue"].Should().Be(DescriptorCodeValue);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", descriptorDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(0);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "Descriptor",
+            descriptorDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_tombstone_concrete_abstract_resources_in_their_own_table()
+    {
+        // 400 chosen distinct from the seeded SchoolId=100 to avoid PK collisions. The
+        // fresh school keeps its triggers enabled (only the seeded SchoolId=100 school
+        // must dodge the manually planted EducationOrganizationIdentity row for that id).
+        const int FreshSchoolId = 400;
+
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var schoolDocumentUuid = Guid.Parse("f2f2f2f2-f2f2-f2f2-f2f2-f2f2f2f2f2f2");
+        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
+        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Delta Academy");
+        var before = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        // Statement 1: delete the concrete-abstract resource row while the dms.Document
+        // row still exists. School tombstones into its OWN tracked-change table.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        trackedRow["Id"].Should().Be(schoolDocumentUuid);
+        Convert.ToInt64(trackedRow["Old_SchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_not_insert_key_change_rows_for_concrete_abstract_identity_updates()
+    {
+        // 500/501 chosen distinct from the seeded SchoolId=100 and the tombstone test's
+        // 400. Triggers stay enabled so TR_School_AbstractIdentity re-projects the
+        // EducationOrganizationIdentity row alongside the identity update.
+        const int OriginalSchoolId = 500;
+        const int ReplacementSchoolId = 501;
+
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var schoolDocumentUuid = Guid.Parse("f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3");
+        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
+        await InsertSchoolAsync(schoolDocumentId, OriginalSchoolId, "Epsilon Academy");
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(0);
+        var before = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        // A successful identity-value change on a concrete-abstract resource must bump
+        // IdentityVersion but never insert a key-change row: deletes are the only writes
+        // that land in tracked_changes for concrete-abstract resources.
+        await DelayForDistinctTimestampsAsync();
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[School]
+            SET [SchoolId] = @replacementSchoolId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@replacementSchoolId", ReplacementSchoolId),
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var after = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task It_should_emit_exactly_one_root_tombstone_for_cascaded_deletes()
+    {
+        // Build a fresh SEOA with an edfi child-collection row
+        // (StudentEducationOrganizationAssociationAddress), a sample _ext row
+        // (StudentEducationOrganizationAssociationExtensionAddress), and _ext
+        // grandchildren (SchoolDistrict/Term) — all FK-cascaded from the root row.
+        const string StudentUniqueId = "20002";
+
+        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var associationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "StudentEducationOrganizationAssociation"
+        );
+
+        var studentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("f4f4f4f4-f4f4-f4f4-f4f4-f4f4f4f4f4f4"),
+            studentResourceKeyId
+        );
+        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Avery", "Sloan");
+
+        var associationDocumentUuid = Guid.Parse("f5f5f5f5-f5f5-f5f5-f5f5-f5f5f5f5f5f5");
+        var associationDocumentId = await InsertDocumentAsync(
+            associationDocumentUuid,
+            associationResourceKeyId
+        );
+        await InsertStudentEducationOrganizationAssociationAsync(
+            associationDocumentId,
+            _seedData.EducationOrganizationDocumentId,
+            100,
+            studentDocumentId,
+            StudentUniqueId
+        );
+
+        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:AddressTypeDescriptor",
+            "Home"
+        );
+        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:StateAbbreviationDescriptor",
+            "TX"
+        );
+        var termDescriptorDocumentId = await GetDescriptorDocumentIdAsync("Ed-Fi:TermDescriptor", "Fall");
+
+        var addressCollectionItemId = await InsertStudentEducationOrganizationAssociationAddressAsync(
+            associationDocumentId,
+            1,
+            addressTypeDescriptorDocumentId,
+            stateAbbreviationDescriptorDocumentId,
+            "Austin",
+            "78701",
+            "100 Congress Ave"
+        );
+        await InsertStudentEducationOrganizationAssociationExtensionAddressAsync(
+            addressCollectionItemId,
+            associationDocumentId,
+            "Tower A"
+        );
+        await InsertStudentEducationOrganizationAssociationExtensionAddressSchoolDistrictAsync(
+            addressCollectionItemId,
+            associationDocumentId,
+            1,
+            "District Nine"
+        );
+        await InsertStudentEducationOrganizationAssociationExtensionAddressTermAsync(
+            addressCollectionItemId,
+            associationDocumentId,
+            1,
+            termDescriptorDocumentId
+        );
+
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [edfi].[StudentEducationOrganizationAssociationAddress] WHERE [StudentEducationOrganizationAssociation_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [sample].[StudentEducationOrganizationAssociationExtensionAddress] WHERE [StudentEducationOrganizationAssociation_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var before = await GetDocumentStampStateAsync(associationDocumentId);
+
+        // Statement 1: delete the root resource row; FK cascades remove the child and
+        // _ext rows and fire their stamping triggers.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", associationDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [edfi].[StudentEducationOrganizationAssociationAddress] WHERE [StudentEducationOrganizationAssociation_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [sample].[StudentEducationOrganizationAssociationExtensionAddress] WHERE [StudentEducationOrganizationAssociation_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                associationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        trackedRow["Id"].Should().Be(associationDocumentUuid);
+        tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
+        AssertAllNewColumnsAreNull(trackedRow);
+
+        // The doc stamp may have advanced past the tombstone if child triggers fired
+        // before stmt 2 — allowed; the tombstone itself must remain the latest tracked
+        // row for the document.
+        (await CountDocumentRowsAsync(associationDocumentId))
+            .Should()
+            .Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThanOrEqualTo(tombstoneChangeVersion);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid,
+            tombstoneChangeVersion
+        );
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", associationDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(associationDocumentId)).Should().Be(0);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", associationDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await CountTrackedChangeRowsAsync(
+                "tracked_changes_edfi",
+                "StudentEducationOrganizationAssociation",
+                associationDocumentUuid
+            )
+        )
+            .Should()
+            .Be(1);
+
+        // No later visible tracked row may advance an extraction watermark past the
+        // tombstone.
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    [Test]
+    public async Task It_should_emit_exactly_one_root_tombstone_for_cascaded_abstract_family_deletes()
+    {
+        // Abstract-resource-family cascade (AC): a concrete-abstract root (School)
+        // carrying a cascaded _ext row and _ext grandchild. The root delete must
+        // produce exactly one School tombstone and no key-change rows, regardless
+        // of cascaded extension-trigger activity.
+        const int FreshSchoolId = 401;
+
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");
+
+        var schoolDocumentUuid = Guid.Parse("f7f7f7f7-f7f7-f7f7-f7f7-f7f7f7f7f7f7");
+        var schoolDocumentId = await InsertDocumentAsync(schoolDocumentUuid, schoolResourceKeyId);
+        await InsertSchoolAsync(schoolDocumentId, FreshSchoolId, "Zeta Academy");
+        await InsertSchoolExtensionAsync(schoolDocumentId);
+
+        var busDocumentId = await InsertDocumentAsync(
+            Guid.Parse("f8f8f8f8-f8f8-f8f8-f8f8-f8f8f8f8f8f8"),
+            busResourceKeyId
+        );
+        await InsertBusAsync(busDocumentId, "BUS-401");
+        await InsertSchoolExtensionDirectlyOwnedBusAsync(schoolDocumentId, 1, busDocumentId, "BUS-401");
+
+        var before = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [sample].[SchoolExtension] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [sample].[SchoolExtensionDirectlyOwnedBus] WHERE [School_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [edfi].[EducationOrganizationIdentity] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(1);
+
+        // Statement 1: delete the root School row; FK cascades remove the _ext row
+        // and its grandchild and fire their stamping triggers.
+        await DelayForDistinctTimestampsAsync();
+        var resourceRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+        resourceRowsAffected.Should().Be(1);
+
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [sample].[SchoolExtension] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [sample].[SchoolExtensionDirectlyOwnedBus] WHERE [School_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+
+        var trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
+        var tombstoneChangeVersion = Convert.ToInt64(
+            trackedRow["ChangeVersion"],
+            CultureInfo.InvariantCulture
+        );
+
+        trackedRow["Id"].Should().Be(schoolDocumentUuid);
+        Convert.ToInt64(trackedRow["Old_SchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
+        AssertAllNewColumnsAreNull(trackedRow);
+        tombstoneChangeVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        // The doc stamp may have advanced past the tombstone if extension triggers
+        // fired before stmt 2 — allowed; the tombstone itself must remain the latest
+        // tracked row for the document.
+        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
+        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
+        afterResourceDelete.ContentVersion.Should().BeGreaterThanOrEqualTo(tombstoneChangeVersion);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid,
+            tombstoneChangeVersion
+        );
+
+        // Statement 2: delete the dms.Document row.
+        var documentRowsAffected = await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+        documentRowsAffected.Should().Be(1);
+
+        (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(0);
+        (
+            await CountRowsAsync(
+                "SELECT COUNT(*) FROM [edfi].[EducationOrganizationIdentity] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", schoolDocumentId)
+            )
+        )
+            .Should()
+            .Be(0);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
+            .Should()
+            .Be(1);
+        await AssertMaxTrackedChangeVersionAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid,
+            tombstoneChangeVersion
+        );
+    }
+
+    #endregion
+
     private async Task<AuthoritativeSampleSmokeSeedData> SeedSmokeRowsAsync()
     {
         var accountabilityRatingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "AccountabilityRating");
@@ -1305,7 +2643,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             contactExtensionAuthorCollectionItemId,
             contactAddressCollectionItemId,
             contactExtensionAddressSchoolDistrictCollectionItemId,
-            contactExtensionAddressTermCollectionItemId
+            contactExtensionAddressTermCollectionItemId,
+            schoolDocumentId,
+            schoolYearTypeDocumentId
         );
     }
 
@@ -1424,6 +2764,41 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             VALUES (@documentId, @busId);
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@busId", busId)
+        );
+    }
+
+    private async Task InsertSchoolExtensionAsync(long schoolDocumentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [sample].[SchoolExtension] ([DocumentId])
+            VALUES (@documentId);
+            """,
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+    }
+
+    private async Task InsertSchoolExtensionDirectlyOwnedBusAsync(
+        long schoolDocumentId,
+        int ordinal,
+        long busDocumentId,
+        string busId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [sample].[SchoolExtensionDirectlyOwnedBus] (
+                [Ordinal],
+                [School_DocumentId],
+                [DirectlyOwnedBus_DocumentId],
+                [DirectlyOwnedBus_BusId]
+            )
+            VALUES (@ordinal, @schoolDocumentId, @busDocumentId, @busId);
+            """,
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@busDocumentId", busDocumentId),
             new SqlParameter("@busId", busId)
         );
     }
@@ -1865,6 +3240,439 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
+    private async Task InsertStudentAsync(
+        long documentId,
+        string studentUniqueId,
+        string firstName,
+        string lastSurname
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Student] ([DocumentId], [BirthDate], [FirstName], [LastSurname], [StudentUniqueId])
+            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@birthDate", new DateOnly(2010, 1, 1)),
+            new SqlParameter("@firstName", firstName),
+            new SqlParameter("@lastSurname", lastSurname),
+            new SqlParameter("@studentUniqueId", studentUniqueId)
+        );
+    }
+
+    private async Task InsertStudentEducationOrganizationAssociationAsync(
+        long documentId,
+        long educationOrganizationDocumentId,
+        int educationOrganizationId,
+        long studentDocumentId,
+        string studentUniqueId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[StudentEducationOrganizationAssociation] (
+                [DocumentId],
+                [EducationOrganization_DocumentId],
+                [EducationOrganization_EducationOrganizationId],
+                [Student_DocumentId],
+                [Student_StudentUniqueId]
+            )
+            VALUES (
+                @documentId,
+                @educationOrganizationDocumentId,
+                @educationOrganizationId,
+                @studentDocumentId,
+                @studentUniqueId
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
+            new SqlParameter("@educationOrganizationId", educationOrganizationId),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", studentUniqueId)
+        );
+    }
+
+    private async Task<long> InsertStudentEducationOrganizationAssociationAddressAsync(
+        long studentEducationOrganizationAssociationDocumentId,
+        int ordinal,
+        long addressTypeDescriptorDocumentId,
+        long stateAbbreviationDescriptorDocumentId,
+        string city,
+        string postalCode,
+        string streetNumberName
+    )
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
+            INSERT INTO [edfi].[StudentEducationOrganizationAssociationAddress] (
+                [Ordinal],
+                [StudentEducationOrganizationAssociation_DocumentId],
+                [AddressTypeDescriptor_DescriptorId],
+                [StateAbbreviationDescriptor_DescriptorId],
+                [City],
+                [PostalCode],
+                [StreetNumberName]
+            )
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
+            VALUES (
+                @ordinal,
+                @studentEducationOrganizationAssociationDocumentId,
+                @addressTypeDescriptorDocumentId,
+                @stateAbbreviationDescriptorDocumentId,
+                @city,
+                @postalCode,
+                @streetNumberName
+            );
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
+            """,
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter(
+                "@studentEducationOrganizationAssociationDocumentId",
+                studentEducationOrganizationAssociationDocumentId
+            ),
+            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
+            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId),
+            new SqlParameter("@city", city),
+            new SqlParameter("@postalCode", postalCode),
+            new SqlParameter("@streetNumberName", streetNumberName)
+        );
+    }
+
+    private async Task InsertStudentEducationOrganizationAssociationExtensionAddressAsync(
+        long baseCollectionItemId,
+        long studentEducationOrganizationAssociationDocumentId,
+        string complex
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [sample].[StudentEducationOrganizationAssociationExtensionAddress] (
+                [BaseCollectionItemId],
+                [StudentEducationOrganizationAssociation_DocumentId],
+                [Complex]
+            )
+            VALUES (
+                @baseCollectionItemId,
+                @studentEducationOrganizationAssociationDocumentId,
+                @complex
+            );
+            """,
+            new SqlParameter("@baseCollectionItemId", baseCollectionItemId),
+            new SqlParameter(
+                "@studentEducationOrganizationAssociationDocumentId",
+                studentEducationOrganizationAssociationDocumentId
+            ),
+            new SqlParameter("@complex", complex)
+        );
+    }
+
+    private async Task<long> InsertStudentEducationOrganizationAssociationExtensionAddressSchoolDistrictAsync(
+        long baseCollectionItemId,
+        long studentEducationOrganizationAssociationDocumentId,
+        int ordinal,
+        string schoolDistrict
+    )
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
+            INSERT INTO [sample].[StudentEducationOrganizationAssociationExtensionAddressSchoolDistrict] (
+                [BaseCollectionItemId],
+                [Ordinal],
+                [StudentEducationOrganizationAssociation_DocumentId],
+                [SchoolDistrict]
+            )
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
+            VALUES (
+                @baseCollectionItemId,
+                @ordinal,
+                @studentEducationOrganizationAssociationDocumentId,
+                @schoolDistrict
+            );
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
+            """,
+            new SqlParameter("@baseCollectionItemId", baseCollectionItemId),
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter(
+                "@studentEducationOrganizationAssociationDocumentId",
+                studentEducationOrganizationAssociationDocumentId
+            ),
+            new SqlParameter("@schoolDistrict", schoolDistrict)
+        );
+    }
+
+    private async Task<long> InsertStudentEducationOrganizationAssociationExtensionAddressTermAsync(
+        long baseCollectionItemId,
+        long studentEducationOrganizationAssociationDocumentId,
+        int ordinal,
+        long termDescriptorDocumentId
+    )
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
+            INSERT INTO [sample].[StudentEducationOrganizationAssociationExtensionAddressTerm] (
+                [BaseCollectionItemId],
+                [Ordinal],
+                [StudentEducationOrganizationAssociation_DocumentId],
+                [TermDescriptor_DescriptorId]
+            )
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
+            VALUES (
+                @baseCollectionItemId,
+                @ordinal,
+                @studentEducationOrganizationAssociationDocumentId,
+                @termDescriptorDocumentId
+            );
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
+            """,
+            new SqlParameter("@baseCollectionItemId", baseCollectionItemId),
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter(
+                "@studentEducationOrganizationAssociationDocumentId",
+                studentEducationOrganizationAssociationDocumentId
+            ),
+            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId)
+        );
+    }
+
+    private async Task InsertGradingPeriodAsync(
+        long documentId,
+        long schoolYearTypeDocumentId,
+        int schoolYear,
+        long schoolDocumentId,
+        long schoolId,
+        long gradingPeriodDescriptorDocumentId,
+        string gradingPeriodName
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[GradingPeriod] (
+                [DocumentId],
+                [SchoolYear_DocumentId],
+                [SchoolYear_SchoolYear],
+                [School_DocumentId],
+                [School_SchoolId],
+                [GradingPeriodDescriptor_DescriptorId],
+                [BeginDate],
+                [EndDate],
+                [GradingPeriodName],
+                [TotalInstructionalDays]
+            )
+            VALUES (
+                @documentId,
+                @schoolYearTypeDocumentId,
+                @schoolYear,
+                @schoolDocumentId,
+                @schoolId,
+                @gradingPeriodDescriptorDocumentId,
+                @beginDate,
+                @endDate,
+                @gradingPeriodName,
+                @totalInstructionalDays
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@schoolYearTypeDocumentId", schoolYearTypeDocumentId),
+            new SqlParameter("@schoolYear", schoolYear),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@schoolId", schoolId),
+            new SqlParameter("@gradingPeriodDescriptorDocumentId", gradingPeriodDescriptorDocumentId),
+            new SqlParameter("@beginDate", new DateOnly(2025, 8, 1)),
+            new SqlParameter("@endDate", new DateOnly(2025, 9, 15)),
+            new SqlParameter("@gradingPeriodName", gradingPeriodName),
+            new SqlParameter("@totalInstructionalDays", 30)
+        );
+    }
+
+    private async Task InsertAssessmentAsync(
+        long documentId,
+        string assessmentIdentifier,
+        string assessmentTitle,
+        string @namespace
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Assessment] ([DocumentId], [AssessmentIdentifier], [AssessmentTitle], [Namespace])
+            VALUES (@documentId, @assessmentIdentifier, @assessmentTitle, @namespace);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
+            new SqlParameter("@assessmentTitle", assessmentTitle),
+            new SqlParameter("@namespace", @namespace)
+        );
+    }
+
+    private async Task InsertStudentAssessmentAsync(
+        long documentId,
+        long assessmentDocumentId,
+        string assessmentIdentifier,
+        string assessmentNamespace,
+        long studentDocumentId,
+        string studentUniqueId,
+        string studentAssessmentIdentifier
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[StudentAssessment] (
+                [DocumentId],
+                [Assessment_DocumentId],
+                [Assessment_AssessmentIdentifier],
+                [Assessment_Namespace],
+                [Student_DocumentId],
+                [Student_StudentUniqueId],
+                [StudentAssessmentIdentifier]
+            )
+            VALUES (
+                @documentId,
+                @assessmentDocumentId,
+                @assessmentIdentifier,
+                @assessmentNamespace,
+                @studentDocumentId,
+                @studentUniqueId,
+                @studentAssessmentIdentifier
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@assessmentDocumentId", assessmentDocumentId),
+            new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
+            new SqlParameter("@assessmentNamespace", assessmentNamespace),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", studentUniqueId),
+            new SqlParameter("@studentAssessmentIdentifier", studentAssessmentIdentifier)
+        );
+    }
+
+    private async Task InsertAssessmentScoreRangeLearningStandardAsync(
+        long documentId,
+        string assessmentIdentifier,
+        string @namespace,
+        long assessmentDocumentId,
+        string scoreRangeId
+    )
+    {
+        // The Assessment_AssessmentIdentifier/Assessment_Namespace alias columns are
+        // computed (PERSISTED) from the canonical *_Unified columns and must not be
+        // inserted.
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[AssessmentScoreRangeLearningStandard] (
+                [DocumentId],
+                [AssessmentIdentifier_Unified],
+                [Namespace_Unified],
+                [Assessment_DocumentId],
+                [MaximumScore],
+                [MinimumScore],
+                [ScoreRangeId]
+            )
+            VALUES (
+                @documentId,
+                @assessmentIdentifier,
+                @namespace,
+                @assessmentDocumentId,
+                @maximumScore,
+                @minimumScore,
+                @scoreRangeId
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@assessmentIdentifier", assessmentIdentifier),
+            new SqlParameter("@namespace", @namespace),
+            new SqlParameter("@assessmentDocumentId", assessmentDocumentId),
+            new SqlParameter("@maximumScore", "100"),
+            new SqlParameter("@minimumScore", "0"),
+            new SqlParameter("@scoreRangeId", scoreRangeId)
+        );
+    }
+
+    private async Task<TrackedChangeKeyChangeAssociationSeedData> SeedKeyChangeStudentEducationOrganizationAssociationAsync()
+    {
+        const string StudentUniqueId = "20001";
+        const long OriginalEducationOrganizationId = 100;
+        const long ReplacementEducationOrganizationId = 200;
+
+        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var associationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "StudentEducationOrganizationAssociation"
+        );
+
+        var studentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1"),
+            studentResourceKeyId
+        );
+        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Riley", "Quinn");
+
+        // Unlike the seeded SchoolId=100 school (whose triggers are disabled to dodge the
+        // manually planted EducationOrganizationIdentity row for the same id), this fresh
+        // school keeps its triggers enabled so TR_School_AbstractIdentity projects the
+        // EducationOrganizationIdentity row the association FK re-points to.
+        var replacementSchoolDocumentId = await InsertDocumentAsync(
+            Guid.Parse("c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2"),
+            schoolResourceKeyId
+        );
+        await InsertSchoolAsync(
+            replacementSchoolDocumentId,
+            (int)ReplacementEducationOrganizationId,
+            "Gamma Academy"
+        );
+
+        var associationDocumentUuid = Guid.Parse("c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3");
+        var associationDocumentId = await InsertDocumentAsync(
+            associationDocumentUuid,
+            associationResourceKeyId
+        );
+        // The association's original EdOrg reference targets the seeded
+        // EducationOrganizationIdentity row (EducationOrganizationId=100), which the
+        // single-column FK on EducationOrganization_DocumentId requires.
+        await InsertStudentEducationOrganizationAssociationAsync(
+            associationDocumentId,
+            _seedData.EducationOrganizationDocumentId,
+            (int)OriginalEducationOrganizationId,
+            studentDocumentId,
+            StudentUniqueId
+        );
+
+        return new(
+            associationDocumentId,
+            associationDocumentUuid,
+            studentDocumentId,
+            StudentUniqueId,
+            OriginalEducationOrganizationId,
+            replacementSchoolDocumentId,
+            ReplacementEducationOrganizationId
+        );
+    }
+
+    private async Task RepointAssociationEducationOrganizationAsync(
+        TrackedChangeKeyChangeAssociationSeedData seed
+    )
+    {
+        // The stored EdOrg identity value travels with its DocumentId: the FK targets
+        // edfi.EducationOrganizationIdentity through EducationOrganization_DocumentId and
+        // the AllNone CHECK pairs the two columns, so the direct-SQL simulation of a
+        // cascaded identity key change re-points both in a single UPDATE (the trigger's
+        // identity gate keys off the value column).
+        var rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StudentEducationOrganizationAssociation]
+            SET [EducationOrganization_DocumentId] = @replacementSchoolDocumentId,
+                [EducationOrganization_EducationOrganizationId] = @replacementEducationOrganizationId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@replacementSchoolDocumentId", seed.ReplacementSchoolDocumentId),
+            new SqlParameter("@replacementEducationOrganizationId", seed.ReplacementEducationOrganizationId),
+            new SqlParameter("@documentId", seed.AssociationDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+    }
+
     private async Task<long> CountRowsAsync(string sql, params SqlParameter[] parameters)
     {
         return await _database.ExecuteScalarAsync<long>(sql, parameters);
@@ -1873,6 +3681,88 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task<long> ReadMaxChangeVersionAsync()
     {
         return await _database.ExecuteScalarAsync<long>("SELECT dms.GetMaxChangeVersion();");
+    }
+
+    private async Task<long> CountDocumentRowsAsync(long documentId)
+    {
+        return await CountRowsAsync(
+            "SELECT COUNT(*) FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task<long> CountTrackedChangeRowsAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT(*)
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+    }
+
+    private async Task<IReadOnlyDictionary<string, object?>> GetLatestTrackedChangeRowAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            $"""
+            SELECT TOP (1) *
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid
+            ORDER BY [ChangeVersion] DESC;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+
+        return rows.Single();
+    }
+
+    // No tracked row may advance an extraction watermark past the tombstone
+    // (extraction-watermark contract). This helper makes that invariant explicit at
+    // every call site so it cannot be mistaken for a duplicate of GetLatestTrackedChangeRowAsync.
+    private async Task AssertMaxTrackedChangeVersionAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid,
+        long expectedChangeVersion
+    )
+    {
+        var maxChangeVersion = await _database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT max([ChangeVersion])
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+        maxChangeVersion
+            .Should()
+            .Be(
+                expectedChangeVersion,
+                "no tracked row may advance an extraction watermark past the tombstone"
+            );
+    }
+
+    private static void AssertAllNewColumnsAreNull(IReadOnlyDictionary<string, object?> trackedRow)
+    {
+        var newColumns = trackedRow
+            .Keys.Where(columnName => columnName.StartsWith("New_", StringComparison.Ordinal))
+            .ToList();
+
+        newColumns.Should().NotBeEmpty();
+        foreach (var columnName in newColumns)
+        {
+            trackedRow[columnName].Should().BeNull($"tombstone column [{columnName}] must be NULL");
+        }
     }
 
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)

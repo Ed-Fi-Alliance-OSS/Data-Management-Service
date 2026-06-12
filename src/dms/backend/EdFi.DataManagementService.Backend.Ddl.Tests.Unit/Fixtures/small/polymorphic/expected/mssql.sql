@@ -715,6 +715,20 @@ BEGIN
         FROM [edfi].[LocalEducationAgency] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        INSERT INTO [tracked_changes_edfi].[LocalEducationAgency] (
+            [Old_LocalEducationAgencyId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[LocalEducationAgencyId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([LocalEducationAgencyId]))
     BEGIN
         UPDATE d
@@ -871,6 +885,20 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[School] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        INSERT INTO [tracked_changes_edfi].[School] (
+            [Old_SchoolId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[SchoolId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN

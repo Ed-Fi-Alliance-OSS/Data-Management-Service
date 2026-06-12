@@ -147,9 +147,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         EmitReadChangesAuthViews(writer, authHierarchy, concreteResources, trackedChangeTables);
 
         var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
+        var trackedChangeTablesByName = trackedChangeTables.ToDictionary(t => t.Table, t => t);
 
         // Phase 7: Triggers (includes auth hierarchy triggers)
-        EmitTriggers(writer, triggers, tableModelsByTableName);
+        EmitTriggers(writer, triggers, tableModelsByTableName, trackedChangeTablesByName);
 
         return writer.ToString();
     }
@@ -610,7 +611,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitTriggers(
         SqlWriter writer,
         IReadOnlyList<DbTriggerInfo> triggers,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName
     )
     {
         // MSSQL requires a batch boundary before the first CREATE OR ALTER TRIGGER.
@@ -643,11 +645,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // EmitStringLiteralWithCast.
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
-                EmitPgsqlTrigger(writer, trigger, tableModelsByTableName);
+                EmitPgsqlTrigger(writer, trigger, tableModelsByTableName, trackedChangeTablesByName);
             }
             else
             {
-                EmitMssqlTrigger(writer, trigger, tableModelsByTableName);
+                EmitMssqlTrigger(writer, trigger, tableModelsByTableName, trackedChangeTablesByName);
             }
         }
     }
@@ -659,7 +661,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitPgsqlTrigger(
         SqlWriter writer,
         DbTriggerInfo trigger,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName
     )
     {
         var funcName = _dialect.Rules.ShortenIdentifier($"TF_{trigger.Name.Value}");
@@ -693,10 +696,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
-            // DMS-1002 accepts INSERT/UPDATE representation stamping as the main behavior.
-            // We still emit DELETE handling here as future-facing prevision for later
-            // delete-tracking work. On DELETE there is no NEW row, so we bump
-            // ContentVersion via OLD, return OLD, and skip the normal body.
+            // The DELETE branch bumps ContentVersion via OLD and, for triggers with a
+            // ChangeTracking attachment, inserts the tracked-change tombstone (DMS-1179).
+            // On DELETE there is no NEW row, so it returns OLD and skips the normal body.
+            TrackedChangeInsertPlan? trackedChangePlan = null;
             if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
             {
                 if (trigger.KeyColumns.Count != 1)
@@ -714,6 +717,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     tableModel,
                     mirrorStampTargetTable
                 );
+                // Built once per trigger and shared by the DELETE-branch tombstone below and
+                // the UPDATE-path body (EmitPgsqlDocumentStampingBody). Built unconditionally
+                // so attachment inconsistencies throw even when neither branch emits.
+                trackedChangePlan = TryBuildTrackedChangePlan(trigger, tableModel, trackedChangeTablesByName);
                 writer.AppendLine("IF TG_OP = 'DELETE' THEN");
                 using (writer.Indent())
                 {
@@ -727,12 +734,21 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                         assignToNewMirrorColumns: false,
                         updateMirrorTable: !isRootDocumentStampingTrigger
                     );
+                    if (trackedChangePlan is not null)
+                    {
+                        TrackedChangeTriggerBodyEmitter.EmitPgsqlTombstoneInsert(
+                            writer,
+                            _dialect,
+                            trackedChangePlan,
+                            deleteKeyColumn
+                        );
+                    }
                     writer.AppendLine("RETURN OLD;");
                 }
                 writer.AppendLine("END IF;");
             }
 
-            EmitTriggerBody(writer, trigger, tableModelsByTableName);
+            EmitTriggerBody(writer, trigger, tableModelsByTableName, trackedChangeTablesByName, trackedChangePlan);
             writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
@@ -746,9 +762,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("CREATE TRIGGER ");
         writer.AppendLine(Quote(trigger.Name));
 
-        // Keep DELETE in the emitted trigger shape as future-facing prevision for later
-        // delete-tracking work, even though DMS-1002 acceptance is centered on
-        // INSERT/UPDATE representation stamping.
+        // DELETE is part of the trigger event list because the DELETE branch stamps
+        // ContentVersion and emits tracked-change tombstones (DMS-1179).
         var pgsqlTriggerEvent = trigger.Parameters switch
         {
             TriggerKindParameters.DocumentStamping => "BEFORE INSERT OR UPDATE OR DELETE ON ",
@@ -775,7 +790,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitMssqlTrigger(
         SqlWriter writer,
         DbTriggerInfo trigger,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName
     )
     {
         writer.Append("CREATE OR ALTER TRIGGER ");
@@ -796,7 +812,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
-            EmitTriggerBody(writer, trigger, tableModelsByTableName);
+            EmitTriggerBody(writer, trigger, tableModelsByTableName, trackedChangeTablesByName, null);
         }
         writer.AppendLine("END;");
         // Close the batch so that the next trigger (or any subsequent DDL/DML
@@ -908,18 +924,22 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits the trigger body logic based on trigger kind.
+    /// The <paramref name="pgsqlTrackedChangePlan"/> is the prebuilt PG tracked-change plan;
+    /// it is only meaningful on the PostgreSQL document-stamping path and is null for MSSQL callers.
     /// </summary>
     private void EmitTriggerBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName,
+        TrackedChangeInsertPlan? pgsqlTrackedChangePlan
     )
     {
         switch (trigger.Parameters)
         {
             case TriggerKindParameters.DocumentStamping:
                 var tableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
-                EmitDocumentStampingBody(writer, trigger, tableModel);
+                EmitDocumentStampingBody(writer, trigger, tableModel, trackedChangeTablesByName, pgsqlTrackedChangePlan);
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
                 if (!tableModelsByTableName.TryGetValue(trigger.Table, out var refIdTableModel))
@@ -967,11 +987,18 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits document stamping trigger body for DMS-1002 INSERT/UPDATE representation
-    /// stamping, with retained DELETE prevision left in place for later delete-tracking work.
-    /// Root tables with identity projection columns also stamp <c>IdentityVersion</c>.
+    /// Emits the document stamping trigger body: INSERT/UPDATE representation stamping,
+    /// <c>IdentityVersion</c> stamping on root tables with identity projection columns,
+    /// and — for triggers with a ChangeTracking attachment — tracked-change tombstone and
+    /// key-change emission on DELETE (DMS-1179).
     /// </summary>
-    private void EmitDocumentStampingBody(SqlWriter writer, DbTriggerInfo trigger, DbTableModel tableModel)
+    private void EmitDocumentStampingBody(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName,
+        TrackedChangeInsertPlan? pgsqlTrackedChangePlan
+    )
     {
         if (trigger.KeyColumns.Count != 1)
         {
@@ -994,7 +1021,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 documentTable,
                 sequenceName,
                 keyColumn,
-                mirrorStampTargetTable
+                mirrorStampTargetTable,
+                pgsqlTrackedChangePlan
             );
         }
         else
@@ -1006,9 +1034,73 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 documentTable,
                 sequenceName,
                 keyColumn,
-                mirrorStampTargetTable
+                mirrorStampTargetTable,
+                trackedChangeTablesByName
             );
         }
+    }
+
+    /// <summary>
+    /// Resolves the tracked-change insert plan for a <see cref="TriggerKindParameters.DocumentStamping"/>
+    /// trigger that carries a <see cref="TrackedChangeAttachment"/>, or returns <c>null</c> when the
+    /// trigger is not a stamping trigger or has no attachment. Validation runs for every attached
+    /// trigger regardless of which body branches are ultimately emitted.
+    /// </summary>
+    /// <param name="trigger">The trigger whose parameters may carry a tracked-change attachment.</param>
+    /// <param name="tableModel">The live source table model used to resolve value column sources.</param>
+    /// <param name="trackedChangeTablesByName">The tracked-change inventory keyed by table name.</param>
+    /// <returns>The resolved insert plan, or <c>null</c> when the trigger is unattached.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the attachment references a table absent from the tracked-change inventory; when the
+    /// tracked table is <see cref="TrackedChangeTableKind.Resource"/> but the trigger has no identity
+    /// projection columns (key-change detection would be impossible); or when
+    /// <see cref="TrackedChangeTriggerBodyEmitter.BuildPlan"/> finds an inventory inconsistency.
+    /// </exception>
+    private static TrackedChangeInsertPlan? TryBuildTrackedChangePlan(
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName
+    )
+    {
+        if (
+            trigger.Parameters
+            is not TriggerKindParameters.DocumentStamping { ChangeTracking: { } attachment }
+        )
+        {
+            return null;
+        }
+
+        if (!trackedChangeTablesByName.TryGetValue(attachment.TrackedChangeTable, out var tableInfo))
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{trigger.Name.Value}' references tracked-change table "
+                    + $"'{attachment.TrackedChangeTable.Schema.Value}.{attachment.TrackedChangeTable.Name}', "
+                    + "but no such table exists in the tracked-change inventory."
+            );
+        }
+
+        if (tableInfo.Kind == TrackedChangeTableKind.Resource && trigger.IdentityProjectionColumns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{trigger.Name.Value}' is attached to Resource-kind "
+                    + $"tracked-change table '{tableInfo.Table.Schema.Value}.{tableInfo.Table.Name}' "
+                    + "but has empty IdentityProjectionColumns; key-change detection requires a "
+                    + "non-empty identity workset."
+            );
+        }
+
+        var mirrorTarget = RequireMirrorStampTargetTable(trigger);
+        if (!IsRootDocumentStampingTrigger(trigger, tableModel, mirrorTarget))
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{trigger.Name.Value}' is attached to tracked-change table "
+                    + $"'{attachment.TrackedChangeTable.Schema.Value}.{attachment.TrackedChangeTable.Name}' "
+                    + "but is not a root document-stamping trigger; only root triggers may carry a "
+                    + "tracked-change attachment."
+            );
+        }
+
+        return TrackedChangeTriggerBodyEmitter.BuildPlan(tableInfo, tableModel);
     }
 
     private static DbTableName RequireMirrorStampTargetTable(DbTriggerInfo trigger)
@@ -1071,7 +1163,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string documentTable,
         string sequenceName,
         DbColumnName keyColumn,
-        DbTableName mirrorStampTargetTable
+        DbTableName mirrorStampTargetTable,
+        TrackedChangeInsertPlan? trackedChangePlan
     )
     {
         var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
@@ -1162,6 +1255,22 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(" = NEW.");
                 writer.Append(Quote(keyColumn));
                 writer.AppendLine(";");
+
+                // Resource-kind tracked-change attachments record a key-change row for the same
+                // identity-diff workset that bumped IdentityVersion above. ConcreteAbstract tables
+                // are tombstone-only by design.
+                if (
+                    trackedChangePlan is not null
+                    && trackedChangePlan.Table.Kind == TrackedChangeTableKind.Resource
+                )
+                {
+                    TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
+                        writer,
+                        _dialect,
+                        trackedChangePlan,
+                        keyColumn
+                    );
+                }
             }
 
             writer.AppendLine("END IF;");
@@ -1243,9 +1352,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(Quote(ContentLastModifiedAtColumn));
                 // STRICT: a missing dms.Document row must fail with a clear no-rows error
                 // here, not as a misleading not-null violation when the NULL locals reach NEW.
-                writer.AppendLine(
-                    " INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;"
-                );
+                writer.AppendLine(" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;");
                 writer.Append("NEW.");
                 writer.Append(Quote(ContentVersionColumn));
                 writer.AppendLine(" := _stampedContentVersion;");
@@ -1326,7 +1433,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string documentTable,
         string sequenceName,
         DbColumnName keyColumn,
-        DbTableName mirrorStampTargetTable
+        DbTableName mirrorStampTargetTable,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName
     )
     {
         var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
@@ -1489,59 +1597,177 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine("END");
 
+        // Built unconditionally so attachment inconsistencies (unknown tracked table, empty identity
+        // workset on a Resource-kind attachment) throw even when neither tracked-change block below
+        // is emitted.
+        var trackedChangePlan = TryBuildTrackedChangePlan(trigger, tableModel, trackedChangeTablesByName);
+        if (trackedChangePlan is not null)
+        {
+            writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                TrackedChangeTriggerBodyEmitter.EmitMssqlTombstoneInsert(
+                    writer,
+                    _dialect,
+                    trackedChangePlan,
+                    keyColumn
+                );
+            }
+            writer.AppendLine("END");
+        }
+
         // IdentityVersion stamp for root tables with identity projection columns
         if (trigger.IdentityProjectionColumns.Count > 0)
         {
-            // Performance pre-filter: UPDATE(col) returns true if the column appeared in the SET clause,
-            // regardless of whether the value actually changed. The WHERE clause below (using null-safe
-            // inequality) is the authoritative value-change check that filters to only actually changed rows.
-            writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
-            EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
-            writer.AppendLine(")");
-
-            writer.AppendLine("BEGIN");
-
-            using (writer.Indent())
+            if (
+                trackedChangePlan is not null
+                && trackedChangePlan.Table.Kind == TrackedChangeTableKind.Resource
+            )
             {
-                writer.AppendLine("UPDATE d");
-                writer.Append("SET d.");
-                writer.Append(Quote(IdentityVersionColumn));
-                writer.Append(" = NEXT VALUE FOR ");
-                writer.Append(sequenceName);
-                writer.Append(", d.");
-                writer.Append(Quote(IdentityLastModifiedAtColumn));
-                writer.AppendLine(" = sysutcdatetime()");
-                writer.Append("FROM ");
-                writer.Append(documentTable);
-                writer.AppendLine(" d");
-                writer.Append("INNER JOIN inserted i ON d.");
-                writer.Append(Quote(DocumentIdColumn));
-                writer.Append(" = i.");
-                writer.AppendLine(Quote(keyColumn));
-                writer.Append("INNER JOIN deleted del ON del.");
-                writer.Append(Quote(keyColumn));
-                writer.Append(" = i.");
-                writer.AppendLine(Quote(keyColumn));
-                writer.Append("WHERE ");
-                for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+                EmitMssqlIdentityStampWithKeyChange(
+                    writer,
+                    trigger,
+                    tableModel,
+                    documentTable,
+                    sequenceName,
+                    keyColumn,
+                    trackedChangePlan
+                );
+            }
+            else
+            {
+                // Performance pre-filter: UPDATE(col) returns true if the column appeared in the SET clause,
+                // regardless of whether the value actually changed. The WHERE clause below (using null-safe
+                // inequality) is the authoritative value-change check that filters to only actually changed rows.
+                writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
+                EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
+                writer.AppendLine(")");
+
+                writer.AppendLine("BEGIN");
+
+                using (writer.Indent())
                 {
-                    if (i > 0)
-                    {
-                        writer.Append(" OR ");
-                    }
-                    EmitMssqlColumnValueDiffPredicate(
+                    EmitMssqlIdentityVersionUpdate(
                         writer,
+                        trigger,
                         tableModel,
-                        "i",
-                        "del",
-                        trigger.IdentityProjectionColumns[i]
+                        documentTable,
+                        sequenceName,
+                        keyColumn,
+                        captureIdentityChangedDocs: false
                     );
                 }
-                writer.AppendLine(";");
-            }
 
-            writer.AppendLine("END");
+                writer.AppendLine("END");
+            }
         }
+    }
+
+    /// <summary>
+    /// Emits the SQL Server IdentityVersion stamp for a stamping trigger attached to a
+    /// <see cref="TrackedChangeTableKind.Resource"/> tracked-change table, capturing the
+    /// identity-changed workset into <c>@identityChangedDocs</c> via an OUTPUT clause and rendering the
+    /// key-change INSERT from it. Gated only by row-set existence plus the authoritative null-safe
+    /// value diff — never by <c>UPDATE(column)</c>, which reports SET-clause membership rather than
+    /// value change (DMS-1179 AC bans <c>UPDATE(column)</c> for key-change eligibility).
+    /// </summary>
+    private void EmitMssqlIdentityStampWithKeyChange(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        string documentTable,
+        string sequenceName,
+        DbColumnName keyColumn,
+        TrackedChangeInsertPlan trackedChangePlan
+    )
+    {
+        writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)");
+        writer.AppendLine("BEGIN");
+
+        using (writer.Indent())
+        {
+            writer.AppendLine(
+                "DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);"
+            );
+            EmitMssqlIdentityVersionUpdate(
+                writer,
+                trigger,
+                tableModel,
+                documentTable,
+                sequenceName,
+                keyColumn,
+                captureIdentityChangedDocs: true
+            );
+
+            TrackedChangeTriggerBodyEmitter.EmitMssqlKeyChangeInsert(
+                writer,
+                _dialect,
+                trackedChangePlan,
+                keyColumn
+            );
+        }
+
+        writer.AppendLine("END");
+    }
+
+    /// <summary>
+    /// Emits the core <c>UPDATE d SET d.[IdentityVersion] = ... FROM ... INNER JOIN inserted ...
+    /// INNER JOIN deleted ... WHERE &lt;null-safe diff&gt;</c> statement, optionally appending an
+    /// <c>OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs</c> line
+    /// when <paramref name="captureIdentityChangedDocs"/> is <see langword="true"/>.
+    /// </summary>
+    private void EmitMssqlIdentityVersionUpdate(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        string documentTable,
+        string sequenceName,
+        DbColumnName keyColumn,
+        bool captureIdentityChangedDocs
+    )
+    {
+        writer.AppendLine("UPDATE d");
+        writer.Append("SET d.");
+        writer.Append(Quote(IdentityVersionColumn));
+        writer.Append(" = NEXT VALUE FOR ");
+        writer.Append(sequenceName);
+        writer.Append(", d.");
+        writer.Append(Quote(IdentityLastModifiedAtColumn));
+        writer.AppendLine(" = sysutcdatetime()");
+        if (captureIdentityChangedDocs)
+        {
+            writer.AppendLine(
+                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs"
+            );
+        }
+        writer.Append("FROM ");
+        writer.Append(documentTable);
+        writer.AppendLine(" d");
+        writer.Append("INNER JOIN inserted i ON d.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = i.");
+        writer.AppendLine(Quote(keyColumn));
+        writer.Append("INNER JOIN deleted del ON del.");
+        writer.Append(Quote(keyColumn));
+        writer.Append(" = i.");
+        writer.AppendLine(Quote(keyColumn));
+        writer.Append("WHERE ");
+        for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" OR ");
+            }
+            EmitMssqlColumnValueDiffPredicate(
+                writer,
+                tableModel,
+                "i",
+                "del",
+                trigger.IdentityProjectionColumns[i]
+            );
+        }
+        writer.AppendLine(";");
     }
 
     /// <summary>

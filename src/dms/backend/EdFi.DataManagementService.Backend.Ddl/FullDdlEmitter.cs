@@ -25,7 +25,10 @@ public static class FullDdlEmitter
         string preflightDdl = WrapPhase0(
             seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)
         );
-        string coreDdl = new CoreDdlEmitter(dialect).Emit();
+        var sharedDescriptorTrackedChangeTable = modelSet.TrackedChangeTablesInNameOrder.SingleOrDefault(t =>
+            t.Kind == TrackedChangeTableKind.SharedDescriptor
+        );
+        string coreDdl = new CoreDdlEmitter(dialect, sharedDescriptorTrackedChangeTable).Emit();
         string relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
         string seedDml = seedEmitter.Emit(modelSet.EffectiveSchema);
         return JoinSegments(preflightDdl, coreDdl, relationalDdl, seedDml);

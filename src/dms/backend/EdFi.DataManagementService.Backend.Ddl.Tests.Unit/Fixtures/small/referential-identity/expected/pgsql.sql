@@ -1161,6 +1161,17 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."DateTimeKeyResource" (
+            "Old_EventTimestamp",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."EventTimestamp",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EventTimestamp" IS DISTINCT FROM NEW."EventTimestamp") THEN
@@ -1185,6 +1196,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."DateTimeKeyResource" (
+            "Old_EventTimestamp",
+            "New_EventTimestamp",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."EventTimestamp",
+            NEW."EventTimestamp",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1225,6 +1249,17 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."DecimalKeyResource" (
+            "Old_DecimalKey",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."DecimalKey",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DecimalKey" IS DISTINCT FROM NEW."DecimalKey") THEN
@@ -1249,6 +1284,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."DecimalKeyResource" (
+            "Old_DecimalKey",
+            "New_DecimalKey",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."DecimalKey",
+            NEW."DecimalKey",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1289,6 +1337,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."DecimalRefResource" (
+            "Old_RefResourceId",
+            "Old_DecimalKeyReference_DecimalKey",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."RefResourceId",
+            OLD."DecimalKeyReference_DecimalKey",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DecimalKeyReference_DocumentId" IS DISTINCT FROM NEW."DecimalKeyReference_DocumentId" OR OLD."DecimalKeyReference_DecimalKey" IS DISTINCT FROM NEW."DecimalKeyReference_DecimalKey" OR OLD."RefResourceId" IS DISTINCT FROM NEW."RefResourceId") THEN
@@ -1313,6 +1374,23 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."DecimalRefResource" (
+            "Old_RefResourceId",
+            "Old_DecimalKeyReference_DecimalKey",
+            "New_RefResourceId",
+            "New_DecimalKeyReference_DecimalKey",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."RefResourceId",
+            OLD."DecimalKeyReference_DecimalKey",
+            NEW."RefResourceId",
+            NEW."DecimalKeyReference_DecimalKey",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1353,6 +1431,21 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."EdOrgDependentChildResource" (
+            "Old_EdOrgDependentChildResourceId",
+            "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId",
+            "Old_EdOrgDependentResourceReference_EducationOrganizationId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."EdOrgDependentChildResourceId",
+            OLD."EdOrgDependentResourceReference_EdOrgDependentResourceId",
+            OLD."EdOrgDependentResourceReference_EducationOrganizationId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EdOrgDependentResourceReference_DocumentId" IS DISTINCT FROM NEW."EdOrgDependentResourceReference_DocumentId" OR OLD."EdOrgDependentResourceReference_EdOrgDependentResourceId" IS DISTINCT FROM NEW."EdOrgDependentResourceReference_EdOrgDependentResourceId" OR OLD."EdOrgDependentResourceReference_EducationOrganizationId" IS DISTINCT FROM NEW."EdOrgDependentResourceReference_EducationOrganizationId" OR OLD."EdOrgDependentChildResourceId" IS DISTINCT FROM NEW."EdOrgDependentChildResourceId") THEN
@@ -1377,6 +1470,27 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."EdOrgDependentChildResource" (
+            "Old_EdOrgDependentChildResourceId",
+            "Old_EdOrgDependentResourceReference_EdOrgDependentResourceId",
+            "Old_EdOrgDependentResourceReference_EducationOrganizationId",
+            "New_EdOrgDependentChildResourceId",
+            "New_EdOrgDependentResourceReference_EdOrgDependentResourceId",
+            "New_EdOrgDependentResourceReference_EducationOrganizationId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."EdOrgDependentChildResourceId",
+            OLD."EdOrgDependentResourceReference_EdOrgDependentResourceId",
+            OLD."EdOrgDependentResourceReference_EducationOrganizationId",
+            NEW."EdOrgDependentChildResourceId",
+            NEW."EdOrgDependentResourceReference_EdOrgDependentResourceId",
+            NEW."EdOrgDependentResourceReference_EducationOrganizationId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1417,6 +1531,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."EdOrgDependentResource" (
+            "Old_EdOrgDependentResourceId",
+            "Old_EducationOrganization_EducationOrganizationId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."EdOrgDependentResourceId",
+            OLD."EducationOrganization_EducationOrganizationId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EdOrgDependentResourceId" IS DISTINCT FROM NEW."EdOrgDependentResourceId") THEN
@@ -1441,6 +1568,23 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."EdOrgDependentResource" (
+            "Old_EdOrgDependentResourceId",
+            "Old_EducationOrganization_EducationOrganizationId",
+            "New_EdOrgDependentResourceId",
+            "New_EducationOrganization_EducationOrganizationId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."EdOrgDependentResourceId",
+            OLD."EducationOrganization_EducationOrganizationId",
+            NEW."EdOrgDependentResourceId",
+            NEW."EducationOrganization_EducationOrganizationId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1481,6 +1625,23 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."KeyUnifiedResource" (
+            "Old_KeyUnifiedResourceId",
+            "Old_ResourceAReference_ResourceAId",
+            "Old_StudentUniqueId_Unified",
+            "Old_ResourceBReference_ResourceBId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."KeyUnifiedResourceId",
+            OLD."ResourceAReference_ResourceAId",
+            OLD."StudentUniqueId_Unified",
+            OLD."ResourceBReference_ResourceBId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StudentUniqueId_Unified" IS DISTINCT FROM NEW."StudentUniqueId_Unified" OR OLD."ResourceAReference_DocumentId" IS DISTINCT FROM NEW."ResourceAReference_DocumentId" OR OLD."ResourceAReference_ResourceAId" IS DISTINCT FROM NEW."ResourceAReference_ResourceAId" OR OLD."ResourceBReference_DocumentId" IS DISTINCT FROM NEW."ResourceBReference_DocumentId" OR OLD."ResourceBReference_ResourceBId" IS DISTINCT FROM NEW."ResourceBReference_ResourceBId" OR OLD."KeyUnifiedResourceId" IS DISTINCT FROM NEW."KeyUnifiedResourceId") THEN
@@ -1505,6 +1666,31 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."KeyUnifiedResource" (
+            "Old_KeyUnifiedResourceId",
+            "Old_ResourceAReference_ResourceAId",
+            "Old_StudentUniqueId_Unified",
+            "Old_ResourceBReference_ResourceBId",
+            "New_KeyUnifiedResourceId",
+            "New_ResourceAReference_ResourceAId",
+            "New_StudentUniqueId_Unified",
+            "New_ResourceBReference_ResourceBId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."KeyUnifiedResourceId",
+            OLD."ResourceAReference_ResourceAId",
+            OLD."StudentUniqueId_Unified",
+            OLD."ResourceBReference_ResourceBId",
+            NEW."KeyUnifiedResourceId",
+            NEW."ResourceAReference_ResourceAId",
+            NEW."StudentUniqueId_Unified",
+            NEW."ResourceBReference_ResourceBId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1545,6 +1731,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."ResourceA" (
+            "Old_ResourceAId",
+            "Old_StudentReference_StudentUniqueId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."ResourceAId",
+            OLD."StudentReference_StudentUniqueId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StudentReference_DocumentId" IS DISTINCT FROM NEW."StudentReference_DocumentId" OR OLD."StudentReference_StudentUniqueId" IS DISTINCT FROM NEW."StudentReference_StudentUniqueId" OR OLD."ResourceAId" IS DISTINCT FROM NEW."ResourceAId") THEN
@@ -1569,6 +1768,23 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."ResourceA" (
+            "Old_ResourceAId",
+            "Old_StudentReference_StudentUniqueId",
+            "New_ResourceAId",
+            "New_StudentReference_StudentUniqueId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."ResourceAId",
+            OLD."StudentReference_StudentUniqueId",
+            NEW."ResourceAId",
+            NEW."StudentReference_StudentUniqueId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1609,6 +1825,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."ResourceB" (
+            "Old_ResourceBId",
+            "Old_StudentReference_StudentUniqueId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."ResourceBId",
+            OLD."StudentReference_StudentUniqueId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StudentReference_DocumentId" IS DISTINCT FROM NEW."StudentReference_DocumentId" OR OLD."StudentReference_StudentUniqueId" IS DISTINCT FROM NEW."StudentReference_StudentUniqueId" OR OLD."ResourceBId" IS DISTINCT FROM NEW."ResourceBId") THEN
@@ -1633,6 +1862,23 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."ResourceB" (
+            "Old_ResourceBId",
+            "Old_StudentReference_StudentUniqueId",
+            "New_ResourceBId",
+            "New_StudentReference_StudentUniqueId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."ResourceBId",
+            OLD."StudentReference_StudentUniqueId",
+            NEW."ResourceBId",
+            NEW."StudentReference_StudentUniqueId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1726,6 +1972,17 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."School" (
+            "Old_SchoolId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."SchoolId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
@@ -1790,6 +2047,17 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."Student" (
+            "Old_StudentUniqueId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."StudentUniqueId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
@@ -1814,6 +2082,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."Student" (
+            "Old_StudentUniqueId",
+            "New_StudentUniqueId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."StudentUniqueId",
+            NEW."StudentUniqueId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;
@@ -1854,6 +2135,19 @@ BEGIN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation" (
+            "Old_StudentUniqueId",
+            "Old_SchoolReference_SchoolId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."StudentUniqueId",
+            OLD."SchoolReference_SchoolId",
+            doc."DocumentUuid",
+            doc."ContentVersion"
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolReference_DocumentId" IS DISTINCT FROM NEW."SchoolReference_DocumentId" OR OLD."SchoolReference_SchoolId" IS DISTINCT FROM NEW."SchoolReference_SchoolId" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
@@ -1878,6 +2172,23 @@ BEGIN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
+        INSERT INTO "tracked_changes_edfi"."StudentSchoolAssociation" (
+            "Old_StudentUniqueId",
+            "Old_SchoolReference_SchoolId",
+            "New_StudentUniqueId",
+            "New_SchoolReference_SchoolId",
+            "Id",
+            "ChangeVersion"
+        )
+        SELECT
+            OLD."StudentUniqueId",
+            OLD."SchoolReference_SchoolId",
+            NEW."StudentUniqueId",
+            NEW."SchoolReference_SchoolId",
+            doc."DocumentUuid",
+            _stampedContentVersion
+        FROM "dms"."Document" doc
+        WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;

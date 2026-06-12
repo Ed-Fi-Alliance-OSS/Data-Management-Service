@@ -428,6 +428,24 @@ BEGIN
         FROM [dms].[Descriptor] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        INSERT INTO [tracked_changes_edfi].[Descriptor] (
+            [Discriminator],
+            [Old_Namespace],
+            [Old_CodeValue],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[Discriminator],
+            del.[Namespace],
+            del.[CodeValue],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
 END;
 GO
 
@@ -665,14 +683,45 @@ BEGIN
         FROM [edfi].[ProfileRootOnlyMergeItem] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([ProfileRootOnlyMergeItemId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[ProfileRootOnlyMergeItem] (
+            [Old_ProfileRootOnlyMergeItemId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[ProfileRootOnlyMergeItemId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[ProfileRootOnlyMergeItemId] <> del.[ProfileRootOnlyMergeItemId] OR (i.[ProfileRootOnlyMergeItemId] IS NULL AND del.[ProfileRootOnlyMergeItemId] IS NOT NULL) OR (i.[ProfileRootOnlyMergeItemId] IS NOT NULL AND del.[ProfileRootOnlyMergeItemId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[ProfileRootOnlyMergeItem] (
+            [Old_ProfileRootOnlyMergeItemId],
+            [New_ProfileRootOnlyMergeItemId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[ProfileRootOnlyMergeItemId],
+            i.[ProfileRootOnlyMergeItemId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
@@ -748,14 +797,45 @@ BEGIN
         FROM [edfi].[Student] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StudentUniqueId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[Student] (
+            [Old_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[StudentUniqueId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[Student] (
+            [Old_StudentUniqueId],
+            [New_StudentUniqueId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[StudentUniqueId],
+            i.[StudentUniqueId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO

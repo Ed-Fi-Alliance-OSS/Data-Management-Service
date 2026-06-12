@@ -900,9 +900,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         insertBranch.Should().Contain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
         insertBranch.Should().Contain("FROM \"dms\".\"Document\"");
         insertBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        insertBranch
-            .Should()
-            .Contain("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
+        insertBranch.Should().Contain("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
         insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
         insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
         insertBranch.Should().NotContain("nextval");
@@ -4143,5 +4141,340 @@ internal static class ChildCollectionReferrerFixture
                     ReferentialAction.NoAction
                 ),
             ];
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Tracked-Change Rendering Tests (DMS-1179)
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resource_Pgsql
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        _ddl = new RelationalModelDdlEmitter(dialect).Emit(
+            TrackedChangeTriggerFixture.BuildAttachedResource(SqlDialect.Pgsql)
+        );
+    }
+
+    [Test]
+    public void It_should_insert_a_tombstone_in_the_delete_branch()
+    {
+        _ddl.Should().Contain("IF TG_OP = 'DELETE' THEN");
+        _ddl.Should().Contain("INSERT INTO \"tracked_changes_edfi\".");
+        _ddl.IndexOf("INSERT INTO \"tracked_changes_edfi\".", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(_ddl.IndexOf("RETURN OLD;", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public void It_should_insert_a_key_change_row_inside_the_identity_diff_branch()
+    {
+        _ddl.Should().Contain("_stampedContentVersion");
+        _ddl.Should().Contain("IS DISTINCT FROM");
+
+        // The tracked-change CREATE TABLE earlier in the script legitimately names New_* columns,
+        // so slice to the trigger-function section to prove the key-change INSERT was rendered.
+        var triggerSection = _ddl[_ddl.IndexOf("CREATE OR REPLACE FUNCTION", StringComparison.Ordinal)..];
+        triggerSection.Should().Contain("\"New_BeginDate\"");
+
+        // The key-change INSERT must appear AFTER the IdentityVersion UPDATE within the DDL.
+        triggerSection
+            .IndexOf("\"IdentityVersion\"", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(triggerSection.IndexOf("\"New_BeginDate\"", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public void It_should_not_gate_key_change_eligibility_on_update_of_column_lists()
+    {
+        // AC: PostgreSQL must not use UPDATE OF target-list checks for key-change
+        // row eligibility — the null-safe identity-workset diff is the only gate.
+        // Mirrors the MSSQL fixture's NotContain("UPDATE(") assertion.
+        _ddl.Should().NotContain("UPDATE OF");
+    }
+
+    [Test]
+    public void It_should_place_tombstone_insert_after_delete_branch_content_stamp_update()
+    {
+        // Locate the delete-branch marker, the content-stamp UPDATE that follows it,
+        // and the tombstone INSERT — the INSERT must come after the UPDATE.
+        var deleteBranchIdx = _ddl.IndexOf("IF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        deleteBranchIdx.Should().BeGreaterThanOrEqualTo(0, "delete branch must be present");
+
+        // The UPDATE on dms."Document" inside the delete branch
+        var stampUpdateIdx = _ddl.IndexOf(
+            "UPDATE \"dms\".\"Document\"",
+            deleteBranchIdx,
+            StringComparison.Ordinal
+        );
+        stampUpdateIdx.Should().BeGreaterThanOrEqualTo(0, "content-stamp UPDATE must follow delete branch");
+
+        var tombstoneIdx = _ddl.IndexOf(
+            "INSERT INTO \"tracked_changes_edfi\".",
+            stampUpdateIdx,
+            StringComparison.Ordinal
+        );
+        tombstoneIdx
+            .Should()
+            .BeGreaterThan(stampUpdateIdx, "tombstone INSERT must appear after the content-stamp UPDATE");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resource_Mssql
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        _ddl = new RelationalModelDdlEmitter(dialect).Emit(
+            TrackedChangeTriggerFixture.BuildAttachedResource(SqlDialect.Mssql)
+        );
+    }
+
+    [Test]
+    public void It_should_insert_a_tombstone_in_a_delete_only_branch()
+    {
+        _ddl.Should().Contain("IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)");
+        _ddl.Should().Contain("INSERT INTO [tracked_changes_edfi].");
+    }
+
+    [Test]
+    public void It_should_capture_identity_changed_docs_and_not_gate_on_update_function()
+    {
+        _ddl.Should().Contain("DECLARE @identityChangedDocs TABLE");
+        _ddl.Should()
+            .Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs");
+        _ddl.Should().NotContain("UPDATE("); // AC: no UPDATE(col) gating on attached Resource triggers
+    }
+
+    [Test]
+    public void It_should_place_tombstone_branch_after_mirror_update_block()
+    {
+        // The mirror-update guard block must appear before the tombstone DELETE-only branch.
+        var mirrorUpdateIdx = _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @stamped)", StringComparison.Ordinal);
+        mirrorUpdateIdx.Should().BeGreaterThanOrEqualTo(0, "mirror-update guard must be present");
+
+        var tombstoneBranchIdx = _ddl.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)",
+            StringComparison.Ordinal
+        );
+        tombstoneBranchIdx
+            .Should()
+            .BeGreaterThan(mirrorUpdateIdx, "tombstone branch must appear after the mirror-update block");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_TrackedChange_ConcreteAbstract
+{
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_tombstone_but_no_key_change(SqlDialect sqlDialect)
+    {
+        var dialect = SqlDialectFactory.Create(sqlDialect);
+        var ddl = new RelationalModelDdlEmitter(dialect).Emit(
+            TrackedChangeTriggerFixture.BuildAttachedConcreteAbstract(sqlDialect)
+        );
+
+        ddl.Should().Contain("tracked_changes_edfi");
+        ddl.Should().NotContain("@identityChangedDocs");
+
+        // The tombstone itself never emits New_* columns, so their absence from the trigger
+        // section proves no key-change INSERT was rendered. (The tracked-change CREATE TABLE
+        // earlier in the script legitimately names New_* columns.)
+        var triggerSectionStart =
+            sqlDialect == SqlDialect.Pgsql
+                ? ddl.IndexOf("CREATE OR REPLACE FUNCTION", StringComparison.Ordinal)
+                : ddl.IndexOf("CREATE OR ALTER TRIGGER", StringComparison.Ordinal);
+        triggerSectionStart.Should().BeGreaterThanOrEqualTo(0);
+        var triggerSection = ddl[triggerSectionStart..];
+        triggerSection.Should().NotContain("\"New_BeginDate\"").And.NotContain("[New_BeginDate]");
+        triggerSection
+            .Should()
+            .Contain(
+                sqlDialect == SqlDialect.Pgsql
+                    ? "INSERT INTO \"tracked_changes_edfi\"."
+                    : "INSERT INTO [tracked_changes_edfi]."
+            );
+
+        if (sqlDialect == SqlDialect.Mssql)
+        {
+            ddl.Should().Contain("UPDATE("); // existing IdentityVersion stamp shape preserved
+        }
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_TrackedChange_Resource_Without_Identity_Columns
+{
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_throw_on_emission(SqlDialect sqlDialect)
+    {
+        var dialect = SqlDialectFactory.Create(sqlDialect);
+
+        var act = () =>
+            new RelationalModelDdlEmitter(dialect).Emit(
+                TrackedChangeTriggerFixture.BuildAttachedResourceWithEmptyIdentity(sqlDialect)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*IdentityProjectionColumns*");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Attachment_To_Unknown_Tracked_Table
+{
+    [Test]
+    public void It_should_throw_on_emission()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var modelSet = TrackedChangeTriggerFixture.BuildAttachedResource(SqlDialect.Pgsql) with
+        {
+            TrackedChangeTablesInNameOrder = [],
+        };
+
+        var act = () => new RelationalModelDdlEmitter(dialect).Emit(modelSet);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*tracked-change table*");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_NonRoot_Attachment
+{
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_throw_because_attachment_requires_root_trigger(SqlDialect sqlDialect)
+    {
+        var dialect = SqlDialectFactory.Create(sqlDialect);
+
+        var act = () =>
+            new RelationalModelDdlEmitter(dialect).Emit(
+                TrackedChangeTriggerFixture.BuildNonRootAttachedResource(sqlDialect)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*root*");
+    }
+}
+
+/// <summary>
+/// Builds <see cref="DerivedRelationalModelSet"/> instances whose single DocumentStamping trigger is
+/// attached to a tracked-change table (<see cref="TriggerKindParameters.DocumentStamping.ChangeTracking"/>),
+/// reusing the Grade-shaped source table and tracked-change inventory from
+/// <see cref="TrackedChangeEmitterFixture"/>. Table models for the person-join targets
+/// (edfi.StudentSectionAssociation, edfi.Student) are not required because the emitted SQL references
+/// them by name only.
+/// </summary>
+internal static class TrackedChangeTriggerFixture
+{
+    internal static DerivedRelationalModelSet BuildAttachedResource(SqlDialect dialect)
+    {
+        return Build(
+            dialect,
+            TrackedChangeTableKind.Resource,
+            [new DbColumnName("BeginDate"), new DbColumnName("SchoolId_Unified")]
+        );
+    }
+
+    internal static DerivedRelationalModelSet BuildAttachedConcreteAbstract(SqlDialect dialect)
+    {
+        return Build(
+            dialect,
+            TrackedChangeTableKind.ConcreteAbstract,
+            [new DbColumnName("BeginDate"), new DbColumnName("SchoolId_Unified")]
+        );
+    }
+
+    internal static DerivedRelationalModelSet BuildAttachedResourceWithEmptyIdentity(SqlDialect dialect)
+    {
+        return Build(dialect, TrackedChangeTableKind.Resource, []);
+    }
+
+    /// <summary>
+    /// Builds a model set whose stamping trigger has a <see cref="TrackedChangeAttachment"/> but
+    /// whose <see cref="DbTriggerInfo.MirrorStampTargetTable"/> points to a parent table rather than
+    /// the trigger's own table, making it non-root per
+    /// <see cref="RelationalModelDdlEmitter"/>.<c>IsRootDocumentStampingTrigger</c>.
+    /// Used to verify that <c>TryBuildTrackedChangePlan</c> rejects non-root attached triggers.
+    /// </summary>
+    internal static DerivedRelationalModelSet BuildNonRootAttachedResource(SqlDialect dialect)
+    {
+        return Build(
+            dialect,
+            TrackedChangeTableKind.Resource,
+            [new DbColumnName("BeginDate"), new DbColumnName("SchoolId_Unified")],
+            mirrorStampTargetTable: new DbTableName(TrackedChangeEmitterFixture.EdfiSchema, "CourseOffering")
+        );
+    }
+
+    private static DerivedRelationalModelSet Build(
+        SqlDialect dialect,
+        TrackedChangeTableKind kind,
+        IReadOnlyList<DbColumnName> identityProjectionColumns,
+        DbTableName? mirrorStampTargetTable = null
+    )
+    {
+        var schema = TrackedChangeEmitterFixture.EdfiSchema;
+        var sourceTable = TrackedChangeEmitterFixture.BuildSourceTableModel();
+        var trackedTable = TrackedChangeEmitterFixture.BuildTrackedTable() with { Kind = kind };
+        var resource = new QualifiedResourceName("Ed-Fi", "Grade");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            sourceTable,
+            [sourceTable],
+            [],
+            []
+        );
+
+        var trigger = new DbTriggerInfo(
+            new DbTriggerName("TR_Grade_DocumentStamping"),
+            sourceTable.Table,
+            [new DbColumnName("DocumentId")],
+            identityProjectionColumns,
+            new TriggerKindParameters.DocumentStamping(new TrackedChangeAttachment(trackedTable.Table)),
+            MirrorStampTargetTable: mirrorStampTargetTable ?? sourceTable.Table
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            [trigger],
+            TrackedChangeTablesInNameOrder: [trackedTable]
+        );
     }
 }

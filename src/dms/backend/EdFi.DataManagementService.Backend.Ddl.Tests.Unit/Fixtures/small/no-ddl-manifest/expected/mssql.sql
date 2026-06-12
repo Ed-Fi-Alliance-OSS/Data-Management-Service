@@ -549,14 +549,45 @@ BEGIN
         FROM [edfi].[Person] r
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([PersonId]))
+    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
+        INSERT INTO [tracked_changes_edfi].[Person] (
+            [Old_PersonId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[PersonId],
+            doc.[DocumentUuid],
+            doc.[ContentVersion]
+        FROM deleted del
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
+    END
+    IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
+    BEGIN
+        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
         UPDATE d
         SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         WHERE (i.[PersonId] <> del.[PersonId] OR (i.[PersonId] IS NULL AND del.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND del.[PersonId] IS NULL));
+        INSERT INTO [tracked_changes_edfi].[Person] (
+            [Old_PersonId],
+            [New_PersonId],
+            [Id],
+            [ChangeVersion]
+        )
+        SELECT
+            del.[PersonId],
+            i.[PersonId],
+            doc.[DocumentUuid],
+            idc.[ContentVersion]
+        FROM @identityChangedDocs idc
+        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
 END;
 GO
