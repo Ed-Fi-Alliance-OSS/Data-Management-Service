@@ -57,18 +57,38 @@ Describe "Start scripts register identity clients with env-file secrets" {
         @{ Name = $_; ScriptPath = (Join-Path $composeRoot $_) }
     }
 
-    It "passes -NewClientSecret on every full-access and read-only client registration in <Name>" -ForEach $cases {
-        # Every setup-keycloak/setup-openiddict client registration must pass -NewClientSecret,
-        # except -InitDb (no client) and the CMSAuthMetadataReadOnlyAccess client (no dedicated
-        # env-file secret). A registration without -NewClientSecret silently falls back to the
-        # setup script's hard-coded default and reintroduces the secret-mismatch regression.
-        $offenders = Get-Content -LiteralPath $ScriptPath | Where-Object {
-            $_ -match '\./setup-(keycloak|openiddict)\.ps1' -and
-            $_ -notmatch 'InitDb' -and
-            $_ -notmatch 'CMSAuthMetadataReadOnlyAccess' -and
-            $_ -notmatch 'NewClientSecret'
+    It "resolves the identity client secrets from the env file in <Name>" -ForEach $cases {
+        # The per-client bindings asserted below reference $identityClientSecrets, so the script
+        # must populate it from the env file via the shared resolver.
+        $content = Get-Content -LiteralPath $ScriptPath -Raw
+        $content | Should -Match '\$identityClientSecrets\s*=\s*Resolve-IdentityClientSecrets\s+-EnvValues\s+\$envValues'
+    }
+
+    It "binds each client registration to the matching resolved secret in <Name>" -ForEach $cases {
+        # A presence-only check (does the line contain -NewClientSecret?) is not enough: it would
+        # still pass with a hard-coded value, with the same secret reused for both clients, or with
+        # the two resolved secrets swapped. Assert the exact resolved property each client requires:
+        #   - CMSReadOnlyAccess           -> CmsReadOnlyAccessClientSecret        (CONFIG_SERVICE_CLIENT_SECRET)
+        #   - DmsConfigurationService     -> DmsConfigurationServiceClientSecret  (DMS_CONFIG_IDENTITY_CLIENT_SECRET)
+        #   - CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret and keeps the default.
+        $setupLines = Get-Content -LiteralPath $ScriptPath | Where-Object {
+            $_ -match '\./setup-(keycloak|openiddict)\.ps1' -and $_ -notmatch '-InitDb'
         }
 
-        $offenders | Should -BeNullOrEmpty
+        $setupLines | Should -Not -BeNullOrEmpty -Because "each start script invokes the identity setup scripts"
+
+        foreach ($line in $setupLines) {
+            if ($line -match '-NewClientId\s+"CMSAuthMetadataReadOnlyAccess"') {
+                # Intentionally not bound to an env-file secret; uses the setup default.
+                $line | Should -Not -Match '\$identityClientSecrets\.' -Because "CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret: $line"
+            }
+            elseif ($line -match '-NewClientId\s+"CMSReadOnlyAccess"') {
+                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.CmsReadOnlyAccessClientSecret\b' -Because "CMSReadOnlyAccess must register CONFIG_SERVICE_CLIENT_SECRET: $line"
+            }
+            else {
+                # No -NewClientId => the default DmsConfigurationService (full_access) client.
+                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.DmsConfigurationServiceClientSecret\b' -Because "DmsConfigurationService must register DMS_CONFIG_IDENTITY_CLIENT_SECRET: $line"
+            }
+        }
     }
 }
