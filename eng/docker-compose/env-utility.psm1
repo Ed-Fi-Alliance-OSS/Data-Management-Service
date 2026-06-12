@@ -138,6 +138,35 @@ function Resolve-BootstrapAdminClient {
     }
 }
 
+function Resolve-IdentityClientSecrets {
+    <#
+    .SYNOPSIS
+        Returns the client secrets used to register the local identity clients so that the
+        registered secrets match the env-file values DMS and CMS authenticate with.
+
+        - DmsConfigurationService (full_access) is registered with
+          DMS_CONFIG_IDENTITY_CLIENT_SECRET (the CMS IdentitySettings:ClientSecret).
+        - CMSReadOnlyAccess (readonly_access) is registered with CONFIG_SERVICE_CLIENT_SECRET
+          (the DMS ConfigurationServiceSettings:ClientSecret used at runtime to obtain CMS tokens).
+
+        Both fall back to the historical local-dev default so the standard developer flow needs
+        no env-file changes. Previously the setup scripts registered every client with the
+        hard-coded default secret, so overriding CONFIG_SERVICE_CLIENT_SECRET (or
+        DMS_CONFIG_IDENTITY_CLIENT_SECRET) produced a secret mismatch and CMS token acquisition
+        failed. Single-sources the mapping so registration and runtime always agree.
+    .PARAMETER EnvValues
+        Hashtable returned by ReadValuesFromEnvFile.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    return [pscustomobject]@{
+        DmsConfigurationServiceClientSecret = Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
+        CmsReadOnlyAccessClientSecret       = Get-EnvValue -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
+    }
+}
+
 function Resolve-CmsBaseUrl {
     <#
     .SYNOPSIS

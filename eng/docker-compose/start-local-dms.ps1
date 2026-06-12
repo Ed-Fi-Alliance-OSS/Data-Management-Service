@@ -183,6 +183,7 @@ $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot
 # Identity provider configuration
 Import-Module ./env-utility.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
+$identityClientSecrets = Resolve-IdentityClientSecrets -EnvValues $envValues
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
 # Shared local-settings contract: explicit -IdentityProvider wins, then the env file's
@@ -386,10 +387,10 @@ else {
 
         Write-Output "Running setup-keycloak.ps1 scripts..."
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-keycloak.ps1
+        ./setup-keycloak.ps1 -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
@@ -420,8 +421,8 @@ else {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Starting self-contained initialization script..."
-            ./setup-openiddict.ps1 -InsertData -EnvironmentFile $EnvironmentFile
-            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -EnvironmentFile $EnvironmentFile
+            ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -EnvironmentFile $EnvironmentFile
             ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
         }
 
@@ -525,10 +526,10 @@ else {
     {
         Write-Output "Starting self-contained initialization script..."
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-openiddict.ps1 -InsertData -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -EnvironmentFile $EnvironmentFile
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -EnvironmentFile $EnvironmentFile
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile

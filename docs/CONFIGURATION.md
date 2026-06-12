@@ -101,9 +101,12 @@ These settings configure the allowed client-secret length range used by CMS regi
 > the 32-character minimum), `ReportInvalidConfiguration` in `Program.cs` returns
 > true, `InitializeDatabase` is skipped, and the DbUp migrations that create the
 > OpenIddict tables never run — causing `start-local-dms.ps1` to fail. The local
-> scripts and Compose files reuse one secret value across
-> `CONFIG_SERVICE_CLIENT_SECRET` (DMS → CMS) and `DMS_CONFIG_IDENTITY_CLIENT_SECRET`
-> (the CMS client), so that value must meet the length and complexity rules above.
+> startup scripts register the CMS identity clients from these env-file values —
+> `CMSReadOnlyAccess` from `CONFIG_SERVICE_CLIENT_SECRET` (DMS → CMS) and
+> `DmsConfigurationService` from `DMS_CONFIG_IDENTITY_CLIENT_SECRET` (the CMS client) —
+> so overriding either variable stays consistent between the registered client and the
+> service that authenticates with it. Any value you choose must still meet the length
+> and complexity rules above.
 
 ## RateLimit
 
