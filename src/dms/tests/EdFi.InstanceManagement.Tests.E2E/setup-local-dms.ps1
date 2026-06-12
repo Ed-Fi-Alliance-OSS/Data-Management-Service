@@ -13,8 +13,8 @@
     Extension schema packages (Sample, Homograph) are loaded via DLL-backed SCHEMA_PACKAGES.
     The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
     claimset fragments are loaded from the AdditionalClaimsets directory mounted at
-    /app/additional-claims. This is the non-bootstrap transitional path until Story 04
-    moves E2E runtime loading onto the staged bootstrap workspace.
+    /app/additional-claims. This is the non-bootstrap compatibility path; bootstrap mode
+    activates staged schema and claims automatically when a manifest is present.
 
     The script runs:
     ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -IdentityProvider self-contained -AddExtensionSecurityMetadata -SkipConnectorSetup
@@ -107,17 +107,17 @@ try {
     Write-Host "NOTE: Tenant, instance, and Kafka infrastructure will be created by tests" -ForegroundColor Yellow
     Write-Host ""
 
-    Write-Output "Using DLL-backed schema packages for E2E. Bootstrap loose-file runtime loading is Story 04."
+    Write-Output "Using DLL-backed schema packages for E2E (non-bootstrap compatibility path)."
 
     $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
     $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
     $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
     $previousNeedDatabaseSetup = [System.Environment]::GetEnvironmentVariable("NEED_DATABASE_SETUP")
     try {
-        # .env.routeContext.e2e carries the Story 04 loose-file schema settings, but this
-        # transitional E2E setup still runs from DLL-backed SCHEMA_PACKAGES. Process env
+        # .env.routeContext.e2e carries the bootstrap loose-file schema settings, but this
+        # non-bootstrap E2E setup still runs from DLL-backed SCHEMA_PACKAGES. Process env
         # values win over docker compose --env-file entries, so clear stale overrides
-        # left by teardown, force the Story 04 path off, and keep the DMS entrypoint
+        # left by teardown, force the bootstrap path off, and keep the DMS entrypoint
         # installer off because this harness provisions the main database explicitly below.
         $env:USE_API_SCHEMA_PATH = "false"
         $env:API_SCHEMA_PATH = ""

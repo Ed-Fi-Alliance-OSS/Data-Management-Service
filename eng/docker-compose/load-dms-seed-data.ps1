@@ -1366,7 +1366,7 @@ function Get-SeedXsdDirectory {
     }
 
     if ($xsdPlan.Count -eq 0) {
-        throw "No staged XSD files found in any project's xsdDirectory from $(Format-LogSafeText $absApiSchemaManifestPath). Ensure Story 04 XSD staging is complete, or verify the ApiSchema manifest projects include an xsdDirectory entry."
+        throw "No staged XSD files found in any project's xsdDirectory from $(Format-LogSafeText $absApiSchemaManifestPath). Verify the ApiSchema manifest projects include an xsdDirectory entry and that prepare-dms-schema.ps1 completed successfully."
     }
 
     foreach ($entry in $xsdPlan) {
@@ -1450,6 +1450,15 @@ function Invoke-BulkLoadClient {
     XSD validation is left enabled because the bootstrap path sources both sample XML and
     bulk-load XSDs from the same Ed-Fi-Data-Standard tag (currently v5.2.0), so the two
     are version-consistent by construction.
+
+    Connection/concurrency/retry tuning is required: DMS's Polly circuit breaker
+    (FailureRatio=0.01, MinimumThroughput=2, 10s sampling window, 30s break) trips almost
+    immediately under the BulkLoadClient's unbounded default concurrency, causing all
+    subsequent requests to 500 (BrokenCircuit) and retry-storming the rate limiter
+    (PermitLimit=5000/10s, QueueLimit=0) into a flood of 429s. The reference values used
+    by the CI bulk-load path (eng/bulkLoad/modules/BulkLoad.psm1 -c 100 -l 500 -t 50)
+    prove the approach; bootstrap seed delivery uses conservative equivalents for the
+    relational backend.
     #>
     param(
         [string]$BulkLoadClientDll,
@@ -1463,6 +1472,20 @@ function Invoke-BulkLoadClient {
         [scriptblock]$Invoker = $null
     )
 
+    # Conservative tuning for the relational backend's circuit-breaker sensitivity and
+    # rate-limiter headroom (PermitLimit=5000/10s, QueueLimit=0):
+    # -c  max concurrent HTTP connections
+    # -l  max simultaneous API requests (same as -c but guards a different internal queue)
+    # -t  task buffer capacity
+    # -r  per-resource retry count (tolerate transient 500s before a circuit trip)
+    # Low concurrency prevents exhausting the 5000/10s rate-limit window on large files
+    # such as StudentTranscript.xml (~15k CourseTranscript records). Reference CI values
+    # in eng/bulkLoad/modules/BulkLoad.psm1 use -c 100 -l 500 for non-rate-limited paths.
+    $connectionLimit  = 10
+    $maxRequests      = 10
+    $taskCapacity     = 5
+    $retries          = 2
+
     $bulkLoadArgs = @(
         "-b", $DmsBaseUrl,
         "-d", $DataDirectory,
@@ -1470,7 +1493,11 @@ function Invoke-BulkLoadClient {
         "-k", $Key,
         "-s", $Secret,
         "-o", $OAuthUrl,
-        "-x", $XsdDirectory
+        "-x", $XsdDirectory,
+        "-c", [string]$connectionLimit,
+        "-l", [string]$maxRequests,
+        "-t", [string]$taskCapacity,
+        "-r", [string]$retries
     )
 
     if ($null -ne $Invoker) {

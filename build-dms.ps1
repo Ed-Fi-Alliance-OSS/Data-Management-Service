@@ -699,16 +699,14 @@ function Start-DockerEnvironment {
                 # Local-image path: start-local-dms.ps1 is infrastructure-lifecycle-only as of
                 # DMS-1153 and no longer accepts -LoadSeedData.
                 #
-                # This flow is intentionally OUTSIDE the DMS-1153 bootstrap-manifest contract:
-                # the -RemoveBootstrap teardown above guarantees no manifest is staged, so the
-                # claims-ready gate is skipped and NEED_DATABASE_SETUP from the env file
-                # provisions the database in-container at DMS startup. The full start (rather
+                # This flow is intentionally OUTSIDE the bootstrap-manifest contract (non-bootstrap
+                # compatibility): the -RemoveBootstrap teardown above guarantees no manifest is
+                # staged, so the claims-ready gate is skipped and NEED_DATABASE_SETUP from the env
+                # file provisions the database in-container at DMS startup. The full start (rather
                 # than the -InfraOnly/-DmsOnly split) is required here because -DmsOnly forces
                 # NEED_DATABASE_SETUP=false per the DMS-1151 phase contract, which would leave
                 # this legacy DLL-backed flow unprovisioned. The DMS container restarts until
                 # the configure step below lands the data store (restart: unless-stopped).
-                # Story 04 moves this flow onto the staged bootstrap workspace and the ordered
-                # phase flow.
                 if ($LoadSeedData) {
                     # The database template must own dms schema creation: the env files used
                     # here set NEED_DATABASE_SETUP=true, and startup provisioning would create
@@ -735,7 +733,7 @@ function Start-DockerEnvironment {
 
                     # Direct-SQL database-template seed path, relocated verbatim from the seed
                     # block de-scoped out of start-local-dms.ps1; its removal is gated on the
-                    # bootstrap-design.md Section 6.4 Story-04 XSD-staging verification. The
+                    # bootstrap-design.md Section 6.4 verification gate closing. The
                     # API-based load-dms-seed-data.ps1 path is not usable here: it requires a
                     # staged bootstrap manifest, and the -RemoveBootstrap teardown above
                     # guarantees none is present.

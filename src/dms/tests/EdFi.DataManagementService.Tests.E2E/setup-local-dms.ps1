@@ -13,8 +13,8 @@
     Extension schema packages (Sample, Homograph) are loaded via DLL-backed SCHEMA_PACKAGES.
     The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
     claimset fragments are loaded from the AdditionalClaimsets directory mounted at
-    /app/additional-claims. This is the non-bootstrap transitional path until Story 04
-    moves E2E runtime loading onto the staged bootstrap workspace.
+    /app/additional-claims. This is the non-bootstrap compatibility path; bootstrap mode
+    activates staged schema and claims automatically when a manifest is present.
 
     The script runs:
     ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
@@ -83,7 +83,7 @@ try {
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
 
-    Write-Output "Using DLL-backed schema packages for E2E. Bootstrap loose-file runtime loading is Story 04."
+    Write-Output "Using DLL-backed schema packages for E2E (non-bootstrap compatibility path)."
 
     # Run the start script with E2E configuration
     ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata
@@ -101,8 +101,7 @@ try {
     # This DLL-backed E2E flow intentionally keeps the full start rather than the
     # -InfraOnly/-DmsOnly split: -DmsOnly forces NEED_DATABASE_SETUP=false (DMS-1151 phase
     # contract), but this flow relies on .env.e2e legacy in-container provisioning. The DMS
-    # container restarts until this step lands the data store; Story 04 migrates E2E onto the
-    # staged bootstrap workspace and the ordered phase flow.
+    # container restarts until this step lands the data store (non-bootstrap compatibility flow).
     ./configure-local-data-store.ps1 -EnvironmentFile $EnvironmentFile
 
     if ($LASTEXITCODE -ne 0) {

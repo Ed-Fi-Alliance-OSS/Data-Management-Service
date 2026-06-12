@@ -674,12 +674,12 @@ function Get-ProvisionIdeGuidance {
         $lines.Add("  Effective schema hash: $(Format-LogSafeText $SchemaWorkspace.EffectiveSchemaHash)")
     }
     $lines.Add("")
-    $lines.Add("Expected DMS runtime appsettings for IDE-hosted launch (activation deferred to Story 04 - DMS-1154):")
+    $lines.Add("Expected DMS runtime appsettings for IDE-hosted launch (staged workspace is runtime-authoritative):")
     $apiSchemaRoot = [System.IO.Path]::GetDirectoryName($SchemaWorkspace.ApiSchemaManifestPath)
     $lines.Add("  AppSettings__UseApiSchemaPath = true")
     $lines.Add("  AppSettings__ApiSchemaPath    = $(Format-LogSafePath $apiSchemaRoot)")
-    $lines.Add("Note: bootstrap does not flip these flags. Story 04 owns enabling staged-schema runtime loading;")
-    $lines.Add("      until then DMS containers and IDE launches keep using the DLL-backed schema assemblies.")
+    $lines.Add("Note: in bootstrap mode these flags are activated automatically; the staged workspace is runtime-authoritative.")
+    $lines.Add("      IDE-hosted DMS reads the staged schema directly via ApiSchemaPath (UseApiSchemaPath=true).")
 
     return $lines.ToArray()
 }
@@ -756,8 +756,8 @@ function Write-ProvisionSummary {
     <#
     .SYNOPSIS
     Writes the post-provisioning summary and the IDE next-step guidance derived from the
-    staged schema workspace and the targets just provisioned. The Story 04 dependency is
-    surfaced explicitly so operators don't assume the staged path is the active runtime path.
+    staged schema workspace and the targets just provisioned. The staged schema workspace is
+    runtime-authoritative in bootstrap mode; this guidance reflects the active runtime path.
     #>
     param(
         [Parameter(Mandatory)]

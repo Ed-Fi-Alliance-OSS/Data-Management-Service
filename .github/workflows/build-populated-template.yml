@@ -172,11 +172,10 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -enableConfig
         working-directory: eng/docker-compose/
 
-      # Legacy DLL-backed flow (no bootstrap manifest): the claims-ready gate does not apply, and
-      # DMS fails fatally at startup when CMS has no data stores; no data store is created by
-      # default. This non-relational path uses USE_API_SCHEMA_PATH=false (DLL-backed runtime
-      # loading) and is outside the DMS-1153 bootstrap-manifest contract; cutover is assigned
-      # to DMS-1154.
+      # Legacy DLL-backed flow (no bootstrap manifest, non-bootstrap compatibility): the
+      # claims-ready gate does not apply, and DMS fails fatally at startup when CMS has no data
+      # stores; no data store is created by default. This non-relational path uses
+      # USE_API_SCHEMA_PATH=false (DLL-backed runtime loading).
       - name: Register non-relational data store
         if: ${{ !inputs.use_relational_backend }}
         run: |

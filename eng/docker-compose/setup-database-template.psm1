@@ -9,7 +9,7 @@
 # start-published-dms.ps1 still owns -LoadSeedData and calls this module directly. Deleting the
 # module is explicitly gated on "verifying the repo-pinned BulkLoadClient XML mode against DMS
 # discovery, dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." That
-# verification depends on Story 04's XSD staging, which has not landed. The slice that
+# verification requires the full bootstrap verification gate in §6.4 to close. The slice that
 # closes the gate owns this module's removal.
 
 function LoadSeedData {

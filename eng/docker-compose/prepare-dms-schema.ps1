@@ -558,6 +558,16 @@ try {
         Copy-Item -LiteralPath $copyOperation.SourcePath -Destination $targetPath -ErrorAction Stop
     }
 
+    # Copy JsonSchemaForApiSchema.json into the workspace root so it is available when
+    # /app/ApiSchema is mounted in Docker (the mount shadows the DMS assembly output directory
+    # that ApiSchemaValidator uses to load this meta-schema at startup).
+    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    $jsonSchemaValidatorSource = Join-Path $repoRoot "src/dms/core/EdFi.DataManagementService.Core/ApiSchema/JsonSchemaForApiSchema.json"
+    if (-not (Test-Path -LiteralPath $jsonSchemaValidatorSource -PathType Leaf)) {
+        throw "JsonSchemaForApiSchema.json not found at $(Format-LogSafeText $jsonSchemaValidatorSource). Build the DMS solution before running prepare-dms-schema.ps1."
+    }
+    Copy-Item -LiteralPath $jsonSchemaValidatorSource -Destination (Join-Path $temporaryRoot "JsonSchemaForApiSchema.json") -ErrorAction Stop
+
     $apiSchemaManifest = [ordered]@{
         version = 1
         projects = @($manifestProjects)

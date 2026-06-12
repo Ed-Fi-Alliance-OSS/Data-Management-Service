@@ -9,10 +9,10 @@ Describe "Story 00 bootstrap" {
         $script:sourceDockerComposeRoot = Join-Path $script:sourceRepoRoot "eng/docker-compose"
         $script:hashA = "0000000000000000000000000000000000000000000000000000000000000001"
         $script:hashB = "0000000000000000000000000000000000000000000000000000000000000002"
-        # Story 04 boundary: USE_API_SCHEMA_PATH, API_SCHEMA_PATH, SCHEMA_PACKAGES,
-        # DMS_API_SCHEMA_MOUNT_SOURCE are NOT set by Set-BootstrapStartupEnvironment (Story 04 owns
-        # that flip). They are included here for isolation only so that incidental env state from
-        # the host environment does not bleed into assertion tests that expect those vars to be absent.
+        # These bootstrap-managed env vars are snapshotted and restored around each test so that
+        # incidental host env state does not bleed into assertions. Set-BootstrapStartupEnvironment
+        # activates them (schema + claims) when a valid manifest is present; they stay blank when
+        # no manifest is present.
         $script:bootstrapEnvVars = @(
             "USE_API_SCHEMA_PATH",
             "API_SCHEMA_PATH",
@@ -43,6 +43,12 @@ Describe "Story 00 bootstrap" {
         New-Item -ItemType Directory -Path $claimsTargetRoot -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Claims") -Destination $claimsTargetRoot -Recurse
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Deploy") -Destination $claimsTargetRoot -Recurse
+
+        # Copy JsonSchemaForApiSchema.json so prepare-dms-schema.ps1 can include it in the staged workspace.
+        $jsonSchemaSourceDir = Join-Path $script:sourceRepoRoot "src/dms/core/EdFi.DataManagementService.Core/ApiSchema"
+        $jsonSchemaTargetDir = Join-Path $repoRoot "src/dms/core/EdFi.DataManagementService.Core/ApiSchema"
+        New-Item -ItemType Directory -Path $jsonSchemaTargetDir -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $jsonSchemaSourceDir "JsonSchemaForApiSchema.json") -Destination $jsonSchemaTargetDir
 
         return [pscustomobject]@{
             RepoRoot = $repoRoot
@@ -794,73 +800,108 @@ exit $ExitCode
     }
 
     Context "startup handoff" {
-        It "validates the bootstrap manifest without activating staged DMS schema or staged CMS claims startup" {
-            # Story 04 boundary: with a valid bootstrap manifest present, Set-BootstrapStartupEnvironment
-            # returns $true but does not activate either side of the staged runtime pair. DMS falls
-            # back to its built-in DLL-backed schemas, so CMS must not be pointed at staged .bootstrap/claims.
-            # The existing claims source/directory are left intact for the non-staged path.
+        It "activates staged DMS schema and CMS claims env vars when a valid bootstrap manifest is present" {
+            # With a valid bootstrap manifest, Set-BootstrapStartupEnvironment returns $true and
+            # activates both the staged schema workspace (USE_API_SCHEMA_PATH, API_SCHEMA_PATH,
+            # DMS_API_SCHEMA_MOUNT_SOURCE, SCHEMA_PACKAGES cleared) and staged claims per
+            # manifest claims.mode. The "Sample" extension produces Hybrid mode.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+            # Pre-set stale process-env values to confirm bootstrap activation overrides them.
+            $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
+            $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
             $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
             $env:SCHEMA_PACKAGES = "ambient-packages"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
-            $env:USE_API_SCHEMA_PATH | Should -BeNullOrEmpty
-            $env:API_SCHEMA_PATH | Should -BeNullOrEmpty
-            $env:SCHEMA_PACKAGES | Should -Be "ambient-packages"
-            $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -BeNullOrEmpty
+            # Schema activation: USE_API_SCHEMA_PATH and API_SCHEMA_PATH are set; SCHEMA_PACKAGES
+            # is cleared so run.sh performs no second download; DMS_API_SCHEMA_MOUNT_SOURCE is the
+            # host-side source for bootstrap-dms.yml.
+            $env:USE_API_SCHEMA_PATH | Should -Be "true"
+            $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
+            $env:SCHEMA_PACKAGES | Should -BeNullOrEmpty
+            $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
 
+            # Claims activation: manifest claims.mode=Hybrid (Sample extension) overrides the
+            # stale Embedded process-env values.
             $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
             $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
+            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
-        It "explicitly blanks process-env schema vars in bootstrap mode so docker compose --env-file cannot leak UseApiSchemaPath" {
-            # The repo .env / .env.example / .env.e2e set USE_API_SCHEMA_PATH=true and
-            # API_SCHEMA_PATH=/app/ApiSchema for the eventual Story 04 end state. Until Story 04
-            # ships ContentProvider's loose-JSON path, the bootstrap helper must override those
-            # values in the process environment so compose's ${VAR:-default} falls back to
-            # UseApiSchemaPath=false + empty ApiSchemaPath, keeping DMS on built-in DLL-backed assemblies.
+        It "activates staged schema env vars in bootstrap mode and sets DMS_API_SCHEMA_MOUNT_SOURCE to the staged workspace" {
+            # Bootstrap mode sets USE_API_SCHEMA_PATH=true, API_SCHEMA_PATH=/app/ApiSchema, and
+            # DMS_API_SCHEMA_MOUNT_SOURCE to the absolute .bootstrap/ApiSchema path. SCHEMA_PACKAGES
+            # is cleared so run.sh performs no second package download into the mounted workspace.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
-            $env:USE_API_SCHEMA_PATH = "true"
-            $env:API_SCHEMA_PATH = "/app/ApiSchema"
+            # Pre-set values to confirm bootstrap activation writes the correct activation values.
+            $env:USE_API_SCHEMA_PATH = "false"
+            $env:API_SCHEMA_PATH = ""
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
-            $env:USE_API_SCHEMA_PATH | Should -BeNullOrEmpty
-            $env:API_SCHEMA_PATH | Should -BeNullOrEmpty
+            $env:USE_API_SCHEMA_PATH | Should -Be "true"
+            $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
+            $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+            $env:SCHEMA_PACKAGES | Should -BeNullOrEmpty
         }
 
-        It "clears stale process-env claims mount source in bootstrap mode until staged runtime startup is enabled" {
+        It "manifest claims.mode governs in bootstrap mode and overrides caller-set process-env claims values" {
+            # Bootstrap mode: manifest claims.mode is authoritative. "Sample" extension produces
+            # Hybrid mode; any pre-set Embedded process-env values are overridden by activation.
+            # DMS_CONFIG_CLAIMS_MOUNT_SOURCE is set to the staged .bootstrap/claims path.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
-            # Simulate process env populated by an outer caller. Source/directory remain caller-owned
-            # for DLL-backed startup, while mount source is cleared to avoid staged .bootstrap/claims.
+            # Simulate process env set to Embedded by a prior caller; manifest says Hybrid.
             $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
             $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
             $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
+            # Manifest claims.mode=Hybrid overrides the Embedded process-env values.
+            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+        }
+
+        It "Embedded manifest claims.mode overrides pre-set Hybrid process-env values in bootstrap mode" {
+            # Core-only schema produces Embedded claims mode; the manifest governs even when the
+            # process env was previously set to Hybrid (e.g. from .env defaults).
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet)
+            Invoke-PrepareClaim
+            Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
+            Import-Module $script:repo.ManifestModule -Force
+
+            # Simulate Hybrid values left in process env from a prior session.
+            $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
+            $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/claims/path"
+
+            Set-BootstrapStartupEnvironment | Should -BeTrue
+
+            # Manifest claims.mode=Embedded overrides Hybrid; mount source is blanked.
             $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Embedded"
             $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
             $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
         }
 
-        It "keeps AddExtensionSecurityMetadata working when a bootstrap manifest exists but staged runtime startup is deferred" {
+        It "AddExtensionSecurityMetadata flag is ignored in bootstrap mode; manifest claims.mode governs" {
+            # In bootstrap mode the manifest's claims.mode is authoritative. Passing
+            # -AddExtensionSecurityMetadata has no effect on the claims activation: the
+            # manifest-driven Hybrid (from Sample) is already applied by Set-BootstrapStartupEnvironment,
+            # and the flag does not override it. Schema vars ARE set by bootstrap activation.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
@@ -872,30 +913,44 @@ exit $ExitCode
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
-            $env:USE_API_SCHEMA_PATH | Should -BeNullOrEmpty
-            $env:API_SCHEMA_PATH | Should -BeNullOrEmpty
+            # Schema vars activated by bootstrap (flag does not touch these).
+            $env:USE_API_SCHEMA_PATH | Should -Be "true"
+            $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
+            # Manifest claims.mode=Hybrid governs; flag does not override.
             $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
             $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
+            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
-        It "Invoke-BootstrapStartupConfiguration does not depend on a return value so callers can snapshot env independently" {
-            # Reviewer concern: if the helper threw before assigning $bootstrapStartup, the caller's
-            # finally would null-bind on $bootstrapStartup.EnvSnapshot and skip Pop-Location. The
-            # helper now returns nothing; callers capture Get-BootstrapEnvSnapshot themselves before
-            # Push-Location, so Restore + Pop always run cleanly.
+        It "Invoke-BootstrapStartupConfiguration returns a clean boolean so start scripts can conditionally append bootstrap-dms.yml" {
+            # Callers (start-local-dms.ps1 / start-published-dms.ps1) capture the return value to
+            # decide whether to append -f bootstrap-dms.yml to the compose file set. The helper must
+            # return a boolean and must not emit status text on the PowerShell success output stream
+            # (Write-Host is allowed; Write-Output / pipeline output is not).
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
-            $result = Invoke-BootstrapStartupConfiguration -IsTeardown -AddExtensionSecurityMetadata:$false
-            $result | Should -BeNullOrEmpty
+            # Without a manifest: must return $false cleanly, no extra output on the success stream.
+            $outputNoManifest = Invoke-BootstrapStartupConfiguration -IsTeardown -AddExtensionSecurityMetadata:$false
+            $outputNoManifest | Should -BeOfType [bool]
+            $outputNoManifest | Should -BeFalse
+
+            # With a manifest: must return $true cleanly.
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet)
+            Invoke-PrepareClaim
+            Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
+            Import-Module $script:repo.ManifestModule -Force
+
+            $outputWithManifest = Invoke-BootstrapStartupConfiguration
+            $outputWithManifest | Should -BeOfType [bool]
+            $outputWithManifest | Should -BeTrue
         }
 
-        It "keeps bootstrap mounts out of the default DMS service and leaves Config Service mount source optional" {
-            # bootstrap-dms.yml is removed in Story 00 (Story 04 will re-introduce runtime DMS wiring).
-            # local-dms.yml and published-dms.yml must not carry additional-claims or ApiSchema mounts.
-            # Config Service keeps the mount-source env hook for the non-bootstrap transition path and
-            # the future Story 04 staged claims activation.
+        It "bootstrap-dms.yml exists with the dms volume override and is conditionally included by start scripts" {
+            # bootstrap-dms.yml overrides the dms service with the staged ApiSchema volume mount.
+            # local-dms.yml and published-dms.yml must NOT carry the ApiSchema mount directly (they
+            # rely on bootstrap-dms.yml, included only when bootstrap mode is active). Config Service
+            # keeps its mount-source env hook for bootstrap-mode claims activation.
             $localDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.yml") -Raw
             $publishedDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.yml") -Raw
             $localConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-config.yml") -Raw
@@ -905,14 +960,27 @@ exit $ExitCode
             $localDms | Should -Not -Match "/app/ApiSchema:ro"
             $localConfig | Should -Match "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
 
-            # bootstrap-dms.yml must not exist until Story 04 re-enables the runtime DMS bootstrap path
-            Test-Path -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-dms.yml") | Should -BeFalse
+            # bootstrap-dms.yml must exist and declare the dms service volume override.
+            $bootstrapDmsYml = Join-Path $script:sourceDockerComposeRoot "bootstrap-dms.yml"
+            Test-Path -LiteralPath $bootstrapDmsYml | Should -BeTrue
+            $bootstrapDmsContent = Get-Content -LiteralPath $bootstrapDmsYml -Raw
+            $bootstrapDmsContent | Should -Match "dms:"
+            $bootstrapDmsContent | Should -Match "/app/ApiSchema:ro"
+            $bootstrapDmsContent | Should -Match "DMS_API_SCHEMA_MOUNT_SOURCE"
+
+            # start-local-dms.ps1 and start-published-dms.ps1 must include bootstrap-dms.yml in
+            # the compose file set when bootstrap mode is active (conditional on $bootstrapMode).
+            foreach ($startScript in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $startScript) -Raw
+                $content | Should -Match "bootstrap-dms\.yml" -Because "$startScript must append -f bootstrap-dms.yml when bootstrap mode is active"
+                $content | Should -Match "\`$bootstrapMode" -Because "$startScript must gate the bootstrap-dms.yml inclusion on the boolean returned by Invoke-BootstrapStartupConfiguration"
+            }
         }
 
         It "retains AddExtensionSecurityMetadata as a transitional non-bootstrap hybrid claims path" {
             # The -AddExtensionSecurityMetadata switch is kept in the startup wrappers and build script
-            # as a transitional helper for DLL-backed (non-bootstrap) E2E until Story 04 moves runtime
-            # loading onto the staged bootstrap workspace. It must be present in all three files.
+            # as a transitional helper for DLL-backed (non-bootstrap) E2E setups. It must be present
+            # in all three files.
             foreach ($path in @(
                 (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"),
                 (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"),
@@ -960,20 +1028,27 @@ exit $ExitCode
             $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
         }
 
-        It "restores bootstrap environment variables through the snapshot helper" {
-            # Snapshot/restore covers the process env vars this helper blanks or mutates while preserving
-            # the Story 04 boundary: SCHEMA_PACKAGES and DMS_API_SCHEMA_MOUNT_SOURCE are not managed here.
+        It "restores bootstrap environment variables through the snapshot helper including DMS_API_SCHEMA_MOUNT_SOURCE and SCHEMA_PACKAGES" {
+            # Snapshot/restore covers all bootstrap-managed env vars: USE_API_SCHEMA_PATH,
+            # API_SCHEMA_PATH, DMS_API_SCHEMA_MOUNT_SOURCE, SCHEMA_PACKAGES (schema side) and
+            # DMS_CONFIG_CLAIMS_SOURCE, DMS_CONFIG_CLAIMS_DIRECTORY, DMS_CONFIG_CLAIMS_MOUNT_SOURCE
+            # (claims side). Both new vars (DMS_API_SCHEMA_MOUNT_SOURCE and SCHEMA_PACKAGES) are
+            # now fully managed by Set-BootstrapStartupEnvironment and must round-trip correctly.
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
             $env:DMS_CONFIG_CLAIMS_SOURCE = "existing"
             [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_CLAIMS_DIRECTORY", $null)
             $env:USE_API_SCHEMA_PATH = "true"
             [System.Environment]::SetEnvironmentVariable("API_SCHEMA_PATH", $null)
+            $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/prior/ApiSchema"
+            $env:SCHEMA_PACKAGES = "prior-packages"
             $snapshot = Get-BootstrapEnvSnapshot
             $env:DMS_CONFIG_CLAIMS_SOURCE = "mutated"
             $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
             $env:USE_API_SCHEMA_PATH = ""
             $env:API_SCHEMA_PATH = "/app/ApiSchema"
+            $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/mutated/ApiSchema"
+            $env:SCHEMA_PACKAGES = "mutated-packages"
 
             Restore-BootstrapEnvSnapshot -Snapshot $snapshot
 
@@ -981,11 +1056,39 @@ exit $ExitCode
             $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
             $env:USE_API_SCHEMA_PATH | Should -Be "true"
             $env:API_SCHEMA_PATH | Should -BeNullOrEmpty
+            $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -Be "/prior/ApiSchema"
+            $env:SCHEMA_PACKAGES | Should -Be "prior-packages"
+        }
+
+        It "start-local-dms.ps1 gates default connector registration on bootstrap mode in the -DmsOnly block" {
+            # Bootstrap mode provisions the redesigned relational schema which does not include the
+            # legacy dms.document table or the to_debezium publication that the default Debezium connector
+            # requires. Both start scripts must check $bootstrapMode before calling setup-connectors.ps1
+            # in the -DmsOnly block so the connector is never registered against a schema where its
+            # required tables and publication do not exist.
+            $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+
+            # $bootstrapMode must participate in the connector gate (not just $SkipConnectorSetup alone)
+            $content | Should -Match '\$bootstrapMode' -Because "start-local-dms.ps1 must gate the default connector on `$bootstrapMode so bootstrap mode never registers a connector against a schema without dms.document"
+
+            # The script must still retain -SkipConnectorSetup for non-bootstrap harnesses
+            $content | Should -Match 'SkipConnectorSetup' -Because "start-local-dms.ps1 must retain -SkipConnectorSetup for non-bootstrap harnesses (e.g. Instance Management E2E)"
+
+            # The skip message for bootstrap mode must distinguish it from the explicit-flag path
+            $content | Should -Match 'bootstrap mode provisions the redesigned relational schema' -Because "the bootstrap-mode skip message must explain why the connector is not registered"
+        }
+
+        It "start-published-dms.ps1 gates default connector registration on bootstrap mode in the -DmsOnly block" {
+            $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
+
+            $content | Should -Match '\$bootstrapMode' -Because "start-published-dms.ps1 must gate the default connector on `$bootstrapMode so bootstrap mode never registers a connector against a schema without dms.document"
+            $content | Should -Match 'SkipConnectorSetup' -Because "start-published-dms.ps1 must retain -SkipConnectorSetup for non-bootstrap harnesses"
+            $content | Should -Match 'bootstrap mode provisions the redesigned relational schema' -Because "the bootstrap-mode skip message must explain why the connector is not registered"
         }
     }
 
     Context "E2E wrappers" {
-        It "keeps E2E setup on the DLL-backed schema path until Story 04" {
+        It "keeps E2E setup on the DLL-backed schema path (non-bootstrap compatibility)" {
             foreach ($path in @(
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")
