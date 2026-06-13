@@ -51,7 +51,7 @@ RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.
     dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
     -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05ad7ea16782b4bee55260de4acc6f99bec897fd11de7640c AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.9-alpine3.23@sha256:f03685b2735e0d3d25d6c60672e74b21bb6334f1402f71bae2d2cf02307163cd AS runtimebase
 
 # Install OpenSSL on the 3.5 line and runtime helpers
 RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 jq=~1.8
