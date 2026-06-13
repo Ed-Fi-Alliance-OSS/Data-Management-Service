@@ -129,3 +129,9 @@ Key decisions: Published startup now imports bootstrap-claims-gate and runs Test
 Files changed: eng/docker-compose/start-published-dms.ps1; eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1; tasks.json; progress.txt.
 Verification: pwsh -NoProfile -Command "Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1" passed, 113 tests.
 Blockers/notes: unrelated pre-existing tasks.json deletion left unstaged.
+
+Task completed: Metadata Content - extension XSD streaming uses listing ordering for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Section-specific XSD streaming now reuses ResolveXsdListingPathsForSection so core-first duplicate-name selection matches advertised extension file listings. Duplicate extension filenames still only search requested extension plus core.
+Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format touched C# files; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~Xsd passed, 11 tests.
+Blockers/notes: Remaining task: prepare-dms-schema fallback helper cleanup. Pre-existing tasks.json deletion preserved.

@@ -248,7 +248,7 @@ public class ContentProvider(
 
     private Stream GetXsdStreamFromManifest(string fileNamePattern, string section)
     {
-        var matchedPath = ResolveXsdStreamingPathsForSection(section)
+        var matchedPath = ResolveXsdListingPathsForSection(section)
             .FirstOrDefault(f =>
                 Path.GetFileName(f).Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase)
             );
@@ -287,32 +287,6 @@ public class ContentProvider(
         }
 
         xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(sectionProject));
-
-        return xsdPaths;
-    }
-
-    private IEnumerable<string> ResolveXsdStreamingPathsForSection(string section)
-    {
-        var manifest = manifestProvider.GetManifest();
-        var sectionProject = FindProjectForSection(manifest, section);
-
-        if (sectionProject is null)
-        {
-            return [];
-        }
-
-        if (!sectionProject.IsExtensionProject)
-        {
-            return manifestProvider.EnumerateValidatedXsdFiles(sectionProject);
-        }
-
-        var xsdPaths = manifestProvider.EnumerateValidatedXsdFiles(sectionProject).ToList();
-        var coreProject = GetCoreProject(manifest);
-
-        if (!IsSameProject(sectionProject, coreProject))
-        {
-            xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(coreProject));
-        }
 
         return xsdPaths;
     }

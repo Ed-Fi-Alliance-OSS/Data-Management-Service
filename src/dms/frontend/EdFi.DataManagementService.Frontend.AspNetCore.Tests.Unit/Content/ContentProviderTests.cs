@@ -157,6 +157,7 @@ internal static class FileModeWorkspaceBuilder
     public const string CoreXsdFile1Content = "<xs:schema id=\"core\"/>";
     public const string CoreXsdFile2Content = "<xs:schema id=\"interchange-student\"/>";
     public const string ExtensionXsdFileContent = "<xs:schema id=\"sample-extension\"/>";
+    public const string ExtensionDuplicateCoreXsdContent = "<xs:schema id=\"sample-duplicate-core\"/>";
     public const string SampleDuplicateExtensionXsdContent = "<xs:schema id=\"sample-shared\"/>";
     public const string SecondDuplicateExtensionXsdContent = "<xs:schema id=\"second-shared\"/>";
 
@@ -576,6 +577,26 @@ public class Given_file_mode_xsd_stream_loading
         var lazy = _provider.LoadXsdContent(FileModeWorkspaceBuilder.CoreXsdFile1, "sample");
         using var reader = new StreamReader(lazy.Value);
         var content = reader.ReadToEnd();
+
+        content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
+    }
+
+    [Test]
+    public void It_streams_the_same_duplicate_core_file_advertised_by_extension_section_listing()
+    {
+        FileModeWorkspaceBuilder.AddXsdFile(
+            _workspaceRoot,
+            FileModeWorkspaceBuilder.ExtensionProjectName,
+            FileModeWorkspaceBuilder.CoreXsdFile1,
+            FileModeWorkspaceBuilder.ExtensionDuplicateCoreXsdContent
+        );
+
+        var advertisedFiles = _provider
+            .Files(FileModeWorkspaceBuilder.CoreXsdFile1, ".xsd", "sample")
+            .ToList();
+        advertisedFiles.Should().ContainSingle(FileModeWorkspaceBuilder.CoreXsdFile1);
+
+        var content = ReadXsdContent(_provider.LoadXsdContent(advertisedFiles.Single(), "sample"));
 
         content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
     }

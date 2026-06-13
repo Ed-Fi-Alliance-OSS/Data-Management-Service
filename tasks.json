@@ -396,7 +396,7 @@
       "Keep or add coverage for two extension projects with the same XSD filename and assert each section streams its own extension content.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ContentProvider|FullyQualifiedName~Xsd\"`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Code Simplification",
