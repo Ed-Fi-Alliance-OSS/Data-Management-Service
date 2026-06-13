@@ -198,6 +198,7 @@ internal class ApiSchemaProvider(
 
         IReadOnlyList<BootstrapApiSchemaProject> projects = manifest.Projects ?? [];
         List<JsonNode> apiSchemaNodes = [];
+        var pathResolver = new ApiSchemaWorkspacePathResolver(workspaceRoot);
         foreach ((BootstrapApiSchemaProject project, int index) in projects.Select((p, i) => (p, i)))
         {
             var projectDescription = DescribeManifestProject(project, index);
@@ -217,7 +218,7 @@ internal class ApiSchemaProvider(
             string resolvedSchemaPath;
             try
             {
-                resolvedSchemaPath = ResolveManifestRelativePath(workspaceRoot, schemaPath);
+                resolvedSchemaPath = pathResolver.ResolveManifestRelativePath(schemaPath);
             }
             catch (InvalidOperationException ex)
             {
@@ -379,124 +380,6 @@ internal class ApiSchemaProvider(
         }
 
         return failures;
-    }
-
-    private static string ResolveManifestRelativePath(string workspaceRoot, string relativePath)
-    {
-        if (Path.IsPathRooted(relativePath))
-        {
-            throw new InvalidOperationException(
-                "Only workspace-relative paths are permitted; rooted paths are rejected."
-            );
-        }
-
-        if (ContainsParentTraversal(relativePath))
-        {
-            throw new InvalidOperationException(
-                "Paths containing a parent-directory traversal ('..') component are rejected."
-            );
-        }
-
-        var fullPath = Path.GetFullPath(Path.Combine(workspaceRoot, relativePath));
-        var canonicalWorkspaceRoot = ResolveCanonicalPath(workspaceRoot);
-        var canonicalPath = ResolveCanonicalPath(fullPath);
-        var relativeToWorkspace = Path.GetRelativePath(canonicalWorkspaceRoot, canonicalPath);
-
-        if (
-            Path.IsPathRooted(relativeToWorkspace)
-            || relativeToWorkspace == ".."
-            || relativeToWorkspace.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-            || relativeToWorkspace.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Path resolves to '{canonicalPath}', which is outside the configured ApiSchema workspace."
-            );
-        }
-
-        return canonicalPath;
-    }
-
-    private static string ResolveCanonicalPath(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        var root = Path.GetPathRoot(fullPath);
-        if (string.IsNullOrEmpty(root))
-        {
-            return fullPath;
-        }
-
-        var canonicalPath = root;
-        var pathWithoutRoot = fullPath[root.Length..];
-        var pathParts = pathWithoutRoot.Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            StringSplitOptions.RemoveEmptyEntries
-        );
-
-        foreach (var pathPart in pathParts)
-        {
-            var candidatePath = Path.Combine(canonicalPath, pathPart);
-            var fileSystemInfo = GetFileSystemInfo(candidatePath);
-            if (fileSystemInfo?.LinkTarget is not null)
-            {
-                canonicalPath = ResolveSymbolicLink(fileSystemInfo, path);
-                continue;
-            }
-
-            canonicalPath = candidatePath;
-        }
-
-        return Path.GetFullPath(canonicalPath);
-    }
-
-    private static FileSystemInfo? GetFileSystemInfo(string path)
-    {
-        try
-        {
-            var attributes = File.GetAttributes(path);
-            return attributes.HasFlag(FileAttributes.Directory)
-                ? new DirectoryInfo(path)
-                : new FileInfo(path);
-        }
-        catch (FileNotFoundException)
-        {
-            return null;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return null;
-        }
-    }
-
-    private static string ResolveSymbolicLink(FileSystemInfo fileSystemInfo, string originalPath)
-    {
-        try
-        {
-            var resolvedTarget = fileSystemInfo.ResolveLinkTarget(returnFinalTarget: true);
-            if (resolvedTarget is null)
-            {
-                throw new InvalidOperationException(
-                    $"Path '{originalPath}' contains symbolic link '{fileSystemInfo.FullName}' "
-                        + "whose target could not be resolved."
-                );
-            }
-
-            return Path.GetFullPath(resolvedTarget.FullName);
-        }
-        catch (IOException ex)
-        {
-            throw new InvalidOperationException(
-                $"Path '{originalPath}' contains symbolic link '{fileSystemInfo.FullName}' "
-                    + $"whose target could not be resolved: {ex.Message}",
-                ex
-            );
-        }
-    }
-
-    private static bool ContainsParentTraversal(string path)
-    {
-        var parts = path.Split(['/', '\\'], StringSplitOptions.None);
-        return Array.Exists(parts, p => p == "..");
     }
 
     private static string DescribeManifestProject(BootstrapApiSchemaProject project, int index)

@@ -276,6 +276,103 @@ public abstract class ApiSchemaProviderWorkspaceTestBase
 }
 
 [TestFixture]
+public class Given_ApiSchemaProvider_workspace_path_resolver
+{
+    private string _workspaceRoot = null!;
+    private string _outsideRoot = null!;
+    private ApiSchemaWorkspacePathResolver _resolver = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"ApiSchemaWorkspacePathResolverTests_{Guid.NewGuid()}"
+        );
+        _outsideRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"ApiSchemaWorkspacePathResolverOutside_{Guid.NewGuid()}"
+        );
+        Directory.CreateDirectory(_workspaceRoot);
+        Directory.CreateDirectory(_outsideRoot);
+        _resolver = new ApiSchemaWorkspacePathResolver(_workspaceRoot);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+
+        if (Directory.Exists(_outsideRoot))
+        {
+            Directory.Delete(_outsideRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_resolves_a_valid_manifest_relative_path()
+    {
+        var resolvedPath = _resolver.ResolveManifestRelativePath("schemas/EdFi/ApiSchema.json");
+
+        resolvedPath.Should().Be(Path.Combine(_workspaceRoot, "schemas", "EdFi", "ApiSchema.json"));
+    }
+
+    [Test]
+    public void It_rejects_a_rooted_path()
+    {
+        var rootedPath = Path.Combine(Path.GetPathRoot(_workspaceRoot)!, "outside", "ApiSchema.json");
+
+        Action action = () => _resolver.ResolveManifestRelativePath(rootedPath);
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*absolute (rooted) path*");
+    }
+
+    [Test]
+    public void It_rejects_parent_directory_traversal()
+    {
+        Action action = () => _resolver.ResolveManifestRelativePath("schemas/../outside/ApiSchema.json");
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*parent-directory traversal*");
+    }
+
+    [Test]
+    public void It_rejects_a_symbolic_link_that_resolves_outside_the_workspace()
+    {
+        File.WriteAllText(Path.Combine(_outsideRoot, "ApiSchema.json"), "{}");
+        var linkPath = Path.Combine(_workspaceRoot, "linked");
+        CreateDirectorySymbolicLinkOrIgnore(linkPath, _outsideRoot);
+
+        Action action = () => _resolver.ResolveManifestRelativePath("linked/ApiSchema.json");
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*outside the configured workspace root*symbolic links*");
+    }
+
+    private static void CreateDirectorySymbolicLinkOrIgnore(string linkPath, string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+        }
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or NotSupportedException
+                        or PlatformNotSupportedException
+                        or UnauthorizedAccessException
+            )
+        {
+            Assert.Ignore($"Symbolic link creation is not available: {ex.Message}");
+        }
+    }
+}
+
+[TestFixture]
 public class Given_manifest_backed_workspace_with_a_stale_root_schema_file
     : ApiSchemaProviderWorkspaceTestBase
 {
