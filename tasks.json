@@ -272,5 +272,83 @@
       "Search `src`, `eng`, and `reference/design/backend-redesign` for `EdFi.DataStandard52.Sample.ApiSchema`, `EdFi.DataStandard52.Homograph.ApiSchema`, and `EdFi.DataStandard52.TPDM.ApiSchema` to verify examples use the canonical extension package IDs."
     ],
     "completed": true
+  },
+  {
+    "category": "Runtime Schema Loading",
+    "description": "Medium: Enforce the runtime ApiSchema workspace invariant that exactly one core project is selected, and reject malformed bootstrap manifests that omit `isExtensionProject`, so DMS cannot start with a split or partially ignored schema.",
+    "acceptance-criteria": [
+      "`ApiSchemaProvider` fails startup when the manifest-selected schema JSON contains zero or more than one project with `projectSchema.isExtensionProject` set to `false`; it does not choose the first core and ignore the others.",
+      "`ApiSchemaAssetManifestProvider.GetManifest` rejects manifests where `isExtensionProject` is missing, null, or not a boolean for any project entry.",
+      "`ApiSchemaAssetManifestProvider.GetManifest` rejects manifests whose project entries contain zero or more than one core project after `isExtensionProject` validation.",
+      "XSD listing and streaming paths no longer rely on `FirstOrDefault(p => !p.IsExtensionProject)` against an invalid multiple-core manifest.",
+      "Valid one-core-plus-extension workspaces continue to load schema, discovery, and XSD content."
+    ],
+    "steps-to-verify": [
+      "Add `ApiSchemaProvider` unit coverage with a manifest selecting two schema JSON files marked `isExtensionProject=false`; assert `GetApiSchemaNodes` fails and records a configuration failure.",
+      "Add `ApiSchemaAssetManifestProvider` unit coverage for missing, null, and non-boolean `isExtensionProject` values and for zero or multiple core projects.",
+      "Add or update `ContentProvider` unit coverage to assert invalid zero-core and multiple-core manifests fail before section fallback selects an arbitrary core project.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaProvider\"`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "API Integration Tests",
+    "description": "Medium: Make API-level integration fixture workspaces manifest-backed in `src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContextLoader.cs:147`, `src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContextLoader.cs:268`, and `src/dms/tests/EdFi.DataManagementService.Tests.Integration/ApiIntegrationTestBase.cs:103` so `UseApiSchemaPath=true` tests exercise the Story 04 bootstrap workspace contract before the recursive runtime fallback is removed.",
+    "acceptance-criteria": [
+      "`FixtureContextLoader.MaterializeApiSchemaDirectory` writes a root `bootstrap-api-schema-manifest.json` alongside the generated `fixture.json` and materialized fixture schemas.",
+      "The generated bootstrap manifest has `version` 1 and one project entry per materialized schema file, with `schemaPath` values relative to the fixture ApiSchema workspace root, using `inputs/<materialized-file-name>` for files written under the generated `inputs` directory rather than the bare `fixture.json` `apiSchemaFiles` entries.",
+      "Bootstrap manifest `projectName`, `projectEndpointName`, and `isExtensionProject` values are read from each augmented schema JSON document.",
+      "`ApiIntegrationTestBase` continues to set `AppSettings:UseApiSchemaPath=true`, and host-level coverage proves the DMS host loads fixture schemas through the manifest-backed path rather than only proving that `FixtureContextLoader` wrote the files.",
+      "The existing generated `fixture.json` contract for per-dialect baseline loading remains intact.",
+      "`BuildScannableFileName` and fixture comments in `FixtureContextLoader.cs:13`, `FixtureContextLoader.cs:289`, `PostgresqlBaselineCache.cs:34`, and `MssqlBaselineCache.cs:34` are renamed or rewritten so integration fixtures no longer describe the DMS host as scanning `ApiSchema*.json` files."
+    ],
+    "steps-to-verify": [
+      "Update `src/dms/tests/EdFi.DataManagementService.Tests.Integration/Fixtures/FixtureContextLoader.cs` to emit `bootstrap-api-schema-manifest.json` from the materialized schema files.",
+      "Add or update `Given_FixtureContextLoader` assertions that the bootstrap manifest exists, selects the materialized schemas, and still preserves the generated `fixture.json` baseline manifest.",
+      "Add a focused host-loading assertion, such as a new `Given_ApiIntegrationHostLoadsManifestBackedFixture` test or an equivalent `ApiIntegrationTestBase`-derived smoke test, that starts DMS with a manifest-backed fixture workspace and fails if the fixture can only load through recursive `ApiSchema*.json` discovery.",
+      "Search `src/dms/tests/EdFi.DataManagementService.Tests.Integration` for `ApiSchema*.json`, `scan pattern`, and `host scans`; confirm remaining matches do not describe runtime fallback loading.",
+      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_FixtureContextLoader|FullyQualifiedName~Given_ApiIntegrationHostLoadsManifestBackedFixture\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runtime Schema Loading",
+    "description": "Medium: Remove the no-manifest recursive `ApiSchema*.json` fallback from `src/dms/core/EdFi.DataManagementService.Core/ApiSchema/ApiSchemaProvider.cs:60` and `src/dms/core/EdFi.DataManagementService.Core/ApiSchema/ApiSchemaProvider.cs:222` so every runtime ApiSchema workspace is selected by `bootstrap-api-schema-manifest.json`.",
+    "acceptance-criteria": [
+      "`ApiSchemaProvider.LoadSchemaFromDirectory` treats a missing root `bootstrap-api-schema-manifest.json` as a configuration failure for both `UseApiSchemaPath=true` and bundled `UseApiSchemaPath=false`; it does not call `Directory.EnumerateFiles(..., \"ApiSchema*.json\", SearchOption.AllDirectories)`.",
+      "`ReadApiSchemaFiles` and the legacy recursive loading surface are removed from `ApiSchemaProvider`; schema JSON files are read only from manifest-declared `schemaPath` entries.",
+      "`Given_legacy_workspace_without_a_bootstrap_manifest` in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/ApiSchema/ApiSchemaProviderTests.cs:301` is replaced with coverage asserting a no-manifest workspace containing root and nested `ApiSchema*.json` files fails with a message that identifies the missing `bootstrap-api-schema-manifest.json`.",
+      "Bundled-mode coverage, or an equivalent static/build-output guard, proves `UseApiSchemaPath=false` also fails when the application `ApiSchema` directory lacks `bootstrap-api-schema-manifest.json` even if loose `ApiSchema*.json` files are present.",
+      "`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/RelationalWriteSmokeTests.cs:159` writes a bootstrap manifest for its temp ApiSchema workspace instead of relying on a lone `ApiSchema.json` file.",
+      "`src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs:29`, `src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs:35`, and `docs/CONFIGURATION.md:22` describe manifest-backed ApiSchema workspaces and state that loose no-manifest `ApiSchema*.json` folders are no longer a runtime loading contract."
+    ],
+    "steps-to-verify": [
+      "Search `src/dms/core` for `ReadApiSchemaFiles`, `SearchOption.AllDirectories`, and `Directory.EnumerateFiles` and confirm no runtime schema-loading fallback remains.",
+      "Search `src/dms` for `Given_legacy_workspace_without_a_bootstrap_manifest`, `It_preserves_recursive_ApiSchema_file_loading`, and runtime comments describing `ApiSchema*.json` scans; confirm they were removed or rewritten.",
+      "Add explicit bundled no-manifest negative verification by temporarily removing or isolating the bundled `ApiSchema/bootstrap-api-schema-manifest.json`, leaving loose `ApiSchema*.json` content present, and asserting startup/schema loading fails with a missing-manifest configuration failure.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaProvider\"`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_FixtureContextLoader\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Simplification",
+    "description": "Low: Extract shared ApiSchema workspace path validation and canonicalization from `ApiSchemaProvider` and `ApiSchemaAssetManifestProvider` so symlink-aware manifest-relative path handling has one implementation.",
+    "acceptance-criteria": [
+      "A shared helper handles rooted path rejection, parent-directory traversal rejection, canonical workspace containment, and symbolic-link resolution for manifest-relative ApiSchema paths.",
+      "`ApiSchemaProvider` uses the shared helper when resolving manifest-declared `schemaPath` values.",
+      "`ApiSchemaAssetManifestProvider` uses the shared helper when resolving `schemaPath`, `discoverySpecPath`, and `xsdDirectory` values.",
+      "Caller-specific error messages still identify the manifest project and field that failed validation.",
+      "The duplicated `ResolveCanonicalPath`, `GetFileSystemInfo`, `ResolveSymbolicLink`, and `ContainsParentTraversal` implementations are removed from the two providers."
+    ],
+    "steps-to-verify": [
+      "Introduce the shared path resolver in a layer usable by both Core and Frontend runtime code.",
+      "Move or add focused unit coverage for valid relative paths, rooted paths, parent traversal, and symlink escape attempts.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaProvider\"`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
+    ],
+    "completed": false
   }
 ]
