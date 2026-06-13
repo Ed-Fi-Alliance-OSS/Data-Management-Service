@@ -171,5 +171,106 @@
       "Build or inspect the DMS image output and verify `/app/ApiSchema/bootstrap-api-schema-manifest.json`, discovery/spec files, and XSD files are present."
     ],
     "completed": true
+  },
+  {
+    "category": "Runtime Schema Loading",
+    "description": "Medium: Make `ApiSchemaProvider` load runtime schema JSON from the selected workspace contract instead of recursively loading every `ApiSchema*.json` under `ApiSchemaPath`, so stale legacy root files or stray package outputs cannot change the API surface independently from `bootstrap-api-schema-manifest.json`.",
+    "acceptance-criteria": [
+      "When a root `bootstrap-api-schema-manifest.json` exists, `ApiSchemaProvider` loads exactly the manifest-declared `schemaPath` entries, or an explicitly documented normalized schema convention, and ignores `ApiSchema*.json` files outside that selected set.",
+      "A workspace containing a current package-backed manifest plus legacy root-level `ApiSchema*.json` files produced by the old DLL-resource downloader starts with only the manifest-selected core and extensions.",
+      "A missing manifest-declared schema file fails fast with a configuration or filesystem error that identifies the missing path; it does not silently fall back to another `ApiSchema*.json` file in the workspace.",
+      "Bundled `UseApiSchemaPath=false` loading and `UseApiSchemaPath=true` loading use the same selected-schema behavior when the root manifest is present.",
+      "Existing supported legacy loading behavior without a root manifest is either preserved with focused coverage or intentionally removed with an explicit migration note."
+    ],
+    "steps-to-verify": [
+      "Add `ApiSchemaProvider` unit coverage with a package-backed-style workspace containing `bootstrap-api-schema-manifest.json`, `Packages/<Current>/ApiSchema.json`, and a stale root-level `ApiSchema.json`; assert only the manifest-selected schema is loaded.",
+      "Add `ApiSchemaProvider` unit coverage where `bootstrap-api-schema-manifest.json` declares a missing `schemaPath`; assert startup fails instead of loading an undeclared fallback schema.",
+      "Add bundled-output coverage, or equivalent static verification, showing the application `ApiSchema/bootstrap-api-schema-manifest.json` drives bundled schema loading when present.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Metadata Content",
+    "description": "High: Preserve deterministic core-first XSD metadata listing order in file-mode ApiSchema workspaces so `/metadata/xsd/{section}/files` matches the existing exact response contract.",
+    "acceptance-criteria": [
+      "`ApiSchemaAssetManifestProvider.EnumerateValidatedXsdFiles` does not depend on filesystem enumeration order; files from each declared `xsdDirectory` are returned in a deterministic bare-file-name order after validation.",
+      "Core section file listings return core XSD names in the same deterministic order expected by `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/XSDMetadata.feature`.",
+      "Extension section file listings return core XSD names first, followed by that extension's XSD names, with deterministic ordering inside each group.",
+      "Section-specific XSD streaming still opens the requested section's validated file path and does not regress duplicate extension filename behavior.",
+      "Frontend unit tests assert ordered file lists rather than only asserting containment."
+    ],
+    "steps-to-verify": [
+      "Add or update `ContentProvider` unit tests for core and extension section listings to assert exact file order, including core-first ordering for extension sections.",
+      "Add or update `XsdMetadataEndpointModule` file-mode tests to assert ordered `/metadata/xsd/{section}/files` response bodies.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ContentProvider|FullyQualifiedName~ApiSchemaAssetManifestProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Workspace Validation",
+    "description": "Medium: Validate ApiSchema manifest project fields and non-empty content path values before use so malformed manifests cannot null-reference or treat the workspace root as an XSD directory.",
+    "acceptance-criteria": [
+      "`ApiSchemaAssetManifestProvider.GetManifest` rejects missing, null, or blank required project fields such as `projectName`, `projectEndpointName`, and `schemaPath` with an `InvalidOperationException` that identifies the field.",
+      "Optional `discoverySpecPath` and `xsdDirectory` remain nullable, but when present they must be non-blank manifest-relative paths that pass the existing rooted-path and parent-traversal validation.",
+      "A manifest entry with `xsdDirectory` set to an empty string does not resolve to the ApiSchema workspace root or enumerate unrelated project XSD files.",
+      "`ContentProvider.FindProjectForSection` and related content paths no longer rely on non-null record fields that were never validated after JSON deserialization.",
+      "Existing valid manifests with omitted optional discovery spec or XSD directory fields continue to work."
+    ],
+    "steps-to-verify": [
+      "Add `ApiSchemaAssetManifestProvider` unit tests for missing, null, and blank `projectName`, `projectEndpointName`, and `schemaPath` values.",
+      "Add unit coverage for blank `discoverySpecPath` and blank `xsdDirectory`; assert both fail with manifest validation errors while omitted optional fields still behave as absent optional content.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Bootstrap Claims",
+    "description": "Medium: Verify user-staged claimset fragments during Story 04 bootstrap startup instead of continuing to mark them `stagedOnly` and deferring them as if CMS still ignored the staged claims workspace.",
+    "acceptance-criteria": [
+      "`eng/docker-compose/prepare-dms-claims.ps1` no longer marks `-ClaimsDirectoryPath` fragment checks as `stagedOnly` solely because they came from the staged workspace.",
+      "`eng/docker-compose/bootstrap-claims-gate.psm1` verifies user-staged leaf checks against `/authorizationMetadata` after Story 04 activation; only parent-claim checks that are not directly observable remain deferred.",
+      "Bootstrap claim warnings and comments no longer state that CMS does not load staged claims until DMS-1154.",
+      "If a user-staged leaf claim is missing from CMS authorization metadata, the claims-ready gate fails the bootstrap instead of passing with only the baseline probe verified.",
+      "Existing parent-resource-claim deferral behavior remains intact for checks marked `isParent`."
+    ],
+    "steps-to-verify": [
+      "Update `eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1` so user-supplied fragment checks are not expected to carry `stagedOnly` after Story 04 activation.",
+      "Update `eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1` so a missing user-staged leaf check fails, while an observed user-staged leaf check passes and parent checks still defer.",
+      "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Bootstrap Startup",
+    "description": "Medium: Include `published-config.yml` for published bootstrap starts whenever `bootstrapMode` is active so staged CMS claims are mounted with the staged DMS ApiSchema workspace in direct start-script workflows.",
+    "acceptance-criteria": [
+      "`eng/docker-compose/start-published-dms.ps1` includes `published-config.yml` when `$bootstrapMode` is true, including keycloak-backed direct full-stack starts without `-EnableConfig` or `-InfraOnly`.",
+      "The published bootstrap compose file set activates the staged claims mount through `DMS_CONFIG_CLAIMS_MOUNT_SOURCE` at the same boundary where `bootstrap-dms.yml` mounts `/app/ApiSchema` for DMS.",
+      "Non-bootstrap published keycloak starts continue to honor the existing `-EnableConfig` behavior.",
+      "Published wrapper flows that already force configuration service startup continue to work without relying on wrapper-only behavior for the direct start-script contract.",
+      "Static or Pester coverage asserts the published and local bootstrap start scripts both include their config compose files for bootstrap mode."
+    ],
+    "steps-to-verify": [
+      "Add or update Pester coverage around `start-published-dms.ps1` compose-file selection to assert `published-config.yml` is included when a bootstrap manifest makes `$bootstrapMode` true.",
+      "Add a negative Pester assertion showing a non-bootstrap keycloak published start without `-EnableConfig` still does not include `published-config.yml` unless that remains the intended non-bootstrap contract.",
+      "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Bootstrap Documentation",
+    "description": "Low: Correct the sibling Story 05 and Story 06 ApiSchema package ID examples so extension packages consistently use the canonical `EdFi.DataStandard52.<Project>.ApiSchema` convention.",
+    "acceptance-criteria": [
+      "`reference/design/backend-redesign/epics/16-bootstrap/05-metaed-apischema-asset-packaging.md` says extension packages follow `EdFi.DataStandard52.<Project>.ApiSchema`.",
+      "`reference/design/backend-redesign/epics/16-bootstrap/06-package-backed-standard-schema-selection.md` says extension packages follow `EdFi.DataStandard52.<Project>.ApiSchema`.",
+      "The sibling story wording matches `reference/design/backend-redesign/design-docs/bootstrap/apischema-container.md` and the package IDs used by `src/Directory.Packages.props`, `src/dms/Directory.Build.targets`, and `SCHEMA_PACKAGES` examples.",
+      "No remaining bootstrap design or story document refers to the stale `EdFi.DataStandard52.ApiSchema.<Project>` extension package convention except when explicitly describing legacy or rejected examples."
+    ],
+    "steps-to-verify": [
+      "Search the bootstrap design/story docs for `EdFi.DataStandard52.ApiSchema.<Project>` and confirm only intentional legacy references remain.",
+      "Search `src`, `eng`, and `reference/design/backend-redesign` for `EdFi.DataStandard52.Sample.ApiSchema`, `EdFi.DataStandard52.Homograph.ApiSchema`, and `EdFi.DataStandard52.TPDM.ApiSchema` to verify examples use the canonical extension package IDs."
+    ],
+    "completed": false
   }
 ]
