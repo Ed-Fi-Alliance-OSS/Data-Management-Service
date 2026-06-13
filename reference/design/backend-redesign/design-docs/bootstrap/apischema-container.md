@@ -183,6 +183,10 @@ When `UseApiSchemaPath=true`, it reads static content from the normalized worksp
 - XSD file lists from each project's `xsdDirectory`,
 - XSD file streams through `File.OpenRead` on validated manifest-relative paths.
 
+The XSD metadata API exposes the staged package XSD filenames exactly as they appear in the selected
+project's `xsdDirectory`. Assembly manifest resource names and project-prefixed extension aliases are not a
+file-based runtime contract.
+
 The runtime does not generate DLLs from files. Generating DLLs would require runtime compilation, resource
 name synthesis, cache invalidation, write permissions, cleanup, and additional trust boundaries. That keeps
 the old assembly-resource shape alive and adds complexity in the wrong layer.

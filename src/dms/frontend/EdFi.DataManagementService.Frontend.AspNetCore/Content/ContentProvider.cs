@@ -78,15 +78,12 @@ public class ContentProvider(
             return [];
         }
 
-        // XsdMetadataEndpointModule passes either an assembly-name regex (e.g.
-        // "EdFi\.DataStandard.*\.ApiSchema") for listing all section XSDs, or a bare/
-        // legacy-prefixed file name (e.g. "Ed-Fi-Core.xsd") for single-file lookup.
-        // Assembly-name regex patterns do not end in ".xsd"; in file mode we ignore
+        // XsdMetadataEndpointModule passes either a broad listing pattern or an exact
+        // package XSD file name (e.g. "Ed-Fi-Core.xsd") for single-file lookup.
+        // Listing patterns do not end in ".xsd"; in file mode we ignore
         // them for filtering and use the section for manifest project selection instead.
-        // File-name patterns ending in ".xsd" are normalized and matched exactly.
-        bool patternIsFileNameFilter =
-            fileNamePattern.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)
-            || fileNamePattern.EndsWith(".xsd?", StringComparison.OrdinalIgnoreCase);
+        // File-name patterns ending in ".xsd" are matched exactly.
+        bool patternIsFileNameFilter = fileNamePattern.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase);
 
         var candidatePaths = ResolveXsdListingPathsForSection(section);
 
@@ -98,13 +95,11 @@ public class ContentProvider(
 
         if (!patternIsFileNameFilter)
         {
-            // Assembly-name regex pattern — return the full section list
+            // Non-file listing pattern: return the full section list.
             return fileNames;
         }
 
-        // Filter by the bare file-name pattern (exact match, case-insensitive)
-        var normalizedPattern = NormalizeToBareXsdFileName(fileNamePattern);
-        return fileNames.Where(f => f.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase));
+        return fileNames.Where(f => f.Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase));
     }
 
     public JsonNode LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl)
@@ -231,7 +226,6 @@ public class ContentProvider(
 
     private Stream GetXsdStreamFromManifest(string fileNamePattern)
     {
-        var bareFileName = NormalizeToBareXsdFileName(fileNamePattern);
         var manifest = manifestProvider.GetManifest();
 
         // Search core first, then extensions in manifest order; return the first matching file
@@ -239,7 +233,7 @@ public class ContentProvider(
             .Projects.OrderBy(p => p.IsExtensionProject ? 1 : 0)
             .SelectMany(manifestProvider.EnumerateValidatedXsdFiles)
             .FirstOrDefault(f =>
-                Path.GetFileName(f).Equals(bareFileName, StringComparison.OrdinalIgnoreCase)
+                Path.GetFileName(f).Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase)
             );
 
         if (matchedPath is not null)
@@ -254,10 +248,9 @@ public class ContentProvider(
 
     private Stream GetXsdStreamFromManifest(string fileNamePattern, string section)
     {
-        var bareFileName = NormalizeToBareXsdFileName(fileNamePattern);
         var matchedPath = ResolveXsdStreamingPathsForSection(section)
             .FirstOrDefault(f =>
-                Path.GetFileName(f).Equals(bareFileName, StringComparison.OrdinalIgnoreCase)
+                Path.GetFileName(f).Equals(fileNamePattern, StringComparison.OrdinalIgnoreCase)
             );
 
         if (matchedPath is not null)
@@ -340,26 +333,6 @@ public class ContentProvider(
     private static bool IsSameProject(ApiSchemaProject left, ApiSchemaProject right)
     {
         return left.ProjectName.Equals(right.ProjectName, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Normalizes a file-name argument to the staged bare XSD file name.
-    /// Legacy assembly-resource-prefixed values look like:
-    ///   EdFi.DataStandard52.ApiSchema.xsd.Ed-Fi-Core.xsd
-    /// Staged bare names are like:
-    ///   Ed-Fi-Core.xsd
-    /// Strips everything up to and including the literal ".xsd." infix when present.
-    /// </summary>
-    private static string NormalizeToBareXsdFileName(string fileNamePattern)
-    {
-        const string xsdInfix = ".xsd.";
-        var infixIndex = fileNamePattern.IndexOf(xsdInfix, StringComparison.OrdinalIgnoreCase);
-        if (infixIndex >= 0)
-        {
-            return fileNamePattern[(infixIndex + xsdInfix.Length)..];
-        }
-
-        return fileNamePattern;
     }
 
     /// <summary>

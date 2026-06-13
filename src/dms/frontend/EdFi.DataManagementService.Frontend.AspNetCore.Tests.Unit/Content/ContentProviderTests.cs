@@ -120,9 +120,7 @@ public class ContentProviderTests
             .Returns(new Lazy<Stream>(() => contentStream));
 
         // Act
-        var response = contentProvider.LoadXsdContent(
-            "EdFi.DataStandard52.ApiSchema.xsd.Interchange-Contact.xsd"
-        );
+        var response = contentProvider.LoadXsdContent("Interchange-Contact.xsd");
         var responseStream = response.Value;
         string line = string.Empty;
         using (var reader = new StreamReader(responseStream))
@@ -448,7 +446,7 @@ public class Given_file_mode_xsd_listing_for_core_section
     [Test]
     public void It_lists_only_core_xsd_files_for_the_core_section()
     {
-        // XsdMetadataEndpointModule passes an assembly-name regex pattern for the full listing
+        // XsdMetadataEndpointModule passes a broad listing pattern for the full listing.
         var files = _provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi").ToList();
 
         files.Should().Equal(FileModeWorkspaceBuilder.CoreXsdFile1, FileModeWorkspaceBuilder.CoreXsdFile2);
@@ -466,17 +464,6 @@ public class Given_file_mode_xsd_listing_for_core_section
     public void It_filters_by_bare_file_name()
     {
         var files = _provider.Files(FileModeWorkspaceBuilder.CoreXsdFile1, ".xsd", "ed-fi").ToList();
-
-        files.Should().ContainSingle();
-        files[0].Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1);
-    }
-
-    [Test]
-    public void It_filters_by_legacy_assembly_resource_prefixed_file_name()
-    {
-        var legacyName = $"EdFi.DataStandard52.ApiSchema.xsd.{FileModeWorkspaceBuilder.CoreXsdFile1}";
-
-        var files = _provider.Files(legacyName, ".xsd", "ed-fi").ToList();
 
         files.Should().ContainSingle();
         files[0].Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1);
@@ -538,17 +525,6 @@ public class Given_file_mode_xsd_listing_for_extension_section
         files.Should().ContainSingle();
         files[0].Should().Be(FileModeWorkspaceBuilder.ExtensionXsdFile);
     }
-
-    [Test]
-    public void It_filters_extension_section_by_legacy_prefixed_core_file_name()
-    {
-        var legacyName = $"EdFi.DataStandard52.ApiSchema.xsd.{FileModeWorkspaceBuilder.CoreXsdFile2}";
-
-        var files = _provider.Files(legacyName, ".xsd", "sample").ToList();
-
-        files.Should().ContainSingle();
-        files[0].Should().Be(FileModeWorkspaceBuilder.CoreXsdFile2);
-    }
 }
 
 [TestFixture]
@@ -582,18 +558,6 @@ public class Given_file_mode_xsd_stream_loading
         var content = reader.ReadToEnd();
 
         content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile1Content);
-    }
-
-    [Test]
-    public void It_returns_stream_content_for_legacy_prefixed_file_name()
-    {
-        var legacyName = $"EdFi.DataStandard52.ApiSchema.xsd.{FileModeWorkspaceBuilder.CoreXsdFile2}";
-
-        var lazy = _provider.LoadXsdContent(legacyName);
-        using var reader = new StreamReader(lazy.Value);
-        var content = reader.ReadToEnd();
-
-        content.Should().Be(FileModeWorkspaceBuilder.CoreXsdFile2Content);
     }
 
     [Test]
@@ -641,16 +605,6 @@ public class Given_file_mode_xsd_stream_loading
 
         sampleContent.Should().Be(FileModeWorkspaceBuilder.SampleDuplicateExtensionXsdContent);
         secondContent.Should().Be(FileModeWorkspaceBuilder.SecondDuplicateExtensionXsdContent);
-    }
-
-    [Test]
-    public void It_returns_section_stream_content_for_legacy_prefixed_file_name()
-    {
-        var legacyName = $"EdFi.Sample.ApiSchema.xsd.{FileModeWorkspaceBuilder.ExtensionXsdFile}";
-
-        var content = ReadXsdContent(_provider.LoadXsdContent(legacyName, "sample"));
-
-        content.Should().Be(FileModeWorkspaceBuilder.ExtensionXsdFileContent);
     }
 
     [Test]

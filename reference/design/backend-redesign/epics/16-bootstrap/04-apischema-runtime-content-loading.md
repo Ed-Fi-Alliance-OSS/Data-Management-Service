@@ -55,6 +55,9 @@ both materialize to the same workspace before runtime starts.
   schema and schema-adjacent content from the application `ApiSchema` directory rather than from
   assembly-bundled resources. Asset-only Data-Standard-qualified packages still rely on the file-based
   workspace contract delivered here, with package resolution owned by Story 06.
+- XSD metadata endpoints expose the staged package XSD filenames from each selected project's
+  `xsdDirectory`. Assembly manifest resource names and project-prefixed extension aliases are not part of the
+  file-based endpoint contract.
 - Unit or integration coverage proves that metadata/specification JSON and XSD endpoints work from a
   file-based staged workspace with no `*.ApiSchema.dll` files present.
 
