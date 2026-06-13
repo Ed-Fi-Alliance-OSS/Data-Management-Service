@@ -57,62 +57,6 @@ internal class ApiSchemaProvider(
     private bool _isSchemaValid = true;
     private List<ApiSchemaFailure> _apiSchemaFailures = [];
 
-    /// <summary>
-    /// Finds and reads all ApiSchema*.json files in the given directory path.
-    /// Returns the parsed files as JsonNodes
-    /// </summary>
-    public (List<JsonNode>? Nodes, List<ApiSchemaFailure> Failures) ReadApiSchemaFiles(string directoryPath)
-    {
-        List<JsonNode> fileContents = [];
-        List<ApiSchemaFailure> failures = [];
-
-        try
-        {
-            IEnumerable<string> matchingFilePaths = Directory
-                .EnumerateFiles(directoryPath, "ApiSchema*.json", SearchOption.AllDirectories)
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
-
-            foreach (string filePath in matchingFilePaths)
-            {
-                var (node, failure) = ReadApiSchemaFile(filePath);
-                if (failure is not null)
-                {
-                    failures.Add(failure);
-                }
-                else if (node is not null)
-                {
-                    fileContents.Add(node);
-                }
-            }
-        }
-        catch (DirectoryNotFoundException ex)
-        {
-            ApiSchemaFailure failure = new("FileSystem", $"Directory not found: '{directoryPath}'", null, ex);
-            failures.Add(failure);
-            _logger.LogError(ex, failure.Message);
-            return (null, failures);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            ApiSchemaFailure failure = new(
-                "AccessDenied",
-                $"Access denied to directory '{directoryPath}'",
-                null,
-                ex
-            );
-            failures.Add(failure);
-            _logger.LogError(ex, failure.Message);
-            return (null, failures);
-        }
-
-        if (failures.Count > 0)
-        {
-            return (null, failures);
-        }
-
-        return (fileContents, []);
-    }
-
     private (JsonNode? Node, ApiSchemaFailure? Failure) ReadApiSchemaFile(string filePath)
     {
         _logger.LogInformation("Loading ApiSchema.json file: {FilePath}", filePath);
@@ -220,16 +164,12 @@ internal class ApiSchemaProvider(
             return LoadSchemaFromManifest(Path.GetFullPath(apiSchemaPath), manifestPath);
         }
 
-        var (apiSchemaNodes, readFailures) = ReadApiSchemaFiles(apiSchemaPath);
-        if (readFailures.Count > 0)
-        {
-            return new(null, readFailures);
-        }
-
-        return CreateApiSchemaLoadResult(
-            apiSchemaNodes,
-            $"No API schema files found in directory {apiSchemaPath}"
+        ApiSchemaFailure missingManifestFailure = new(
+            "Configuration",
+            $"Required bootstrap manifest file '{BootstrapManifestFileName}' was not found in ApiSchema workspace '{apiSchemaPath}'."
         );
+        _logger.LogError(missingManifestFailure.Message);
+        return new(null, [missingManifestFailure]);
     }
 
     private ApiSchemaLoadResult LoadSchemaFromManifest(string workspaceRoot, string manifestPath)

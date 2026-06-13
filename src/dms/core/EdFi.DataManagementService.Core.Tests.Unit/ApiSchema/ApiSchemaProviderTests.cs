@@ -16,6 +16,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 
 [TestFixture]
+[NonParallelizable]
 public class Given_bundled_ApiSchema_package_content
 {
     private ApiSchemaDocumentNodes _nodes = null!;
@@ -42,6 +43,101 @@ public class Given_bundled_ApiSchema_package_content
             )
             .Should()
             .Be("ed-fi");
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_bundled_ApiSchema_package_content_without_a_bootstrap_manifest
+{
+    private string _manifestPath = null!;
+    private string _manifestBackupPath = null!;
+    private string _legacyRootSchemaPath = null!;
+    private string? _originalLegacyRootContent;
+    private bool _legacyRootSchemaExisted;
+    private IApiSchemaProvider _provider = null!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var outputApiSchemaDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ApiSchema");
+        _manifestPath = Path.Combine(outputApiSchemaDirectory, "bootstrap-api-schema-manifest.json");
+        File.Exists(_manifestPath)
+            .Should()
+            .BeTrue("bundled package content should materialize a bootstrap manifest in the app output");
+
+        _manifestBackupPath = $"{_manifestPath}.{Guid.NewGuid():N}.bak";
+        File.Move(_manifestPath, _manifestBackupPath);
+
+        _legacyRootSchemaPath = Path.Combine(outputApiSchemaDirectory, "ApiSchema.json");
+        _legacyRootSchemaExisted = File.Exists(_legacyRootSchemaPath);
+        _originalLegacyRootContent = _legacyRootSchemaExisted
+            ? File.ReadAllText(_legacyRootSchemaPath)
+            : null;
+
+        File.WriteAllText(
+            _legacyRootSchemaPath,
+            ApiSchemaProviderTestFixtures
+                .CreateApiSchema("Legacy", "legacy", isExtensionProject: false)
+                .ToJsonString()
+        );
+
+        _provider = new ApiSchemaProvider(
+            NullLogger<ApiSchemaProvider>.Instance,
+            Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
+            new ApiSchemaValidator(NullLogger<ApiSchemaValidator>.Instance)
+        );
+
+        try
+        {
+            _provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (_legacyRootSchemaExisted)
+        {
+            File.WriteAllText(_legacyRootSchemaPath, _originalLegacyRootContent ?? string.Empty);
+        }
+        else if (File.Exists(_legacyRootSchemaPath))
+        {
+            File.Delete(_legacyRootSchemaPath);
+        }
+
+        if (File.Exists(_manifestBackupPath))
+        {
+            if (File.Exists(_manifestPath))
+            {
+                File.Delete(_manifestPath);
+            }
+
+            File.Move(_manifestBackupPath, _manifestPath);
+        }
+    }
+
+    [Test]
+    public void It_fails_startup()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_reports_the_missing_bundled_manifest()
+    {
+        _provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains("bootstrap-api-schema-manifest.json", StringComparison.Ordinal)
+                && f.Message.Contains("not found", StringComparison.Ordinal)
+            );
     }
 }
 
@@ -470,9 +566,10 @@ public class Given_manifest_backed_workspace_with_missing_isExtensionProject_fie
 }
 
 [TestFixture]
-public class Given_legacy_workspace_without_a_bootstrap_manifest : ApiSchemaProviderWorkspaceTestBase
+public class Given_workspace_without_a_bootstrap_manifest : ApiSchemaProviderWorkspaceTestBase
 {
-    private ApiSchemaDocumentNodes _nodes = null!;
+    private IApiSchemaProvider _provider = null!;
+    private Exception? _exception;
 
     [SetUp]
     public void Setup()
@@ -486,17 +583,34 @@ public class Given_legacy_workspace_without_a_bootstrap_manifest : ApiSchemaProv
             ApiSchemaProviderTestFixtures.CreateApiSchema("Sample", "sample", isExtensionProject: true)
         );
 
-        _nodes = CreateFileModeProvider().GetApiSchemaNodes();
+        _provider = CreateFileModeProvider();
+
+        try
+        {
+            _provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
     }
 
     [Test]
-    public void It_preserves_recursive_ApiSchema_file_loading()
+    public void It_fails_startup()
     {
-        ApiSchemaProviderTestFixtures.GetCoreEndpointName(_nodes).Should().Be("legacy");
-        _nodes
-            .ExtensionApiSchemaRootNodes.Select(ApiSchemaProviderTestFixtures.GetEndpointName)
-            .Should()
-            .Equal("sample");
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_reports_the_missing_bootstrap_manifest()
+    {
+        _provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains("bootstrap-api-schema-manifest.json", StringComparison.Ordinal)
+                && f.Message.Contains("not found", StringComparison.Ordinal)
+            );
     }
 }
 
