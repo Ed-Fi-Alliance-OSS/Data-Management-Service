@@ -19,6 +19,11 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
             appSettings.Value.MultiTenancy
         );
 
+        // Temporary dev/smoke stub until resource Change Query routes are implemented.
+        endpoints.MapGet(
+            BuildChangeQueryStubRoutePattern(routePattern),
+            () => Results.Content("[]", "application/json")
+        );
         endpoints.MapPost(routePattern, Upsert);
         endpoints.MapGet(routePattern, Get);
         endpoints.MapPut(routePattern, UpdateById);
@@ -47,4 +52,10 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
         var segmentPlaceholders = string.Join("/", routeQualifierSegments.Select(s => $"{{{s}}}"));
         return $"/{tenantSegment}{segmentPlaceholders}/data/{{**dmsPath}}";
     }
+
+    internal static string BuildChangeQueryStubRoutePattern(string routePattern) =>
+        routePattern.Replace(
+            "{**dmsPath}",
+            "{projectNamespace}/{endpointName}/{changeQueryType:regex(^(deletes|keyChanges)$)}"
+        );
 }
