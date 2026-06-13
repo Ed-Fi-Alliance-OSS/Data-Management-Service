@@ -350,22 +350,6 @@
     "completed": true
   },
   {
-    "category": "Metadata Content",
-    "description": "Medium: Align TPDM XSD metadata E2E expectations with package-backed file names at `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/XSDMetadata.feature:193` so Story 04 file-mode runtime does not expect stale `TPDM-EXTENSION-*` names that are not present in the selected package manifest.",
-    "acceptance-criteria": [
-      "`/metadata/xsd/tpdm/files` expectations use the actual XSD file names exposed by the selected `EdFi.DataStandard52.TPDM.ApiSchema` package-backed workspace, such as `EXTENSION-Interchange-Survey-Extension.xsd`, unless the product deliberately adds and tests a backward-compatible `TPDM-EXTENSION-*` alias.",
-      "The TPDM XSD content scenario requests a filename that `ContentProvider.NormalizeToBareXsdFileName` can resolve from the manifest-declared `xsdDirectory`, such as the bare `EXTENSION-Interchange-Survey-Extension.xsd` or a legacy assembly prefix ending in that bare filename.",
-      "No `TPDM-EXTENSION-*` literal remains in XSD metadata E2E expectations unless it is covered by an explicit compatibility test and implemented alias behavior.",
-      "The expected TPDM XSD response body remains consistent with the package file content, including the existing `schemaLocation=\"EXTENSION-Ed-Fi-Extended-Core.xsd\"` include."
-    ],
-    "steps-to-verify": [
-      "Inspect the selected TPDM package `contentFiles/any/any/ApiSchema/package-manifest.json` and `xsd` directory to confirm the extension file names the runtime manifest will expose.",
-      "Update `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/XSDMetadata.feature` scenario 05 and scenario 06 to match the manifest-backed TPDM XSD names or to assert explicitly implemented compatibility aliases.",
-      "Run the preferred relational E2E shard path for the XSD metadata scenarios: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=relational-backend&Category=@relational-ci-shard-4'`."
-    ],
-    "completed": false
-  },
-  {
     "category": "Bootstrap Startup",
     "description": "Medium: Run the claims-ready gate in `eng/docker-compose/start-published-dms.ps1` bootstrap `-InfraOnly` startup just as `start-local-dms.ps1` does, so published bootstrap does not proceed after CMS health without proving staged claims are active.",
     "acceptance-criteria": [
@@ -412,5 +396,77 @@
       "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1\"`."
     ],
     "completed": true
+  },
+  {
+    "category": "Container Packaging",
+    "description": "Medium: Derive bundled ApiSchema manifest optional content paths from package manifests and verified package files instead of hard-coding `discoverySpecPath` and `xsdDirectory` in `src/dms/Directory.Build.targets`.",
+    "acceptance-criteria": [
+      "Bundled `ApiSchema/bootstrap-api-schema-manifest.json` emits explicit `null` values for optional `discoverySpecPath` and `xsdDirectory` when the package manifest has no non-null value for those fields.",
+      "A package with no optional XSD assets does not produce a runtime failure from `ApiSchemaAssetManifestProvider.EnumerateValidatedXsdFiles`.",
+      "The bundled root manifest does not declare an optional content path unless the corresponding bundled file or directory exists under `ApiSchema/Packages/<packageId>/`.",
+      "If package metadata declares optional content but the file or directory is missing, bundled manifest materialization fails before publishing an invalid workspace rather than silently rewriting the declared path to `null`.",
+      "Valid bundled core and extension package content still publishes schema, discovery, and XSD assets recursively."
+    ],
+    "steps-to-verify": [
+      "Add publish verification for a package entry without `xsd/` showing the generated manifest has `xsdDirectory: null`.",
+      "Add verification that declared-but-missing optional content fails during materialization, not later at runtime.",
+      "Run the focused container-packaging verification added for bundled ApiSchema manifest generation."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runtime Schema Loading",
+    "description": "Medium: Validate manifest project identity against the loaded ApiSchema JSON in `src/dms/core/EdFi.DataManagementService.Core/ApiSchema/ApiSchemaProvider.cs:248` before accepting a manifest-selected schema file.",
+    "acceptance-criteria": [
+      "`ApiSchemaProvider` rejects null manifest project entries and missing or blank `projectName`, `projectEndpointName`, and `schemaPath` fields with `ApiSchemaFailure` configuration errors instead of null-referencing or deferring the failure to metadata endpoints.",
+      "After reading each manifest-selected schema file, `ApiSchemaProvider` compares manifest `projectName`, `projectEndpointName`, and `isExtensionProject` with `$.projectSchema.projectName`, `$.projectSchema.projectEndpointName`, and `$.projectSchema.isExtensionProject` from that file.",
+      "A mismatch fails startup with a configuration failure that identifies the manifest project, mismatched field, declared value, schema value, and `schemaPath`.",
+      "`ApiSchemaProvider` and frontend content loading use a shared ApiSchema manifest model, reader, and validation contract from Core, so startup cannot accept a manifest that metadata or XSD endpoints later reject.",
+      "The validation runs for both `UseApiSchemaPath=true` workspaces and bundled `UseApiSchemaPath=false` ApiSchema content.",
+      "Valid staged and bundled manifests with matching schema identity continue to load unchanged."
+    ],
+    "steps-to-verify": [
+      "Add `ApiSchemaProvider` unit coverage for mismatched manifest `projectName`, `projectEndpointName`, and `isExtensionProject` values and assert each case returns a configuration failure before creating `ApiSchemaDocuments`.",
+      "Add `ApiSchemaProvider` unit coverage for a null project entry and blank identity fields in `bootstrap-api-schema-manifest.json`.",
+      "Add shared manifest-reader coverage proving malformed manifests are rejected before both `ApiSchemaProvider` startup loading and frontend content loading.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaProvider\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Metadata Content",
+    "description": "Medium: Serve `discovery-spec` only from the manifest-declared core project in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs:196` instead of the first project with `discoverySpecPath`.",
+    "acceptance-criteria": [
+      "`LoadJsonContent(\"discovery\", ...)` selects the single manifest project where `isExtensionProject` is false when resolving `discoverySpecPath`; manifest order does not affect the selected discovery document.",
+      "If the core project omits `discoverySpecPath`, discovery content is treated as absent even when an extension project declares its own `discoverySpecPath`.",
+      "If the core project declares `discoverySpecPath` but the file is missing, the existing invalid-workspace error behavior remains in place.",
+      "Extension project discovery/spec files are not served as the DMS global discovery document."
+    ],
+    "steps-to-verify": [
+      "Add `ContentProvider` unit coverage where an extension with `discoverySpecPath` appears before the core project and assert `LoadJsonContent(\"discovery\", ...)` serves the core file.",
+      "Add `ContentProvider` unit coverage where only an extension declares `discoverySpecPath` and assert discovery loading follows the absent-content failure path instead of serving the extension file.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ContentProvider|FullyQualifiedName~discovery\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Simplification",
+    "description": "Low: Remove the dead legacy XSD assembly-resource search pattern from `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/XsdMetadataEndpointModule.cs:102` and make section-based XSD listing explicit.",
+    "acceptance-criteria": [
+      "`GetXsdMetadataFiles` no longer constructs `EdFi.DataStandard.*.ApiSchema` or `EdFi.{section}.ApiSchema` regex patterns for file-mode XSD listing.",
+      "`ContentProvider` exposes an explicit section-based XSD listing path that `XsdMetadataEndpointModule` uses instead of accepting a broad legacy resource-name pattern that is intentionally ignored when it does not end in `.xsd`.",
+      "Exact bare-file XSD lookup behavior remains available for single-file streaming, and legacy assembly-resource-prefixed XSD file names are not supported in file-mode listing or streaming.",
+      "`eng/docker-compose/tests/Invoke-BootstrapDockerSmoke.ps1` no longer constructs legacy assembly-resource-prefixed XSD URLs or expects them to return 200; smoke tests request the staged filenames returned by `/metadata/xsd/{section}/files`.",
+      "`IContentProvider.LoadXsdContent(string)` is removed from the production interface; production XSD streaming uses the section-aware overload so duplicate extension filenames are not resolved through an ambiguous core-then-extension search.",
+      "Frontend unit tests continue to cover core and extension XSD listing and streaming behavior without depending on assembly resource naming."
+    ],
+    "steps-to-verify": [
+      "Search `XsdMetadataEndpointModule` and `ContentProvider` for `EdFi.DataStandard.*.ApiSchema`, `EdFi.{section}.ApiSchema`, and comments saying broad listing patterns are ignored; confirm the dead listing path is gone.",
+      "Search `eng/docker-compose/tests/Invoke-BootstrapDockerSmoke.ps1` for `legacy-prefixed`, `.ApiSchema.xsd.`, and constructed assembly-resource XSD names; confirm the smoke test only follows returned staged file URLs.",
+      "Search production code for `LoadXsdContent(string)` and confirm only section-aware XSD streaming remains in the public content-provider contract.",
+      "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapDockerSmoke.Tests.ps1\"`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ContentProvider\"`"
+    ],
+    "completed": false
   }
 ]

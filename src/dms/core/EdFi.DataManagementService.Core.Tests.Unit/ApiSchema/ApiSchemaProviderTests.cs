@@ -533,14 +533,17 @@ public class Given_manifest_backed_workspace_with_two_schema_documents_marked_as
     }
 
     [Test]
-    public void It_records_a_configuration_failure_for_multiple_core_schemas()
+    public void It_records_a_configuration_failure_for_the_schema_identity_mismatch()
     {
         _provider
             .ApiSchemaFailures.Should()
             .ContainSingle(f =>
                 f.FailureType == "Configuration"
-                && f.Message.Contains("exactly one core API schema", StringComparison.Ordinal)
-                && f.Message.Contains("found 2", StringComparison.Ordinal)
+                && f.Message.Contains("Sample", StringComparison.Ordinal)
+                && f.Message.Contains("isExtensionProject", StringComparison.Ordinal)
+                && f.Message.Contains("true", StringComparison.Ordinal)
+                && f.Message.Contains("false", StringComparison.Ordinal)
+                && f.Message.Contains("Packages/Sample/ApiSchema.json", StringComparison.Ordinal)
             );
     }
 }
@@ -587,14 +590,17 @@ public class Given_manifest_backed_workspace_with_no_schema_document_marked_as_c
     }
 
     [Test]
-    public void It_records_a_configuration_failure_for_zero_core_schemas()
+    public void It_records_a_configuration_failure_for_the_schema_identity_mismatch()
     {
         _provider
             .ApiSchemaFailures.Should()
             .ContainSingle(f =>
                 f.FailureType == "Configuration"
-                && f.Message.Contains("exactly one core API schema", StringComparison.Ordinal)
-                && f.Message.Contains("found 0", StringComparison.Ordinal)
+                && f.Message.Contains("Ed-Fi", StringComparison.Ordinal)
+                && f.Message.Contains("isExtensionProject", StringComparison.Ordinal)
+                && f.Message.Contains("false", StringComparison.Ordinal)
+                && f.Message.Contains("true", StringComparison.Ordinal)
+                && f.Message.Contains("Packages/Core/ApiSchema.json", StringComparison.Ordinal)
             );
     }
 }
@@ -659,6 +665,212 @@ public class Given_manifest_backed_workspace_with_missing_isExtensionProject_fie
                 && f.Message.Contains("isExtensionProject", StringComparison.Ordinal)
                 && f.Message.Contains("non-null boolean", StringComparison.Ordinal)
             );
+    }
+}
+
+[TestFixture]
+public class Given_manifest_backed_workspace_with_a_null_project_entry : ApiSchemaProviderWorkspaceTestBase
+{
+    private IApiSchemaProvider _provider = null!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var manifest = new JsonObject { ["version"] = 1, ["projects"] = new JsonArray((JsonNode?)null) };
+        File.WriteAllText(
+            Path.Combine(WorkspaceRoot, "bootstrap-api-schema-manifest.json"),
+            manifest.ToJsonString()
+        );
+
+        _provider = CreateFileModeProvider();
+
+        try
+        {
+            _provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_fails_startup()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_records_a_configuration_failure_for_the_null_project()
+    {
+        _provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains("null project entry", StringComparison.Ordinal)
+                && f.Message.Contains("index 0", StringComparison.Ordinal)
+            );
+    }
+}
+
+[TestFixture]
+public class Given_manifest_backed_workspace_with_blank_identity_fields : ApiSchemaProviderWorkspaceTestBase
+{
+    [TestCase("projectName")]
+    [TestCase("projectEndpointName")]
+    [TestCase("schemaPath")]
+    public void It_records_a_configuration_failure_for_the_blank_manifest_field(string fieldName)
+    {
+        var project = new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["isExtensionProject"] = false,
+            ["schemaPath"] = "Packages/Core/ApiSchema.json",
+        };
+        project[fieldName] = "   ";
+
+        var manifest = new JsonObject { ["version"] = 1, ["projects"] = new JsonArray(project) };
+        File.WriteAllText(
+            Path.Combine(WorkspaceRoot, "bootstrap-api-schema-manifest.json"),
+            manifest.ToJsonString()
+        );
+
+        var provider = CreateFileModeProvider();
+        Exception? exception = null;
+
+        try
+        {
+            provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            exception = ex;
+        }
+
+        exception.Should().BeOfType<InvalidOperationException>();
+        provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains($"non-empty {fieldName}", StringComparison.Ordinal)
+            );
+    }
+}
+
+public abstract class ManifestSchemaIdentityMismatchTestBase : ApiSchemaProviderWorkspaceTestBase
+{
+    private IApiSchemaProvider _provider = null!;
+    private Exception? _exception;
+
+    protected virtual string ManifestProjectName => "Ed-Fi";
+    protected virtual string ManifestProjectEndpointName => "ed-fi";
+    protected virtual bool ManifestIsExtensionProject => false;
+    protected virtual string SchemaProjectName => "Ed-Fi";
+    protected virtual string SchemaProjectEndpointName => "ed-fi";
+    protected virtual bool SchemaIsExtensionProject => false;
+    protected abstract string FieldName { get; }
+    protected abstract string DeclaredValue { get; }
+    protected abstract string SchemaValue { get; }
+
+    [SetUp]
+    public void Setup()
+    {
+        WriteSchemaFile(
+            "Packages/Core/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchema(
+                SchemaProjectName,
+                SchemaProjectEndpointName,
+                SchemaIsExtensionProject
+            )
+        );
+        WriteManifest(
+            (
+                ManifestProjectName,
+                ManifestProjectEndpointName,
+                ManifestIsExtensionProject,
+                "Packages/Core/ApiSchema.json"
+            )
+        );
+
+        _provider = CreateFileModeProvider();
+
+        try
+        {
+            _provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_fails_startup()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_records_a_configuration_failure_that_identifies_the_mismatch()
+    {
+        _provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains("Ed-Fi", StringComparison.Ordinal)
+                && f.Message.Contains(FieldName, StringComparison.Ordinal)
+                && f.Message.Contains(DeclaredValue, StringComparison.Ordinal)
+                && f.Message.Contains(SchemaValue, StringComparison.Ordinal)
+                && f.Message.Contains("Packages/Core/ApiSchema.json", StringComparison.Ordinal)
+            );
+    }
+}
+
+[TestFixture]
+public class Given_manifest_project_name_does_not_match_schema : ManifestSchemaIdentityMismatchTestBase
+{
+    protected override string SchemaProjectName => "Actual";
+    protected override string FieldName => "projectName";
+    protected override string DeclaredValue => "Ed-Fi";
+    protected override string SchemaValue => "Actual";
+}
+
+[TestFixture]
+public class Given_manifest_project_endpoint_name_does_not_match_schema
+    : ManifestSchemaIdentityMismatchTestBase
+{
+    protected override string SchemaProjectEndpointName => "actual";
+    protected override string FieldName => "projectEndpointName";
+    protected override string DeclaredValue => "ed-fi";
+    protected override string SchemaValue => "actual";
+}
+
+[TestFixture]
+public class Given_manifest_is_extension_project_does_not_match_schema
+    : ManifestSchemaIdentityMismatchTestBase
+{
+    protected override bool SchemaIsExtensionProject => true;
+    protected override string FieldName => "isExtensionProject";
+    protected override string DeclaredValue => "false";
+    protected override string SchemaValue => "true";
+}
+
+[TestFixture]
+public class Given_ApiSchemaAssetManifestReader_with_malformed_manifest_content
+    : ApiSchemaProviderWorkspaceTestBase
+{
+    [Test]
+    public void It_rejects_malformed_json_with_a_parse_failure_type()
+    {
+        Action action = () => ApiSchemaAssetManifestReader.ReadFromJson("{ nope", WorkspaceRoot);
+
+        action
+            .Should()
+            .Throw<ApiSchemaAssetManifestException>()
+            .Where(ex => ex.FailureType == "ParseError")
+            .WithMessage("*malformed JSON*");
     }
 }
 

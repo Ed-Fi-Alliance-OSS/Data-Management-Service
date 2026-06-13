@@ -5,7 +5,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
+namespace EdFi.DataManagementService.Core.ApiSchema;
 
 /// <summary>
 /// Represents a project entry in the bootstrap-api-schema-manifest.json file.

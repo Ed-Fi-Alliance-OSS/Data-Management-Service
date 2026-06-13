@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
@@ -29,20 +28,6 @@ internal class ApiSchemaProvider(
 ) : IApiSchemaProvider
 {
     private const string BundledApiSchemaDirectoryName = "ApiSchema";
-    private const string BootstrapManifestFileName = "bootstrap-api-schema-manifest.json";
-    private const int SupportedBootstrapManifestVersion = 1;
-
-    private sealed record BootstrapApiSchemaManifest(
-        int Version,
-        IReadOnlyList<BootstrapApiSchemaProject>? Projects
-    );
-
-    private sealed record BootstrapApiSchemaProject(
-        string? ProjectName,
-        string? ProjectEndpointName,
-        bool? IsExtensionProject,
-        string? SchemaPath
-    );
 
     // Cached API schema nodes loaded from files
     private ApiSchemaDocumentNodes? _apiSchemaNodes;
@@ -158,7 +143,7 @@ internal class ApiSchemaProvider(
             return new(null, [failure]);
         }
 
-        var manifestPath = Path.Combine(apiSchemaPath, BootstrapManifestFileName);
+        var manifestPath = Path.Combine(apiSchemaPath, ApiSchemaAssetManifestReader.ManifestFileName);
         if (File.Exists(manifestPath))
         {
             return LoadSchemaFromManifest(Path.GetFullPath(apiSchemaPath), manifestPath);
@@ -166,7 +151,7 @@ internal class ApiSchemaProvider(
 
         ApiSchemaFailure missingManifestFailure = new(
             "Configuration",
-            $"Required bootstrap manifest file '{BootstrapManifestFileName}' was not found in ApiSchema workspace '{apiSchemaPath}'."
+            $"Required bootstrap manifest file '{ApiSchemaAssetManifestReader.ManifestFileName}' was not found in ApiSchema workspace '{apiSchemaPath}'."
         );
         _logger.LogError(missingManifestFailure.Message);
         return new(null, [missingManifestFailure]);
@@ -174,58 +159,35 @@ internal class ApiSchemaProvider(
 
     private ApiSchemaLoadResult LoadSchemaFromManifest(string workspaceRoot, string manifestPath)
     {
-        var (manifest, manifestFailure) = ReadBootstrapManifest(manifestPath);
-        if (manifestFailure is not null)
+        ApiSchemaAssetManifest manifest;
+        try
         {
-            return new(null, [manifestFailure]);
+            manifest = ApiSchemaAssetManifestReader.ReadFromFile(workspaceRoot, manifestPath);
         }
-
-        if (manifest is null)
+        catch (ApiSchemaAssetManifestException ex)
         {
-            ApiSchemaFailure failure = new(
-                "Configuration",
-                $"Bootstrap manifest file '{BootstrapManifestFileName}' deserialized to null"
-            );
-            _logger.LogError(failure.Message);
+            ApiSchemaFailure failure = new(ex.FailureType, ex.Message, null, ex);
+            _logger.LogError(ex, failure.Message);
             return new(null, [failure]);
         }
 
-        List<ApiSchemaFailure> failures = ValidateBootstrapManifest(manifest);
-        if (failures.Count > 0)
-        {
-            return new(null, failures);
-        }
-
-        IReadOnlyList<BootstrapApiSchemaProject> projects = manifest.Projects ?? [];
         List<JsonNode> apiSchemaNodes = [];
         var pathResolver = new ApiSchemaWorkspacePathResolver(workspaceRoot);
-        foreach ((BootstrapApiSchemaProject project, int index) in projects.Select((p, i) => (p, i)))
+        List<ApiSchemaFailure> failures = [];
+        foreach ((ApiSchemaProject project, int index) in manifest.Projects.Select((p, i) => (p, i)))
         {
-            var projectDescription = DescribeManifestProject(project, index);
-            var schemaPath = project.SchemaPath;
-
-            if (string.IsNullOrWhiteSpace(schemaPath))
-            {
-                failures.Add(
-                    new ApiSchemaFailure(
-                        "Configuration",
-                        $"Bootstrap manifest project {projectDescription} must declare a non-empty schemaPath."
-                    )
-                );
-                continue;
-            }
-
             string resolvedSchemaPath;
             try
             {
-                resolvedSchemaPath = pathResolver.ResolveManifestRelativePath(schemaPath);
+                resolvedSchemaPath = pathResolver.ResolveManifestRelativePath(project.SchemaPath);
             }
             catch (InvalidOperationException ex)
             {
                 failures.Add(
                     new ApiSchemaFailure(
                         "Configuration",
-                        $"Bootstrap manifest project {projectDescription} has invalid schemaPath '{schemaPath}': {ex.Message}",
+                        $"Bootstrap manifest project {DescribeManifestProject(project, index)} has invalid schemaPath "
+                            + $"'{project.SchemaPath}': {ex.Message}",
                         null,
                         ex
                     )
@@ -238,7 +200,8 @@ internal class ApiSchemaProvider(
                 failures.Add(
                     new ApiSchemaFailure(
                         "FileSystem",
-                        $"Bootstrap manifest project {projectDescription} declares schemaPath '{schemaPath}', "
+                        $"Bootstrap manifest project {DescribeManifestProject(project, index)} declares schemaPath "
+                            + $"'{project.SchemaPath}', "
                             + $"but the resolved schema file '{resolvedSchemaPath}' does not exist."
                     )
                 );
@@ -252,6 +215,13 @@ internal class ApiSchemaProvider(
             }
             else if (node is not null)
             {
+                var identityFailure = ValidateSchemaProjectIdentity(project, index, node);
+                if (identityFailure is not null)
+                {
+                    failures.Add(identityFailure);
+                    continue;
+                }
+
                 apiSchemaNodes.Add(node);
             }
         }
@@ -263,138 +233,108 @@ internal class ApiSchemaProvider(
 
         return CreateApiSchemaLoadResult(
             apiSchemaNodes,
-            $"Bootstrap manifest file '{BootstrapManifestFileName}' did not select any API schema files."
+            $"Bootstrap manifest file '{ApiSchemaAssetManifestReader.ManifestFileName}' did not select any API schema files."
         );
     }
 
-    private (BootstrapApiSchemaManifest? Manifest, ApiSchemaFailure? Failure) ReadBootstrapManifest(
-        string manifestPath
+    private ApiSchemaFailure? ValidateSchemaProjectIdentity(
+        ApiSchemaProject project,
+        int index,
+        JsonNode node
     )
     {
+        return CompareSchemaProjectField(project, index, "projectName", project.ProjectName, ReadSchemaString)
+            ?? CompareSchemaProjectField(
+                project,
+                index,
+                "projectEndpointName",
+                project.ProjectEndpointName,
+                ReadSchemaString
+            )
+            ?? CompareSchemaProjectField(
+                project,
+                index,
+                "isExtensionProject",
+                FormatBoolean(project.IsExtensionProject),
+                ReadSchemaBoolean
+            );
+
+        string? ReadSchemaString(string fieldName)
+        {
+            return TryReadProjectSchemaValue<string>(node, fieldName, out var value) ? value : null;
+        }
+
+        string? ReadSchemaBoolean(string fieldName)
+        {
+            return TryReadProjectSchemaValue<bool>(node, fieldName, out var value)
+                ? FormatBoolean(value)
+                : null;
+        }
+    }
+
+    private static string FormatBoolean(bool value)
+    {
+        return value ? "true" : "false";
+    }
+
+    private ApiSchemaFailure? CompareSchemaProjectField(
+        ApiSchemaProject project,
+        int index,
+        string fieldName,
+        string declaredValue,
+        Func<string, string?> readSchemaValue
+    )
+    {
+        var schemaValue = readSchemaValue(fieldName);
+        if (schemaValue is not null && declaredValue.Equals(schemaValue, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var schemaValueDescription = schemaValue ?? "<missing or invalid>";
+        var failure = new ApiSchemaFailure(
+            "Configuration",
+            $"Bootstrap manifest project {DescribeManifestProject(project, index)} declares {fieldName} "
+                + $"'{declaredValue}', but ApiSchema JSON projectSchema.{fieldName} is "
+                + $"'{schemaValueDescription}' for schemaPath '{project.SchemaPath}'."
+        );
+        _logger.LogError(failure.Message);
+        return failure;
+    }
+
+    private static bool TryReadProjectSchemaValue<T>(JsonNode node, string fieldName, out T value)
+    {
+        value = default!;
+
+        if (node["projectSchema"] is not JsonObject projectSchema)
+        {
+            return false;
+        }
+
+        var fieldNode = projectSchema[fieldName];
+        if (fieldNode is null)
+        {
+            return false;
+        }
+
         try
         {
-            string json = File.ReadAllText(manifestPath);
-            var manifest = JsonSerializer.Deserialize<BootstrapApiSchemaManifest>(
-                json,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            );
-            return (manifest, null);
+            value = fieldNode.GetValue<T>();
+            return value is not null;
         }
-        catch (JsonException ex)
+        catch (InvalidOperationException)
         {
-            ApiSchemaFailure failure = new(
-                "ParseError",
-                $"Bootstrap manifest file '{BootstrapManifestFileName}' contains malformed JSON",
-                null,
-                ex
-            );
-            _logger.LogError(ex, failure.Message);
-            return (null, failure);
+            return false;
         }
-        catch (IOException ex)
+        catch (FormatException)
         {
-            ApiSchemaFailure failure = new(
-                "FileSystem",
-                $"Error reading bootstrap manifest file '{manifestPath}'",
-                null,
-                ex
-            );
-            _logger.LogError(ex, failure.Message);
-            return (null, failure);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            ApiSchemaFailure failure = new(
-                "AccessDenied",
-                $"Access denied to bootstrap manifest file '{manifestPath}'",
-                null,
-                ex
-            );
-            _logger.LogError(ex, failure.Message);
-            return (null, failure);
+            return false;
         }
     }
 
-    private List<ApiSchemaFailure> ValidateBootstrapManifest(BootstrapApiSchemaManifest manifest)
+    private static string DescribeManifestProject(ApiSchemaProject project, int index)
     {
-        List<ApiSchemaFailure> failures = [];
-
-        if (manifest.Version != SupportedBootstrapManifestVersion)
-        {
-            failures.Add(
-                new ApiSchemaFailure(
-                    "Configuration",
-                    $"Bootstrap manifest version {manifest.Version} is not supported. "
-                        + $"Only version {SupportedBootstrapManifestVersion} is accepted."
-                )
-            );
-        }
-
-        if (manifest.Projects is null || manifest.Projects.Count == 0)
-        {
-            failures.Add(
-                new ApiSchemaFailure(
-                    "Configuration",
-                    $"Bootstrap manifest '{BootstrapManifestFileName}' contains zero projects."
-                )
-            );
-        }
-
-        if (manifest.Projects is not null && manifest.Projects.Count > 0)
-        {
-            foreach (
-                (BootstrapApiSchemaProject project, int index) in manifest.Projects.Select((p, i) => (p, i))
-            )
-            {
-                if (project.IsExtensionProject is null)
-                {
-                    failures.Add(
-                        new ApiSchemaFailure(
-                            "Configuration",
-                            $"Bootstrap manifest project {DescribeManifestProject(project, index)} must declare "
-                                + "isExtensionProject as a non-null boolean."
-                        )
-                    );
-                }
-            }
-
-            if (manifest.Projects.All(p => p.IsExtensionProject is not null))
-            {
-                var coreProjectCount = manifest.Projects.Count(p => p.IsExtensionProject is false);
-                if (coreProjectCount != 1)
-                {
-                    failures.Add(
-                        new ApiSchemaFailure(
-                            "Configuration",
-                            $"Bootstrap manifest '{BootstrapManifestFileName}' must declare exactly one core "
-                                + $"project where isExtensionProject is false; found {coreProjectCount}."
-                        )
-                    );
-                }
-            }
-        }
-
-        foreach (ApiSchemaFailure failure in failures)
-        {
-            _logger.LogError(failure.Message);
-        }
-
-        return failures;
-    }
-
-    private static string DescribeManifestProject(BootstrapApiSchemaProject project, int index)
-    {
-        if (!string.IsNullOrWhiteSpace(project.ProjectName))
-        {
-            return $"'{project.ProjectName}'";
-        }
-
-        if (!string.IsNullOrWhiteSpace(project.ProjectEndpointName))
-        {
-            return $"'{project.ProjectEndpointName}'";
-        }
-
-        return $"at index {index}";
+        return ApiSchemaAssetManifestReader.DescribeProject(project, index);
     }
 
     private ApiSchemaLoadResult CreateApiSchemaLoadResult(

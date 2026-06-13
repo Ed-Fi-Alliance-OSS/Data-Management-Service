@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 

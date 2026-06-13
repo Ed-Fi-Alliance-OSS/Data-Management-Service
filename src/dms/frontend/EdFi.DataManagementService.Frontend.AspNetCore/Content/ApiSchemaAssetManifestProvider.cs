@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Options;
@@ -50,8 +49,6 @@ public class ApiSchemaAssetManifestProvider(
     ILogger<ApiSchemaAssetManifestProvider> logger
 ) : IApiSchemaAssetManifestProvider
 {
-    private const int SupportedManifestVersion = 1;
-    private const string ManifestFileName = "bootstrap-api-schema-manifest.json";
     private const string BundledApiSchemaDirectoryName = "ApiSchema";
 
     private string? _resolvedWorkspaceRoot;
@@ -94,75 +91,24 @@ public class ApiSchemaAssetManifestProvider(
     public ApiSchemaAssetManifest GetManifest()
     {
         var workspaceRoot = GetOrResolveWorkspaceRoot();
-        var manifestPath = Path.Combine(workspaceRoot, ManifestFileName);
-
-        if (!File.Exists(manifestPath))
+        try
+        {
+            return ApiSchemaAssetManifestReader.ReadFromWorkspace(workspaceRoot);
+        }
+        catch (ApiSchemaAssetManifestException ex)
         {
             logger.LogError(
-                "Bootstrap ApiSchema manifest not found at {ManifestPath}",
-                SanitizeForLog(manifestPath)
+                ex,
+                "Invalid ApiSchema manifest in workspace {WorkspaceRoot}: {Message}",
+                SanitizeForLog(workspaceRoot),
+                SanitizeForLog(ex.Message)
             );
-            throw new InvalidOperationException(
-                $"Bootstrap manifest file '{ManifestFileName}' was not found under the configured "
-                    + $"ApiSchema workspace. Expected path: {manifestPath}."
-            );
-        }
 
-        string json;
-        try
-        {
-            json = File.ReadAllText(manifestPath);
-        }
-        catch (IOException ex)
-        {
             throw new InvalidOperationException(
-                $"Failed to read bootstrap manifest file '{ManifestFileName}': {ex.Message}",
+                $"Invalid ApiSchema manifest in workspace '{workspaceRoot}': {ex.Message}",
                 ex
             );
         }
-
-        ApiSchemaAssetManifest manifest;
-        try
-        {
-            ValidateRawManifestProjectFields(json);
-
-            manifest =
-                JsonSerializer.Deserialize<ApiSchemaAssetManifest>(
-                    json,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                )
-                ?? throw new InvalidOperationException(
-                    $"Bootstrap manifest file '{ManifestFileName}' deserializes to null. "
-                        + "The file may be empty or contain only a JSON null literal."
-                );
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidOperationException(
-                $"Bootstrap manifest file '{ManifestFileName}' contains malformed JSON: {ex.Message}",
-                ex
-            );
-        }
-
-        if (manifest.Version != SupportedManifestVersion)
-        {
-            throw new InvalidOperationException(
-                $"Bootstrap manifest version {manifest.Version} is not supported. "
-                    + $"Only version {SupportedManifestVersion} is accepted."
-            );
-        }
-
-        if (manifest.Projects is null || manifest.Projects.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Bootstrap manifest '{ManifestFileName}' contains zero projects. "
-                    + "A valid staged workspace must declare at least one project."
-            );
-        }
-
-        ValidateManifestProjects(manifest);
-
-        return manifest;
     }
 
     public string ResolveValidatedPath(string relativePath)
@@ -209,188 +155,6 @@ public class ApiSchemaAssetManifestProvider(
         var relativePath = Path.GetRelativePath(directoryPath, filePath);
         return relativePath.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
             || relativePath.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
-    }
-
-    private void ValidateManifestProjects(ApiSchemaAssetManifest manifest)
-    {
-        foreach ((var project, var index) in manifest.Projects.Select((p, i) => (p, i)))
-        {
-            if (project is null)
-            {
-                throw new InvalidOperationException(
-                    $"Bootstrap manifest '{ManifestFileName}' contains a null project entry at index {index}."
-                );
-            }
-
-            ValidateRequiredProjectField(project.ProjectName, "projectName", project, index);
-            ValidateRequiredProjectField(project.ProjectEndpointName, "projectEndpointName", project, index);
-            ValidateRequiredProjectField(project.SchemaPath, "schemaPath", project, index);
-
-            ValidateManifestRelativePath(project.SchemaPath, "schemaPath", project, index);
-            ValidateOptionalManifestRelativePath(
-                project.DiscoverySpecPath,
-                "discoverySpecPath",
-                project,
-                index
-            );
-            ValidateOptionalManifestRelativePath(project.XsdDirectory, "xsdDirectory", project, index);
-        }
-
-        ValidateSingleCoreProject(manifest);
-    }
-
-    private static void ValidateRawManifestProjectFields(string json)
-    {
-        using var document = JsonDocument.Parse(json);
-
-        if (
-            document.RootElement.ValueKind != JsonValueKind.Object
-            || !TryGetPropertyCaseInsensitive(document.RootElement, "projects", out var projectsElement)
-            || projectsElement.ValueKind != JsonValueKind.Array
-        )
-        {
-            return;
-        }
-
-        foreach ((var projectElement, var index) in projectsElement.EnumerateArray().Select((p, i) => (p, i)))
-        {
-            if (projectElement.ValueKind != JsonValueKind.Object)
-            {
-                continue;
-            }
-
-            if (
-                !TryGetPropertyCaseInsensitive(
-                    projectElement,
-                    "isExtensionProject",
-                    out var isExtensionProjectElement
-                )
-                || isExtensionProjectElement.ValueKind is JsonValueKind.Null
-                || isExtensionProjectElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
-            )
-            {
-                throw new InvalidOperationException(
-                    $"Bootstrap manifest project {DescribeRawManifestProject(projectElement, index)} "
-                        + "must declare isExtensionProject as a non-null boolean."
-                );
-            }
-        }
-    }
-
-    private static bool TryGetPropertyCaseInsensitive(
-        JsonElement element,
-        string propertyName,
-        out JsonElement value
-    )
-    {
-        foreach (var property in element.EnumerateObject())
-        {
-            if (
-                property.NameEquals(propertyName)
-                || property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                value = property.Value;
-                return true;
-            }
-        }
-
-        value = default;
-        return false;
-    }
-
-    private static string DescribeRawManifestProject(JsonElement projectElement, int index)
-    {
-        if (
-            TryGetPropertyCaseInsensitive(projectElement, "projectName", out var projectNameElement)
-            && projectNameElement.ValueKind == JsonValueKind.String
-            && !string.IsNullOrWhiteSpace(projectNameElement.GetString())
-        )
-        {
-            return $"'{projectNameElement.GetString()}' at index {index}";
-        }
-
-        return $"at index {index}";
-    }
-
-    private static void ValidateSingleCoreProject(ApiSchemaAssetManifest manifest)
-    {
-        var coreProjectCount = manifest.Projects.Count(p => !p.IsExtensionProject);
-
-        if (coreProjectCount != 1)
-        {
-            throw new InvalidOperationException(
-                $"Bootstrap manifest '{ManifestFileName}' must declare exactly one core project where "
-                    + $"isExtensionProject is false; found {coreProjectCount}."
-            );
-        }
-    }
-
-    private static void ValidateRequiredProjectField(
-        string? value,
-        string fieldName,
-        ApiSchemaProject project,
-        int index
-    )
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException(
-                $"Bootstrap manifest project {DescribeManifestProject(project, index)} must declare a "
-                    + $"non-empty {fieldName}."
-            );
-        }
-    }
-
-    private void ValidateOptionalManifestRelativePath(
-        string? value,
-        string fieldName,
-        ApiSchemaProject project,
-        int index
-    )
-    {
-        if (value is null)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException(
-                $"Bootstrap manifest project {DescribeManifestProject(project, index)} declares {fieldName}, "
-                    + "but it must be null, omitted, or a non-empty manifest-relative path."
-            );
-        }
-
-        ValidateManifestRelativePath(value, fieldName, project, index);
-    }
-
-    private void ValidateManifestRelativePath(
-        string value,
-        string fieldName,
-        ApiSchemaProject project,
-        int index
-    )
-    {
-        try
-        {
-            ResolveValidatedPath(value);
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new InvalidOperationException(
-                $"Bootstrap manifest project {DescribeManifestProject(project, index)} has invalid "
-                    + $"{fieldName} '{value}': {ex.Message}",
-                ex
-            );
-        }
-    }
-
-    private static string DescribeManifestProject(ApiSchemaProject project, int index)
-    {
-        return string.IsNullOrWhiteSpace(project.ProjectName)
-            ? $"at index {index}"
-            : $"'{project.ProjectName}' at index {index}";
     }
 
     /// <summary>
