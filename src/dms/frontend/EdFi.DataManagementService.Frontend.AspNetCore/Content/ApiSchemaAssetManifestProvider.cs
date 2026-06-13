@@ -212,7 +212,9 @@ public class ApiSchemaAssetManifestProvider(
             );
         }
 
-        return allXsdFiles.Select(f => ValidatePathInsideCanonicalWorkspace(f, f));
+        return allXsdFiles
+            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(f => ValidatePathInsideCanonicalWorkspace(f, f));
     }
 
     private static bool IsNestedUnderDirectory(string filePath, string directoryPath)

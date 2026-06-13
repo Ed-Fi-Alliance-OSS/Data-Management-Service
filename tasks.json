@@ -205,7 +205,7 @@
       "Add or update `XsdMetadataEndpointModule` file-mode tests to assert ordered `/metadata/xsd/{section}/files` response bodies.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ContentProvider|FullyQualifiedName~ApiSchemaAssetManifestProvider\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Workspace Validation",

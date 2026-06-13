@@ -346,11 +346,12 @@ public class Given_file_mode_xsd_metadata_endpoint
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         files.Should().NotBeNull();
-        // Each entry should be a URL containing the bare file name
-        files!.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile1));
-        files.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile2));
-        // Extension file should not appear in the core section listing
-        files.Should().NotContain(f => f.Contains(FileModeWorkspaceBuilder.ExtensionXsdFile));
+        files!
+            .Should()
+            .Equal(
+                $"http://localhost/metadata/xsd/ed-fi/{FileModeWorkspaceBuilder.CoreXsdFile1}",
+                $"http://localhost/metadata/xsd/ed-fi/{FileModeWorkspaceBuilder.CoreXsdFile2}"
+            );
     }
 
     [Test]
@@ -365,9 +366,13 @@ public class Given_file_mode_xsd_metadata_endpoint
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         files.Should().NotBeNull();
-        files!.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile1));
-        files.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.CoreXsdFile2));
-        files.Should().Contain(f => f.Contains(FileModeWorkspaceBuilder.ExtensionXsdFile));
+        files!
+            .Should()
+            .Equal(
+                $"http://localhost/metadata/xsd/sample/{FileModeWorkspaceBuilder.CoreXsdFile1}",
+                $"http://localhost/metadata/xsd/sample/{FileModeWorkspaceBuilder.CoreXsdFile2}",
+                $"http://localhost/metadata/xsd/sample/{FileModeWorkspaceBuilder.ExtensionXsdFile}"
+            );
     }
 
     [Test]

@@ -451,9 +451,7 @@ public class Given_file_mode_xsd_listing_for_core_section
         // XsdMetadataEndpointModule passes an assembly-name regex pattern for the full listing
         var files = _provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "ed-fi").ToList();
 
-        files.Should().HaveCount(2);
-        files.Should().Contain(FileModeWorkspaceBuilder.CoreXsdFile1);
-        files.Should().Contain(FileModeWorkspaceBuilder.CoreXsdFile2);
+        files.Should().Equal(FileModeWorkspaceBuilder.CoreXsdFile1, FileModeWorkspaceBuilder.CoreXsdFile2);
     }
 
     [Test]
@@ -523,10 +521,13 @@ public class Given_file_mode_xsd_listing_for_extension_section
             .Files(@"EdFi\.DataStandard.*\.ApiSchema|EdFi.sample.ApiSchema", ".xsd", "sample")
             .ToList();
 
-        files.Should().HaveCount(3);
-        files.Should().Contain(FileModeWorkspaceBuilder.CoreXsdFile1);
-        files.Should().Contain(FileModeWorkspaceBuilder.CoreXsdFile2);
-        files.Should().Contain(FileModeWorkspaceBuilder.ExtensionXsdFile);
+        files
+            .Should()
+            .Equal(
+                FileModeWorkspaceBuilder.CoreXsdFile1,
+                FileModeWorkspaceBuilder.CoreXsdFile2,
+                FileModeWorkspaceBuilder.ExtensionXsdFile
+            );
     }
 
     [Test]
@@ -698,9 +699,7 @@ public class Given_file_mode_missing_optional_content
 
         // Minimal is an extension project but has no xsdDirectory; only core files are returned
         // because no extension xsdDirectory is present (core files always included if core exists)
-        files.Should().HaveCount(2);
-        files.Should().Contain(FileModeWorkspaceBuilder.CoreXsdFile1);
-        files.Should().Contain(FileModeWorkspaceBuilder.CoreXsdFile2);
+        files.Should().Equal(FileModeWorkspaceBuilder.CoreXsdFile1, FileModeWorkspaceBuilder.CoreXsdFile2);
     }
 
     [Test]

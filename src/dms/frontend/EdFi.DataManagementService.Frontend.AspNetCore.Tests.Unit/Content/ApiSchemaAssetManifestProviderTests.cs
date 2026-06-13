@@ -140,8 +140,7 @@ public class Given_a_valid_manifest_workspace
         var xsdFiles = _provider.EnumerateValidatedXsdFiles(coreProject).ToList();
 
         xsdFiles.Should().HaveCount(2);
-        xsdFiles.Should().Contain(f => f.EndsWith("Interchange-Student.xsd"));
-        xsdFiles.Should().Contain(f => f.EndsWith("Ed-Fi-Core.xsd"));
+        xsdFiles.Select(Path.GetFileName).Should().Equal("Ed-Fi-Core.xsd", "Interchange-Student.xsd");
     }
 
     [Test]

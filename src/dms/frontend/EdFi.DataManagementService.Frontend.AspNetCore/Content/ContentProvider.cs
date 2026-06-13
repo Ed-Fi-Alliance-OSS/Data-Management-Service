@@ -88,7 +88,7 @@ public class ContentProvider(
             fileNamePattern.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)
             || fileNamePattern.EndsWith(".xsd?", StringComparison.OrdinalIgnoreCase);
 
-        var candidatePaths = ResolveXsdPathsForSection(section);
+        var candidatePaths = ResolveXsdListingPathsForSection(section);
 
         // Extract bare file names for the listing
         var fileNames = candidatePaths
@@ -255,7 +255,7 @@ public class ContentProvider(
     private Stream GetXsdStreamFromManifest(string fileNamePattern, string section)
     {
         var bareFileName = NormalizeToBareXsdFileName(fileNamePattern);
-        var matchedPath = ResolveXsdPathsForSection(section)
+        var matchedPath = ResolveXsdStreamingPathsForSection(section)
             .FirstOrDefault(f =>
                 Path.GetFileName(f).Equals(bareFileName, StringComparison.OrdinalIgnoreCase)
             );
@@ -270,7 +270,35 @@ public class ContentProvider(
         throw new InvalidOperationException(error);
     }
 
-    private IEnumerable<string> ResolveXsdPathsForSection(string section)
+    private IEnumerable<string> ResolveXsdListingPathsForSection(string section)
+    {
+        var manifest = manifestProvider.GetManifest();
+        var sectionProject = FindProjectForSection(manifest, section);
+
+        if (sectionProject is null)
+        {
+            return [];
+        }
+
+        if (!sectionProject.IsExtensionProject)
+        {
+            return manifestProvider.EnumerateValidatedXsdFiles(sectionProject);
+        }
+
+        var xsdPaths = new List<string>();
+        var coreProject = manifest.Projects.FirstOrDefault(p => !p.IsExtensionProject);
+
+        if (coreProject is not null && !IsSameProject(sectionProject, coreProject))
+        {
+            xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(coreProject));
+        }
+
+        xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(sectionProject));
+
+        return xsdPaths;
+    }
+
+    private IEnumerable<string> ResolveXsdStreamingPathsForSection(string section)
     {
         var manifest = manifestProvider.GetManifest();
         var sectionProject = FindProjectForSection(manifest, section);
