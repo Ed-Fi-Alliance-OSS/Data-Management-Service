@@ -348,5 +348,69 @@
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Metadata Content",
+    "description": "Medium: Align TPDM XSD metadata E2E expectations with package-backed file names at `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/XSDMetadata.feature:193` so Story 04 file-mode runtime does not expect stale `TPDM-EXTENSION-*` names that are not present in the selected package manifest.",
+    "acceptance-criteria": [
+      "`/metadata/xsd/tpdm/files` expectations use the actual XSD file names exposed by the selected `EdFi.DataStandard52.TPDM.ApiSchema` package-backed workspace, such as `EXTENSION-Interchange-Survey-Extension.xsd`, unless the product deliberately adds and tests a backward-compatible `TPDM-EXTENSION-*` alias.",
+      "The TPDM XSD content scenario requests a filename that `ContentProvider.NormalizeToBareXsdFileName` can resolve from the manifest-declared `xsdDirectory`, such as the bare `EXTENSION-Interchange-Survey-Extension.xsd` or a legacy assembly prefix ending in that bare filename.",
+      "No `TPDM-EXTENSION-*` literal remains in XSD metadata E2E expectations unless it is covered by an explicit compatibility test and implemented alias behavior.",
+      "The expected TPDM XSD response body remains consistent with the package file content, including the existing `schemaLocation=\"EXTENSION-Ed-Fi-Extended-Core.xsd\"` include."
+    ],
+    "steps-to-verify": [
+      "Inspect the selected TPDM package `contentFiles/any/any/ApiSchema/package-manifest.json` and `xsd` directory to confirm the extension file names the runtime manifest will expose.",
+      "Update `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/General/XSDMetadata.feature` scenario 05 and scenario 06 to match the manifest-backed TPDM XSD names or to assert explicitly implemented compatibility aliases.",
+      "Run the preferred relational E2E shard path for the XSD metadata scenarios: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=relational-backend&Category=@relational-ci-shard-4'`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Bootstrap Startup",
+    "description": "Medium: Run the claims-ready gate in `eng/docker-compose/start-published-dms.ps1` bootstrap `-InfraOnly` startup just as `start-local-dms.ps1` does, so published bootstrap does not proceed after CMS health without proving staged claims are active.",
+    "acceptance-criteria": [
+      "`start-published-dms.ps1` imports `bootstrap-claims-gate.psm1` and invokes `Test-CmsClaimsReady` when a bootstrap manifest is present in the `-InfraOnly` path.",
+      "The published gate runs after CMS is healthy and after self-contained OpenIddict client data is inserted, so the same authorization metadata client assumptions used by local startup hold.",
+      "Legacy no-manifest published `-InfraOnly` startup logs an informational skip instead of running the claims-ready gate.",
+      "The local and published startup scripts remain aligned with the command-boundary contract that staged schema and staged claims activate together and are verified after CMS health.",
+      "Published wrapper flows that call the infra phase fail before configure/provision work if the staged claims workspace is not reflected by `/authorizationMetadata`."
+    ],
+    "steps-to-verify": [
+      "Add or update Pester/static coverage asserting `start-published-dms.ps1` imports `bootstrap-claims-gate.psm1` and runs `Test-CmsClaimsReady` in bootstrap `-InfraOnly` mode.",
+      "Add a negative assertion that no-manifest published startup skips the claims-ready gate with an informational message.",
+      "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1\"`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Metadata Content",
+    "description": "Medium: Make extension-section XSD streaming use the same duplicate-name project ordering as extension-section XSD listing in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs:301`.",
+    "acceptance-criteria": [
+      "`ResolveXsdStreamingPathsForSection` uses the same core/extension project ordering as `ResolveXsdListingPathsForSection`, or both paths share one helper that returns the validated candidate paths in a single documented order.",
+      "When a core project and extension project contain the same bare XSD filename, the URL advertised by `/metadata/xsd/{extension}/files` streams content from the same selected manifest path.",
+      "Duplicate XSD filenames across extension projects still resolve to the requested extension section's content rather than another extension's file.",
+      "Existing core-first extension section file-list ordering remains unchanged unless the product intentionally changes and updates both listing and streaming together."
+    ],
+    "steps-to-verify": [
+      "Add a `ContentProvider` unit test where the core project and an extension project both contain the same XSD filename; assert section listing and `LoadXsdContent(fileName, section)` agree on which content is served.",
+      "Keep or add coverage for two extension projects with the same XSD filename and assert each section streams its own extension content.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ContentProvider|FullyQualifiedName~Xsd\"`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Simplification",
+    "description": "Low: Remove the unreachable fallback helper definitions in `eng/docker-compose/prepare-dms-schema.ps1:23` now that the script unconditionally imports `bootstrap-manifest.psm1` and `bootstrap-schema-tool.psm1` before use.",
+    "acceptance-criteria": [
+      "The guarded fallback block that redefines `Format-LogSafeText`, `Read-RequiredJsonBoolean`, and bootstrap manifest helpers is removed from `prepare-dms-schema.ps1`.",
+      "`prepare-dms-schema.ps1` relies on the module imports at the top of the file; a missing or broken module fails at import time instead of using a divergent partial implementation.",
+      "There is only one maintained implementation of bootstrap manifest reading, writing, fingerprinting, and path helpers for the prepare-schema flow.",
+      "Pester coverage that dot-sources or invokes `prepare-dms-schema.ps1` still passes with the module imports in place."
+    ],
+    "steps-to-verify": [
+      "Search `eng/docker-compose/prepare-dms-schema.ps1` for `if (-not (Get-Command Format-LogSafeText` and confirm the fallback block is gone.",
+      "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1\"`."
+    ],
+    "completed": false
   }
 ]
