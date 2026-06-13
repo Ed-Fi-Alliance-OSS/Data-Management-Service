@@ -476,7 +476,10 @@ else {
         ./setup-openiddict.ps1 -InsertData -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
 
-    if (-not $SkipConnectorSetup) {
+    if ($bootstrapMode) {
+        Write-Output "Skipping default connector setup: bootstrap mode provisions the redesigned relational schema, which does not include the legacy document-store CDC tables (dms.document) or the to_debezium publication created by the legacy installer."
+    }
+    elseif (-not $SkipConnectorSetup) {
         Write-Output "Running connector setup..."
         ./setup-connectors.ps1 $EnvironmentFile
     }

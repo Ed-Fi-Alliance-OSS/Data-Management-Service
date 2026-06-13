@@ -155,7 +155,7 @@
       "Add or update Pester/static coverage that asserts the full-stack connector setup branch in both startup scripts is guarded by bootstrap mode.",
       "Run the focused bootstrap startup script tests for `eng/docker-compose`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Container Packaging",

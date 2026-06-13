@@ -33,3 +33,9 @@ Key decisions: Manifest provider treats null xsdDirectory as optional absent con
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ApiSchemaAssetManifestProviderTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format provider/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Xsd|FullyQualifiedName~ApiSchemaAssetManifestProvider; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~ApiSchemaAssetManifestProvider; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~xsd.
 Blockers/notes: none.
+
+Task completed: Container Startup - skip default connector setup for full-stack bootstrap starts for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Full-stack local and published startup now use same bootstrap connector gate as DMS-only path. Bootstrap skips default Debezium setup because redesigned relational schema lacks legacy CDC table/publication; non-bootstrap still runs setup unless -SkipConnectorSetup is supplied.
+Files changed: eng/docker-compose/start-local-dms.ps1; eng/docker-compose/start-published-dms.ps1; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; tasks.json; progress.txt.
+Verification: Invoke-Pester BootstrapSchemaAndSecuritySelection full file passed.
+Blockers/notes: none.

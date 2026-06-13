@@ -1071,16 +1071,18 @@ exit $ExitCode
             $content | Should -Match 'schemaPath: \(\$packageDir \+ "/" \+ \.schemaPath\)'
         }
 
-        It "start-local-dms.ps1 gates default connector registration on bootstrap mode in the -DmsOnly block" {
+        It "start-local-dms.ps1 gates default connector registration on bootstrap mode in DMS-only and full-stack paths" {
             # Bootstrap mode provisions the redesigned relational schema which does not include the
             # legacy dms.document table or the to_debezium publication that the default Debezium connector
             # requires. Both start scripts must check $bootstrapMode before calling setup-connectors.ps1
-            # in the -DmsOnly block so the connector is never registered against a schema where its
+            # in both startup paths so the connector is never registered against a schema where its
             # required tables and publication do not exist.
             $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
 
-            # $bootstrapMode must participate in the connector gate (not just $SkipConnectorSetup alone)
-            $content | Should -Match '\$bootstrapMode' -Because "start-local-dms.ps1 must gate the default connector on `$bootstrapMode so bootstrap mode never registers a connector against a schema without dms.document"
+            $connectorGatePattern = 'if \(\$bootstrapMode\)\s*\{[\s\S]*?Skipping default connector setup: bootstrap mode[\s\S]*?\}\s*elseif \(-not \$SkipConnectorSetup\)\s*\{[\s\S]*?setup-connectors\.ps1 \$EnvironmentFile[\s\S]*?\}\s*else\s*\{[\s\S]*?Skipping default connector setup\.'
+            $connectorGates = [regex]::Matches($content, $connectorGatePattern)
+
+            $connectorGates.Count | Should -Be 2 -Because "start-local-dms.ps1 must guard default connector setup in both the -DmsOnly and full-stack startup paths"
 
             # The script must still retain -SkipConnectorSetup for non-bootstrap harnesses
             $content | Should -Match 'SkipConnectorSetup' -Because "start-local-dms.ps1 must retain -SkipConnectorSetup for non-bootstrap harnesses (e.g. Instance Management E2E)"
@@ -1089,10 +1091,13 @@ exit $ExitCode
             $content | Should -Match 'bootstrap mode provisions the redesigned relational schema' -Because "the bootstrap-mode skip message must explain why the connector is not registered"
         }
 
-        It "start-published-dms.ps1 gates default connector registration on bootstrap mode in the -DmsOnly block" {
+        It "start-published-dms.ps1 gates default connector registration on bootstrap mode in DMS-only and full-stack paths" {
             $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
 
-            $content | Should -Match '\$bootstrapMode' -Because "start-published-dms.ps1 must gate the default connector on `$bootstrapMode so bootstrap mode never registers a connector against a schema without dms.document"
+            $connectorGatePattern = 'if \(\$bootstrapMode\)\s*\{[\s\S]*?Skipping default connector setup: bootstrap mode[\s\S]*?\}\s*elseif \(-not \$SkipConnectorSetup\)\s*\{[\s\S]*?setup-connectors\.ps1 \$EnvironmentFile[\s\S]*?\}\s*else\s*\{[\s\S]*?Skipping default connector setup\.'
+            $connectorGates = [regex]::Matches($content, $connectorGatePattern)
+
+            $connectorGates.Count | Should -Be 2 -Because "start-published-dms.ps1 must guard default connector setup in both the -DmsOnly and full-stack startup paths"
             $content | Should -Match 'SkipConnectorSetup' -Because "start-published-dms.ps1 must retain -SkipConnectorSetup for non-bootstrap harnesses"
             $content | Should -Match 'bootstrap mode provisions the redesigned relational schema' -Because "the bootstrap-mode skip message must explain why the connector is not registered"
         }
