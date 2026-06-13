@@ -39,3 +39,9 @@ Key decisions: Full-stack local and published startup now use same bootstrap con
 Files changed: eng/docker-compose/start-local-dms.ps1; eng/docker-compose/start-published-dms.ps1; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; tasks.json; progress.txt.
 Verification: Invoke-Pester BootstrapSchemaAndSecuritySelection full file passed.
 Blockers/notes: none.
+
+Task completed: Seed Delivery - bootstrap workspace-relative XSD path validation for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Get-SeedXsdDirectory now validates schema.apiSchemaManifestPath before reading and resolves project xsdDirectory only as a strict relative path under the staged ApiSchema workspace. Rejects rooted, drive-qualified, empty-segment, current-dir, and parent-dir paths before Test-Path/Get-ChildItem/Copy-Item.
+Files changed: eng/docker-compose/load-dms-seed-data.ps1; eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1; tasks.json; progress.txt.
+Verification: pwsh -NoProfile -Command "Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1" passed, 131 passed, 1 skipped.
+Blockers/notes: nested XSD rejection remains separate Metadata Content task.

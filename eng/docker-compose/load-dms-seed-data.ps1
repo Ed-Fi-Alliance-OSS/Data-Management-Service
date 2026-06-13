@@ -56,6 +56,69 @@ function Test-SeedXmlIsLoadable {
     return $true
 }
 
+function Resolve-SeedBootstrapWorkspaceRelativePath {
+    param(
+        [string]$RelativePath,
+        [string]$ManifestField
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not be empty."
+    }
+
+    $normalizedPath = $RelativePath.Replace("\", "/")
+    if ([System.IO.Path]::IsPathRooted($RelativePath) -or
+        $normalizedPath.StartsWith("/") -or
+        $normalizedPath -match "^[A-Za-z]:($|/)") {
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the bootstrap workspace: $(Format-LogSafeText $RelativePath)"
+    }
+
+    $pathSegments = $normalizedPath.Split([char[]]@('/'), [System.StringSplitOptions]::None)
+    $invalidPathSegments = @($pathSegments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." })
+    if ($invalidPathSegments.Count -gt 0) {
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafeText $RelativePath)"
+    }
+
+    return Resolve-BootstrapWorkspaceRelativePath -RelativePath $RelativePath -ManifestField $ManifestField
+}
+
+function Resolve-SeedApiSchemaWorkspacePath {
+    param(
+        [string]$RelativePath,
+        [string]$ApiSchemaWorkspaceRoot,
+        [string]$ManifestField
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must not be empty."
+    }
+
+    $normalizedPath = $RelativePath.Replace("\", "/")
+    if ([System.IO.Path]::IsPathRooted($RelativePath) -or
+        $normalizedPath.StartsWith("/") -or
+        $normalizedPath -match "^[A-Za-z]:($|/)") {
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the staged ApiSchema workspace: $(Format-LogSafeText $RelativePath)"
+    }
+
+    $pathSegments = $normalizedPath.Split([char[]]@('/'), [System.StringSplitOptions]::None)
+    $invalidPathSegments = @($pathSegments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." })
+    if ($invalidPathSegments.Count -gt 0) {
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafeText $RelativePath)"
+    }
+
+    $resolvedRoot = [System.IO.Path]::GetFullPath($ApiSchemaWorkspaceRoot)
+    $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $resolvedRoot $normalizedPath))
+    $relativeToRoot = [System.IO.Path]::GetRelativePath($resolvedRoot, $resolvedPath).Replace("\", "/")
+
+    if ($relativeToRoot.StartsWith("../", [System.StringComparison]::Ordinal) -or
+        $relativeToRoot.Equals("..", [System.StringComparison]::Ordinal) -or
+        [System.IO.Path]::IsPathRooted($relativeToRoot)) {
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' escapes the staged ApiSchema workspace: $(Format-LogSafeText $RelativePath)"
+    }
+
+    return $resolvedPath
+}
+
 # ---------------------------------------------------------------------------
 # Section A - BulkLoadClient resolver
 # ---------------------------------------------------------------------------
@@ -1247,7 +1310,9 @@ function Get-SeedXsdDirectory {
         [switch]$ExtensionProjectsOnly
     )
 
-    $relApiSchemaManifestPath = $Manifest["schema"]["apiSchemaManifestPath"]
+    $relApiSchemaManifestPath = Resolve-SeedBootstrapWorkspaceRelativePath `
+        -RelativePath $Manifest["schema"]["apiSchemaManifestPath"] `
+        -ManifestField "schema.apiSchemaManifestPath"
     $absApiSchemaManifestPath = [System.IO.Path]::GetFullPath((Join-Path $BootstrapRoot $relApiSchemaManifestPath))
 
     if (-not (Test-Path -LiteralPath $absApiSchemaManifestPath -PathType Leaf)) {
@@ -1329,12 +1394,11 @@ function Get-SeedXsdDirectory {
 
             # xsdDirectory entries are relative to the staged ApiSchema workspace, not to
             # the root .bootstrap manifest directory.
-            if (-not [System.IO.Path]::IsPathRooted($xsdDir)) {
-                $xsdDir = [System.IO.Path]::GetFullPath((Join-Path $apiSchemaWorkspaceRoot $xsdDir))
-            }
-            else {
-                $xsdDir = [System.IO.Path]::GetFullPath($xsdDir)
-            }
+            $declaredXsdDir = [string]$xsdDir
+            $xsdDir = Resolve-SeedApiSchemaWorkspacePath `
+                -RelativePath $declaredXsdDir `
+                -ApiSchemaWorkspaceRoot $apiSchemaWorkspaceRoot `
+                -ManifestField "projects[].xsdDirectory"
 
             $projectLabel = if ([string]::IsNullOrWhiteSpace($projectName)) { $xsdDir } else { $projectName }
 

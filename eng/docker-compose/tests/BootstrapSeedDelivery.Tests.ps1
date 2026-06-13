@@ -1762,6 +1762,113 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
+        It "rejects invalid staged ApiSchema manifest paths before reading XSD metadata" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+
+                $outsideXsdDir = Join-Path $tmpRoot "outside-xsd"
+                New-Item -ItemType Directory -Path $outsideXsdDir -Force | Out-Null
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $outsideXsdDir "Interchange-Outside.xsd") -Encoding utf8
+
+                $outsideManifestPath = Join-Path $tmpRoot "outside-api-schema-manifest.json"
+                @{
+                    projects = @(
+                        @{ projectName = "Outside"; xsdDirectory = $outsideXsdDir }
+                    )
+                } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $outsideManifestPath -Encoding utf8
+
+                $invalidPaths = @(
+                    "../outside-api-schema-manifest.json",
+                    $outsideManifestPath,
+                    "ApiSchema//bootstrap-api-schema-manifest.json",
+                    "ApiSchema/./bootstrap-api-schema-manifest.json",
+                    "C:/outside/bootstrap-api-schema-manifest.json"
+                )
+
+                $caseIndex = 0
+                foreach ($invalidPath in $invalidPaths) {
+                    $caseIndex++
+                    $workspaceRoot = Join-Path $tmpRoot "seed-workspace-$caseIndex"
+                    New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+                    $manifest = @{
+                        schema = @{ apiSchemaManifestPath = $invalidPath }
+                    }
+
+                    {
+                        Get-SeedXsdDirectory `
+                            -Manifest $manifest `
+                            -WorkspaceRoot $workspaceRoot `
+                            -BootstrapRoot $bootstrapRoot
+                    } | Should -Throw -ExpectedMessage "*schema.apiSchemaManifestPath*"
+
+                    $xsdDestDir = Join-Path $workspaceRoot "xsd"
+                    if (Test-Path -LiteralPath $xsdDestDir) {
+                        @(Get-ChildItem -LiteralPath $xsdDestDir -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
+        }
+
+        It "rejects invalid staged ApiSchema xsdDirectory paths before copying files" {
+            $tmpRoot = New-TestDirectory
+            try {
+                $bootstrapRoot = Join-Path $tmpRoot ".bootstrap"
+                $apiSchemaDir = Join-Path $bootstrapRoot "ApiSchema"
+                New-Item -ItemType Directory -Path $apiSchemaDir -Force | Out-Null
+
+                $outsideXsdDir = Join-Path $tmpRoot "outside-xsd"
+                New-Item -ItemType Directory -Path $outsideXsdDir -Force | Out-Null
+                "<xs:schema />" | Set-Content -LiteralPath (Join-Path $outsideXsdDir "Interchange-Outside.xsd") -Encoding utf8
+
+                $manifestRelPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                $manifestPath = Join-Path $bootstrapRoot $manifestRelPath
+                $manifest = @{
+                    schema = @{ apiSchemaManifestPath = $manifestRelPath }
+                }
+
+                $invalidXsdDirectories = @(
+                    "../outside-xsd",
+                    $outsideXsdDir,
+                    "content//Ed-Fi/xsd",
+                    "content/./Ed-Fi/xsd",
+                    "C:/outside/xsd"
+                )
+
+                $caseIndex = 0
+                foreach ($invalidXsdDirectory in $invalidXsdDirectories) {
+                    $caseIndex++
+                    @{
+                        projects = @(
+                            @{ projectName = "Ed-Fi"; xsdDirectory = $invalidXsdDirectory }
+                        )
+                    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+                    $workspaceRoot = Join-Path $tmpRoot "seed-workspace-$caseIndex"
+                    New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+
+                    {
+                        Get-SeedXsdDirectory `
+                            -Manifest $manifest `
+                            -WorkspaceRoot $workspaceRoot `
+                            -BootstrapRoot $bootstrapRoot
+                    } | Should -Throw -ExpectedMessage "*xsdDirectory*"
+
+                    $xsdDestDir = Join-Path $workspaceRoot "xsd"
+                    if (Test-Path -LiteralPath $xsdDestDir) {
+                        @(Get-ChildItem -LiteralPath $xsdDestDir -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
+        }
+
         It "deduplicates shared XSD directories from staged ApiSchema manifests" {
             $tmpRoot = New-TestDirectory
             try {

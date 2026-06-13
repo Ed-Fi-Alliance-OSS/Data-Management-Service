@@ -125,7 +125,7 @@
       "Add Pester coverage that exercises `Copy-XsdsFromStagedApiSchema` with an invalid `schema.apiSchemaManifestPath` value and assert the helper rejects it through the workspace-relative path validation path.",
       "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Container Startup",
