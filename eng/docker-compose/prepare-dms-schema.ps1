@@ -451,6 +451,19 @@ function Add-ProjectContentOperation {
     $xsdDirectoryRelativePath = $null
     if (Test-Path -LiteralPath $xsdSourceDirectory -PathType Container) {
         $xsdDirectoryRelativePath = "$contentRoot/xsd"
+        $pathSeparatorChars = [char[]]@(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        )
+        $xsdSourceDirectoryFullPath = [System.IO.Path]::GetFullPath($xsdSourceDirectory).TrimEnd($pathSeparatorChars)
+        $xsdFiles = @(Get-ChildItem -LiteralPath $xsdSourceDirectory -File -Filter "*.xsd" -Recurse | Sort-Object -Property FullName)
+        foreach ($xsdFile in $xsdFiles) {
+            $xsdFileDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($xsdFile.FullName)).TrimEnd($pathSeparatorChars)
+            if (-not [System.String]::Equals($xsdFileDirectory, $xsdSourceDirectoryFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "ApiSchema project '$(Format-LogSafeText $($Project.ProjectName))' contains nested XSD file '$(Format-LogSafeText $($xsdFile.FullName))'. XSD files must be flattened directly under '$(Format-LogSafeText $xsdSourceDirectory)'."
+            }
+        }
+
         foreach ($xsdFile in Get-ChildItem -LiteralPath $xsdSourceDirectory -File -Recurse | Sort-Object -Property FullName) {
             $sourceRelativePath = Get-BootstrapRelativePath -Path $xsdFile.FullName -BasePath $xsdSourceDirectory
             Add-CopyOperation `

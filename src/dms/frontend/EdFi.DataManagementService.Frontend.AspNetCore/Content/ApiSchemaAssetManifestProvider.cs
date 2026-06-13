@@ -199,9 +199,27 @@ public class ApiSchemaAssetManifestProvider(
             );
         }
 
-        return Directory
-            .EnumerateFiles(validatedDir, "*.xsd", SearchOption.TopDirectoryOnly)
-            .Select(f => ValidatePathInsideCanonicalWorkspace(f, f));
+        var allXsdFiles = Directory
+            .EnumerateFiles(validatedDir, "*.xsd", SearchOption.AllDirectories)
+            .ToList();
+        var nestedXsdFile = allXsdFiles.Find(f => IsNestedUnderDirectory(f, validatedDir));
+        if (nestedXsdFile is not null)
+        {
+            throw new InvalidOperationException(
+                $"Manifest project '{project.ProjectName}' declares xsdDirectory '{project.XsdDirectory}', "
+                    + $"but nested XSD file '{nestedXsdFile}' was found. XSD files must be flattened "
+                    + "directly under the declared xsdDirectory."
+            );
+        }
+
+        return allXsdFiles.Select(f => ValidatePathInsideCanonicalWorkspace(f, f));
+    }
+
+    private static bool IsNestedUnderDirectory(string filePath, string directoryPath)
+    {
+        var relativePath = Path.GetRelativePath(directoryPath, filePath);
+        return relativePath.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || relativePath.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
     }
 
     private string ValidatePathInsideCanonicalWorkspace(string fullPath, string sourcePath)

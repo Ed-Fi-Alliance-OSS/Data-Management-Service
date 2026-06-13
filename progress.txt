@@ -57,3 +57,9 @@ Key decisions: Added shared validator for packageId before CLI/download/extract 
 Files changed: src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Services/ApiSchemaDownloader.cs; src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Services/PackageIdPathSegmentValidator.cs; src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Program.cs; src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/ApiSchemaDownloaderTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format downloader service/validator/program/tests; dotnet test --no-restore ApiSchemaDownloader.Tests.Integration passed, 16 tests.
 Blockers/notes: Nested XSD rejection remains open.
+
+Task completed: Metadata Content - nested XSD rejection for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Staging and runtime now fail on nested .xsd files under declared xsdDirectory instead of staging/ignoring them. Top-level XSD files still flow through existing manifest-relative validation and streaming.
+Files changed: eng/docker-compose/prepare-dms-schema.ps1; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ApiSchemaAssetManifestProviderTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format provider/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Xsd|FullyQualifiedName~ApiSchemaAssetManifestProvider; Invoke-Pester BootstrapSchemaAndSecuritySelection passed, 56 tests; Invoke-Pester BootstrapSchemaDeploymentSafety passed, 99 tests.
+Blockers/notes: none.

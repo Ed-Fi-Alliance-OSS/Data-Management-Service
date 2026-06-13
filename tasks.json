@@ -60,7 +60,7 @@
       "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1\"`",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ApiSchemaAssetManifestProvider\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Workspace Validation",

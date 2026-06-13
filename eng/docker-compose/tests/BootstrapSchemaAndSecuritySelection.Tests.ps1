@@ -276,6 +276,18 @@ exit $ExitCode
             $stagedCore.projectSchema.openApiBaseDocuments.resources.openapi | Should -Be "3.0.1"
         }
 
+        It "rejects nested XSD files before finalizing a staged ApiSchema workspace" {
+            $schemaDir = New-ApiSchemaSet
+            New-Item -ItemType Directory -Path (Join-Path $schemaDir "xsd/nested") -Force | Out-Null
+            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $schemaDir "xsd/Ed-Fi-Core.xsd") -Encoding utf8
+            "<xs:schema />" | Set-Content -LiteralPath (Join-Path $schemaDir "xsd/nested/Interchange-Student.xsd") -Encoding utf8
+
+            { Invoke-PrepareSchema -ApiSchemaPath $schemaDir } |
+                Should -Throw -ExpectedMessage "*nested XSD file*Interchange-Student.xsd*flattened*"
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json") |
+                Should -BeFalse
+        }
+
         It "detects normalized-path collisions before finalizing a workspace" {
             $schemaDir = Join-Path $script:repo.RepoRoot "schema"
             New-ApiSchemaFile -Path (Join-Path $schemaDir "ApiSchema.json") -ProjectName "Ed-Fi" -ProjectEndpointName "ed-fi" -IsExtensionProject $false
