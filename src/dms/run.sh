@@ -38,6 +38,17 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
     package_count=$(echo "$schema_packages" | jq 'length')
 
     if [ "$package_count" -gt 0 ]; then
+        if [ -z "${AppSettings__ApiSchemaPath:-}" ]; then
+            echo "AppSettings__ApiSchemaPath is required when SCHEMA_PACKAGES contains package entries."
+            exit 1
+        fi
+
+        generated_packages_dir="${AppSettings__ApiSchemaPath}/Packages"
+        downloaded_packages_dir="${AppSettings__ApiSchemaPath}/DownloadedPackages"
+        echo "Clearing generated ApiSchema package extraction output under ${AppSettings__ApiSchemaPath}."
+        rm -rf -- "$generated_packages_dir" "$downloaded_packages_dir"
+        mkdir -p "${AppSettings__ApiSchemaPath}"
+
         echo "$schema_packages" | jq -c '.[]' | while read -r item
         do
             version=$(echo "$item" | jq -r '.version')

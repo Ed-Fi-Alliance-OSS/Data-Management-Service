@@ -140,7 +140,7 @@
       "Add script-level or integration coverage that starts with stale generated package extraction output for `<RemovedPackage>`, processes a package list that omits it, and verifies the generated root `bootstrap-api-schema-manifest.json` excludes `<RemovedPackage>`.",
       "Run the focused startup, downloader, or manifest-materializer verification added for this behavior."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Container Startup",

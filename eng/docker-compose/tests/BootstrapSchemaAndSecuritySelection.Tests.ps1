@@ -1071,6 +1071,132 @@ exit $ExitCode
             $content | Should -Match 'schemaPath: \(\$packageDir \+ "/" \+ \.schemaPath\)'
         }
 
+        It "run.sh clears stale generated package output before materializing the current SCHEMA_PACKAGES manifest" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name jq -ErrorAction SilentlyContinue)) {
+            $workspace = Join-Path $script:repo.RepoRoot "run-sh"
+            $stubDirectory = Join-Path $workspace "bin"
+            $apiSchemaPath = Join-Path $workspace "ApiSchema"
+            $dotnetInvocationsPath = Join-Path $workspace "dotnet-invocations.log"
+            New-Item -ItemType Directory -Path $stubDirectory -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $apiSchemaPath "Packages/RemovedPackage/xsd") -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $apiSchemaPath "DownloadedPackages/RemovedPackage") -Force | Out-Null
+
+            "preserve" | Set-Content -LiteralPath (Join-Path $apiSchemaPath "JsonSchemaForApiSchema.json") -Encoding utf8
+            "{}" | Set-Content -LiteralPath (Join-Path $apiSchemaPath "Packages/RemovedPackage/ApiSchema.json") -Encoding utf8
+            @"
+{
+  "version": "1",
+  "projectName": "RemovedPackage",
+  "projectEndpointName": "removed",
+  "isExtensionProject": true,
+  "schemaPath": "ApiSchema.json",
+  "discoverySpecPath": null,
+  "xsdDirectory": "xsd"
+}
+"@ | Set-Content -LiteralPath (Join-Path $apiSchemaPath "Packages/RemovedPackage/package-manifest.json") -Encoding utf8
+
+            @'
+#!/bin/sh
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "pg_isready") -Encoding utf8
+
+            @'
+#!/bin/sh
+echo "$*" >> "$DOTNET_INVOCATIONS_PATH"
+
+if [ "$1" = "/app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll" ]; then
+    package_id=""
+    output_dir=""
+
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -p)
+                package_id="$2"
+                shift 2
+                ;;
+            -d)
+                output_dir="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    package_dir="$output_dir/Packages/$package_id"
+    mkdir -p "$package_dir/xsd"
+    printf "{}" > "$package_dir/ApiSchema.json"
+    printf "{}" > "$package_dir/discovery-spec.json"
+    printf "<schema/>" > "$package_dir/xsd/$package_id.xsd"
+    cat > "$package_dir/package-manifest.json" <<MANIFEST
+{
+  "version": "1",
+  "projectName": "$package_id",
+  "projectEndpointName": "$package_id",
+  "isExtensionProject": true,
+  "schemaPath": "ApiSchema.json",
+  "discoverySpecPath": "discovery-spec.json",
+  "xsdDirectory": "xsd"
+}
+MANIFEST
+fi
+
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "dotnet") -Encoding utf8
+
+            & chmod +x (Join-Path $stubDirectory "pg_isready")
+            & chmod +x (Join-Path $stubDirectory "dotnet")
+
+            $envNames = @(
+                "PATH",
+                "DATABASE_CONNECTION_STRING_ADMIN",
+                "NEED_DATABASE_SETUP",
+                "AppSettings__UseApiSchemaPath",
+                "AppSettings__ApiSchemaPath",
+                "SCHEMA_PACKAGES",
+                "DOTNET_INVOCATIONS_PATH"
+            )
+            $envSnapshot = @{}
+            foreach ($name in $envNames) {
+                $envSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            }
+
+            try {
+                $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
+                $env:DATABASE_CONNECTION_STRING_ADMIN = "host=localhost;port=5432;username=postgres"
+                $env:NEED_DATABASE_SETUP = "false"
+                $env:AppSettings__UseApiSchemaPath = "true"
+                $env:AppSettings__ApiSchemaPath = $apiSchemaPath
+                $env:SCHEMA_PACKAGES = '[{"name":"KeptPackage","version":"1.0.0","feedUrl":"https://example.test/feed/index.json"}]'
+                $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
+
+                $runOutput = & bash (Join-Path $script:sourceRepoRoot "src/dms/run.sh") 2>&1
+
+                $LASTEXITCODE | Should -Be 0 -Because ($runOutput -join [Environment]::NewLine)
+            }
+            finally {
+                foreach ($name in $envNames) {
+                    [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                }
+            }
+
+            Test-Path -LiteralPath (Join-Path $apiSchemaPath "JsonSchemaForApiSchema.json") |
+                Should -BeTrue -Because "workspace files outside generated package output must be preserved"
+            Test-Path -LiteralPath (Join-Path $apiSchemaPath "Packages/RemovedPackage") |
+                Should -BeFalse -Because "stale package extraction output must be removed before manifest materialization"
+            Test-Path -LiteralPath (Join-Path $apiSchemaPath "DownloadedPackages/RemovedPackage") |
+                Should -BeFalse -Because "stale downloaded package output must be removed with extraction output"
+            Test-Path -LiteralPath (Join-Path $apiSchemaPath "Packages/KeptPackage/package-manifest.json") |
+                Should -BeTrue
+
+            $manifest = Get-Content -LiteralPath (Join-Path $apiSchemaPath "bootstrap-api-schema-manifest.json") -Raw |
+                ConvertFrom-Json
+            @($manifest.projects).Count | Should -Be 1
+            @($manifest.projects)[0].projectName | Should -Be "KeptPackage"
+            @($manifest.projects)[0].schemaPath | Should -Be "Packages/KeptPackage/ApiSchema.json"
+            @($manifest.projects).projectName | Should -Not -Contain "RemovedPackage"
+        }
+
         It "start-local-dms.ps1 gates default connector registration on bootstrap mode in DMS-only and full-stack paths" {
             # Bootstrap mode provisions the redesigned relational schema which does not include the
             # legacy dms.document table or the to_debezium publication that the default Debezium connector

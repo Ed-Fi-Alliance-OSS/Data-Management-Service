@@ -45,3 +45,9 @@ Key decisions: Get-SeedXsdDirectory now validates schema.apiSchemaManifestPath b
 Files changed: eng/docker-compose/load-dms-seed-data.ps1; eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1; tasks.json; progress.txt.
 Verification: pwsh -NoProfile -Command "Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1" passed, 131 passed, 1 skipped.
 Blockers/notes: nested XSD rejection remains separate Metadata Content task.
+
+Task completed: Container Startup - clear generated package-backed ApiSchema output for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: run.sh removes only generated Packages and DownloadedPackages under AppSettings__ApiSchemaPath when SCHEMA_PACKAGES has entries, before downloader/manifest materialization. Empty package lists do not write to mounted workspace; workspace files such as JsonSchemaForApiSchema.json remain.
+Files changed: src/dms/run.sh; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; tasks.json; progress.txt.
+Verification: bash -n src/dms/run.sh; Invoke-Pester BootstrapSchemaAndSecuritySelection full file passed, 55 passed.
+Blockers/notes: none.
