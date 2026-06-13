@@ -135,3 +135,9 @@ Key decisions: Section-specific XSD streaming now reuses ResolveXsdListingPathsF
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format touched C# files; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~Xsd passed, 11 tests.
 Blockers/notes: Remaining task: prepare-dms-schema fallback helper cleanup. Pre-existing tasks.json deletion preserved.
+
+Task completed: Code Simplification - remove prepare-dms-schema fallback helpers for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Removed duplicated guarded helper definitions from prepare-dms-schema.ps1 and rely on imported bootstrap-manifest/bootstrap-schema-tool modules. Imported schema-tool before manifest so schema-tool internal import does not hide manifest helper exports from the script session.
+Files changed: eng/docker-compose/prepare-dms-schema.ps1; tasks.json; progress.txt.
+Verification: rg fallback guard returned no matches; direct missing ApiSchemaPath invocation used imported Format-LogSafeText; Invoke-Pester BootstrapSchemaAndSecuritySelection + BootstrapSchemaDeploymentSafety passed, 155 tests.
+Blockers/notes: all tasks now complete. Pre-existing tasks.json deletion preserved.

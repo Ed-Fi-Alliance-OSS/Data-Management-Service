@@ -411,6 +411,6 @@
       "Search `eng/docker-compose/prepare-dms-schema.ps1` for `if (-not (Get-Command Format-LogSafeText` and confirm the fallback block is gone.",
       "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1\"`."
     ],
-    "completed": false
+    "completed": true
   }
 ]
