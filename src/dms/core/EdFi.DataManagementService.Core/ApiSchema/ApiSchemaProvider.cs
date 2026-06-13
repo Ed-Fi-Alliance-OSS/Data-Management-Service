@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
@@ -28,6 +29,19 @@ internal class ApiSchemaProvider(
 ) : IApiSchemaProvider
 {
     private const string BundledApiSchemaDirectoryName = "ApiSchema";
+    private const string BootstrapManifestFileName = "bootstrap-api-schema-manifest.json";
+    private const int SupportedBootstrapManifestVersion = 1;
+
+    private sealed record BootstrapApiSchemaManifest(
+        int Version,
+        IReadOnlyList<BootstrapApiSchemaProject>? Projects
+    );
+
+    private sealed record BootstrapApiSchemaProject(
+        string? ProjectName,
+        string? ProjectEndpointName,
+        string? SchemaPath
+    );
 
     // Cached API schema nodes loaded from files
     private ApiSchemaDocumentNodes? _apiSchemaNodes;
@@ -59,62 +73,14 @@ internal class ApiSchemaProvider(
 
             foreach (string filePath in matchingFilePaths)
             {
-                _logger.LogInformation("Loading ApiSchema.json file: {FilePath}", filePath);
-                try
+                var (node, failure) = ReadApiSchemaFile(filePath);
+                if (failure is not null)
                 {
-                    // Read all text from the file into a string.
-                    string fileContent = File.ReadAllText(filePath);
-
-                    try
-                    {
-                        JsonNode? parsedFileContent = JsonNode.Parse(fileContent);
-                        if (parsedFileContent == null)
-                        {
-                            ApiSchemaFailure failure = new(
-                                "ParseError",
-                                $"Unable to parse ApiSchema file at '{filePath}' - parsed to null"
-                            );
-                            failures.Add(failure);
-                            _logger.LogError(failure.Message);
-                        }
-                        else
-                        {
-                            fileContents.Add(parsedFileContent);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        ApiSchemaFailure failure = new(
-                            "ParseError",
-                            $"Unable to parse ApiSchema file at '{filePath}'",
-                            null,
-                            ex
-                        );
-                        failures.Add(failure);
-                        _logger.LogError(ex, failure.Message);
-                    }
-                }
-                catch (IOException ex)
-                {
-                    ApiSchemaFailure failure = new(
-                        "FileSystem",
-                        $"Error reading file '{filePath}'",
-                        null,
-                        ex
-                    );
                     failures.Add(failure);
-                    _logger.LogError(ex, failure.Message);
                 }
-                catch (UnauthorizedAccessException ex)
+                else if (node is not null)
                 {
-                    ApiSchemaFailure failure = new(
-                        "AccessDenied",
-                        $"Access denied to file '{filePath}'",
-                        null,
-                        ex
-                    );
-                    failures.Add(failure);
-                    _logger.LogError(ex, failure.Message);
+                    fileContents.Add(node);
                 }
             }
         }
@@ -146,6 +112,55 @@ internal class ApiSchemaProvider(
         return (fileContents, []);
     }
 
+    private (JsonNode? Node, ApiSchemaFailure? Failure) ReadApiSchemaFile(string filePath)
+    {
+        _logger.LogInformation("Loading ApiSchema.json file: {FilePath}", filePath);
+
+        try
+        {
+            string fileContent = File.ReadAllText(filePath);
+
+            try
+            {
+                JsonNode? parsedFileContent = JsonNode.Parse(fileContent);
+                if (parsedFileContent is null)
+                {
+                    ApiSchemaFailure failure = new(
+                        "ParseError",
+                        $"Unable to parse ApiSchema file at '{filePath}' - parsed to null"
+                    );
+                    _logger.LogError(failure.Message);
+                    return (null, failure);
+                }
+
+                return (parsedFileContent, null);
+            }
+            catch (Exception ex)
+            {
+                ApiSchemaFailure failure = new(
+                    "ParseError",
+                    $"Unable to parse ApiSchema file at '{filePath}'",
+                    null,
+                    ex
+                );
+                _logger.LogError(ex, failure.Message);
+                return (null, failure);
+            }
+        }
+        catch (IOException ex)
+        {
+            ApiSchemaFailure failure = new("FileSystem", $"Error reading file '{filePath}'", null, ex);
+            _logger.LogError(ex, failure.Message);
+            return (null, failure);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            ApiSchemaFailure failure = new("AccessDenied", $"Access denied to file '{filePath}'", null, ex);
+            _logger.LogError(ex, failure.Message);
+            return (null, failure);
+        }
+    }
+
     /// <summary>
     /// Loads core and extension ApiSchema JsonNodes from the configured source
     /// </summary>
@@ -166,7 +181,7 @@ internal class ApiSchemaProvider(
     /// </summary>
     private ApiSchemaLoadResult LoadSchemaFromFileSystem()
     {
-        if (appSettings.Value.ApiSchemaPath == null)
+        if (appSettings.Value.ApiSchemaPath is null)
         {
             ApiSchemaFailure failure = new("Configuration", "No ApiSchemaPath configuration is set");
             _logger.LogError(failure.Message);
@@ -198,29 +213,351 @@ internal class ApiSchemaProvider(
             return new(null, [failure]);
         }
 
+        var manifestPath = Path.Combine(apiSchemaPath, BootstrapManifestFileName);
+        if (File.Exists(manifestPath))
+        {
+            return LoadSchemaFromManifest(Path.GetFullPath(apiSchemaPath), manifestPath);
+        }
+
         var (apiSchemaNodes, readFailures) = ReadApiSchemaFiles(apiSchemaPath);
         if (readFailures.Count > 0)
         {
             return new(null, readFailures);
         }
 
-        if (apiSchemaNodes == null || apiSchemaNodes.Count == 0)
+        return CreateApiSchemaLoadResult(
+            apiSchemaNodes,
+            $"No API schema files found in directory {apiSchemaPath}"
+        );
+    }
+
+    private ApiSchemaLoadResult LoadSchemaFromManifest(string workspaceRoot, string manifestPath)
+    {
+        var (manifest, manifestFailure) = ReadBootstrapManifest(manifestPath);
+        if (manifestFailure is not null)
+        {
+            return new(null, [manifestFailure]);
+        }
+
+        if (manifest is null)
+        {
+            ApiSchemaFailure failure = new(
+                "Configuration",
+                $"Bootstrap manifest file '{BootstrapManifestFileName}' deserialized to null"
+            );
+            _logger.LogError(failure.Message);
+            return new(null, [failure]);
+        }
+
+        List<ApiSchemaFailure> failures = ValidateBootstrapManifest(manifest);
+        if (failures.Count > 0)
+        {
+            return new(null, failures);
+        }
+
+        IReadOnlyList<BootstrapApiSchemaProject> projects = manifest.Projects ?? [];
+        List<JsonNode> apiSchemaNodes = [];
+        foreach ((BootstrapApiSchemaProject project, int index) in projects.Select((p, i) => (p, i)))
+        {
+            var projectDescription = DescribeManifestProject(project, index);
+            var schemaPath = project.SchemaPath;
+
+            if (string.IsNullOrWhiteSpace(schemaPath))
+            {
+                failures.Add(
+                    new ApiSchemaFailure(
+                        "Configuration",
+                        $"Bootstrap manifest project {projectDescription} must declare a non-empty schemaPath."
+                    )
+                );
+                continue;
+            }
+
+            string resolvedSchemaPath;
+            try
+            {
+                resolvedSchemaPath = ResolveManifestRelativePath(workspaceRoot, schemaPath);
+            }
+            catch (InvalidOperationException ex)
+            {
+                failures.Add(
+                    new ApiSchemaFailure(
+                        "Configuration",
+                        $"Bootstrap manifest project {projectDescription} has invalid schemaPath '{schemaPath}': {ex.Message}",
+                        null,
+                        ex
+                    )
+                );
+                continue;
+            }
+
+            if (!File.Exists(resolvedSchemaPath))
+            {
+                failures.Add(
+                    new ApiSchemaFailure(
+                        "FileSystem",
+                        $"Bootstrap manifest project {projectDescription} declares schemaPath '{schemaPath}', "
+                            + $"but the resolved schema file '{resolvedSchemaPath}' does not exist."
+                    )
+                );
+                continue;
+            }
+
+            var (node, readFailure) = ReadApiSchemaFile(resolvedSchemaPath);
+            if (readFailure is not null)
+            {
+                failures.Add(readFailure);
+            }
+            else if (node is not null)
+            {
+                apiSchemaNodes.Add(node);
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            return new(null, failures);
+        }
+
+        return CreateApiSchemaLoadResult(
+            apiSchemaNodes,
+            $"Bootstrap manifest file '{BootstrapManifestFileName}' did not select any API schema files."
+        );
+    }
+
+    private (BootstrapApiSchemaManifest? Manifest, ApiSchemaFailure? Failure) ReadBootstrapManifest(
+        string manifestPath
+    )
+    {
+        try
+        {
+            string json = File.ReadAllText(manifestPath);
+            var manifest = JsonSerializer.Deserialize<BootstrapApiSchemaManifest>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            );
+            return (manifest, null);
+        }
+        catch (JsonException ex)
+        {
+            ApiSchemaFailure failure = new(
+                "ParseError",
+                $"Bootstrap manifest file '{BootstrapManifestFileName}' contains malformed JSON",
+                null,
+                ex
+            );
+            _logger.LogError(ex, failure.Message);
+            return (null, failure);
+        }
+        catch (IOException ex)
         {
             ApiSchemaFailure failure = new(
                 "FileSystem",
-                $"No API schema files found in directory {apiSchemaPath}"
+                $"Error reading bootstrap manifest file '{manifestPath}'",
+                null,
+                ex
             );
+            _logger.LogError(ex, failure.Message);
+            return (null, failure);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            ApiSchemaFailure failure = new(
+                "AccessDenied",
+                $"Access denied to bootstrap manifest file '{manifestPath}'",
+                null,
+                ex
+            );
+            _logger.LogError(ex, failure.Message);
+            return (null, failure);
+        }
+    }
+
+    private List<ApiSchemaFailure> ValidateBootstrapManifest(BootstrapApiSchemaManifest manifest)
+    {
+        List<ApiSchemaFailure> failures = [];
+
+        if (manifest.Version != SupportedBootstrapManifestVersion)
+        {
+            failures.Add(
+                new ApiSchemaFailure(
+                    "Configuration",
+                    $"Bootstrap manifest version {manifest.Version} is not supported. "
+                        + $"Only version {SupportedBootstrapManifestVersion} is accepted."
+                )
+            );
+        }
+
+        if (manifest.Projects is null || manifest.Projects.Count == 0)
+        {
+            failures.Add(
+                new ApiSchemaFailure(
+                    "Configuration",
+                    $"Bootstrap manifest '{BootstrapManifestFileName}' contains zero projects."
+                )
+            );
+        }
+
+        foreach (ApiSchemaFailure failure in failures)
+        {
+            _logger.LogError(failure.Message);
+        }
+
+        return failures;
+    }
+
+    private static string ResolveManifestRelativePath(string workspaceRoot, string relativePath)
+    {
+        if (Path.IsPathRooted(relativePath))
+        {
+            throw new InvalidOperationException(
+                "Only workspace-relative paths are permitted; rooted paths are rejected."
+            );
+        }
+
+        if (ContainsParentTraversal(relativePath))
+        {
+            throw new InvalidOperationException(
+                "Paths containing a parent-directory traversal ('..') component are rejected."
+            );
+        }
+
+        var fullPath = Path.GetFullPath(Path.Combine(workspaceRoot, relativePath));
+        var canonicalWorkspaceRoot = ResolveCanonicalPath(workspaceRoot);
+        var canonicalPath = ResolveCanonicalPath(fullPath);
+        var relativeToWorkspace = Path.GetRelativePath(canonicalWorkspaceRoot, canonicalPath);
+
+        if (
+            Path.IsPathRooted(relativeToWorkspace)
+            || relativeToWorkspace == ".."
+            || relativeToWorkspace.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            || relativeToWorkspace.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Path resolves to '{canonicalPath}', which is outside the configured ApiSchema workspace."
+            );
+        }
+
+        return canonicalPath;
+    }
+
+    private static string ResolveCanonicalPath(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath);
+        if (string.IsNullOrEmpty(root))
+        {
+            return fullPath;
+        }
+
+        var canonicalPath = root;
+        var pathWithoutRoot = fullPath[root.Length..];
+        var pathParts = pathWithoutRoot.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries
+        );
+
+        foreach (var pathPart in pathParts)
+        {
+            var candidatePath = Path.Combine(canonicalPath, pathPart);
+            var fileSystemInfo = GetFileSystemInfo(candidatePath);
+            if (fileSystemInfo?.LinkTarget is not null)
+            {
+                canonicalPath = ResolveSymbolicLink(fileSystemInfo, path);
+                continue;
+            }
+
+            canonicalPath = candidatePath;
+        }
+
+        return Path.GetFullPath(canonicalPath);
+    }
+
+    private static FileSystemInfo? GetFileSystemInfo(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            return attributes.HasFlag(FileAttributes.Directory)
+                ? new DirectoryInfo(path)
+                : new FileInfo(path);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static string ResolveSymbolicLink(FileSystemInfo fileSystemInfo, string originalPath)
+    {
+        try
+        {
+            var resolvedTarget = fileSystemInfo.ResolveLinkTarget(returnFinalTarget: true);
+            if (resolvedTarget is null)
+            {
+                throw new InvalidOperationException(
+                    $"Path '{originalPath}' contains symbolic link '{fileSystemInfo.FullName}' "
+                        + "whose target could not be resolved."
+                );
+            }
+
+            return Path.GetFullPath(resolvedTarget.FullName);
+        }
+        catch (IOException ex)
+        {
+            throw new InvalidOperationException(
+                $"Path '{originalPath}' contains symbolic link '{fileSystemInfo.FullName}' "
+                    + $"whose target could not be resolved: {ex.Message}",
+                ex
+            );
+        }
+    }
+
+    private static bool ContainsParentTraversal(string path)
+    {
+        var parts = path.Split(['/', '\\'], StringSplitOptions.None);
+        return Array.Exists(parts, p => p == "..");
+    }
+
+    private static string DescribeManifestProject(BootstrapApiSchemaProject project, int index)
+    {
+        if (!string.IsNullOrWhiteSpace(project.ProjectName))
+        {
+            return $"'{project.ProjectName}'";
+        }
+
+        if (!string.IsNullOrWhiteSpace(project.ProjectEndpointName))
+        {
+            return $"'{project.ProjectEndpointName}'";
+        }
+
+        return $"at index {index}";
+    }
+
+    private ApiSchemaLoadResult CreateApiSchemaLoadResult(
+        IReadOnlyList<JsonNode>? apiSchemaNodes,
+        string noSchemaFilesMessage
+    )
+    {
+        if (apiSchemaNodes is null || apiSchemaNodes.Count == 0)
+        {
+            ApiSchemaFailure failure = new("FileSystem", noSchemaFilesMessage);
             _logger.LogError(failure.Message);
             return new(null, [failure]);
         }
 
         try
         {
-            JsonNode? coreApiSchemaNode = apiSchemaNodes.Find(node =>
+            JsonNode? coreApiSchemaNode = apiSchemaNodes.FirstOrDefault(node =>
                 !node.SelectRequiredNodeFromPathAs<bool>("$.projectSchema.isExtensionProject", _logger)
             );
 
-            if (coreApiSchemaNode == null)
+            if (coreApiSchemaNode is null)
             {
                 ApiSchemaFailure failure = new(
                     "Configuration",
@@ -325,7 +662,7 @@ internal class ApiSchemaProvider(
     {
         lock (_loadLock)
         {
-            if (_apiSchemaNodes == null)
+            if (_apiSchemaNodes is null)
             {
                 // Initial load
                 var loadResult = LoadSchemaFromSource();
@@ -342,7 +679,7 @@ internal class ApiSchemaProvider(
                     );
                 }
 
-                if (schemaNodes == null)
+                if (schemaNodes is null)
                 {
                     ApiSchemaFailure failure = new(
                         "Configuration",
