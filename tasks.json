@@ -239,7 +239,7 @@
       "Update `eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1` so a missing user-staged leaf check fails, while an observed user-staged leaf check passes and parent checks still defer.",
       "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Bootstrap Startup",

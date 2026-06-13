@@ -87,3 +87,9 @@ Key decisions: start-published-dms.ps1 now treats bootstrapMode as a reason to i
 Files changed: eng/docker-compose/start-published-dms.ps1; eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; tasks.json; progress.txt.
 Verification: pwsh -NoProfile -Command "Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1" passed, 73 tests.
 Blockers/notes: Bootstrap Claims and Bootstrap Documentation tasks remain open.
+
+Task completed: Bootstrap Claims - verify user-staged claimset fragments for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: User -ClaimsDirectoryPath fragment checks are normal expected checks after Story 04 claims activation; no stagedOnly marker or gate skip. Parent resource claims still defer because /authorizationMetadata exposes leaf claims only.
+Files changed: eng/docker-compose/prepare-dms-claims.ps1; eng/docker-compose/bootstrap-claims-gate.psm1; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1; tasks.json; progress.txt.
+Verification: pwsh -NoProfile -Command "Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1" passed, 94 tests.
+Blockers/notes: Bootstrap Documentation task remains open.
