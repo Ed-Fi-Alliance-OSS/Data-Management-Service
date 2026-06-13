@@ -157,6 +157,8 @@ public class ApiSchemaAssetManifestProvider(
             );
         }
 
+        ValidateManifestProjects(manifest);
+
         return manifest;
     }
 
@@ -222,6 +224,99 @@ public class ApiSchemaAssetManifestProvider(
         var relativePath = Path.GetRelativePath(directoryPath, filePath);
         return relativePath.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
             || relativePath.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    private void ValidateManifestProjects(ApiSchemaAssetManifest manifest)
+    {
+        foreach ((var project, var index) in manifest.Projects.Select((p, i) => (p, i)))
+        {
+            if (project is null)
+            {
+                throw new InvalidOperationException(
+                    $"Bootstrap manifest '{ManifestFileName}' contains a null project entry at index {index}."
+                );
+            }
+
+            ValidateRequiredProjectField(project.ProjectName, "projectName", project, index);
+            ValidateRequiredProjectField(project.ProjectEndpointName, "projectEndpointName", project, index);
+            ValidateRequiredProjectField(project.SchemaPath, "schemaPath", project, index);
+
+            ValidateManifestRelativePath(project.SchemaPath, "schemaPath", project, index);
+            ValidateOptionalManifestRelativePath(
+                project.DiscoverySpecPath,
+                "discoverySpecPath",
+                project,
+                index
+            );
+            ValidateOptionalManifestRelativePath(project.XsdDirectory, "xsdDirectory", project, index);
+        }
+    }
+
+    private static void ValidateRequiredProjectField(
+        string? value,
+        string fieldName,
+        ApiSchemaProject project,
+        int index
+    )
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Bootstrap manifest project {DescribeManifestProject(project, index)} must declare a "
+                    + $"non-empty {fieldName}."
+            );
+        }
+    }
+
+    private void ValidateOptionalManifestRelativePath(
+        string? value,
+        string fieldName,
+        ApiSchemaProject project,
+        int index
+    )
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Bootstrap manifest project {DescribeManifestProject(project, index)} declares {fieldName}, "
+                    + "but it must be null, omitted, or a non-empty manifest-relative path."
+            );
+        }
+
+        ValidateManifestRelativePath(value, fieldName, project, index);
+    }
+
+    private void ValidateManifestRelativePath(
+        string value,
+        string fieldName,
+        ApiSchemaProject project,
+        int index
+    )
+    {
+        try
+        {
+            ResolveValidatedPath(value);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException(
+                $"Bootstrap manifest project {DescribeManifestProject(project, index)} has invalid "
+                    + $"{fieldName} '{value}': {ex.Message}",
+                ex
+            );
+        }
+    }
+
+    private static string DescribeManifestProject(ApiSchemaProject project, int index)
+    {
+        return string.IsNullOrWhiteSpace(project.ProjectName)
+            ? $"at index {index}"
+            : $"'{project.ProjectName}' at index {index}";
     }
 
     private string ValidatePathInsideCanonicalWorkspace(string fullPath, string sourcePath)

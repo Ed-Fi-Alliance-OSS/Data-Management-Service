@@ -222,7 +222,7 @@
       "Add unit coverage for blank `discoverySpecPath` and blank `xsdDirectory`; assert both fail with manifest validation errors while omitted optional fields still behave as absent optional content.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Bootstrap Claims",

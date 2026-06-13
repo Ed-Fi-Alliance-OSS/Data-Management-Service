@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
@@ -431,6 +433,116 @@ public class Given_a_manifest_with_explicit_null_optional_fields
 }
 
 [TestFixture]
+public class Given_a_manifest_with_invalid_project_fields
+{
+    private string _workspaceRoot = string.Empty;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_workspaceRoot);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    [TestCase("projectName", "missing")]
+    [TestCase("projectName", "null")]
+    [TestCase("projectName", "blank")]
+    [TestCase("projectEndpointName", "missing")]
+    [TestCase("projectEndpointName", "null")]
+    [TestCase("projectEndpointName", "blank")]
+    [TestCase("schemaPath", "missing")]
+    [TestCase("schemaPath", "null")]
+    [TestCase("schemaPath", "blank")]
+    public void It_rejects_missing_null_or_blank_required_project_fields(string fieldName, string fieldState)
+    {
+        var provider = BuildProvider(project =>
+        {
+            if (fieldState == "missing")
+            {
+                project.Remove(fieldName);
+                return;
+            }
+
+            project[fieldName] = fieldState == "null" ? null : "   ";
+        });
+
+        Action action = () => provider.GetManifest();
+
+        action.Should().Throw<InvalidOperationException>().WithMessage($"*non-empty {fieldName}*");
+    }
+
+    [TestCase("discoverySpecPath")]
+    [TestCase("xsdDirectory")]
+    public void It_rejects_blank_optional_content_paths(string fieldName)
+    {
+        var provider = BuildProvider(project => project[fieldName] = "   ");
+
+        Action action = () => provider.GetManifest();
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*{fieldName}*non-empty manifest-relative path*");
+    }
+
+    [TestCase("schemaPath")]
+    [TestCase("discoverySpecPath")]
+    [TestCase("xsdDirectory")]
+    public void It_rejects_manifest_paths_that_escape_the_workspace(string fieldName)
+    {
+        var provider = BuildProvider(project => project[fieldName] = "../outside");
+
+        Action action = () => provider.GetManifest();
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*invalid {fieldName}*parent-directory traversal*");
+    }
+
+    private IApiSchemaAssetManifestProvider BuildProvider(Action<JsonObject> mutateProject)
+    {
+        var project = new JsonObject
+        {
+            ["projectName"] = "EdFi",
+            ["projectEndpointName"] = "ed-fi",
+            ["isExtensionProject"] = false,
+            ["schemaPath"] = "schemas/EdFi/ApiSchema.json",
+            ["discoverySpecPath"] = "content/EdFi/discovery-spec.json",
+            ["xsdDirectory"] = "content/EdFi/xsd",
+        };
+        mutateProject(project);
+
+        var manifest = new JsonObject { ["version"] = 1, ["projects"] = new JsonArray(project) };
+        File.WriteAllText(
+            Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"),
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+        );
+
+        var appSettings = Options.Create(
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
+        );
+        var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
+
+        return new ApiSchemaAssetManifestProvider(appSettings, logger);
+    }
+}
+
+[TestFixture]
 public class Given_a_missing_manifest_file
 {
     private string _workspaceRoot = string.Empty;
@@ -785,8 +897,7 @@ public class Given_manifest_paths_that_are_symbolic_links
         var discoverySpecLinkPath = Path.Combine(contentDirectory, "discovery-spec.json");
         CreateFileSymbolicLinkOrIgnore(discoverySpecLinkPath, outsideDiscoverySpecPath);
 
-        var project = _provider.GetManifest().Projects[0];
-        Action action = () => _provider.ResolveValidatedPath(project.DiscoverySpecPath!);
+        Action action = () => _provider.GetManifest();
 
         action
             .Should()
@@ -807,8 +918,7 @@ public class Given_manifest_paths_that_are_symbolic_links
         var xsdDirectoryLinkPath = Path.Combine(contentDirectory, "xsd");
         CreateDirectorySymbolicLinkOrIgnore(xsdDirectoryLinkPath, outsideXsdDirectory);
 
-        var project = _provider.GetManifest().Projects[0];
-        Action action = () => _provider.EnumerateValidatedXsdFiles(project).ToList();
+        Action action = () => _provider.GetManifest();
 
         action
             .Should()
