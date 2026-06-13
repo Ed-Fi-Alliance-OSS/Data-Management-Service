@@ -309,7 +309,7 @@
       "Search `src/dms/tests/EdFi.DataManagementService.Tests.Integration` for `ApiSchema*.json`, `scan pattern`, and `host scans`; confirm remaining matches do not describe runtime fallback loading.",
       "Run: `dotnet test --no-restore ./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_FixtureContextLoader|FullyQualifiedName~Given_ApiIntegrationHostLoadsManifestBackedFixture\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runtime Schema Loading",

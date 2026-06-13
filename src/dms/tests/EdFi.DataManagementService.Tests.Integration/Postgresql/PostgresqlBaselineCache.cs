@@ -32,7 +32,8 @@ internal static class PostgresqlBaselineCache
     /// first access. The fixture signature handed to the baseline is the
     /// <see cref="FixtureKey"/> value so distinct fixtures get distinct templates.
     /// The DDL is generated from the same materialized ApiSchema directory the DMS
-    /// host scans for so the effective schema hash matches at request time.
+    /// host loads through the bootstrap manifest so the effective schema hash
+    /// matches at request time.
     /// </summary>
     public static async Task<PostgresqlGeneratedDdlBaselineDatabase> CreateOrGetAsync(FixtureContext fixture)
     {
