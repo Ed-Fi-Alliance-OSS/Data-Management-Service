@@ -712,6 +712,73 @@ public class Given_file_mode_missing_optional_content
 }
 
 [TestFixture]
+public class Given_file_mode_invalid_core_project_manifest
+{
+    private string _workspaceRoot = string.Empty;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        FileModeWorkspaceBuilder.BuildWorkspace(_workspaceRoot);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_fails_xsd_listing_before_an_extension_section_can_ignore_a_zero_core_manifest()
+    {
+        MutateProject("Ed-Fi", project => project["isExtensionProject"] = true);
+        var provider = BuildProvider();
+
+        Action action = () => provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "sample").ToList();
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one core*found 0*");
+    }
+
+    [Test]
+    public void It_fails_xsd_listing_before_a_multiple_core_manifest_can_select_an_arbitrary_core()
+    {
+        MutateProject("Sample", project => project["isExtensionProject"] = false);
+        var provider = BuildProvider();
+
+        Action action = () => provider.Files(@"EdFi\.DataStandard.*\.ApiSchema", ".xsd", "sample").ToList();
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one core*found 2*");
+    }
+
+    private ContentProvider BuildProvider()
+    {
+        return FileModeWorkspaceBuilder.BuildProvider(_workspaceRoot).provider;
+    }
+
+    private void MutateProject(string projectName, Action<JsonObject> mutate)
+    {
+        var manifestPath = Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var project = manifest["projects"]!
+            .AsArray()
+            .Select(node => node!.AsObject())
+            .Single(project =>
+                project["projectName"]!.GetValue<string>().Equals(projectName, StringComparison.Ordinal)
+            );
+
+        mutate(project);
+        File.WriteAllText(
+            manifestPath,
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+        );
+    }
+}
+
+[TestFixture]
 public class Given_file_mode_path_escape_rejection
 {
     private string _workspaceRoot = string.Empty;

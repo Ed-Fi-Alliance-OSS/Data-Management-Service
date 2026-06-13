@@ -123,6 +123,8 @@ public class ApiSchemaAssetManifestProvider(
         ApiSchemaAssetManifest manifest;
         try
         {
+            ValidateRawManifestProjectFields(json);
+
             manifest =
                 JsonSerializer.Deserialize<ApiSchemaAssetManifest>(
                     json,
@@ -249,6 +251,95 @@ public class ApiSchemaAssetManifestProvider(
                 index
             );
             ValidateOptionalManifestRelativePath(project.XsdDirectory, "xsdDirectory", project, index);
+        }
+
+        ValidateSingleCoreProject(manifest);
+    }
+
+    private static void ValidateRawManifestProjectFields(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        if (
+            document.RootElement.ValueKind != JsonValueKind.Object
+            || !TryGetPropertyCaseInsensitive(document.RootElement, "projects", out var projectsElement)
+            || projectsElement.ValueKind != JsonValueKind.Array
+        )
+        {
+            return;
+        }
+
+        foreach ((var projectElement, var index) in projectsElement.EnumerateArray().Select((p, i) => (p, i)))
+        {
+            if (projectElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (
+                !TryGetPropertyCaseInsensitive(
+                    projectElement,
+                    "isExtensionProject",
+                    out var isExtensionProjectElement
+                )
+                || isExtensionProjectElement.ValueKind is JsonValueKind.Null
+                || isExtensionProjectElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Bootstrap manifest project {DescribeRawManifestProject(projectElement, index)} "
+                        + "must declare isExtensionProject as a non-null boolean."
+                );
+            }
+        }
+    }
+
+    private static bool TryGetPropertyCaseInsensitive(
+        JsonElement element,
+        string propertyName,
+        out JsonElement value
+    )
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (
+                property.NameEquals(propertyName)
+                || property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string DescribeRawManifestProject(JsonElement projectElement, int index)
+    {
+        if (
+            TryGetPropertyCaseInsensitive(projectElement, "projectName", out var projectNameElement)
+            && projectNameElement.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(projectNameElement.GetString())
+        )
+        {
+            return $"'{projectNameElement.GetString()}' at index {index}";
+        }
+
+        return $"at index {index}";
+    }
+
+    private static void ValidateSingleCoreProject(ApiSchemaAssetManifest manifest)
+    {
+        var coreProjectCount = manifest.Projects.Count(p => !p.IsExtensionProject);
+
+        if (coreProjectCount != 1)
+        {
+            throw new InvalidOperationException(
+                $"Bootstrap manifest '{ManifestFileName}' must declare exactly one core project where "
+                    + $"isExtensionProject is false; found {coreProjectCount}."
+            );
         }
     }
 

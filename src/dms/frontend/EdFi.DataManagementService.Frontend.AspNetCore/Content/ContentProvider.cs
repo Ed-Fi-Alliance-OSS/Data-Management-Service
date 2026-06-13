@@ -286,9 +286,9 @@ public class ContentProvider(
         }
 
         var xsdPaths = new List<string>();
-        var coreProject = manifest.Projects.FirstOrDefault(p => !p.IsExtensionProject);
+        var coreProject = GetCoreProject(manifest);
 
-        if (coreProject is not null && !IsSameProject(sectionProject, coreProject))
+        if (!IsSameProject(sectionProject, coreProject))
         {
             xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(coreProject));
         }
@@ -314,14 +314,19 @@ public class ContentProvider(
         }
 
         var xsdPaths = manifestProvider.EnumerateValidatedXsdFiles(sectionProject).ToList();
-        var coreProject = manifest.Projects.FirstOrDefault(p => !p.IsExtensionProject);
+        var coreProject = GetCoreProject(manifest);
 
-        if (coreProject is not null && !IsSameProject(sectionProject, coreProject))
+        if (!IsSameProject(sectionProject, coreProject))
         {
             xsdPaths.AddRange(manifestProvider.EnumerateValidatedXsdFiles(coreProject));
         }
 
         return xsdPaths;
+    }
+
+    private static ApiSchemaProject GetCoreProject(ApiSchemaAssetManifest manifest)
+    {
+        return manifest.Projects.Single(p => !p.IsExtensionProject);
     }
 
     private static ApiSchemaProject? FindProjectForSection(ApiSchemaAssetManifest manifest, string section)

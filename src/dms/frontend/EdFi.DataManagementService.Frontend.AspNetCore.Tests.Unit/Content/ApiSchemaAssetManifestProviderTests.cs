@@ -480,6 +480,53 @@ public class Given_a_manifest_with_invalid_project_fields
         action.Should().Throw<InvalidOperationException>().WithMessage($"*non-empty {fieldName}*");
     }
 
+    [TestCase("missing")]
+    [TestCase("null")]
+    [TestCase("string")]
+    public void It_rejects_missing_null_or_non_boolean_isExtensionProject(string fieldState)
+    {
+        var provider = BuildProvider(project =>
+        {
+            if (fieldState == "missing")
+            {
+                project.Remove("isExtensionProject");
+                return;
+            }
+
+            project["isExtensionProject"] = fieldState == "null" ? null : "false";
+        });
+
+        Action action = () => provider.GetManifest();
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*isExtensionProject*non-null boolean*");
+    }
+
+    [Test]
+    public void It_rejects_a_manifest_with_no_core_project()
+    {
+        var provider = BuildProvider(project => project["isExtensionProject"] = true);
+
+        Action action = () => provider.GetManifest();
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one core*found 0*");
+    }
+
+    [Test]
+    public void It_rejects_a_manifest_with_multiple_core_projects()
+    {
+        var provider = BuildProvider(
+            project => project["isExtensionProject"] = false,
+            CreateProject("Sample", "sample", isExtensionProject: false)
+        );
+
+        Action action = () => provider.GetManifest();
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one core*found 2*");
+    }
+
     [TestCase("discoverySpecPath")]
     [TestCase("xsdDirectory")]
     public void It_rejects_blank_optional_content_paths(string fieldName)
@@ -509,20 +556,21 @@ public class Given_a_manifest_with_invalid_project_fields
             .WithMessage($"*invalid {fieldName}*parent-directory traversal*");
     }
 
-    private IApiSchemaAssetManifestProvider BuildProvider(Action<JsonObject> mutateProject)
+    private IApiSchemaAssetManifestProvider BuildProvider(
+        Action<JsonObject> mutateProject,
+        params JsonObject[] additionalProjects
+    )
     {
-        var project = new JsonObject
-        {
-            ["projectName"] = "EdFi",
-            ["projectEndpointName"] = "ed-fi",
-            ["isExtensionProject"] = false,
-            ["schemaPath"] = "schemas/EdFi/ApiSchema.json",
-            ["discoverySpecPath"] = "content/EdFi/discovery-spec.json",
-            ["xsdDirectory"] = "content/EdFi/xsd",
-        };
+        var project = CreateProject("EdFi", "ed-fi", isExtensionProject: false);
         mutateProject(project);
 
-        var manifest = new JsonObject { ["version"] = 1, ["projects"] = new JsonArray(project) };
+        var projects = new JsonArray(project);
+        foreach (var additionalProject in additionalProjects)
+        {
+            projects.Add(additionalProject);
+        }
+
+        var manifest = new JsonObject { ["version"] = 1, ["projects"] = projects };
         File.WriteAllText(
             Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"),
             manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
@@ -539,6 +587,23 @@ public class Given_a_manifest_with_invalid_project_fields
         var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
 
         return new ApiSchemaAssetManifestProvider(appSettings, logger);
+    }
+
+    private static JsonObject CreateProject(
+        string projectName,
+        string projectEndpointName,
+        bool isExtensionProject
+    )
+    {
+        return new JsonObject
+        {
+            ["projectName"] = projectName,
+            ["projectEndpointName"] = projectEndpointName,
+            ["isExtensionProject"] = isExtensionProject,
+            ["schemaPath"] = $"schemas/{projectName}/ApiSchema.json",
+            ["discoverySpecPath"] = $"content/{projectName}/discovery-spec.json",
+            ["xsdDirectory"] = $"content/{projectName}/xsd",
+        };
     }
 }
 

@@ -40,6 +40,7 @@ internal class ApiSchemaProvider(
     private sealed record BootstrapApiSchemaProject(
         string? ProjectName,
         string? ProjectEndpointName,
+        bool? IsExtensionProject,
         string? SchemaPath
     );
 
@@ -398,6 +399,40 @@ internal class ApiSchemaProvider(
             );
         }
 
+        if (manifest.Projects is not null && manifest.Projects.Count > 0)
+        {
+            foreach (
+                (BootstrapApiSchemaProject project, int index) in manifest.Projects.Select((p, i) => (p, i))
+            )
+            {
+                if (project.IsExtensionProject is null)
+                {
+                    failures.Add(
+                        new ApiSchemaFailure(
+                            "Configuration",
+                            $"Bootstrap manifest project {DescribeManifestProject(project, index)} must declare "
+                                + "isExtensionProject as a non-null boolean."
+                        )
+                    );
+                }
+            }
+
+            if (manifest.Projects.All(p => p.IsExtensionProject is not null))
+            {
+                var coreProjectCount = manifest.Projects.Count(p => p.IsExtensionProject is false);
+                if (coreProjectCount != 1)
+                {
+                    failures.Add(
+                        new ApiSchemaFailure(
+                            "Configuration",
+                            $"Bootstrap manifest '{BootstrapManifestFileName}' must declare exactly one core "
+                                + $"project where isExtensionProject is false; found {coreProjectCount}."
+                        )
+                    );
+                }
+            }
+        }
+
         foreach (ApiSchemaFailure failure in failures)
         {
             _logger.LogError(failure.Message);
@@ -553,28 +588,40 @@ internal class ApiSchemaProvider(
 
         try
         {
-            JsonNode? coreApiSchemaNode = apiSchemaNodes.FirstOrDefault(node =>
-                !node.SelectRequiredNodeFromPathAs<bool>("$.projectSchema.isExtensionProject", _logger)
-            );
+            var classifiedApiSchemaNodes = apiSchemaNodes
+                .Select(node => new
+                {
+                    Node = node,
+                    IsExtensionProject = node.SelectRequiredNodeFromPathAs<bool>(
+                        "$.projectSchema.isExtensionProject",
+                        _logger
+                    ),
+                })
+                .ToList();
 
-            if (coreApiSchemaNode is null)
+            List<JsonNode> coreApiSchemaNodes = classifiedApiSchemaNodes
+                .Where(node => !node.IsExtensionProject)
+                .Select(node => node.Node)
+                .ToList();
+
+            if (coreApiSchemaNodes.Count != 1)
             {
                 ApiSchemaFailure failure = new(
                     "Configuration",
-                    "No core API schema found (all schemas are marked as extensions)"
+                    $"Expected exactly one core API schema where projectSchema.isExtensionProject is false; "
+                        + $"found {coreApiSchemaNodes.Count}."
                 );
                 _logger.LogError(failure.Message);
                 return new(null, [failure]);
             }
 
-            JsonNode[] extensionApiSchemaNodes = apiSchemaNodes
-                .Where(node =>
-                    node.SelectRequiredNodeFromPathAs<bool>("$.projectSchema.isExtensionProject", _logger)
-                )
+            JsonNode[] extensionApiSchemaNodes = classifiedApiSchemaNodes
+                .Where(node => node.IsExtensionProject)
+                .Select(node => node.Node)
                 .ToArray();
 
             return new ApiSchemaLoadResult(
-                new ApiSchemaDocumentNodes(coreApiSchemaNode, extensionApiSchemaNodes),
+                new ApiSchemaDocumentNodes(coreApiSchemaNodes[0], extensionApiSchemaNodes),
                 []
             );
         }

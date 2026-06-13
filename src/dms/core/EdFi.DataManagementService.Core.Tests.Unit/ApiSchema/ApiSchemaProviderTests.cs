@@ -299,6 +299,177 @@ public class Given_manifest_declares_a_missing_schema_file_with_a_legacy_fallbac
 }
 
 [TestFixture]
+public class Given_manifest_backed_workspace_with_two_schema_documents_marked_as_core
+    : ApiSchemaProviderWorkspaceTestBase
+{
+    private IApiSchemaProvider _provider = null!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        WriteSchemaFile(
+            "Packages/Core/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchema("Ed-Fi", "ed-fi", isExtensionProject: false)
+        );
+        WriteSchemaFile(
+            "Packages/Sample/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchema("Sample", "sample", isExtensionProject: false)
+        );
+        WriteManifest(
+            ("Ed-Fi", "ed-fi", false, "Packages/Core/ApiSchema.json"),
+            ("Sample", "sample", true, "Packages/Sample/ApiSchema.json")
+        );
+
+        _provider = CreateFileModeProvider();
+
+        try
+        {
+            _provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_fails_startup()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_records_a_configuration_failure_for_multiple_core_schemas()
+    {
+        _provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains("exactly one core API schema", StringComparison.Ordinal)
+                && f.Message.Contains("found 2", StringComparison.Ordinal)
+            );
+    }
+}
+
+[TestFixture]
+public class Given_manifest_backed_workspace_with_no_schema_document_marked_as_core
+    : ApiSchemaProviderWorkspaceTestBase
+{
+    private IApiSchemaProvider _provider = null!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        WriteSchemaFile(
+            "Packages/Core/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchema("Ed-Fi", "ed-fi", isExtensionProject: true)
+        );
+        WriteSchemaFile(
+            "Packages/Sample/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchema("Sample", "sample", isExtensionProject: true)
+        );
+        WriteManifest(
+            ("Ed-Fi", "ed-fi", false, "Packages/Core/ApiSchema.json"),
+            ("Sample", "sample", true, "Packages/Sample/ApiSchema.json")
+        );
+
+        _provider = CreateFileModeProvider();
+
+        try
+        {
+            _provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_fails_startup()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_records_a_configuration_failure_for_zero_core_schemas()
+    {
+        _provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains("exactly one core API schema", StringComparison.Ordinal)
+                && f.Message.Contains("found 0", StringComparison.Ordinal)
+            );
+    }
+}
+
+[TestFixture]
+public class Given_manifest_backed_workspace_with_missing_isExtensionProject_field
+    : ApiSchemaProviderWorkspaceTestBase
+{
+    private IApiSchemaProvider _provider = null!;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        WriteSchemaFile(
+            "Packages/Core/ApiSchema.json",
+            ApiSchemaProviderTestFixtures.CreateApiSchema("Ed-Fi", "ed-fi", isExtensionProject: false)
+        );
+
+        var manifest = new JsonObject
+        {
+            ["version"] = 1,
+            ["projects"] = new JsonArray(
+                new JsonObject
+                {
+                    ["projectName"] = "Ed-Fi",
+                    ["projectEndpointName"] = "ed-fi",
+                    ["schemaPath"] = "Packages/Core/ApiSchema.json",
+                }
+            ),
+        };
+        File.WriteAllText(
+            Path.Combine(WorkspaceRoot, "bootstrap-api-schema-manifest.json"),
+            manifest.ToJsonString()
+        );
+
+        _provider = CreateFileModeProvider();
+
+        try
+        {
+            _provider.GetApiSchemaNodes();
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_fails_startup()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_records_a_configuration_failure_for_the_manifest_field()
+    {
+        _provider
+            .ApiSchemaFailures.Should()
+            .ContainSingle(f =>
+                f.FailureType == "Configuration"
+                && f.Message.Contains("isExtensionProject", StringComparison.Ordinal)
+                && f.Message.Contains("non-null boolean", StringComparison.Ordinal)
+            );
+    }
+}
+
+[TestFixture]
 public class Given_legacy_workspace_without_a_bootstrap_manifest : ApiSchemaProviderWorkspaceTestBase
 {
     private ApiSchemaDocumentNodes _nodes = null!;
