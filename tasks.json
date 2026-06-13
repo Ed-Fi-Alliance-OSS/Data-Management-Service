@@ -271,6 +271,6 @@
       "Search the bootstrap design/story docs for `EdFi.DataStandard52.ApiSchema.<Project>` and confirm only intentional legacy references remain.",
       "Search `src`, `eng`, and `reference/design/backend-redesign` for `EdFi.DataStandard52.Sample.ApiSchema`, `EdFi.DataStandard52.Homograph.ApiSchema`, and `EdFi.DataStandard52.TPDM.ApiSchema` to verify examples use the canonical extension package IDs."
     ],
-    "completed": false
+    "completed": true
   }
 ]

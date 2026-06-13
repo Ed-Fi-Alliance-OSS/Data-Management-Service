@@ -93,3 +93,9 @@ Key decisions: User -ClaimsDirectoryPath fragment checks are normal expected che
 Files changed: eng/docker-compose/prepare-dms-claims.ps1; eng/docker-compose/bootstrap-claims-gate.psm1; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1; tasks.json; progress.txt.
 Verification: pwsh -NoProfile -Command "Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1,./eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1" passed, 94 tests.
 Blockers/notes: Bootstrap Documentation task remains open.
+
+Task completed: Bootstrap Documentation - canonical extension ApiSchema package IDs for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Story 05 and Story 06 now use EdFi.DataStandard52.<Project>.ApiSchema to match apischema-container and current package examples.
+Files changed: reference/design/backend-redesign/epics/16-bootstrap/05-metaed-apischema-asset-packaging.md; reference/design/backend-redesign/epics/16-bootstrap/06-package-backed-standard-schema-selection.md; tasks.json; progress.txt.
+Verification: rg stale EdFi.DataStandard52.ApiSchema.<Project> in bootstrap docs returned none; rg canonical Sample/Homograph/TPDM examples in src/eng/reference found expected current package IDs.
+Blockers/notes: all tasks now complete.
