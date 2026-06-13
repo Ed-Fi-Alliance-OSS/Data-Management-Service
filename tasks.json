@@ -43,7 +43,7 @@
       "Add an `ApiSchemaAssetManifestProvider` or `ContentProvider` unit test where a project declares a missing `xsdDirectory` and assert XSD enumeration fails with a workspace validation error.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~Xsd|FullyQualifiedName~ApiSchemaAssetManifestProvider\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Metadata Content",

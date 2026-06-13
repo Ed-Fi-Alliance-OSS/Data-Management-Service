@@ -32,7 +32,8 @@ public interface IApiSchemaAssetManifestProvider
 
     /// <summary>
     /// Enumerates the XSD files for a given manifest project after validating that the project's
-    /// xsdDirectory is within the workspace root. Returns an empty enumerable if xsdDirectory is absent.
+    /// xsdDirectory is within the workspace root and exists. Returns an empty enumerable if
+    /// xsdDirectory is absent.
     /// </summary>
     /// <param name="project">The manifest project whose XSD files are to be enumerated.</param>
     /// <returns>Validated absolute paths to each XSD file in the project's xsdDirectory.</returns>
@@ -192,7 +193,10 @@ public class ApiSchemaAssetManifestProvider(
         var validatedDir = ResolveValidatedPath(project.XsdDirectory);
         if (!Directory.Exists(validatedDir))
         {
-            return [];
+            throw new InvalidOperationException(
+                $"Manifest project '{project.ProjectName}' declares xsdDirectory "
+                    + $"'{project.XsdDirectory}', but the resolved directory '{validatedDir}' does not exist."
+            );
         }
 
         return Directory

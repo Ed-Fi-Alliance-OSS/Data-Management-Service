@@ -157,6 +157,70 @@ public class Given_a_valid_manifest_workspace
 }
 
 [TestFixture]
+public class Given_a_manifest_with_declared_missing_xsd_directory
+{
+    private string _workspaceRoot = string.Empty;
+    private IApiSchemaAssetManifestProvider _provider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_workspaceRoot);
+
+        var manifestJson = """
+            {
+              "version": 1,
+              "projects": [
+                {
+                  "projectName": "EdFi",
+                  "projectEndpointName": "ed-fi",
+                  "isExtensionProject": false,
+                  "schemaPath": "schemas/EdFi/ApiSchema.json",
+                  "xsdDirectory": "content/EdFi/missing-xsd"
+                }
+              ]
+            }
+            """;
+
+        File.WriteAllText(Path.Combine(_workspaceRoot, "bootstrap-api-schema-manifest.json"), manifestJson);
+
+        var appSettings = Options.Create(
+            new AppSettings
+            {
+                ApiSchemaPath = _workspaceRoot,
+                UseApiSchemaPath = true,
+                AllowIdentityUpdateOverrides = "",
+            }
+        );
+        var logger = A.Fake<ILogger<ApiSchemaAssetManifestProvider>>();
+        _provider = new ApiSchemaAssetManifestProvider(appSettings, logger);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_workspaceRoot))
+        {
+            Directory.Delete(_workspaceRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_throws_for_declared_missing_xsd_directory()
+    {
+        var project = _provider.GetManifest().Projects[0];
+
+        Action action = () => _provider.EnumerateValidatedXsdFiles(project).ToList();
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*EdFi*xsdDirectory*content/EdFi/missing-xsd*does not exist*");
+    }
+}
+
+[TestFixture]
 public class Given_package_manifests_without_a_bootstrap_manifest
 {
     private string _workspaceRoot = string.Empty;

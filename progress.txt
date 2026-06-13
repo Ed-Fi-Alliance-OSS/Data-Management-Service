@@ -27,3 +27,9 @@ Key decisions: ContentProvider selects first project with declared discoverySpec
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ContentProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ContentProviderTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format provider/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~discovery; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Content.
 Blockers/notes: none.
+
+Task completed: Metadata Content - declared missing xsdDirectory fails workspace for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Manifest provider treats null xsdDirectory as optional absent content but declared missing directories as invalid workspace state. Listing/streaming resolution inherit this through shared EnumerateValidatedXsdFiles path.
+Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ApiSchemaAssetManifestProviderTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format provider/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Xsd|FullyQualifiedName~ApiSchemaAssetManifestProvider; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~ContentProvider|FullyQualifiedName~ApiSchemaAssetManifestProvider; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~xsd.
+Blockers/notes: none.
