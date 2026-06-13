@@ -11,18 +11,18 @@ Script to set up the development environment for the repository.
 This script restores .NET tools and PowerShell resources, then installs Husky for managing Git hooks.
 #>
 
-Write-Host "Setting up the development environment..."
+Write-Information "Setting up the development environment..." -InformationAction Continue
 
 # Restore .NET tools
-Write-Host "Restoring .NET tools..."
+Write-Information "Restoring .NET tools..." -InformationAction Continue
 dotnet tool restore
 
 # Restore PowerShell resources
-Write-Host "Restoring PowerShell resources..."
+Write-Information "Restoring PowerShell resources..." -InformationAction Continue
 $requiredPowerShellResourcesFile = Join-Path $PSScriptRoot "eng/RequiredResources.psd1"
 
 if ($null -eq (Get-Command Install-PSResource -ErrorAction SilentlyContinue)) {
-    Write-Host "Installing Microsoft.PowerShell.PSResourceGet..."
+    Write-Information "Installing Microsoft.PowerShell.PSResourceGet..." -InformationAction Continue
     Install-Module -Name Microsoft.PowerShell.PSResourceGet -Scope CurrentUser -Force -AllowClobber
     Import-Module Microsoft.PowerShell.PSResourceGet -Force
 }
@@ -34,11 +34,11 @@ Install-PSResource `
     -AcceptLicense
 
 # Install CSharpier
-Write-Host "Installing CSharpier..."
+Write-Information "Installing CSharpier..." -InformationAction Continue
 dotnet tool install --local csharpier
 
 # Install Husky
-Write-Host "Installing Husky..."
+Write-Information "Installing Husky..." -InformationAction Continue
 dotnet husky install
 
-Write-Host "Development environment setup complete."
+Write-Information "Development environment setup complete." -InformationAction Continue

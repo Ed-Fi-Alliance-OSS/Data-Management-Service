@@ -635,11 +635,11 @@ function Invoke-BootstrapStartupConfiguration {
     }
 
     if ($bootstrapMode) {
-        Write-Host "Bootstrap manifest detected and validated. Staged schema and claims workspaces are now runtime-authoritative; DMS reads ApiSchema from the staged workspace and CMS claims are governed by the manifest claims.mode."
+        Write-Information "Bootstrap manifest detected and validated. Staged schema and claims workspaces are now runtime-authoritative; DMS reads ApiSchema from the staged workspace and CMS claims are governed by the manifest claims.mode." -InformationAction Continue
         if ($AddExtensionSecurityMetadata) {
             # In bootstrap mode the manifest's claims.mode governs; -AddExtensionSecurityMetadata
             # is ignored. Set-BootstrapStartupEnvironment already activated staged claims above.
-            Write-Host "Extension Security Metadata: bootstrap mode is active; staged claims from manifest govern (AddExtensionSecurityMetadata flag is ignored in bootstrap mode)."
+            Write-Information "Extension Security Metadata: bootstrap mode is active; staged claims from manifest govern (AddExtensionSecurityMetadata flag is ignored in bootstrap mode)." -InformationAction Continue
         }
     } elseif ($AddExtensionSecurityMetadata) {
         # Non-bootstrap mode: activate Hybrid claims so extension claimset fragments
@@ -647,7 +647,7 @@ function Invoke-BootstrapStartupConfiguration {
         $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
         $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
         $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
-        Write-Host "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap startup)."
+        Write-Information "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap startup)." -InformationAction Continue
     }
 
     return $bootstrapMode
