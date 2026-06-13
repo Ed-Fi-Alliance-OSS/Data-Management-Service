@@ -967,11 +967,13 @@ exit $ExitCode
             $localDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.yml") -Raw
             $publishedDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.yml") -Raw
             $localConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-config.yml") -Raw
+            $publishedConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-config.yml") -Raw
 
             $localDms | Should -Not -Match "/app/additional-claims"
             $publishedDms | Should -Not -Match "/app/additional-claims"
             $localDms | Should -Not -Match "/app/ApiSchema:ro"
             $localConfig | Should -Match "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
+            $publishedConfig | Should -Match "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
 
             # bootstrap-dms.yml must exist and declare the dms service volume override.
             $bootstrapDmsYml = Join-Path $script:sourceDockerComposeRoot "bootstrap-dms.yml"
@@ -988,6 +990,9 @@ exit $ExitCode
                 $content | Should -Match "bootstrap-dms\.yml" -Because "$startScript must append -f bootstrap-dms.yml when bootstrap mode is active"
                 $content | Should -Match "\`$bootstrapMode" -Because "$startScript must gate the bootstrap-dms.yml inclusion on the boolean returned by Invoke-BootstrapStartupConfiguration"
             }
+
+            $publishedStartScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
+            $publishedStartScript | Should -Match 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode\)\s*\{[^}]*?published-config\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
         }
 
         It "retains AddExtensionSecurityMetadata as a transitional non-bootstrap hybrid claims path" {

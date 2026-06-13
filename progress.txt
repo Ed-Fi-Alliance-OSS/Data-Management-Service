@@ -81,3 +81,9 @@ Key decisions: GetManifest now validates required projectName/projectEndpointNam
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Content/ApiSchemaAssetManifestProvider.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Content/ApiSchemaAssetManifestProviderTests.cs; tasks.json; progress.txt.
 Verification: dotnet csharpier format provider/tests; dotnet test --no-restore frontend unit tests with filter FullyQualifiedName~Content passed, 70 tests; requested filter FullyQualifiedName~ApiSchemaAssetManifestProvider|FullyQualifiedName~ContentProvider passed, 5 tests.
 Blockers/notes: requested filter does not select most manifest-provider fixture classes because fixture names omit provider name; used broader Content filter for actual coverage.
+
+Task completed: Bootstrap Startup - published bootstrap starts include Config Service compose for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: start-published-dms.ps1 now treats bootstrapMode as a reason to include published-config.yml so staged CMS claims mount through DMS_CONFIG_CLAIMS_MOUNT_SOURCE with bootstrap-dms.yml. Non-bootstrap keycloak published starts remain opt-in through -EnableConfig.
+Files changed: eng/docker-compose/start-published-dms.ps1; eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; tasks.json; progress.txt.
+Verification: pwsh -NoProfile -Command "Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1" passed, 73 tests.
+Blockers/notes: Bootstrap Claims and Bootstrap Documentation tasks remain open.

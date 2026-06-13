@@ -210,8 +210,9 @@ if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
 
-# Include configuration service if enabled or if using self-contained identity provider
-if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained") {
+# Include Configuration Service when requested, when needed for self-contained identity,
+# or when bootstrap mode activates the staged claims workspace mount.
+if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode) {
     $files += @("-f", "published-config.yml")
 }
 

@@ -256,7 +256,7 @@
       "Add a negative Pester assertion showing a non-bootstrap keycloak published start without `-EnableConfig` still does not include `published-config.yml` unless that remains the intended non-bootstrap contract.",
       "Run: `pwsh -NoProfile -Command \"Invoke-Pester -Path ./eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1,./eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Bootstrap Documentation",
