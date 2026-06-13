@@ -109,7 +109,7 @@
       "Add `ApiSchemaDownloader` coverage showing `DownloadNuGetPackageAsync` rejects an invalid `packageId` before creating the `.nupkg` path.",
       "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Seed Delivery",

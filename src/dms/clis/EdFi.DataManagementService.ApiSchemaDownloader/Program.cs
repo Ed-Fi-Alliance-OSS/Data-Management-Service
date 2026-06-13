@@ -43,7 +43,7 @@ try
             logger.LogCritical("Error: apiSchemaFolder is required.");
         }
 
-        string packageId = options.PackageId;
+        string packageId = PackageIdPathSegmentValidator.Validate(options.PackageId);
         string? packageVersion = options.PackageVersion;
         string feedUrl = options.FeedUrl;
 

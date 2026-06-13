@@ -51,3 +51,9 @@ Key decisions: run.sh removes only generated Packages and DownloadedPackages und
 Files changed: src/dms/run.sh; eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1; tasks.json; progress.txt.
 Verification: bash -n src/dms/run.sh; Invoke-Pester BootstrapSchemaAndSecuritySelection full file passed, 55 passed.
 Blockers/notes: none.
+
+Task completed: ApiSchema Downloader - packageId path-segment validation for reference/design/backend-redesign/epics/16-bootstrap/04-apischema-runtime-content-loading.md
+Key decisions: Added shared validator for packageId before CLI/download/extract path construction. Rejects null/empty/whitespace, rooted/drive-qualified, separators, dot, and dot-dot; valid ids flow through unchanged.
+Files changed: src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Services/ApiSchemaDownloader.cs; src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Services/PackageIdPathSegmentValidator.cs; src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Program.cs; src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/ApiSchemaDownloaderTests.cs; tasks.json; progress.txt.
+Verification: dotnet csharpier format downloader service/validator/program/tests; dotnet test --no-restore ApiSchemaDownloader.Tests.Integration passed, 16 tests.
+Blockers/notes: Nested XSD rejection remains open.

@@ -22,9 +22,11 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
 
     public void ExtractApiSchemaFiles(string packageId, string packagePath, string outputDir)
     {
+        string validatedPackageId = PackageIdPathSegmentValidator.Validate(packageId);
+
         _logger.LogInformation(
             "Extracting API schema content from package {PackageId} located at {PackagePath}",
-            packageId,
+            validatedPackageId,
             packagePath
         );
 
@@ -44,13 +46,13 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
             {
                 _logger.LogError(
                     "No ApiSchema content files found in package {PackageId}. Expected files under {ContentRoot}",
-                    packageId,
+                    validatedPackageId,
                     ApiSchemaContentRoot
                 );
                 throw new Exception("No ApiSchema content files found in the package.");
             }
 
-            string packageOutputDir = Path.Combine(outputDir, "Packages", packageId);
+            string packageOutputDir = Path.Combine(outputDir, "Packages", validatedPackageId);
             Directory.CreateDirectory(packageOutputDir);
 
             _logger.LogInformation(
@@ -123,7 +125,13 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
         string outputDir
     )
     {
-        _logger.LogInformation("Downloading NuGet package {PackageId} from {FeedUrl}", packageId, feedUrl);
+        string validatedPackageId = PackageIdPathSegmentValidator.Validate(packageId);
+
+        _logger.LogInformation(
+            "Downloading NuGet package {PackageId} from {FeedUrl}",
+            validatedPackageId,
+            feedUrl
+        );
 
         var providers = Repository.Provider.GetCoreV3();
         var packageSource = new PackageSource(feedUrl);
@@ -135,7 +143,7 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
         {
             var latestPackage = (
                 await packageMetadataResource.GetMetadataAsync(
-                    packageId,
+                    validatedPackageId,
                     true,
                     false,
                     cacheContext,
@@ -146,10 +154,13 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
                 .OrderByDescending(p => p.Identity.Version)
                 .FirstOrDefault();
 
-            if (latestPackage == null)
+            if (latestPackage is null)
             {
-                _logger.LogError("No versions found for package {PackageId} in the feed.", packageId);
-                throw new Exception($"No versions found for package {packageId} in the feed.");
+                _logger.LogError(
+                    "No versions found for package {PackageId} in the feed.",
+                    validatedPackageId
+                );
+                throw new Exception($"No versions found for package {validatedPackageId} in the feed.");
             }
 
             packageVersion = latestPackage.Identity.Version.ToString();
@@ -157,10 +168,10 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
 
         _logger.LogDebug("Selected package version {PackageVersion}", packageVersion);
 
-        var packageIdentity = new PackageIdentity(packageId, new NuGetVersion(packageVersion));
+        var packageIdentity = new PackageIdentity(validatedPackageId, new NuGetVersion(packageVersion));
         var packageMetadata = (
             await packageMetadataResource.GetMetadataAsync(
-                packageId,
+                validatedPackageId,
                 true,
                 false,
                 cacheContext,
@@ -169,14 +180,16 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
             )
         ).FirstOrDefault(p => p.Identity.Version == packageIdentity.Version);
 
-        if (packageMetadata == null)
+        if (packageMetadata is null)
         {
             _logger.LogError(
                 "Package {PackageId} version {PackageVersion} not found in the feed.",
-                packageId,
+                validatedPackageId,
                 packageVersion
             );
-            throw new Exception($"Package {packageId} version {packageVersion} not found in the feed.");
+            throw new Exception(
+                $"Package {validatedPackageId} version {packageVersion} not found in the feed."
+            );
         }
 
         var downloadResource = await sourceRepository.GetResourceAsync<DownloadResource>();
@@ -192,13 +205,13 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
         {
             _logger.LogError(
                 "Failed to download package {PackageId} version {PackageVersion}.",
-                packageId,
+                validatedPackageId,
                 packageVersion
             );
-            throw new Exception($"Failed to download package {packageId} version {packageVersion}.");
+            throw new Exception($"Failed to download package {validatedPackageId} version {packageVersion}.");
         }
 
-        var packageFilePath = Path.Combine(outputDir, $"{packageId}.{packageVersion}.nupkg");
+        var packageFilePath = Path.Combine(outputDir, $"{validatedPackageId}.{packageVersion}.nupkg");
         using (var fileStream = File.Create(packageFilePath))
         {
             await downloadResult.PackageStream.CopyToAsync(fileStream);
@@ -206,7 +219,7 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
 
         _logger.LogInformation(
             "Successfully downloaded package {PackageId} Version {PackageVersion} to {PackageFilePath}",
-            packageId,
+            validatedPackageId,
             packageVersion,
             packageFilePath
         );
